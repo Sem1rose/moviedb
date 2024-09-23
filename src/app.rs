@@ -1,16 +1,28 @@
+use std::collections::HashMap;
+
 pub struct App {
+    // pub socket: String,
     pub single_shot: bool,
+    pub clear_images: bool,
+    pub update_images: bool,
     pub should_quit: bool,
     pub movies: Vec<Movie>,
+    pub movies_posters: HashMap<u32, String>,
+    pub posters_requested: Vec<u32>,
     pub movies_list_screen_options: MainScreen,
 }
 
 impl App {
     pub fn new(_single_shot: bool) -> Self {
         Self {
+            // socket: ueberzugpp_socket_path,
             single_shot: _single_shot,
+            clear_images: false,
+            update_images: true,
             should_quit: false,
             movies: vec![],
+            movies_posters: HashMap::new(),
+            posters_requested: Vec::new(),
             movies_list_screen_options: MainScreen::default(),
         }
     }
@@ -25,6 +37,7 @@ impl App {
         {
             self.movies_list_screen_options.movies_visible = num_movies_visible;
         } else {
+            self.clear_images = true;
             // don't know why i did all of this
             let current_pos = self.movies_list_screen_options.scroll_pos
                 + self.movies_list_screen_options.selected;
@@ -47,6 +60,7 @@ impl App {
             {
                 self.movies_list_screen_options.selected += 1;
             } else {
+                self.clear_images = true;
                 self.movies_list_screen_options.scroll_pos += 1;
             }
         }
@@ -56,6 +70,7 @@ impl App {
         if self.movies_list_screen_options.selected > 0 {
             self.movies_list_screen_options.selected -= 1;
         } else if self.movies_list_screen_options.scroll_pos > 0 {
+            self.clear_images = true;
             self.movies_list_screen_options.scroll_pos -= 1;
         }
     }
@@ -78,6 +93,7 @@ impl MainScreen {
     }
 }
 
+#[derive(Clone)]
 pub struct Movie {
     pub name: String,
     pub url: String,

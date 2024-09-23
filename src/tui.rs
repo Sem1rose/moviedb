@@ -5,7 +5,8 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{backend::Backend, prelude::*, CompletedFrame};
-use std::io::{stdout, Result};
+use std::io::{stderr, stdout, Result};
+use std::time;
 
 pub struct Tui<B: Backend> {
     terminal: Terminal<B>,
@@ -32,8 +33,28 @@ impl<B: Backend> Tui<B> {
                 return Ok(());
             }
 
+            // if now.elapsed().as_millis() > 30 {
+            // TEMPORARY
+            // TODO remove this piece of shit
+            if app.clear_images {
+                // *self.terminal.current_buffer_mut() =
+                //     Buffer::empty(self.terminal.current_buffer_mut().area);
+                // self.terminal.swap_buffers();
+                // *self.terminal.current_buffer_mut() =
+                //     Buffer::empty(self.terminal.current_buffer_mut().area);
+
+                self.terminal.clear();
+                app.update_images = true;
+                app.clear_images = false;
+
+                // execute!(stdout(), LeaveAlternateScreen)?;
+                // println!("ass");
+                // execute!(stdout(), EnterAlternateScreen)?;
+            }
             self.draw(app)?;
             input_handler::handle(app)?;
+            // now = time::Instant::now();
+            // }
         }
     }
 

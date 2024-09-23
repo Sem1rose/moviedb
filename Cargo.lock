@@ -146,12 +146,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "base64"
-version = "0.22.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
-
-[[package]]
 name = "bit_field"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -379,12 +373,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a81dae078cea95a014a339291cec439d2f232ebe854a9d672b796c6afafa9b7"
 
 [[package]]
-name = "dyn-clone"
-version = "1.0.17"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d6ef0072f8a535281e4876be788938b528e9a1d43900b82c2569af7da799125"
-
-[[package]]
 name = "either"
 version = "1.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -502,12 +490,6 @@ name = "hermit-abi"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d231dfb89cfffdbc30e7fc41579ed6066ad03abda9e567ccafae602b97ec5024"
-
-[[package]]
-name = "icy_sixel"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86858ae800284d596cfdefcb0ad435c3493c12f35367431bbe9b2b3858c1155b"
 
 [[package]]
 name = "image"
@@ -756,7 +738,6 @@ dependencies = [
  "json",
  "rand",
  "ratatui",
- "ratatui-image",
 ]
 
 [[package]]
@@ -995,22 +976,6 @@ dependencies = [
  "unicode-segmentation",
  "unicode-truncate",
  "unicode-width",
-]
-
-[[package]]
-name = "ratatui-image"
-version = "1.0.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de94276254cb20fb7431726875bd2ac6391a6ffc26f4b8e3d23f79d1286b491e"
-dependencies = [
- "base64",
- "crossterm",
- "dyn-clone",
- "icy_sixel",
- "image",
- "rand",
- "ratatui",
- "rustix",
 ]
 
 [[package]]

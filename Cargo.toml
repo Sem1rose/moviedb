@@ -10,4 +10,3 @@ image = "0.25.2"
 json = "0.12.4"
 rand = "0.8.5"
 ratatui = "0.28.1"
-ratatui-image = { version = "1.0.5", features = ["crossterm"] }

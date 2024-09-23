@@ -15,8 +15,6 @@ pub struct Cli {
 pub enum Commands {
     /// Add movie to the db.
     Add,
-    /// List all movies in the db.
-    List,
     /// Remove a movie from the db.
     Remove {
         /// Name of the movie to remove.
