@@ -33,10 +33,10 @@ impl App {
                     match key.code {
                         KeyCode::Char('q') => self.should_quit = true,
                         KeyCode::Up => {
-                            drawer.dec_movie_selection();
+                            drawer.dec_selection(self);
                         }
                         KeyCode::Down => {
-                            drawer.inc_movie_selection(self.movies.len());
+                            drawer.inc_selection(self);
                         }
                         _ => return Ok(()),
                     }

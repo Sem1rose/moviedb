@@ -32,10 +32,21 @@ impl MainScreen {
     }
 }
 
+pub enum CurrentScreen {
+    InitScreen(Option<VisiblePopup>),
+    MainScreen(Option<VisiblePopup>),
+}
+
+pub enum VisiblePopup {
+    FetchingMoviesPosters,
+}
+
 pub struct Drawer {
+    movies_fetched: Arc<Mutex<u32>>,
     movie_posters: Arc<Mutex<HashMap<u32, String>>>,
     movie_posters_requested: Vec<u32>,
     images_displayed: Vec<u32>,
+    current_screen: CurrentScreen,
     mainscreen_options: MainScreen,
 
     // TODO: temp delete
@@ -48,10 +59,12 @@ impl Drawer {
     pub fn default() -> Self {
         Self {
             movie_posters: Arc::new(Mutex::new(HashMap::new())),
+            movies_fetched: Arc::new(Mutex::new(0)),
             movie_posters_requested: vec![],
             images_displayed: vec![],
+            current_screen: CurrentScreen::MainScreen(None),
             clear_images: false,
-            paths: fs::read_dir("./src")
+            paths: fs::read_dir(dirs::cache_dir().unwrap().join("moviedb").join("posters"))
                 .unwrap()
                 .filter_map(|x| x.ok())
                 .map(|x| x.path())
@@ -63,13 +76,14 @@ impl Drawer {
 
     pub fn set_num_movies_visible(&mut self, num_movies_visible: u32) {
         if self.mainscreen_options.movies_visible == 0
-            || num_movies_visible == self.mainscreen_options.movies_visible
+            || self.mainscreen_options.movies_visible == num_movies_visible
         {
             self.mainscreen_options.movies_visible = num_movies_visible;
         } else {
             self.clear_images = true;
-            self.movie_posters_requested.clear();
             self.movie_posters.lock().unwrap().clear();
+            self.movie_posters_requested.clear();
+            self.images_displayed.clear();
 
             // don't know why i did all of this
             let current_pos = self.mainscreen_options.scroll_pos + self.mainscreen_options.selected;
@@ -79,6 +93,18 @@ impl Drawer {
             }
 
             self.mainscreen_options.scroll_pos = current_pos - self.mainscreen_options.selected;
+        }
+    }
+
+    pub fn inc_selection(&mut self, app: &App) {
+        if let CurrentScreen::MainScreen(_) = self.current_screen {
+            self.inc_movie_selection(app.movies.len());
+        }
+    }
+
+    pub fn dec_selection(&mut self, app: &App) {
+        if let CurrentScreen::MainScreen(_) = self.current_screen {
+            self.dec_movie_selection();
         }
     }
 
@@ -105,20 +131,37 @@ impl Drawer {
             self.mainscreen_options.scroll_pos -= 1;
         }
     }
+
+    pub fn ui(&mut self, frame: &mut Frame, app: &mut App) -> Result<(), Box<dyn Error>> {
+        // let now = std::time::Instant::now();
+        if let CurrentScreen::InitScreen(_) = self.current_screen {
+            self.render_init_screen(frame, app)?;
+        } else if let CurrentScreen::MainScreen(_) = self.current_screen {
+            self.render_movies_list(frame, app)?;
+        }
+        // frame.render_widget(
+        //     Paragraph::new(format!("{:.1}", 1.0 / now.elapsed().as_secs_f32())),
+        //     // Paragraph::new(format!("{}", app.clear_images)),
+        //     frame.area(),
+        // );
+        Ok(())
+    }
 }
 
 impl Drawer {
-    pub fn ui(&mut self, frame: &mut Frame, app: &mut App) -> Result<(), Box<dyn Error>> {
-        let now = std::time::Instant::now();
-        self.render_movies_list(frame, app)?;
-        frame.render_widget(
-            Paragraph::new(format!("{:.1}", 1.0 / now.elapsed().as_secs_f32())),
-            // Paragraph::new(format!("{}", app.clear_images)),
-            frame.area(),
-        );
+    fn render_init_screen(
+        &mut self,
+        frame: &mut Frame,
+        app: &mut App,
+    ) -> Result<(), Box<dyn Error>> {
+        let frame_area = frame.area();
+        let num_movies = app.movies.len();
+
         Ok(())
     }
+}
 
+impl Drawer {
     fn render_movies_list(
         &mut self,
         frame: &mut Frame,
@@ -188,6 +231,7 @@ impl Drawer {
             .position(self.mainscreen_options.scroll_pos as usize);
 
         frame.render_stateful_widget(scrollbar, horiz_lay[1], &mut scrollbar_state);
+
         Ok(())
     }
 
@@ -255,8 +299,8 @@ impl Drawer {
         frame.render_widget(&block, area);
 
         let mut name = movie.name.clone();
-        if name.len() > 50 {
-            name.truncate(50);
+        if name.len() > (horiz_lay[3].width as usize - 11) {
+            name.truncate(horiz_lay[3].width as usize - 11);
             name += "...";
         }
 

@@ -4,7 +4,7 @@
 //     AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, PkceCodeChallenge, RedirectUrl,
 //     Scope, TokenResponse, TokenUrl,
 // };
-use crate::config::Conf;
+use crate::config_trakt::Conf;
 use reqwest::{
     blocking::{Client, ClientBuilder, RequestBuilder, Response},
     header::HeaderMap,
@@ -177,7 +177,7 @@ pub fn new(config: &Conf) -> Result<(), Box<dyn Error>> {
 
     headers.insert("trakt-api-key", config.client_id().parse().unwrap());
     headers.insert("trakt-api-version", "2".parse().unwrap());
-    let query = vec![
+    let query = [
         ("limit", "3"),
         ("page", "1"),
         ("query", "Allied"),

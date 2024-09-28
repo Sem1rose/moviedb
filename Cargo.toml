@@ -6,18 +6,19 @@ edition = "2021"
 [dependencies]
 clap = { version = "4.5.17", features = ["derive"] }
 cocoon = { version = "0.4.3", features = ["thiserror"] }
+color-eyre = "0.6.3"
 crossterm = "0.28.1"
 dirs = "5.0.1"
-http = "1.1.0"
+# http = "1.1.0"
 json = "0.12.4"
-oauth2 = "4.4.2"
+# oauth2 = "4.4.2"
 rand = "0.8.5"
 ratatui = "0.28.1"
 reqwest = { version = "0.12.7", features = ["blocking", "json"] }
 serde = "1.0.210"
 serde_json = "1.0.128"
-tokio = { version = "1.40.0", features = ["full"] }
+# tokio = { version = "1.40.0", features = ["full"] }
 trakt-rs = "0.2.1"
 unix-ts = "1.0.0"
 # trakt-rs = "0.2.1"
-url = "2.5.2"
+# url = "2.5.2"

@@ -1,9 +1,9 @@
 use clap::Parser;
 
-mod add;
 mod app;
 mod args;
-mod config;
+mod config_tmdb;
+mod config_trakt;
 mod database;
 mod draw;
 mod tmdb;
@@ -11,32 +11,37 @@ mod trakt;
 mod tui;
 
 use app::App;
-use config::Conf;
+// use config_trakt::Conf;
+use color_eyre::{
+    eyre::{bail, WrapErr},
+    Result,
+};
+
+use config_tmdb::Conf;
 use database::*;
 use ratatui::prelude::*;
-use std::{error::Error, io::stdout};
-use tmdb::*;
-use trakt::*;
+use std::{cell::RefCell, error::Error, io::{stdout, Stdout}, rc::Rc};
+// use trakt::*;
 use tui::Tui;
 
 fn main() -> Result<(), Box<dyn Error>> {
+    color_eyre::install()?;
     let cli = args::Cli::parse();
 
-    let mut config = Conf::new();
-    config.init()?;
+    // trakt::populate_tokens(&mut config)?;
+    // trakt::new(&config)?;
+    // tmdb::populate_tokens(&mut config);
+    let terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
 
-    trakt::populate_tokens(&mut config)?;
-    trakt::new(&config)?;
-    // let terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
+    let config = Conf::new();
+    let app = App::new(cli.command.is_some());
+    let mut tui = Tui::new(terminal, app, config);
 
-    // let app = App::new(cli.command.is_some());
-    // let mut tui = Tui::new(terminal, app);
+    tui.init()?;
+    // tmdb::get_movie_poster_banner(&mut config, app.movies[00]);
+    let result = tui.run();
+    Tui::<CrosstermBackend<Stdout>>::exit()?;
 
-    // tui.init()?;
-    // let result = tui.run();
-    // tui.exit()?;
-    config.save_creds()?;
-
-    // result?;
+    result?;
     Ok(())
 }
