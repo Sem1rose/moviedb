@@ -10,14 +10,7 @@ use reqwest::{
     header::HeaderMap,
 };
 use serde::Deserialize;
-use std::{
-    collections::HashMap,
-    error::Error,
-    fmt::Display,
-    fs::File,
-    io::{copy, stdin, stdout, Write},
-    path::PathBuf,
-};
+use std::{collections::HashMap, error::Error, fmt::Display, fs::File};
 
 #[derive(Deserialize, Debug)]
 struct RequestTokenResponse {
@@ -57,60 +50,67 @@ struct ImagesConfiguration {
 
 #[derive(Deserialize, Debug)]
 struct SearchResponse {
-    page: u64,
+    // page: u64,
     results: Vec<SearchResult>,
-    total_pages: u64,
-    total_results: u64,
+    // total_pages: u64,
+    // total_results: u64,
 }
 
 #[derive(Deserialize, Debug)]
-struct SearchResult {
-    // adult: bool,
-    // backdrop_path: Option<String>,
-    // genre_ids: Vec<u64>,
-    id: u64,
-    // original_language: String,
-    // original_title: String,
-    // overview: String,
-    // popularity: f64,
-    // poster_path: Option<String>,
-    // release_date: String,
-    // title: String,
-    // video: bool,
-    // vote_average: f64,
-    // vote_count: u64,
+pub struct SearchResult {
+    // pub adult: bool,
+    // pub backdrop_path: Option<String>,
+    // pub genre_ids: Vec<u64>,
+    pub id: u64,
+    // pub original_language: String,
+    // pub original_title: String,
+    // pub overview: String,
+    // pub popularity: f64,
+    // pub poster_path: Option<String>,
+    pub release_date: String,
+    pub title: String,
+    // pub video: bool,
+    pub vote_average: f64,
+    // pub vote_count: u64,
 }
 
 #[derive(Deserialize, Debug)]
-struct DetailsResponse {
+pub struct DetailsResponse {
     // adult: bool,
-    backdrop_path: Option<String>,
-    belongs_to_collection: Option<String>,
+    pub backdrop_path: Option<String>,
+    pub belongs_to_collection: Option<Collection>,
     // budget: u32,
-    genres: Vec<Genre>,
-    homepage: Option<String>,
-    id: u32,
-    imdb_id: String,
+    pub genres: Vec<Genre>,
+    pub homepage: Option<String>,
+    pub id: u32,
+    pub imdb_id: String,
     // original_language: String,
     // original_title: String,
-    overview: String,
+    pub overview: String,
     // popularity: f32,
-    poster_path: Option<String>,
-    release_date: String,
+    pub poster_path: Option<String>,
+    pub release_date: String,
     // revenue: u32,
-    runtime: u32,
-    status: String,
-    tagline: String,
-    title: String,
+    pub runtime: u32,
+    pub status: String,
+    pub tagline: String,
+    pub title: String,
     // video: bool,
-    vote_average: f32,
-    vote_count: u32,
+    pub vote_average: f32,
+    pub vote_count: u32,
+}
+#[derive(Deserialize, Debug)]
+pub struct Collection {
+    pub id: u32,
+    pub name: String,
+    pub poster_path: Option<String>,
+    pub backdrop_path: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
-struct Genre {
-    id: u32,
-    name: String,
+pub struct Genre {
+    pub id: u32,
+    pub name: String,
 }
 
 #[derive(Deserialize, Debug)]
@@ -243,6 +243,61 @@ fn get_session_id(config: &mut Conf) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+pub fn find_movie(config: &Conf, name: &str) -> Result<Vec<SearchResult>, Box<dyn Error>> {
+    let client = ClientBuilder::new().build()?;
+    let mut headers = HeaderMap::new();
+    headers.insert("accept", "application/json".parse().unwrap());
+    headers.insert("content-type", "application/json".parse().unwrap());
+    headers.insert(
+        "Authorization",
+        format!("Bearer {}", config.access_token()).parse().unwrap(),
+    );
+
+    let query = [("query", name), ("language", "en-US")];
+    let search_response = send_tmdb_request(
+        &client,
+        "https://api.themoviedb.org/3/search/movie",
+        headers.clone(),
+        None,
+        Some(&query),
+    )?;
+    if search_response.status().as_u16() != 200 {
+        return Err(Box::new(search_response.json::<RequestResponseError>()?));
+    }
+    // println!(
+    //     "{}",
+    //     json::parse(&search_response.text()?).unwrap().pretty(2)
+    // );
+
+    let json = search_response.json::<SearchResponse>()?;
+    // println!("{:#?}", json);
+    Ok(json.results)
+}
+
+pub fn get_movie_details(config: &Conf, id: u32) -> Result<DetailsResponse, Box<dyn Error>> {
+    let client = ClientBuilder::new().build()?;
+    let mut headers = HeaderMap::new();
+    headers.insert("accept", "application/json".parse().unwrap());
+    headers.insert("content-type", "application/json".parse().unwrap());
+    headers.insert(
+        "Authorization",
+        format!("Bearer {}", config.access_token()).parse().unwrap(),
+    );
+
+    let details_response = send_tmdb_request(
+        &client,
+        &format!("https://api.themoviedb.org/3/movie/{id}"),
+        headers.clone(),
+        None,
+        None,
+    )?;
+    if details_response.status().as_u16() != 200 {
+        return Err(Box::new(details_response.json::<RequestResponseError>()?));
+    }
+
+    Ok(details_response.json::<DetailsResponse>()?)
+}
+
 pub fn get_movie_poster_banner(config: &Conf, movie: &Movie) -> Result<(), Box<dyn Error>> {
     let poster_cache = config.cache.join("posters");
     let backdrop_cache = config.cache.join("backdrops");
@@ -257,6 +312,13 @@ pub fn get_movie_poster_banner(config: &Conf, movie: &Movie) -> Result<(), Box<d
         "Authorization",
         format!("Bearer {}", config.access_token()).parse().unwrap(),
     );
+
+    let movie_details = get_movie_details(config, movie.id)?;
+
+    // println!(
+    //     "{} {}\n{}",
+    //     movie_details.title, movie_details.release_date, movie_details.id
+    // );
 
     let configuration_response = send_tmdb_request(
         &client,
@@ -275,85 +337,49 @@ pub fn get_movie_poster_banner(config: &Conf, movie: &Movie) -> Result<(), Box<d
         .json::<ConfigurationResponse>()?
         .images;
 
-    let query = [("query", movie.name.as_str()), ("language", "en-US")];
-    let search_response = send_tmdb_request(
-        &client,
-        "https://api.themoviedb.org/3/search/movie",
-        headers.clone(),
-        None,
-        Some(&query),
-    )?;
-    if search_response.status().as_u16() != 200 {
-        return Err(Box::new(search_response.json::<RequestResponseError>()?));
-    }
-    // println!(
-    //     "{}",
-    //     json::parse(&search_response.text()?).unwrap().pretty(2)
-    // );
-
-    let json = search_response.json::<SearchResponse>()?;
-    println!("{:#?}", json);
-
-    let id = &json.results[0].id;
-
-    let details_response = send_tmdb_request(
-        &client,
-        &format!("https://api.themoviedb.org/3/movie/{id}"),
-        headers.clone(),
-        None,
-        None,
-    )?;
-    if details_response.status().as_u16() != 200 {
-        return Err(Box::new(details_response.json::<RequestResponseError>()?));
-    }
-
-    let movie = details_response.json::<DetailsResponse>()?;
-
-    println!("{} {}\n{}", movie.title, movie.release_date, movie.id);
-
-    if movie.poster_path.is_some() {
+    if movie_details.poster_path.is_some() {
         let image_bytes: Vec<_> = reqwest::blocking::get(format!(
             "{}{}{}",
             images_configurations.base_url,
-            images_configurations.poster_sizes[0],
-            movie.poster_path.as_ref().unwrap()
+            images_configurations.poster_sizes[1],
+            movie_details.poster_path.as_ref().unwrap()
         ))
         .expect("requesting movie poster failed!")
         .bytes()?
         .iter()
         .copied()
         .collect();
-        let mut out = File::create(poster_cache.join(format!("{}.jpg", movie.id)))
+        let mut out = File::create(poster_cache.join(format!("{}.jpg", movie_details.id)))
             .expect("failed to create file");
         std::io::copy(&mut image_bytes.as_slice(), &mut out).expect("failed to copy content");
     } else {
         std::fs::copy(
             "poster_placeholder.jpg",
-            poster_cache.join(format!("{}.jpg", movie.id)),
+            poster_cache.join(format!("{}.jpg", movie_details.id)),
         )
         .expect("failed to copy placeholder poster!");
     }
 
-    if movie.backdrop_path.is_some() {
+    if movie_details.backdrop_path.is_some() {
         let image_bytes: Vec<_> = reqwest::blocking::get(format!(
             "{}{}{}",
             images_configurations.base_url,
             images_configurations.backdrop_sizes[1],
-            movie.backdrop_path.as_ref().unwrap()
+            movie_details.backdrop_path.as_ref().unwrap()
         ))
         .expect("requesting movie backdrop failed!")
         .bytes()?
         .iter()
         .copied()
         .collect();
-        let mut out = File::create(backdrop_cache.join(format!("{}.jpg", movie.id)))
+        let mut out = File::create(backdrop_cache.join(format!("{}.jpg", movie_details.id)))
             .expect("failed to create file");
         std::io::copy::<&[u8], File>(&mut image_bytes.as_slice(), &mut out)
             .expect("failed to copy content");
     } else {
         std::fs::copy(
             "backdrop_placeholder.jpg",
-            poster_cache.join(format!("{}.jpg", movie.id)),
+            poster_cache.join(format!("{}.jpg", movie_details.id)),
         )
         .expect("failed to copy placeholder backdrop!");
     }

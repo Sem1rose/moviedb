@@ -1,11 +1,9 @@
-use crate::app::{App, Movie};
+use crate::{app::App, config_tmdb::Conf, tmdb};
 use crossterm::ExecutableCommand;
-use rand::prelude::*;
 use ratatui::{layout::*, prelude::*, widgets::*, Frame};
 use std::{
     collections::HashMap,
     error::Error,
-    fs,
     io::stdout,
     path::PathBuf,
     process::{Command, Stdio},
@@ -42,15 +40,14 @@ pub enum VisiblePopup {
 }
 
 pub struct Drawer {
-    movies_fetched: Arc<Mutex<u32>>,
+    init_progress: Arc<Mutex<u32>>,
+    init_ed: bool,
     movie_posters: Arc<Mutex<HashMap<u32, String>>>,
     movie_posters_requested: Vec<u32>,
     images_displayed: Vec<u32>,
     current_screen: CurrentScreen,
     mainscreen_options: MainScreen,
-
-    // TODO: temp delete
-    paths: Vec<PathBuf>,
+    throbber_state: throbber_widgets_tui::ThrobberState,
 
     pub clear_images: bool,
 }
@@ -58,19 +55,15 @@ pub struct Drawer {
 impl Drawer {
     pub fn default() -> Self {
         Self {
+            init_progress: Arc::new(Mutex::new(0)),
+            init_ed: false,
             movie_posters: Arc::new(Mutex::new(HashMap::new())),
-            movies_fetched: Arc::new(Mutex::new(0)),
             movie_posters_requested: vec![],
             images_displayed: vec![],
             current_screen: CurrentScreen::MainScreen(None),
-            clear_images: false,
-            paths: fs::read_dir(dirs::cache_dir().unwrap().join("moviedb").join("posters"))
-                .unwrap()
-                .filter_map(|x| x.ok())
-                .map(|x| x.path())
-                .filter(|x| x.extension().map_or(false, |x| x == "jpg"))
-                .collect::<Vec<_>>(),
             mainscreen_options: MainScreen::default(),
+            throbber_state: throbber_widgets_tui::ThrobberState::default(),
+            clear_images: false,
         }
     }
 
@@ -132,12 +125,18 @@ impl Drawer {
         }
     }
 
-    pub fn ui(&mut self, frame: &mut Frame, app: &mut App) -> Result<(), Box<dyn Error>> {
+    pub fn ui(
+        &mut self,
+        frame: &mut Frame,
+        app: &mut App,
+        config: &Conf,
+    ) -> Result<(), Box<dyn Error>> {
         // let now = std::time::Instant::now();
+        self.throbber_state.calc_next();
         if let CurrentScreen::InitScreen(_) = self.current_screen {
-            self.render_init_screen(frame, app)?;
+            self.render_init_screen(frame, config, app)?;
         } else if let CurrentScreen::MainScreen(_) = self.current_screen {
-            self.render_movies_list(frame, app)?;
+            self.render_movies_list(frame, config, app)?;
         }
         // frame.render_widget(
         //     Paragraph::new(format!("{:.1}", 1.0 / now.elapsed().as_secs_f32())),
@@ -146,16 +145,106 @@ impl Drawer {
         // );
         Ok(())
     }
+
+    fn center(&self, area: Rect, horizontal: Constraint, vertical: Constraint) -> Rect {
+        let [area] = Layout::horizontal([horizontal])
+            .flex(Flex::Center)
+            .areas(area);
+        let [area] = Layout::vertical([vertical]).flex(Flex::Center).areas(area);
+        area
+    }
 }
 
 impl Drawer {
     fn render_init_screen(
         &mut self,
         frame: &mut Frame,
+        conf: &Conf,
         app: &mut App,
     ) -> Result<(), Box<dyn Error>> {
         let frame_area = frame.area();
         let num_movies = app.movies.len();
+
+        frame.render_widget(Block::new().bg(tailwind::SLATE.c900), frame_area);
+
+        let popup_area = self.center(
+            frame_area,
+            Constraint::Percentage(50),
+            Constraint::Length(11),
+        );
+        let popup = Block::new()
+            .bg(tailwind::INDIGO.c950)
+            .fg(tailwind::INDIGO.c300)
+            .borders(Borders::ALL)
+            .border_type(BorderType::Thick)
+            .border_style(Style::new().fg(tailwind::EMERALD.c400))
+            .title_top("Working...")
+            .title_alignment(Alignment::Center)
+            .title_style(Style::new().fg(tailwind::AMBER.c300));
+
+        frame.render_widget(Clear, popup_area);
+        frame.render_widget(&popup, popup_area);
+
+        let layout = Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Length(1),
+        ])
+        .split(popup.inner(popup_area));
+
+        let info_text = "Getting movie posters...";
+        let [text_lay, throbber_lay] = Layout::horizontal(vec![
+            Constraint::Length(info_text.len() as u16),
+            Constraint::Length(1),
+        ])
+        .flex(Flex::Center)
+        .areas(layout[1]);
+
+        let throbber = throbber_widgets_tui::Throbber::default()
+            .throbber_set(throbber_widgets_tui::BRAILLE_SIX_DOUBLE)
+            .throbber_style(Style::new().bold().fg(tailwind::VIOLET.c400));
+
+        frame.render_widget(info_text, text_lay);
+        frame.render_widget(throbber, throbber_lay);
+
+        let [progress_lay] = Layout::horizontal(vec![Constraint::Length(layout[3].width - 6)])
+            .flex(Flex::Center)
+            .areas(layout[3]);
+        let progress = *self.init_progress.lock().unwrap();
+        let progress_guage = Gauge::default()
+            .ratio(progress as f64 / num_movies as f64)
+            .gauge_style(
+                Style::new()
+                    .fg(tailwind::LIME.c500)
+                    .bg(tailwind::GREEN.c900)
+                    .italic(),
+            )
+            .label(format!("{}/{}", progress, num_movies).fg(tailwind::PINK.c500))
+            .use_unicode(true);
+
+        frame.render_widget(progress_guage, progress_lay);
+
+        if !self.init_ed {
+            self.init_ed = true;
+            for movie in &app.movies {
+                let movie_owned = movie.clone();
+                let conf_owned = conf.clone();
+                let init_prog_owned = Arc::clone(&self.init_progress);
+
+                thread::spawn(move || {
+                    if let Err(err) = tmdb::get_movie_poster_banner(&conf_owned, &movie_owned) {
+                        panic!("{}", err);
+                    }
+                    *init_prog_owned.lock().unwrap() += 1;
+                });
+            }
+        }
+
+        if progress == num_movies as u32 {
+            self.current_screen = CurrentScreen::MainScreen(None);
+        }
 
         Ok(())
     }
@@ -165,6 +254,7 @@ impl Drawer {
     fn render_movies_list(
         &mut self,
         frame: &mut Frame,
+        config: &Conf,
         app: &mut App,
     ) -> Result<(), Box<dyn Error>> {
         let frame_area = frame.area();
@@ -200,6 +290,7 @@ impl Drawer {
             if (i + self.mainscreen_options.scroll_pos as usize) < app.movies.len() {
                 self.draw_movie_widget(
                     i,
+                    config,
                     app,
                     frame,
                     *area,
@@ -238,6 +329,7 @@ impl Drawer {
     fn draw_movie_widget(
         &mut self,
         id: usize,
+        config: &Conf,
         app: &mut App,
         frame: &mut Frame,
         area: Rect,
@@ -286,7 +378,7 @@ impl Drawer {
         let horiz_lay = Layout::new(
             Direction::Horizontal,
             [
-                Constraint::Length(2),
+                Constraint::Length(1),
                 Constraint::Length(movie_width),
                 Constraint::Length(2),
                 Constraint::Min(0),
@@ -341,16 +433,16 @@ impl Drawer {
 
                 if !self.movie_posters_requested.iter().any(|x| *x == movie_id) {
                     self.movie_posters_requested.push(movie_id);
-                    self.request_poster_async(app, movie_id, horiz_lay[1]);
+                    self.request_poster_async(config, app, movie_id, horiz_lay[1]);
                 }
             }
         }
     }
 
-    fn request_poster_async(&mut self, app: &App, id: u32, area: Rect) {
+    fn request_poster_async(&mut self, config: &Conf, app: &App, id: u32, area: Rect) {
         let posters = Arc::clone(&self.movie_posters);
         let path = self
-            .get_movie_poster(&app.movies[id as usize])
+            .get_movie_poster(config, app.movies[id as usize].id)
             .to_str()
             .unwrap()
             .to_string();
@@ -364,7 +456,7 @@ impl Drawer {
                         "--relative",
                         "on",
                         "--view-size",
-                        &format!("{}x{}", area.width, area.height),
+                        &format!("{}x{}", area.width + 1, area.height + 1),
                         &path,
                     ])
                     .stdout(Stdio::piped())
@@ -378,8 +470,7 @@ impl Drawer {
         });
     }
 
-    fn get_movie_poster(&mut self, movie: &Movie) -> PathBuf {
-        // TODO: implement proper poster fetching.
-        self.paths[rand::thread_rng().gen_range(0..self.paths.len())].clone()
+    fn get_movie_poster(&mut self, config: &Conf, id: u32) -> PathBuf {
+        config.cache.join("posters").join(format!("{id}.jpg"))
     }
 }

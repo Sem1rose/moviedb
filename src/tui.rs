@@ -1,20 +1,11 @@
-use crate::{app::App, config_tmdb::Conf, draw::Drawer, fetch_movies, tmdb};
-use color_eyre::{
-    eyre::{bail, WrapErr},
-    Result,
-};
+use crate::{app::App, config_tmdb::Conf, draw::Drawer, tmdb};
+use color_eyre::Result;
 use crossterm::{
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{enable_raw_mode, EnterAlternateScreen},
 };
 use ratatui::{backend::Backend, prelude::*, CompletedFrame};
-use std::{
-    cell::RefCell,
-    error::Error,
-    io::{stderr, stdout},
-    rc::Rc,
-    sync::Mutex,
-};
+use std::{error::Error, io::stdout};
 
 pub struct Tui<B: Backend> {
     terminal: Terminal<B>,
@@ -34,9 +25,9 @@ impl<B: Backend> Tui<B> {
     }
 
     pub fn init(&mut self) -> Result<(), Box<dyn Error>> {
-        self.app.set_movies(fetch_movies().unwrap());
         self.config.init()?;
         tmdb::populate_tokens(&mut self.config)?;
+        self.app.fetch_movies(&self.config);
 
         self.set_panic_hook();
         enable_raw_mode()?;
@@ -98,6 +89,6 @@ impl<B: Backend> Tui<B> {
 
     pub fn draw(&mut self) -> Result<CompletedFrame, std::io::Error> {
         self.terminal
-            .draw(|frame| self.drawer.ui(frame, &mut self.app).unwrap())
+            .draw(|frame| self.drawer.ui(frame, &mut self.app, &self.config).unwrap())
     }
 }

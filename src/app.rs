@@ -1,9 +1,9 @@
-use crate::draw::Drawer;
+use crate::{config_tmdb::Conf, draw::Drawer};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
-use std::io::Result;
+use serde::Deserialize;
+use std::{error::Error, fs};
 
 pub struct App {
-    // pub socket: String,
     pub single_shot: bool,
     pub should_quit: bool,
     pub movies: Vec<Movie>,
@@ -22,7 +22,7 @@ impl App {
         self.movies = _movies;
     }
 
-    pub fn handle(&mut self, drawer: &mut Drawer) -> Result<()> {
+    pub fn handle(&mut self, drawer: &mut Drawer) -> Result<(), Box<dyn Error>> {
         if event::poll(std::time::Duration::from_millis(8))? {
             match event::read()? {
                 Event::Key(key) => {
@@ -46,25 +46,57 @@ impl App {
         }
         Ok(())
     }
+
+    pub fn fetch_movies(&mut self, config: &Conf) {
+        let file_path = config.home.join("ratings.json");
+
+        let file_contents = fs::read_to_string(&file_path).unwrap_or_else(|_| {
+            panic!("Couldn't read database contents at {}", file_path.display())
+        });
+        let json_contents = json::parse(&file_contents).unwrap_or_else(|_| {
+            panic!(
+                "Couldn't parse database contents at {}",
+                file_path.display()
+            )
+        });
+
+        let movies = json_contents
+            .members()
+            .map(|x| {
+                Movie::new(
+                    x["name"].to_string(),
+                    x["rating"]
+                        .to_string()
+                        .parse()
+                        .expect("Rating was not a number!"),
+                    x["year"].to_string(),
+                    x["id"]
+                        .to_string()
+                        .parse()
+                        .expect("Couldn't parse movie id"),
+                )
+            })
+            .collect::<Vec<Movie>>();
+
+        self.set_movies(movies);
+    }
 }
 
-#[derive(Clone)]
+#[derive(serde::Serialize, Clone, Deserialize, Debug)]
 pub struct Movie {
     pub name: String,
-    pub url: String,
+    pub id: u32,
     pub year: String,
     pub rating: f32,
-    pub trakt_id: u32,
 }
 
 impl Movie {
-    pub fn new(_name: String, _rating: f32, _url: String, _year: String, _trakt_id: u32) -> Self {
+    pub fn new(name: String, rating: f32, year: String, id: u32) -> Self {
         Movie {
-            name: _name,
-            rating: _rating,
-            url: _url,
-            year: _year,
-            trakt_id: _trakt_id,
+            name,
+            rating,
+            year,
+            id,
         }
     }
 }

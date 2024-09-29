@@ -10,7 +10,7 @@ use std::{
 
 const ENCRYPTION_KEY: &str = ".key";
 const ENCRYPTED_FILE: &str = ".credentials";
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 struct TMDBCredentials {
     access_token: Box<str>,
     session_id: Box<str>,
@@ -32,6 +32,7 @@ impl TMDBCredentials {
     }
 }
 
+#[derive(Clone)]
 pub struct Conf {
     pub home: Box<Path>,
     pub cache: Box<Path>,
