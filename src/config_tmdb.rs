@@ -55,9 +55,7 @@ impl Conf {
     }
 
     pub fn init(&mut self) -> Result<(), Box<dyn Error>> {
-        if !self.home.is_dir() {
-            fs::create_dir(&self.home)?;
-        }
+        self.init_dirs()?;
 
         if !self.home.join(ENCRYPTION_KEY).is_file() {
             let key: String = rand::thread_rng()
@@ -77,6 +75,22 @@ impl Conf {
             }
         } else {
             self.init_creds();
+        }
+        Ok(())
+    }
+
+    fn init_dirs(&mut self) -> Result<(), Box<dyn Error>> {
+        if !self.home.is_dir() {
+            fs::create_dir(&self.home)?;
+        }
+        if !self.cache.is_dir() {
+            fs::create_dir(&self.cache)?;
+        }
+        if !self.cache.join("posters").is_dir() {
+            fs::create_dir(self.cache.join("posters"))?;
+        }
+        if !self.cache.join("backdrops").is_dir() {
+            fs::create_dir(self.cache.join("backdrops"))?;
         }
         Ok(())
     }

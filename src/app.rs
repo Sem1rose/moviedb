@@ -23,7 +23,7 @@ impl App {
     }
 
     pub fn handle(&mut self, drawer: &mut Drawer) -> Result<(), Box<dyn Error>> {
-        if event::poll(std::time::Duration::from_millis(8))? {
+        if event::poll(std::time::Duration::from_millis(0))? {
             match event::read()? {
                 Event::Key(key) => {
                     if key.kind != KeyEventKind::Press {
@@ -41,6 +41,9 @@ impl App {
                         _ => return Ok(()),
                     }
                 }
+                Event::Resize(_, _) => {
+                    drawer.clear_images(true);
+                }
                 _ => return Ok(()),
             }
         }
@@ -53,30 +56,32 @@ impl App {
         let file_contents = fs::read_to_string(&file_path).unwrap_or_else(|_| {
             panic!("Couldn't read database contents at {}", file_path.display())
         });
-        let json_contents = json::parse(&file_contents).unwrap_or_else(|_| {
-            panic!(
-                "Couldn't parse database contents at {}",
-                file_path.display()
-            )
-        });
+        // let json_contents = json::parse(&file_contents).unwrap_or_else(|_| {
+        //     panic!(
+        //         "Couldn't parse database contents at {}",
+        //         file_path.display()
+        //     )
+        // });
 
-        let movies = json_contents
-            .members()
-            .map(|x| {
-                Movie::new(
-                    x["name"].to_string(),
-                    x["rating"]
-                        .to_string()
-                        .parse()
-                        .expect("Rating was not a number!"),
-                    x["year"].to_string(),
-                    x["id"]
-                        .to_string()
-                        .parse()
-                        .expect("Couldn't parse movie id"),
-                )
-            })
-            .collect::<Vec<Movie>>();
+        // let movies = json_contents
+        //     .members()
+        //     .map(|x| {
+        //         Movie::new(
+        //             x["name"].to_string(),
+        //             x["rating"]
+        //                 .to_string()
+        //                 .parse()
+        //                 .expect("Rating was not a number!"),
+        //             x["year"].to_string(),
+        //             x["id"]
+        //                 .to_string()
+        //                 .parse()
+        //                 .expect("Couldn't parse movie id"),
+        //         )
+        //     })
+        //     .collect::<Vec<Movie>>();
+
+        let movies = serde_json::from_str(&file_contents).expect("couldn't deserialize json!");
 
         self.set_movies(movies);
     }
@@ -87,16 +92,48 @@ pub struct Movie {
     pub name: String,
     pub id: u32,
     pub year: String,
-    pub rating: f32,
+    pub user_rating: f32,
+    pub vote_average: f32,
+    pub genres: Vec<String>,
+    pub collection: Option<String>,
+    pub collection_id: Option<u32>,
+    pub overview: String,
+    pub runtime: u32,
+    pub released: bool,
+    pub tagline: String,
+    pub vote_count: u32,
 }
 
 impl Movie {
-    pub fn new(name: String, rating: f32, year: String, id: u32) -> Self {
+    pub fn new(
+        name: String,
+        user_rating: f32,
+        vote_average: f32,
+        year: String,
+        id: u32,
+        genres: Vec<String>,
+        overview: String,
+        collection: Option<String>,
+        collection_id: Option<u32>,
+        runtime: u32,
+        released: bool,
+        tagline: String,
+        vote_count: u32,
+    ) -> Self {
         Movie {
             name,
-            rating,
+            user_rating,
+            vote_average,
             year,
             id,
+            genres,
+            collection,
+            collection_id,
+            overview,
+            runtime,
+            released,
+            tagline,
+            vote_count,
         }
     }
 }

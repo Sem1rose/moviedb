@@ -1,4 +1,9 @@
-use crate::{app::App, config_tmdb::Conf, draw::Drawer, tmdb};
+use crate::{
+    app::App,
+    config_tmdb::Conf,
+    draw::{CurrentScreen, Drawer},
+    tmdb,
+};
 use color_eyre::Result;
 use crossterm::{
     execute,
@@ -39,28 +44,42 @@ impl<B: Backend> Tui<B> {
     }
 
     pub fn run(&mut self) -> Result<(), Box<dyn Error>> {
+        // let mut frame_time = 0.0;
+        let mut draw_time = 0.0;
+        let mut now = std::time::Instant::now();
         loop {
-            if self.app.should_quit {
+            if self.app.should_quit
+                && (self.drawer.current_screen != CurrentScreen::InitScreen
+                    || (self.drawer.init_ed
+                        && (*self.drawer.init_progress.lock().unwrap() as usize)
+                            == self.app.movies.len()))
+            {
                 return Ok(());
             }
 
-            // TODO remove this piece of shit
-            if self.drawer.clear_images {
-                // *self.terminal.current_buffer_mut() =
-                //     Buffer::empty(self.terminal.current_buffer_mut().area);
-                // self.terminal.swap_buffers();
-                // *self.terminal.current_buffer_mut() =
-                //     Buffer::empty(self.terminal.current_buffer_mut().area);
+            if now.elapsed().as_secs_f64() >= 1.0 / 130.0 - draw_time {
+                if self.drawer.current_screen != CurrentScreen::TermSizeWarn
+                    && (self.drawer.clear_images
+                        || !self.drawer.backdrop_displayed
+                        || !self.drawer.all_movies_displayed
+                        || self.drawer.current_screen == CurrentScreen::InitScreen
+                        || self.drawer.throbber_visible)
+                {
+                    let start_draw_instant = std::time::Instant::now();
+                    // TODO remove this piece of shit
+                    if self.drawer.clear_images {
+                        self.terminal.clear()?;
+                        self.drawer.clear_images = false;
+                    }
+                    // self.draw(frame_time)?;
+                    self.draw()?;
 
-                self.terminal.clear()?;
-                self.drawer.clear_images = false;
-
-                // execute!(stdout(), LeaveAlternateScreen)?;
-                // println!("ass");
-                // execute!(stdout(), EnterAlternateScreen)?;
+                    // frame_time = now.elapsed().as_secs_f64();
+                    now = std::time::Instant::now();
+                    draw_time = start_draw_instant.elapsed().as_secs_f64();
+                }
+                self.app.handle(&mut self.drawer)?;
             }
-            self.draw()?;
-            self.app.handle(&mut self.drawer)?;
         }
     }
 
@@ -88,7 +107,12 @@ impl<B: Backend> Tui<B> {
     }
 
     pub fn draw(&mut self) -> Result<CompletedFrame, std::io::Error> {
-        self.terminal
-            .draw(|frame| self.drawer.ui(frame, &mut self.app, &self.config).unwrap())
+        // pub fn draw(&mut self, frame_time: f64) -> Result<CompletedFrame, std::io::Error> {
+        self.terminal.draw(|frame| {
+            self.drawer
+                .ui(frame, &mut self.app, &self.config)
+                // .ui(frame, &mut self.app, &self.config, frame_time)
+                .unwrap()
+        })
     }
 }

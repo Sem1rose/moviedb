@@ -99,7 +99,7 @@ pub struct DetailsResponse {
     pub vote_average: f32,
     pub vote_count: u32,
 }
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct Collection {
     pub id: u32,
     pub name: String,
@@ -298,7 +298,7 @@ pub fn get_movie_details(config: &Conf, id: u32) -> Result<DetailsResponse, Box<
     Ok(details_response.json::<DetailsResponse>()?)
 }
 
-pub fn get_movie_poster_banner(config: &Conf, movie: &Movie) -> Result<(), Box<dyn Error>> {
+pub fn get_movie_poster_banner(config: &Conf, id: u32) -> Result<(), Box<dyn Error>> {
     let poster_cache = config.cache.join("posters");
     let backdrop_cache = config.cache.join("backdrops");
     std::fs::create_dir_all(&poster_cache)?;
@@ -313,7 +313,7 @@ pub fn get_movie_poster_banner(config: &Conf, movie: &Movie) -> Result<(), Box<d
         format!("Bearer {}", config.access_token()).parse().unwrap(),
     );
 
-    let movie_details = get_movie_details(config, movie.id)?;
+    let movie_details = get_movie_details(config, id)?;
 
     // println!(
     //     "{} {}\n{}",
