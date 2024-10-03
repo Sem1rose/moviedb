@@ -83,6 +83,9 @@ impl Conf {
         if !self.home.is_dir() {
             fs::create_dir(&self.home)?;
         }
+        if !self.home.join("ratings.json").is_file() {
+            fs::write(self.home.join("ratings.json"), "[]")?;
+        }
         if !self.cache.is_dir() {
             fs::create_dir(&self.cache)?;
         }

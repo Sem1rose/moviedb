@@ -48,20 +48,20 @@ struct ImagesConfiguration {
     poster_sizes: Vec<String>,
 }
 
-#[derive(Deserialize, Debug)]
-struct SearchResponse {
+#[derive(PartialEq, Deserialize, Debug, Default)]
+pub struct SearchResponse {
     // page: u64,
-    results: Vec<SearchResult>,
+    pub results: Vec<SearchResult>,
     // total_pages: u64,
     // total_results: u64,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, PartialEq)]
 pub struct SearchResult {
     // pub adult: bool,
     // pub backdrop_path: Option<String>,
     // pub genre_ids: Vec<u64>,
-    pub id: u64,
+    pub id: u32,
     // pub original_language: String,
     // pub original_title: String,
     // pub overview: String,
@@ -74,7 +74,7 @@ pub struct SearchResult {
     // pub vote_count: u64,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Default, Clone)]
 pub struct DetailsResponse {
     // adult: bool,
     pub backdrop_path: Option<String>,
@@ -96,7 +96,7 @@ pub struct DetailsResponse {
     pub tagline: String,
     pub title: String,
     // video: bool,
-    pub vote_average: f32,
+    pub vote_average: f64,
     pub vote_count: u32,
 }
 #[derive(Deserialize, Debug, Clone)]
@@ -107,7 +107,7 @@ pub struct Collection {
     pub backdrop_path: Option<String>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct Genre {
     pub id: u32,
     pub name: String,
@@ -243,7 +243,7 @@ fn get_session_id(config: &mut Conf) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-pub fn find_movie(config: &Conf, name: &str) -> Result<Vec<SearchResult>, Box<dyn Error>> {
+pub fn find_movie(config: &Conf, name: &str) -> Result<SearchResponse, Box<dyn Error>> {
     let client = ClientBuilder::new().build()?;
     let mut headers = HeaderMap::new();
     headers.insert("accept", "application/json".parse().unwrap());
@@ -271,7 +271,11 @@ pub fn find_movie(config: &Conf, name: &str) -> Result<Vec<SearchResult>, Box<dy
 
     let json = search_response.json::<SearchResponse>()?;
     // println!("{:#?}", json);
-    Ok(json.results)
+    Ok(json)
+    // Err(Box::new(std::io::Error::new(
+    //     std::io::ErrorKind::Other,
+    //     "ass",
+    // )))
 }
 
 pub fn get_movie_details(config: &Conf, id: u32) -> Result<DetailsResponse, Box<dyn Error>> {

@@ -5,7 +5,7 @@ use crate::{
     tmdb,
 };
 use color_eyre::Result;
-use crossterm::{
+use ratatui::crossterm::{
     execute,
     terminal::{enable_raw_mode, EnterAlternateScreen},
 };
@@ -49,22 +49,29 @@ impl<B: Backend> Tui<B> {
         let mut now = std::time::Instant::now();
         loop {
             if self.app.should_quit
-                && (self.drawer.current_screen != CurrentScreen::InitScreen
-                    || (self.drawer.init_ed
-                        && (*self.drawer.init_progress.lock().unwrap() as usize)
-                            == self.app.movies.len()))
+                && (*self
+                    .drawer
+                    .fetch_artwork_popup_options
+                    .init_progress
+                    .lock()
+                    .unwrap() as usize)
+                    == self.app.movies.len()
             {
                 return Ok(());
             }
 
             if now.elapsed().as_secs_f64() >= 1.0 / 130.0 - draw_time {
-                if self.drawer.current_screen != CurrentScreen::TermSizeWarn
-                    && (self.drawer.clear_images
-                        || !self.drawer.backdrop_displayed
-                        || !self.drawer.all_movies_displayed
-                        || self.drawer.current_screen == CurrentScreen::InitScreen
-                        || self.drawer.throbber_visible)
+                // if self.drawer.current_screen != CurrentScreen::TermSizeWarn
+                //     && (
+                if self.drawer.update
+                    || self.drawer.throbber_visible
+                    || self.drawer.clear_images
+                    || !self.drawer.backdrop_displayed
+                    || !self.drawer.all_movies_displayed
                 {
+                    self.drawer.update = false;
+                    self.drawer.throbber_visible = false;
+
                     let start_draw_instant = std::time::Instant::now();
                     // TODO remove this piece of shit
                     if self.drawer.clear_images {
@@ -110,7 +117,7 @@ impl<B: Backend> Tui<B> {
         // pub fn draw(&mut self, frame_time: f64) -> Result<CompletedFrame, std::io::Error> {
         self.terminal.draw(|frame| {
             self.drawer
-                .ui(frame, &mut self.app, &self.config)
+                .render_app(frame, &mut self.app, &self.config)
                 // .ui(frame, &mut self.app, &self.config, frame_time)
                 .unwrap()
         })
