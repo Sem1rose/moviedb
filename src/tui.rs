@@ -1,38 +1,34 @@
-use crate::{
-    app::App,
-    config_tmdb::Conf,
-    draw::{CurrentScreen, Drawer},
-    tmdb,
-};
+use crate::{app::App, draw::Drawer};
 use color_eyre::Result;
 use ratatui::crossterm::{
     execute,
     terminal::{enable_raw_mode, EnterAlternateScreen},
 };
-use ratatui::{backend::Backend, prelude::*, CompletedFrame};
-use std::{error::Error, io::stdout};
+use ratatui::{prelude::*, CompletedFrame};
+use std::{
+    error::Error,
+    io::{stdout, Stdout},
+};
 
-pub struct Tui<B: Backend> {
-    terminal: Terminal<B>,
+pub struct Tui {
+    terminal: Terminal<CrosstermBackend<Stdout>>,
     app: App,
     drawer: Drawer,
-    config: Conf,
 }
 
-impl<B: Backend> Tui<B> {
-    pub fn new(terminal: Terminal<B>, app: App, config: Conf) -> Self {
-        Self {
+impl Tui {
+    pub fn new(app: App) -> Result<Self, Box<dyn Error>> {
+        let terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
+
+        Ok(Self {
             terminal,
             app,
-            config,
             drawer: Drawer::default(),
-        }
+        })
     }
 
     pub fn init(&mut self) -> Result<(), Box<dyn Error>> {
-        self.config.init()?;
-        tmdb::populate_tokens(&mut self.config)?;
-        self.app.fetch_movies(&self.config);
+        self.app.init()?;
 
         self.set_panic_hook();
         enable_raw_mode()?;
@@ -44,7 +40,7 @@ impl<B: Backend> Tui<B> {
     }
 
     pub fn run(&mut self) -> Result<(), Box<dyn Error>> {
-        // let mut frame_time = 0.0;
+        let mut frame_time = 0.0;
         let mut draw_time = 0.0;
         let mut now = std::time::Instant::now();
         loop {
@@ -78,10 +74,10 @@ impl<B: Backend> Tui<B> {
                         self.terminal.clear()?;
                         self.drawer.clear_images = false;
                     }
-                    // self.draw(frame_time)?;
-                    self.draw()?;
+                    self.draw(frame_time)?;
+                    // self.draw()?;
 
-                    // frame_time = now.elapsed().as_secs_f64();
+                    frame_time = now.elapsed().as_secs_f64();
                     now = std::time::Instant::now();
                     draw_time = start_draw_instant.elapsed().as_secs_f64();
                 }
@@ -91,8 +87,6 @@ impl<B: Backend> Tui<B> {
     }
 
     pub fn exit() -> Result<(), Box<dyn Error>> {
-        // disable_raw_mode()?;
-        // execute!(stdout(), LeaveAlternateScreen)?;
         if let Err(err) = ratatui::try_restore() {
             eprintln!(
                 "failed to restore terminal. Run `reset` or restart your terminal to recover: {}",
@@ -113,12 +107,12 @@ impl<B: Backend> Tui<B> {
         }));
     }
 
-    pub fn draw(&mut self) -> Result<CompletedFrame, std::io::Error> {
-        // pub fn draw(&mut self, frame_time: f64) -> Result<CompletedFrame, std::io::Error> {
+    // pub fn draw(&mut self) -> Result<CompletedFrame, std::io::Error> {
+    pub fn draw(&mut self, frame_time: f64) -> Result<CompletedFrame, std::io::Error> {
         self.terminal.draw(|frame| {
             self.drawer
-                .render_app(frame, &mut self.app, &self.config)
-                // .ui(frame, &mut self.app, &self.config, frame_time)
+                // .render_app(frame, &mut self.app)
+                .render_app(frame, &mut self.app, frame_time)
                 .unwrap()
         })
     }

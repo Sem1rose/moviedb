@@ -4,7 +4,7 @@
 //     AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, PkceCodeChallenge, RedirectUrl,
 //     Scope, TokenResponse, TokenUrl,
 // };
-use crate::{app::Movie, config_tmdb::Conf};
+use crate::{app::Config, config_tmdb::TMDBConfig};
 use reqwest::{
     blocking::{Client, ClientBuilder, RequestBuilder, Response},
     header::HeaderMap,
@@ -49,15 +49,15 @@ struct ImagesConfiguration {
 }
 
 #[derive(PartialEq, Deserialize, Debug, Default)]
-pub struct SearchResponse {
+pub struct TMDBSearchResponse {
     // page: u64,
-    pub results: Vec<SearchResult>,
+    pub results: Vec<TMDBSearchResult>,
     // total_pages: u64,
     // total_results: u64,
 }
 
 #[derive(Deserialize, Debug, PartialEq)]
-pub struct SearchResult {
+pub struct TMDBSearchResult {
     // pub adult: bool,
     // pub backdrop_path: Option<String>,
     // pub genre_ids: Vec<u64>,
@@ -75,32 +75,32 @@ pub struct SearchResult {
 }
 
 #[derive(Deserialize, Debug, Default, Clone)]
-pub struct DetailsResponse {
-    // adult: bool,
+pub struct TMDBDetailsResponse {
+    // pub adult: bool,
     pub backdrop_path: Option<String>,
-    pub belongs_to_collection: Option<Collection>,
-    // budget: u32,
-    pub genres: Vec<Genre>,
+    pub belongs_to_collection: Option<TMDBCollection>,
+    // pub budget: u32,
+    pub genres: Vec<TMDBGenre>,
     pub homepage: Option<String>,
     pub id: u32,
     pub imdb_id: String,
-    // original_language: String,
-    // original_title: String,
+    pub original_language: String,
+    // pub original_title: String,
     pub overview: String,
-    // popularity: f32,
+    // pub popularity: f32,
     pub poster_path: Option<String>,
     pub release_date: String,
-    // revenue: u32,
+    // pub revenue: u32,
     pub runtime: u32,
     pub status: String,
     pub tagline: String,
     pub title: String,
-    // video: bool,
+    // pub video: bool,
     pub vote_average: f64,
     pub vote_count: u32,
 }
 #[derive(Deserialize, Debug, Clone)]
-pub struct Collection {
+pub struct TMDBCollection {
     pub id: u32,
     pub name: String,
     pub poster_path: Option<String>,
@@ -108,7 +108,7 @@ pub struct Collection {
 }
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct Genre {
+pub struct TMDBGenre {
     pub id: u32,
     pub name: String,
 }
@@ -121,22 +121,27 @@ struct RequestSessionIDResponse {
 
 // const ALTERNATE_POSTER_FILE: String = String::from("placeholder.png");
 
-pub fn populate_tokens(config: &mut Conf) -> Result<(), Box<dyn Error>> {
-    if !config.has_session_id() {
-        get_session_id(config)?
+pub fn populate_tokens(
+    config: &Config,
+    tmdb_config: &mut TMDBConfig,
+) -> Result<(), Box<dyn Error>> {
+    if !tmdb_config.has_session_id() {
+        get_session_id(config, tmdb_config)?
     }
 
     Ok(())
 }
 
-fn get_session_id(config: &mut Conf) -> Result<(), Box<dyn Error>> {
+fn get_session_id(config: &Config, tmdb_config: &mut TMDBConfig) -> Result<(), Box<dyn Error>> {
     let client = ClientBuilder::new().build()?;
     let mut headers = HeaderMap::new();
     headers.insert("accept", "application/json".parse().unwrap());
     headers.insert("content-type", "application/json".parse().unwrap());
     headers.insert(
         "Authorization",
-        format!("Bearer {}", config.access_token()).parse().unwrap(),
+        format!("Bearer {}", tmdb_config.access_token())
+            .parse()
+            .unwrap(),
     );
 
     let validate_key_response = send_tmdb_request(
@@ -237,20 +242,25 @@ fn get_session_id(config: &mut Conf) -> Result<(), Box<dyn Error>> {
         .session_id;
 
     println!("{session_id}");
-    config.set_session_id(session_id);
-    config.save_creds()?;
+    tmdb_config.set_session_id(session_id);
+    tmdb_config.save_creds(config)?;
 
     Ok(())
 }
 
-pub fn find_movie(config: &Conf, name: &str) -> Result<SearchResponse, Box<dyn Error>> {
+pub fn find_movie(
+    tmdb_config: &TMDBConfig,
+    name: &str,
+) -> Result<TMDBSearchResponse, Box<dyn Error>> {
     let client = ClientBuilder::new().build()?;
     let mut headers = HeaderMap::new();
     headers.insert("accept", "application/json".parse().unwrap());
     headers.insert("content-type", "application/json".parse().unwrap());
     headers.insert(
         "Authorization",
-        format!("Bearer {}", config.access_token()).parse().unwrap(),
+        format!("Bearer {}", tmdb_config.access_token())
+            .parse()
+            .unwrap(),
     );
 
     let query = [("query", name), ("language", "en-US")];
@@ -269,7 +279,7 @@ pub fn find_movie(config: &Conf, name: &str) -> Result<SearchResponse, Box<dyn E
     //     json::parse(&search_response.text()?).unwrap().pretty(2)
     // );
 
-    let json = search_response.json::<SearchResponse>()?;
+    let json = search_response.json::<TMDBSearchResponse>()?;
     // println!("{:#?}", json);
     Ok(json)
     // Err(Box::new(std::io::Error::new(
@@ -278,19 +288,24 @@ pub fn find_movie(config: &Conf, name: &str) -> Result<SearchResponse, Box<dyn E
     // )))
 }
 
-pub fn get_movie_details(config: &Conf, id: u32) -> Result<DetailsResponse, Box<dyn Error>> {
+pub fn get_movie_details(
+    tmdb_config: &TMDBConfig,
+    tmdb_id: u32,
+) -> Result<TMDBDetailsResponse, Box<dyn Error>> {
     let client = ClientBuilder::new().build()?;
     let mut headers = HeaderMap::new();
     headers.insert("accept", "application/json".parse().unwrap());
     headers.insert("content-type", "application/json".parse().unwrap());
     headers.insert(
         "Authorization",
-        format!("Bearer {}", config.access_token()).parse().unwrap(),
+        format!("Bearer {}", tmdb_config.access_token())
+            .parse()
+            .unwrap(),
     );
 
     let details_response = send_tmdb_request(
         &client,
-        &format!("https://api.themoviedb.org/3/movie/{id}"),
+        &format!("https://api.themoviedb.org/3/movie/{tmdb_id}"),
         headers.clone(),
         None,
         None,
@@ -299,10 +314,14 @@ pub fn get_movie_details(config: &Conf, id: u32) -> Result<DetailsResponse, Box<
         return Err(Box::new(details_response.json::<RequestResponseError>()?));
     }
 
-    Ok(details_response.json::<DetailsResponse>()?)
+    Ok(details_response.json::<TMDBDetailsResponse>()?)
 }
 
-pub fn get_movie_poster_banner(config: &Conf, id: u32) -> Result<(), Box<dyn Error>> {
+pub fn get_movie_poster_banner(
+    config: &Config,
+    tmdb_config: &TMDBConfig,
+    id: u32,
+) -> Result<(), Box<dyn Error>> {
     let poster_cache = config.cache.join("posters");
     let backdrop_cache = config.cache.join("backdrops");
     std::fs::create_dir_all(&poster_cache)?;
@@ -314,10 +333,12 @@ pub fn get_movie_poster_banner(config: &Conf, id: u32) -> Result<(), Box<dyn Err
     headers.insert("content-type", "application/json".parse().unwrap());
     headers.insert(
         "Authorization",
-        format!("Bearer {}", config.access_token()).parse().unwrap(),
+        format!("Bearer {}", tmdb_config.access_token())
+            .parse()
+            .unwrap(),
     );
 
-    let movie_details = get_movie_details(config, id)?;
+    let movie_details = get_movie_details(tmdb_config, id)?;
 
     // println!(
     //     "{} {}\n{}",

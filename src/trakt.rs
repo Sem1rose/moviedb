@@ -4,7 +4,7 @@
 //     AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, PkceCodeChallenge, RedirectUrl,
 //     Scope, TokenResponse, TokenUrl,
 // };
-use crate::config_trakt::Conf;
+use crate::{app::Config, config_trakt::TraktConfig};
 use reqwest::{
     blocking::{Client, ClientBuilder, RequestBuilder, Response},
     header::HeaderMap,
@@ -16,7 +16,7 @@ use std::{
     fmt::Display,
     io::{stdin, stdout, Write},
 };
-use trakt_rs::smo::*;
+// use trakt_rs::smo::*;
 // use trakt_rs::{Request, Response as Rewponse};
 
 #[derive(Deserialize, Debug)]
@@ -41,20 +41,55 @@ impl Display for TokenResponseError {
     }
 }
 
-pub fn populate_tokens(config: &mut Conf) -> Result<(), Box<dyn Error>> {
-    if !config.has_tokens() {
-        get_tokens(config)?
-    } else if unix_ts::Timestamp::from(config.tokens_expiration_data() - 86_400)
+#[derive(Deserialize, Debug, Default, Clone)]
+pub struct TraktDetailsResponse {
+    pub title: String,
+    pub year: u32,
+    pub ids: IDs,
+    pub tagline: String,
+    pub overview: String,
+    pub released: String,
+    pub runtime: u32,
+    // pub country: String,
+    pub trailer: Option<String>,
+    // pub homepage: String,
+    pub status: String,
+    pub rating: f64,
+    pub votes: u32,
+    // pub comment_count: u32,
+    // pub updated_at: String,
+    // pub language: String,
+    // pub languages: Vec<String>,
+    // pub available_translations: Vec<String>,
+    pub genres: Vec<String>,
+    pub certification: String,
+}
+
+#[derive(Deserialize, Debug, Default, Clone)]
+pub struct IDs {
+    trakt: u32,
+    slug: String,
+    imdb: String,
+    tmdb: u32,
+}
+
+pub fn populate_tokens(
+    config: &Config,
+    trakt_config: &mut TraktConfig,
+) -> Result<(), Box<dyn Error>> {
+    if !trakt_config.has_tokens() {
+        get_tokens(config, trakt_config)?
+    } else if unix_ts::Timestamp::from(trakt_config.tokens_expiration_data() - 86_400)
         < unix_ts::Timestamp::now()
     {
         println!("Refreshing tokens");
-        refresh_tokens(config)?
+        refresh_tokens(trakt_config)?
     }
 
     Ok(())
 }
 
-fn get_tokens(config: &mut Conf) -> Result<(), Box<dyn Error>> {
+fn get_tokens(config: &Config, trakt_config: &mut TraktConfig) -> Result<(), Box<dyn Error>> {
     let client = ClientBuilder::new().build()?;
     let mut headers = HeaderMap::new();
     headers.insert("Content-Type", "application/json".parse().unwrap());
@@ -63,7 +98,7 @@ fn get_tokens(config: &mut Conf) -> Result<(), Box<dyn Error>> {
         .get("https://api.trakt.tv/oauth/authorize")
         .query(&[
             ("response_type", "code"),
-            ("client_id", config.client_id()),
+            ("client_id", trakt_config.client_id()),
             ("redirect_uri", "urn:ietf:wg:oauth:2.0:oob"),
         ])
         .headers(headers.clone())
@@ -91,8 +126,8 @@ fn get_tokens(config: &mut Conf) -> Result<(), Box<dyn Error>> {
 
     let mut body = HashMap::new();
     body.insert("code", auth_code.as_str());
-    body.insert("client_id", config.client_id());
-    body.insert("client_secret", config.client_secret());
+    body.insert("client_id", trakt_config.client_id());
+    body.insert("client_secret", trakt_config.client_secret());
     body.insert("redirect_uri", "urn:ietf:wg:oauth:2.0:oob");
     body.insert("grant_type", "authorization_code");
 
@@ -115,27 +150,26 @@ fn get_tokens(config: &mut Conf) -> Result<(), Box<dyn Error>> {
     }
     let token_response = token_response.json::<TokenResponse>()?;
 
-    println!("{:#?}", token_response);
-
-    config.set_trakt_tokens(
+    trakt_config.set_trakt_tokens(
         token_response.access_token,
         token_response.refresh_token,
         token_response.created_at,
         token_response.expires_in,
     );
+    trakt_config.save_creds(config)?;
 
     Ok(())
 }
 
-fn refresh_tokens(config: &mut Conf) -> Result<(), Box<dyn Error>> {
+fn refresh_tokens(trakt_config: &mut TraktConfig) -> Result<(), Box<dyn Error>> {
     let client = ClientBuilder::new().build()?;
     let mut headers = HeaderMap::new();
     headers.insert("Content-Type", "application/json".parse().unwrap());
 
     let mut body = HashMap::new();
-    body.insert("refresh_token", config.refresh_token());
-    body.insert("client_id", config.client_id());
-    body.insert("client_secret", config.client_secret());
+    body.insert("refresh_token", trakt_config.refresh_token());
+    body.insert("client_id", trakt_config.client_id());
+    body.insert("client_secret", trakt_config.client_secret());
     body.insert("redirect_uri", "urn:ietf:wg:oauth:2.0:oob");
     body.insert("grant_type", "refresh_token");
 
@@ -158,9 +192,7 @@ fn refresh_tokens(config: &mut Conf) -> Result<(), Box<dyn Error>> {
     }
     let token_response = token_response.json::<TokenResponse>()?;
 
-    println!("{:#?}", token_response);
-
-    config.set_trakt_tokens(
+    trakt_config.set_trakt_tokens(
         token_response.access_token,
         token_response.refresh_token,
         token_response.created_at,
@@ -170,33 +202,37 @@ fn refresh_tokens(config: &mut Conf) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-pub fn new(config: &Conf) -> Result<(), Box<dyn Error>> {
+pub fn get_movie_details(
+    trakt_config: &TraktConfig,
+    imdb_id: &str,
+) -> Result<TraktDetailsResponse, Box<dyn Error>> {
     let client = ClientBuilder::new().build()?;
     let mut headers = HeaderMap::new();
-    headers.insert("Content-Type", "application/json".parse().unwrap());
 
-    headers.insert("trakt-api-key", config.client_id().parse().unwrap());
+    headers.insert("Content-Type", "application/json".parse().unwrap());
+    headers.insert("trakt-api-key", trakt_config.client_id().parse().unwrap());
     headers.insert("trakt-api-version", "2".parse().unwrap());
-    let query = [
-        ("limit", "3"),
-        ("page", "1"),
-        ("query", "Allied"),
-        // ("extended", "full"),
-        // ("ratings", "70-100"),
-        // ("imdb_ratings", "7.0-10.0"),
-    ];
-    let search_response = send_trakt_request(
+    let query = [("type", "movie"), ("extended", "full")];
+
+    let details_response = send_trakt_request(
         &client,
-        "https://api.trakt.tv/search/movie",
+        &format!("https://api.trakt.tv/movies/{imdb_id}"),
         headers,
         None,
         Some(&query),
     )?;
 
-    let movies = search_response.text()?;
-    println!("{:#}", json::parse(movies.as_str()).unwrap());
+    if details_response.status().as_u16() != 200 {
+        return Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "Couldn't get movie details with trakt!",
+        )));
+    }
 
-    Ok(())
+    // let movies = details_response.text()?;
+    // println!("{:#}", json::parse(movies.as_str()).unwrap());
+    let json = details_response.json::<TraktDetailsResponse>()?;
+    Ok(json)
 }
 
 // #[derive(Debug)]

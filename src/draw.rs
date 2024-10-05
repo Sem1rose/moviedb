@@ -1,7 +1,8 @@
 use crate::{
-    app::{App, Movie},
-    config_tmdb::Conf,
-    tmdb::{self, DetailsResponse, SearchResponse},
+    app::{App, Config, Movie, Rating},
+    config_tmdb::TMDBConfig,
+    tmdb::{self, TMDBDetailsResponse, TMDBSearchResponse},
+    trakt::{self, TraktDetailsResponse},
 };
 use ratatui::{
     crossterm::{
@@ -23,10 +24,10 @@ use std::{
     thread,
 };
 use style::palette::tailwind;
-use tui_input::backend::crossterm as backend;
 use tui_input::backend::crossterm::EventHandler;
 use tui_input::Input;
 
+#[derive(Default)]
 pub struct MainScreen {
     pub movies_visible: u32,
     pub scroll_pos: u32,
@@ -57,7 +58,7 @@ impl MainScreen {
             return true;
         }
 
-        return false;
+        false
     }
 
     pub fn dec_movie_selection(&mut self) -> bool {
@@ -68,7 +69,7 @@ impl MainScreen {
             self.scroll_pos -= 1;
             return true;
         }
-        return false;
+        false
     }
 }
 
@@ -92,7 +93,7 @@ pub struct AddMoviePopup {
     pub finished_search_input: bool,
     pub search_input: Input,
     pub requested_search: bool,
-    pub search_result: Arc<Mutex<SearchResponse>>,
+    pub search_result: Arc<Mutex<TMDBSearchResponse>>,
     pub search_finished: Arc<Mutex<bool>>,
     pub movies_visible: u32,
     pub scroll_pos: u32,
@@ -102,7 +103,8 @@ pub struct AddMoviePopup {
     pub got_user_rating: bool,
     pub user_rating: f64,
     pub requested_movie_details: bool,
-    pub movie_details_result: Arc<Mutex<DetailsResponse>>,
+    pub tmdb_movie_details_result: Arc<Mutex<TMDBDetailsResponse>>,
+    pub trakt_movie_details_result: Arc<Mutex<TraktDetailsResponse>>,
     pub movie_details_finished: Arc<Mutex<bool>>,
     pub added_movie: bool,
 }
@@ -167,8 +169,9 @@ impl RemoveMoviePopup {
     }
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Default)]
 pub enum CurrentScreen {
+    #[default]
     InitScreen,
     MainScreen,
     TermSizeWarn,
@@ -182,6 +185,7 @@ pub enum Popup {
     RemoveMovie,
 }
 
+#[derive(Default)]
 pub struct Drawer {
     previous_screen: Option<CurrentScreen>,
     ticks_since_throbber: u8,
@@ -209,25 +213,8 @@ const MINTERMSIZE: [u32; 2] = [80, 22];
 impl Drawer {
     pub fn default() -> Self {
         Self {
-            update: false,
-            accepting_input: false,
-            movie_artwork: Arc::new(Mutex::new(HashMap::new())),
-            movie_artworks_requested: vec![],
-            images_displayed: vec![],
-            all_movies_displayed: false,
-            backdrop_displayed: false,
-            current_screen: CurrentScreen::InitScreen,
             popup: Some(Popup::FetchArtwork),
-            previous_screen: None,
-            mainscreen_options: MainScreen::default(),
-            add_movie_popup_options: AddMoviePopup::default(),
-            edit_movie_popup_options: EditMoviePopup::default(),
-            remove_movie_popup_options: RemoveMoviePopup::default(),
-            fetch_artwork_popup_options: FetchArtworkPopup::default(),
-            ticks_since_throbber: 0,
-            throbber_state: throbber_widgets_tui::ThrobberState::default(),
-            clear_images: false,
-            throbber_visible: false,
+            ..Default::default()
         }
     }
 
@@ -320,8 +307,7 @@ impl Drawer {
         &mut self,
         frame: &mut Frame,
         app: &mut App,
-        config: &Conf,
-        // frame_time: f64,
+        frame_time: f64,
     ) -> Result<(), Box<dyn Error>> {
         self.ticks_since_throbber += 1;
         if self.ticks_since_throbber > 20 {
@@ -339,33 +325,12 @@ impl Drawer {
             self.previous_screen = None;
         }
 
-        // if self.popup.is_some() {
-        //     match self.popup.unwrap() {
-        //         Popup::AddMovie => {
-        //             self.draw_add_movie_popup(frame, config, app);
-        //         }
-        //         _ => {}
-        //     }
-        // } else {
-        //     match self.current_screen {
-        //         CurrentScreen::InitScreen => {
-        //             self.render_init_screen(frame, config, app)?;
-        //         }
-        //         CurrentScreen::MainScreen => {
-        //             self.render_movies_list(frame, config, app)?;
-        //         }
-        //         CurrentScreen::TermSizeWarn => {
-        //             self.render_term_size_warning(frame)?;
-        //         }
-        //     }
-        // }
-
         match self.current_screen {
             CurrentScreen::InitScreen => {
-                self.render_init_screen(frame, config, app)?;
+                self.render_init_screen(frame, app)?;
             }
             CurrentScreen::MainScreen => {
-                self.render_movies_list(frame, config, app)?;
+                self.render_movies_list(frame, app)?;
             }
             CurrentScreen::TermSizeWarn => {
                 self.render_term_size_warning(frame)?;
@@ -374,26 +339,26 @@ impl Drawer {
         if self.popup.is_some() {
             match self.popup.unwrap() {
                 Popup::FetchArtwork => {
-                    self.draw_fetch_artwork_popup(frame, config, app)?;
+                    self.draw_fetch_artwork_popup(frame, app)?;
                 }
                 Popup::AddMovie => {
-                    self.draw_add_movie_popup(frame, config, app)?;
+                    self.draw_add_movie_popup(frame, app)?;
                 }
                 Popup::EditMovie => {
-                    self.draw_edit_movie_popup(frame, config, app);
+                    self.draw_edit_movie_popup(frame, app);
                 }
                 Popup::RemoveMovie => {
-                    self.draw_remove_movie_popup(frame, config, app);
+                    self.draw_remove_movie_popup(frame, app)?;
                 }
                 _ => {}
             }
         }
 
-        // frame.render_widget(
-        //     Paragraph::new(format!("{:.1}", 1.0 / frame_time)),
-        //     // Paragraph::new(format!("{}", app.clear_images)),
-        //     frame.area(),
-        // );
+        frame.render_widget(
+            Paragraph::new(format!("{:.1}", 1.0 / frame_time)),
+            // Paragraph::new(format!("{}", app.clear_images)),
+            frame.area(),
+        );
         Ok(())
     }
 
@@ -407,13 +372,14 @@ impl Drawer {
         }
     }
 
+    pub fn close_popups(&mut self) {
+        self.popup = None;
+        self.accepting_input = false;
+    }
+
     pub fn open_fetch_artworks_popup(&mut self) {
         self.popup = Some(Popup::FetchArtwork);
         self.fetch_artwork_popup_options.begin();
-    }
-
-    pub fn close_fetch_artworks_popup(&mut self) {
-        self.popup = None;
     }
 
     pub fn open_add_movie_popup(&mut self) {
@@ -422,30 +388,15 @@ impl Drawer {
         self.accepting_input = true;
     }
 
-    pub fn close_add_movie_popup(&mut self) {
-        self.popup = None;
-        self.accepting_input = false;
-    }
-
     pub fn open_edit_movie_popup(&mut self) {
         self.popup = Some(Popup::EditMovie);
         self.edit_movie_popup_options.begin();
         self.accepting_input = true;
     }
 
-    pub fn close_edit_movie_popup(&mut self) {
-        self.popup = None;
-        self.accepting_input = false;
-    }
-
     pub fn open_remove_movie_popup(&mut self) {
         self.popup = Some(Popup::RemoveMovie);
         self.remove_movie_popup_options.begin();
-        self.accepting_input = false;
-    }
-
-    pub fn close_remove_movie_popup(&mut self) {
-        self.popup = None;
         self.accepting_input = false;
     }
 
@@ -500,7 +451,6 @@ impl Drawer {
     fn render_init_screen(
         &mut self,
         frame: &mut Frame,
-        conf: &Conf,
         app: &mut App,
     ) -> Result<(), Box<dyn Error>> {
         let frame_area = frame.area();
@@ -513,7 +463,7 @@ impl Drawer {
             .unwrap()
             == app.movies.len() as u32
         {
-            self.close_fetch_artworks_popup();
+            self.close_popups();
             self.current_screen = CurrentScreen::MainScreen;
         }
 
@@ -525,7 +475,6 @@ impl Drawer {
     fn render_movies_list(
         &mut self,
         frame: &mut Frame,
-        config: &Conf,
         app: &mut App,
     ) -> Result<(), Box<dyn Error>> {
         let frame_area = frame.area();
@@ -565,7 +514,7 @@ impl Drawer {
                 if display_poster {
                     self.all_movies_displayed = false;
                 }
-                self.draw_movie_widget(i, config, app, frame, *area, display_poster);
+                self.draw_movie_widget(i, app, frame, *area, display_poster);
             } else {
                 frame.render_widget(
                     Block::new().bg(if i % 2 == 0 {
@@ -581,7 +530,6 @@ impl Drawer {
         if !app.movies.is_empty() {
             // Must be called after the draw_movie_widget for reasons....
             self.draw_movie_description(
-                config,
                 app,
                 frame,
                 horiz_lay[0],
@@ -610,7 +558,6 @@ impl Drawer {
     fn draw_movie_widget(
         &mut self,
         id: usize,
-        config: &Conf,
         app: &mut App,
         frame: &mut Frame,
         area: Rect,
@@ -717,7 +664,7 @@ impl Drawer {
                     .any(|(_, x)| *x == movie_id)
                 {
                     self.movie_artworks_requested.push((false, movie_id));
-                    self.request_artwork_async(config, app, movie_id, poster_area, true, 0);
+                    self.request_artwork_async(app, movie_id, poster_area, true, 0);
                 }
             }
         }
@@ -725,7 +672,6 @@ impl Drawer {
 
     fn draw_movie_description(
         &mut self,
-        config: &Conf,
         app: &mut App,
         frame: &mut Frame,
         area: Rect,
@@ -777,7 +723,7 @@ impl Drawer {
                     .any(|(y, x)| *x == movie_id && *y)
                 {
                     self.movie_artworks_requested.push((true, movie_id));
-                    self.request_artwork_async(config, app, movie_id, poster_area, false, 0);
+                    self.request_artwork_async(app, movie_id, poster_area, false, 0);
                 }
             }
         }
@@ -787,7 +733,13 @@ impl Drawer {
             movie.year.as_str().bold().italic(),
             " ".repeat((title_area.width - 11 - 14).into()).into(),
             "rating: ".italic(),
-            format!("{:.1}", movie.vote_average).italic().bold(),
+            if let Rating::TMDB(rating, count) = movie.ratings[1] {
+                format!("{:.1}", rating).italic().bold()
+            } else if let Rating::Trakt(rating, count) = movie.ratings[1] {
+                format!("{:.1}", rating).italic().bold()
+            } else {
+                "nan".into()
+            },
         ]);
         let mut name = movie.name.clone();
         if name.len() > (title_area.width as usize - 5) {
@@ -809,7 +761,6 @@ impl Drawer {
 
     fn request_artwork_async(
         &mut self,
-        config: &Conf,
         app: &App,
         id: u32,
         area: Rect,
@@ -817,10 +768,11 @@ impl Drawer {
         expand_width: u16,
     ) {
         let artworks = Arc::clone(&self.movie_artwork);
-        let path = config
+        let path = app
+            .config
             .cache
             .join(if poster { "posters" } else { "backdrops" })
-            .join(format!("{}.jpg", app.movies[id as usize].id))
+            .join(format!("{}.jpg", app.movies[id as usize].tmdb_id))
             .to_str()
             .unwrap()
             .to_string();
@@ -857,13 +809,12 @@ impl Drawer {
     fn draw_fetch_artwork_popup(
         &mut self,
         frame: &mut Frame,
-        conf: &Conf,
         app: &mut App,
     ) -> Result<bool, Box<dyn Error>> {
-        if !conf.cache.join(".cached_posters").is_file() {
-            std::fs::write(conf.cache.join(".cached_posters"), "")?;
+        if !app.config.cache.join(".cached_posters").is_file() {
+            std::fs::write(app.config.cache.join(".cached_posters"), "")?;
         }
-        let contents = std::fs::read_to_string(conf.cache.join(".cached_posters"))?;
+        let contents = std::fs::read_to_string(app.config.cache.join(".cached_posters"))?;
         let mut posters_cached: Vec<_> = contents
             .split_ascii_whitespace()
             .map(|x| x.to_string())
@@ -882,14 +833,17 @@ impl Drawer {
             self.fetch_artwork_popup_options.init_ed = true;
 
             for movie in &app.movies {
-                let movie_id = movie.id;
+                let movie_id = movie.tmdb_id;
                 if !posters_cached.contains(&movie_id.to_string()) {
-                    let conf_owned = conf.clone();
+                    let conf_owned = app.config.clone();
+                    let tmdb_conf_owned = app.tmdb_config.clone();
                     let init_prog_owned =
                         Arc::clone(&self.fetch_artwork_popup_options.init_progress);
 
                     thread::spawn(move || {
-                        if let Err(err) = tmdb::get_movie_poster_banner(&conf_owned, movie_id) {
+                        if let Err(err) =
+                            tmdb::get_movie_poster_banner(&conf_owned, &tmdb_conf_owned, movie_id)
+                        {
                             panic!("{}", err);
                         }
                         *init_prog_owned.lock().unwrap() += 1;
@@ -906,7 +860,7 @@ impl Drawer {
             }
 
             std::fs::write(
-                conf.cache.join(".cached_posters"),
+                app.config.cache.join(".cached_posters"),
                 posters_cached.join("\n"),
             )?;
         }
@@ -979,7 +933,6 @@ impl Drawer {
     fn draw_add_movie_popup(
         &mut self,
         frame: &mut Frame,
-        config: &Conf,
         app: &mut App,
     ) -> Result<(), Box<dyn Error>> {
         let frame_area = frame.area();
@@ -1033,7 +986,7 @@ impl Drawer {
 
                 // ▄▀█ ▂🮂▗▖▘▝
                 frame.render_widget(
-                    Paragraph::new("🮂".repeat(search_bottom.width as usize)).fg(tailwind::RED.c700),
+                    Paragraph::new("🮃".repeat(search_bottom.width as usize)).fg(tailwind::RED.c700),
                     search_bottom,
                 );
                 frame.render_widget(
@@ -1075,7 +1028,7 @@ impl Drawer {
             if !self.add_movie_popup_options.requested_search {
                 self.add_movie_popup_options.requested_search = true;
                 let search_result = Arc::clone(&self.add_movie_popup_options.search_result);
-                let conf_cloned = config.clone();
+                let tmdb_conf_cloned = app.tmdb_config.clone();
                 let search_string = self
                     .add_movie_popup_options
                     .search_input
@@ -1085,7 +1038,7 @@ impl Drawer {
                 let search_finished = Arc::clone(&self.add_movie_popup_options.search_finished);
 
                 thread::spawn(move || {
-                    let result = tmdb::find_movie(&conf_cloned, &search_string);
+                    let result = tmdb::find_movie(&tmdb_conf_cloned, &search_string);
                     if result.is_ok() {
                         *search_result.lock().unwrap() = result.unwrap();
                     } else {
@@ -1269,9 +1222,12 @@ impl Drawer {
         } else if self.add_movie_popup_options.phase == 4 {
             if !self.add_movie_popup_options.requested_movie_details {
                 self.add_movie_popup_options.requested_movie_details = true;
-                let movie_details_result =
-                    Arc::clone(&self.add_movie_popup_options.movie_details_result);
-                let conf_cloned = config.clone();
+                let tmdb_details_result =
+                    Arc::clone(&self.add_movie_popup_options.tmdb_movie_details_result);
+                let trakt_details_result =
+                    Arc::clone(&self.add_movie_popup_options.trakt_movie_details_result);
+                let tmdb_conf_cloned = app.tmdb_config.clone();
+                let trakt_conf_cloned = app.trakt_config.clone();
                 let movie_id = self
                     .add_movie_popup_options
                     .search_result
@@ -1285,9 +1241,20 @@ impl Drawer {
                     Arc::clone(&self.add_movie_popup_options.movie_details_finished);
 
                 thread::spawn(move || {
-                    let result = tmdb::get_movie_details(&conf_cloned, movie_id);
-                    if result.is_ok() {
-                        *movie_details_result.lock().unwrap() = result.unwrap();
+                    let tmdb_response = tmdb::get_movie_details(&tmdb_conf_cloned, movie_id);
+                    if tmdb_response.is_ok() {
+                        let tmdb_response = tmdb_response.unwrap();
+
+                        let trakt_response =
+                            trakt::get_movie_details(&trakt_conf_cloned, &tmdb_response.imdb_id);
+
+                        *tmdb_details_result.lock().unwrap() = tmdb_response;
+
+                        if trakt_response.is_ok() {
+                            *trakt_details_result.lock().unwrap() = trakt_response.unwrap();
+                        } else {
+                            *search_failed.lock().unwrap() = true;
+                        }
                     } else {
                         *search_failed.lock().unwrap() = true;
                     }
@@ -1329,46 +1296,56 @@ impl Drawer {
             } else {
                 if !self.add_movie_popup_options.added_movie {
                     self.add_movie_popup_options.added_movie = true;
-                    let mut collection: Option<String> = None;
-                    let mut collection_id: Option<u32> = None;
-                    let movie_details = self
+                    let tmdb_movie_details = self
                         .add_movie_popup_options
-                        .movie_details_result
+                        .tmdb_movie_details_result
+                        .lock()
+                        .unwrap()
+                        .clone();
+                    let trakt_movie_details = self
+                        .add_movie_popup_options
+                        .trakt_movie_details_result
                         .lock()
                         .unwrap()
                         .clone();
 
-                    if movie_details.belongs_to_collection.is_some() {
-                        collection =
-                            Some(movie_details.belongs_to_collection.clone().unwrap().name);
-                        collection_id =
-                            Some(movie_details.belongs_to_collection.clone().unwrap().id);
-                    }
-                    let new_movie = Movie::new(
-                        movie_details.title,
-                        self.add_movie_popup_options.user_rating,
-                        movie_details.vote_average,
-                        movie_details.release_date.split('-').collect::<Vec<_>>()[0].to_string(),
-                        movie_details.id,
-                        movie_details
-                            .genres
-                            .iter()
-                            .map(|x| x.name.to_string())
-                            .collect(),
-                        movie_details.overview,
-                        collection,
-                        collection_id,
-                        movie_details.runtime,
-                        movie_details.status == "Released",
-                        movie_details.tagline,
-                        movie_details.vote_count,
+                    // let mut collection: Option<String> = None;
+                    // let mut collection_id: Option<u32> = None;
+                    // if movie_details.belongs_to_collection.is_some() {
+                    //     collection =
+                    //         Some(movie_details.belongs_to_collection.clone().unwrap().name);
+                    //     collection_id =
+                    //         Some(movie_details.belongs_to_collection.clone().unwrap().id);
+                    // }
+                    // let new_movie = Movie::new(
+                    //     movie_details.title,
+                    //     self.add_movie_popup_options.user_rating,
+                    //     movie_details.vote_average,
+                    //     movie_details.release_date.split('-').collect::<Vec<_>>()[0].to_string(),
+                    //     movie_details.id,
+                    //     movie_details
+                    //         .genres
+                    //         .iter()
+                    //         .map(|x| x.name.to_string())
+                    //         .collect(),
+                    //     movie_details.overview,
+                    //     collection,
+                    //     collection_id,
+                    //     movie_details.runtime,
+                    //     movie_details.status == "Released",
+                    //     movie_details.tagline,
+                    //     movie_details.vote_count,
+                    // );
+
+                    app.movies.push(
+                        Movie::from(tmdb_movie_details, self.add_movie_popup_options.user_rating)
+                            .add_trakt_details(trakt_movie_details),
                     );
-                    app.movies.push(new_movie);
                     self.fetch_artwork_popup_options.begin();
                 }
 
-                if self.draw_fetch_artwork_popup(frame, config, app)? {
-                    if app.save_movies(config).is_err() {
+                if self.draw_fetch_artwork_popup(frame, app)? {
+                    if app.save_movies().is_err() {
                         *self.add_movie_popup_options.failed.lock().unwrap() = true;
                         let areas = Layout::vertical([Constraint::Length(1); 5]).split(horiz);
                         frame.render_widget(
@@ -1380,7 +1357,7 @@ impl Drawer {
                             areas[4],
                         );
                     } else {
-                        self.close_add_movie_popup();
+                        self.close_popups();
                         self.clear_images(false);
                     }
 
@@ -1394,7 +1371,7 @@ impl Drawer {
         Ok(())
     }
 
-    fn draw_edit_movie_popup(&mut self, frame: &mut Frame, config: &Conf, app: &mut App) {
+    fn draw_edit_movie_popup(&mut self, frame: &mut Frame, app: &mut App) {
         let frame_area = frame.area();
         let popup_area = self.center(frame_area, Constraint::Percentage(40), Constraint::Max(8));
 
@@ -1523,7 +1500,7 @@ impl Drawer {
                 as usize]
                 .user_rating = self.edit_movie_popup_options.user_rating;
 
-            if app.save_movies(config).is_err() {
+            if app.save_movies().is_err() {
                 self.edit_movie_popup_options.errored = true;
                 let areas = Layout::vertical([Constraint::Length(1); 5]).split(horiz);
                 frame.render_widget(
@@ -1532,7 +1509,7 @@ impl Drawer {
                 );
                 frame.render_widget(Paragraph::new(" Ok ").right_aligned().on_red(), areas[4]);
             } else {
-                self.close_edit_movie_popup();
+                self.close_popups();
                 self.clear_images(false);
             }
         }
@@ -1541,7 +1518,6 @@ impl Drawer {
     fn draw_remove_movie_popup(
         &mut self,
         frame: &mut Frame,
-        config: &Conf,
         app: &mut App,
     ) -> Result<(), Box<dyn Error>> {
         let frame_area = frame.area();
@@ -1651,8 +1627,8 @@ impl Drawer {
                 self.fetch_artwork_popup_options.begin();
             }
 
-            if self.draw_fetch_artwork_popup(frame, config, app)? {
-                if app.save_movies(config).is_err() {
+            if self.draw_fetch_artwork_popup(frame, app)? {
+                if app.save_movies().is_err() {
                     self.remove_movie_popup_options.errored = true;
                     let areas = Layout::vertical([Constraint::Length(1); 5]).split(horiz);
                     frame.render_widget(
@@ -1661,7 +1637,7 @@ impl Drawer {
                     );
                     frame.render_widget(Paragraph::new(" Ok ").right_aligned().on_red(), areas[4]);
                 } else {
-                    self.close_remove_movie_popup();
+                    self.close_popups();
                     self.clear_images(false);
                 }
             }

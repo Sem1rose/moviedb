@@ -1,3 +1,4 @@
+use crate::app::Config;
 use cocoon::Cocoon;
 use rand::{distributions::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
@@ -5,12 +6,11 @@ use std::{
     error::Error,
     fs::{self, File},
     io::{stdin, stdout, Write},
-    path::Path,
 };
 
 const ENCRYPTION_KEY: &str = ".key";
-const ENCRYPTED_FILE: &str = ".credentials";
-#[derive(Serialize, Deserialize, Debug)]
+const ENCRYPTED_FILE: &str = ".credentials_trakt";
+#[derive(Serialize, Deserialize, Debug, Clone)]
 struct TraktCredentials {
     client_secret: Box<str>,
     client_id: Box<str>,
@@ -41,41 +41,33 @@ impl TraktCredentials {
     }
 }
 
-pub struct Conf {
-    home: Box<Path>,
+#[derive(Clone)]
+pub struct TraktConfig {
     trakt_credentials: TraktCredentials,
 }
 
-impl Conf {
+impl TraktConfig {
     pub fn new() -> Self {
-        let home = dirs::config_dir()
-            .expect("Couldn't get user's config dir")
-            .join(".moviedb");
         Self {
-            home: home.into_boxed_path(),
             trakt_credentials: TraktCredentials::default(),
         }
     }
 
-    pub fn init(&mut self) -> Result<(), Box<dyn Error>> {
-        if !self.home.is_dir() {
-            fs::create_dir(&self.home)?;
-        }
-
-        if !self.home.join(ENCRYPTION_KEY).is_file() {
+    pub fn init(&mut self, config: &Config) -> Result<(), Box<dyn Error>> {
+        if !config.home.join(ENCRYPTION_KEY).is_file() {
             let key: String = rand::thread_rng()
                 .sample_iter(&Alphanumeric)
                 .take(16)
                 .map(char::from)
                 .collect();
 
-            let _ = fs::remove_file(self.home.join(ENCRYPTED_FILE));
+            let _ = fs::remove_file(config.home.join(ENCRYPTED_FILE));
 
-            fs::write(self.home.join(ENCRYPTION_KEY), key)?;
+            fs::write(config.home.join(ENCRYPTION_KEY), key)?;
         }
 
-        if self.home.join(ENCRYPTED_FILE).is_file() {
-            if self.read_creds().is_err() {
+        if config.home.join(ENCRYPTED_FILE).is_file() {
+            if self.read_creds(config).is_err() {
                 self.init_creds();
             }
         } else {
@@ -91,11 +83,11 @@ impl Conf {
         self.trakt_credentials = TraktCredentials::new(client_secret, client_id);
     }
 
-    fn read_creds(&mut self) -> Result<(), Box<dyn Error>> {
-        let key = fs::read(self.home.join(ENCRYPTION_KEY))?;
+    fn read_creds(&mut self, config: &Config) -> Result<(), Box<dyn Error>> {
+        let key = fs::read(config.home.join(ENCRYPTION_KEY))?;
         let cocoon = Cocoon::new(&key);
 
-        let mut encrypted_file = File::open(self.home.join(ENCRYPTED_FILE))?;
+        let mut encrypted_file = File::open(config.home.join(ENCRYPTED_FILE))?;
         let decrypted_creds = String::from_utf8(cocoon.parse(&mut encrypted_file)?)?;
 
         self.trakt_credentials = serde_json::from_str(&decrypted_creds)?;
@@ -103,11 +95,11 @@ impl Conf {
         Ok(())
     }
 
-    pub fn save_creds(&self) -> Result<(), Box<dyn Error>> {
-        let key = fs::read(self.home.join(ENCRYPTION_KEY))?;
+    pub fn save_creds(&self, config: &Config) -> Result<(), Box<dyn Error>> {
+        let key = fs::read(config.home.join(ENCRYPTION_KEY))?;
         let mut cocoon = Cocoon::new(&key);
 
-        let mut encrypted_file = File::create(self.home.join(ENCRYPTED_FILE))?;
+        let mut encrypted_file = File::create(config.home.join(ENCRYPTED_FILE))?;
         let dump_json = serde_json::to_string(&self.trakt_credentials)?;
 
         cocoon.dump(dump_json.into_bytes(), &mut encrypted_file)?;

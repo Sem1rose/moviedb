@@ -1,3 +1,4 @@
+use crate::app::Config;
 use cocoon::Cocoon;
 use rand::{distributions::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
@@ -5,11 +6,10 @@ use std::{
     error::Error,
     fs::{self, File},
     io::{stdin, stdout, Write},
-    path::Path,
 };
 
 const ENCRYPTION_KEY: &str = ".key";
-const ENCRYPTED_FILE: &str = ".credentials";
+const ENCRYPTED_FILE: &str = ".credentials_tmdb";
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct TMDBCredentials {
     access_token: Box<str>,
@@ -33,67 +33,36 @@ impl TMDBCredentials {
 }
 
 #[derive(Clone)]
-pub struct Conf {
-    pub home: Box<Path>,
-    pub cache: Box<Path>,
+pub struct TMDBConfig {
     tmdb_credentials: TMDBCredentials,
 }
 
-impl Conf {
+impl TMDBConfig {
     pub fn new() -> Self {
-        let home = dirs::config_dir()
-            .expect("Couldn't get user's config dir")
-            .join("moviedb");
-        let cache = dirs::cache_dir()
-            .expect("Couldn't get user's cache dir")
-            .join("moviedb");
         Self {
-            home: home.into_boxed_path(),
-            cache: cache.into_boxed_path(),
             tmdb_credentials: TMDBCredentials::default(),
         }
     }
 
-    pub fn init(&mut self) -> Result<(), Box<dyn Error>> {
-        self.init_dirs()?;
-
-        if !self.home.join(ENCRYPTION_KEY).is_file() {
+    pub fn init(&mut self, config: &Config) -> Result<(), Box<dyn Error>> {
+        if !config.home.join(ENCRYPTION_KEY).is_file() {
             let key: String = rand::thread_rng()
                 .sample_iter(&Alphanumeric)
                 .take(16)
                 .map(char::from)
                 .collect();
 
-            let _ = fs::remove_file(self.home.join(ENCRYPTED_FILE));
+            let _ = fs::remove_file(config.home.join(ENCRYPTED_FILE));
 
-            fs::write(self.home.join(ENCRYPTION_KEY), key)?;
+            fs::write(config.home.join(ENCRYPTION_KEY), key)?;
         }
 
-        if self.home.join(ENCRYPTED_FILE).is_file() {
-            if self.read_creds().is_err() {
+        if config.home.join(ENCRYPTED_FILE).is_file() {
+            if self.read_creds(config).is_err() {
                 self.init_creds();
             }
         } else {
             self.init_creds();
-        }
-        Ok(())
-    }
-
-    fn init_dirs(&mut self) -> Result<(), Box<dyn Error>> {
-        if !self.home.is_dir() {
-            fs::create_dir(&self.home)?;
-        }
-        if !self.home.join("ratings.json").is_file() {
-            fs::write(self.home.join("ratings.json"), "[]")?;
-        }
-        if !self.cache.is_dir() {
-            fs::create_dir(&self.cache)?;
-        }
-        if !self.cache.join("posters").is_dir() {
-            fs::create_dir(self.cache.join("posters"))?;
-        }
-        if !self.cache.join("backdrops").is_dir() {
-            fs::create_dir(self.cache.join("backdrops"))?;
         }
         Ok(())
     }
@@ -104,11 +73,11 @@ impl Conf {
         self.tmdb_credentials = TMDBCredentials::new(access_token);
     }
 
-    fn read_creds(&mut self) -> Result<(), Box<dyn Error>> {
-        let key = fs::read(self.home.join(ENCRYPTION_KEY))?;
+    fn read_creds(&mut self, config: &Config) -> Result<(), Box<dyn Error>> {
+        let key = fs::read(config.home.join(ENCRYPTION_KEY))?;
         let cocoon = Cocoon::new(&key);
 
-        let mut encrypted_file = File::open(self.home.join(ENCRYPTED_FILE))?;
+        let mut encrypted_file = File::open(config.home.join(ENCRYPTED_FILE))?;
         let decrypted_creds = String::from_utf8(cocoon.parse(&mut encrypted_file)?)?;
 
         self.tmdb_credentials = serde_json::from_str(&decrypted_creds)?;
@@ -116,11 +85,11 @@ impl Conf {
         Ok(())
     }
 
-    pub fn save_creds(&self) -> Result<(), Box<dyn Error>> {
-        let key = fs::read(self.home.join(ENCRYPTION_KEY))?;
+    pub fn save_creds(&self, config: &Config) -> Result<(), Box<dyn Error>> {
+        let key = fs::read(config.home.join(ENCRYPTION_KEY))?;
         let mut cocoon = Cocoon::new(&key);
 
-        let mut encrypted_file = File::create(self.home.join(ENCRYPTED_FILE))?;
+        let mut encrypted_file = File::create(config.home.join(ENCRYPTED_FILE))?;
         let dump_json = serde_json::to_string(&self.tmdb_credentials)?;
 
         cocoon.dump(dump_json.into_bytes(), &mut encrypted_file)?;
