@@ -45,7 +45,7 @@ impl Display for TokenResponseError {
 pub struct TraktDetailsResponse {
     pub title: String,
     pub year: u32,
-    pub ids: IDs,
+    // pub ids: IDs,
     pub tagline: String,
     pub overview: String,
     pub released: String,
@@ -62,7 +62,7 @@ pub struct TraktDetailsResponse {
     // pub languages: Vec<String>,
     // pub available_translations: Vec<String>,
     pub genres: Vec<String>,
-    pub certification: String,
+    pub certification: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Default, Clone)]

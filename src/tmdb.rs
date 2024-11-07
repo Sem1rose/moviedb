@@ -200,14 +200,14 @@ fn get_session_id(config: &Config, tmdb_config: &mut TMDBConfig) -> Result<(), B
             request_token_response.url()
         );
         retries += 1;
-        if retries > 20 {
+        if retries > 50 {
             return Err(Box::new(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 "Couldn't authenticate request token!",
             )));
         }
 
-        std::thread::sleep(std::time::Duration::from_secs(5));
+        std::thread::sleep(std::time::Duration::from_secs(1));
         request_token_response = send_tmdb_request(
             &client,
             &format!(
@@ -241,7 +241,7 @@ fn get_session_id(config: &Config, tmdb_config: &mut TMDBConfig) -> Result<(), B
         .json::<RequestSessionIDResponse>()?
         .session_id;
 
-    println!("{session_id}");
+    // println!("{session_id}");
     tmdb_config.set_session_id(session_id);
     tmdb_config.save_creds(config)?;
 
@@ -263,7 +263,7 @@ pub fn find_movie(
             .unwrap(),
     );
 
-    let query = [("query", name), ("language", "en-US")];
+    let query = [("query", name)];
     let search_response = send_tmdb_request(
         &client,
         "https://api.themoviedb.org/3/search/movie",

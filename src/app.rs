@@ -276,43 +276,10 @@ pub struct Movie {
     pub released: bool,
     pub tagline: String,
     pub trailer: Option<String>,
+    // pub finished_at: String,
 }
 
 impl Movie {
-    // pub fn new(
-    //     name: String,
-    //     user_rating: f64,
-    //     ratings: Vec<Rating>,
-    //     year: String,
-    //     tmdb_id: u32,
-    //     imdb_id: String,
-    //     genres: Vec<String>,
-    //     overview: String,
-    //     collection: Option<String>,
-    //     collection_id: Option<u32>,
-    //     runtime: u32,
-    //     released: bool,
-    //     tagline: String,
-    //     trailer: Option<String>,
-    // ) -> Self {
-    //     Movie {
-    //         name,
-    //         user_rating,
-    //         ratings,
-    //         year,
-    //         tmdb_id,
-    //         imdb_id,
-    //         genres,
-    //         collection,
-    //         collection_id,
-    //         overview,
-    //         runtime,
-    //         released,
-    //         tagline,
-    //         trailer,
-    //     }
-    // }
-
     pub fn from(movie_details: TMDBDetailsResponse, user_rating: f64) -> Self {
         let mut collection: Option<String> = None;
         let mut collection_id: Option<u32> = None;
@@ -343,6 +310,7 @@ impl Movie {
             released: movie_details.status == "Released",
             tagline: movie_details.tagline,
             trailer: None,
+            // finished_at: "".into(),
         }
     }
 

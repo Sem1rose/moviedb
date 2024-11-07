@@ -8,7 +8,7 @@ use std::{error::Error, fs};
 
 pub fn change_ratings() -> Result<(), Box<dyn Error>> {
     let mut config = Config::new();
-    config.init_dirs();
+    config.init_dirs()?;
 
     let file_path = config.home.join("ratings.json");
 
