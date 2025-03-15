@@ -2,19 +2,86 @@ use crate::{
     config_tmdb::TMDBConfig,
     config_trakt::TraktConfig,
     draw::Drawer,
-    draw::Popup,
-    tmdb::{self, TMDBDetailsResponse},
-    trakt::{self, TraktDetailsResponse},
+    popups::Popups,
+    tmdb::{self, RequestResponseError, TMDBDetailsResponse},
+    trakt::{self, TokenResponseError, TraktDetailsResponse},
 };
+use log::{debug, error};
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use serde::Deserialize;
-use std::{error::Error, fs, path::Path};
+use std::{
+    error::Error,
+    fs::{create_dir, read_to_string, rename, write},
+    path::PathBuf,
+    sync::mpsc::{self, Receiver, Sender},
+};
+
+#[derive(Debug, thiserror::Error)]
+pub enum Errors {
+    #[error("TMDB request error: {0}")]
+    TMDBRequest(#[from] RequestResponseError),
+
+    #[error("Trakt request error: {0}")]
+    TraktRequest(#[from] TokenResponseError),
+
+    #[error("reqwest error: {0}")]
+    Reqwest(#[from] reqwest::Error),
+
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("serde deserialization error: {0}")]
+    Deserialization(#[from] serde_json::Error),
+
+    #[error("cocoon encryption error: {0}")]
+    Encryption(#[from] cocoon::Error),
+
+    #[error("{0}")]
+    Other(String),
+}
+
+#[derive(Clone)]
+pub struct Dirs {
+    pub home: PathBuf,
+    pub cache: PathBuf,
+    pub ratings_file: PathBuf,
+    pub encryption_key_file: PathBuf,
+    pub trakt_encrypted_file: PathBuf,
+    pub tmdb_encrypted_file: PathBuf,
+    pub cached_movies_file: PathBuf,
+    pub poster_cache: PathBuf,
+    pub backdrop_cache: PathBuf,
+}
+
+impl Dirs {
+    pub fn new(home: PathBuf, cache: PathBuf) -> Self {
+        let ratings_file = home.join("ratings.json");
+        let encryption_key_file = home.join(".key");
+        let trakt_encrypted_file = home.join(".credentials_trakt");
+        let tmdb_encrypted_file = home.join(".credentials_tmdb");
+        let cached_movies_file = cache.join(".cached_movies");
+        let poster_cache = cache.join("posters");
+        let backdrop_cache = cache.join("backdrops");
+
+        Self {
+            home,
+            cache,
+            ratings_file,
+            encryption_key_file,
+            trakt_encrypted_file,
+            tmdb_encrypted_file,
+            cached_movies_file,
+            poster_cache,
+            backdrop_cache,
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct Config {
-    pub home: Box<Path>,
-    pub cache: Box<Path>,
+    pub dirs: Dirs,
 }
+
 impl Config {
     pub fn new() -> Self {
         let home = dirs::config_dir()
@@ -25,65 +92,92 @@ impl Config {
             .join("moviedb");
 
         Self {
-            home: home.into_boxed_path(),
-            cache: cache.into_boxed_path(),
+            dirs: Dirs::new(home, cache),
         }
     }
 
-    pub fn init_dirs(&mut self) -> Result<(), Box<dyn Error>> {
-        if !self.home.is_dir() {
-            fs::create_dir(&self.home)?;
+    pub fn init_dirs(&mut self) -> Result<(), Errors> {
+        if !self.dirs.home.is_dir() {
+            create_dir(&self.dirs.home)?;
         }
-        if !self.home.join("ratings.json").is_file() {
-            fs::write(self.home.join("ratings.json"), "[]")?;
+        if !self.dirs.ratings_file.is_file() {
+            write(&self.dirs.ratings_file, "[]")?;
         }
-        if !self.cache.is_dir() {
-            fs::create_dir(&self.cache)?;
+        if !self.dirs.cache.is_dir() {
+            create_dir(&self.dirs.cache)?;
         }
-        if !self.cache.join("posters").is_dir() {
-            fs::create_dir(self.cache.join("posters"))?;
+        if !self.dirs.cached_movies_file.is_file() {
+            write(&self.dirs.cached_movies_file, "")?;
         }
-        if !self.cache.join("backdrops").is_dir() {
-            fs::create_dir(self.cache.join("backdrops"))?;
+        if !self.dirs.poster_cache.is_dir() {
+            create_dir(&self.dirs.poster_cache)?;
+        }
+        if !self.dirs.backdrop_cache.is_dir() {
+            create_dir(&self.dirs.backdrop_cache)?;
         }
         Ok(())
     }
 }
 
+pub enum AppEvent {
+    KeyEvent(KeyEvent),
+    // DrawImage(usize, Result<ResizeResponse, Errors>),
+    // LoadImage(u64, Result<StatefulProtocol, Errors>),
+}
+
 pub struct App {
-    pub single_shot: bool,
+    // pub single_shot: bool,
     pub should_quit: bool,
     pub movies: Vec<Movie>,
+
     pub config: Config,
     pub tmdb_config: TMDBConfig,
     pub trakt_config: TraktConfig,
+
+    pub tx_main: Sender<AppEvent>,
+    pub rx_main: Receiver<AppEvent>,
 }
 
 impl App {
-    pub fn new(_single_shot: bool) -> Result<Self, Box<dyn Error>> {
+    pub fn new() -> Result<Self, Errors> {
         let mut config = Config::new();
         config.init_dirs()?;
 
         let tmdb_config = TMDBConfig::new();
         let trakt_config = TraktConfig::new();
 
+        let (tx_main, rx_main) = mpsc::channel();
+
         Ok(Self {
-            single_shot: _single_shot,
             should_quit: false,
             movies: vec![],
             config,
             tmdb_config,
             trakt_config,
+            tx_main,
+            rx_main,
         })
     }
 
-    pub fn init(&mut self) -> Result<(), Box<dyn Error>> {
+    pub fn init(&mut self) -> Result<(), Errors> {
         self.tmdb_config.init(&self.config)?;
         tmdb::populate_tokens(&self.config, &mut self.tmdb_config)?;
+        debug!("TMDB config init finished successfully.");
+
         self.trakt_config.init(&self.config)?;
         trakt::populate_tokens(&self.config, &mut self.trakt_config)?;
+        debug!("Trakt config init finished successfully.");
 
-        self.fetch_movies();
+        // let x =
+        //     trakt::get_movie_poster_banner(&self.config, &self.trakt_config, "tt1130884".into());
+
+        // if x.is_err() {
+        //     panic!("{}", x.unwrap_err());
+        // } else {
+        //     panic!("{}", x.unwrap());
+        // }
+
+        self.fetch_movies()?;
 
         Ok(())
     }
@@ -92,167 +186,190 @@ impl App {
         self.movies = _movies;
     }
 
-    pub fn fetch_movies(&mut self) {
-        let file_path = self.config.home.join("ratings.json");
+    pub fn fetch_movies(&mut self) -> Result<(), Errors> {
+        let file_path = &self.config.dirs.ratings_file;
 
-        let file_contents = fs::read_to_string(&file_path).unwrap_or_else(|_| {
+        let file_contents = read_to_string(file_path).unwrap_or_else(|_| {
             panic!("Couldn't read database contents at {}", file_path.display())
         });
 
-        let movies = serde_json::from_str(&file_contents).expect("couldn't deserialize json!");
+        let result = serde_json::from_str(&file_contents);
+        if let Err(error) = result {
+            error!("couldn't deserialize ratings file, backing it up and creating a blank one: {error}");
 
-        self.set_movies(movies);
-    }
+            let mut renamed = self.config.dirs.home.join("corrupted_ratings.json");
+            let mut i = 1;
+            while renamed.exists() {
+                renamed = self
+                    .config
+                    .dirs
+                    .home
+                    .join(format!("corrupted_ratings_{i}.json"));
+                i += 1;
+            }
 
-    pub fn save_movies(&self) -> Result<(), Box<dyn Error>> {
-        let string = serde_json::to_string_pretty(self.movies.as_slice()).unwrap();
+            rename(file_path, renamed)?;
 
-        fs::rename(
-            self.config.home.join("ratings.json"),
-            self.config.home.join("ratings.json.bak"),
-        )?;
-        fs::write(self.config.home.join("ratings.json"), string)?;
+            write(&self.config.dirs.ratings_file, "[]")?;
+        } else {
+            let movies = result.unwrap();
+            self.set_movies(movies);
+        }
 
         Ok(())
     }
 
-    pub fn handle(&mut self, drawer: &mut Drawer) -> Result<(), Box<dyn Error>> {
-        if event::poll(std::time::Duration::from_millis(0))? {
-            let event = event::read()?;
-            match event {
-                Event::Key(KeyEvent { code, kind, .. }) => {
-                    if kind != KeyEventKind::Press {
-                        return Ok(());
-                    }
+    pub fn save_movies(&self) -> Result<(), Errors> {
+        let string = serde_json::to_string_pretty(self.movies.as_slice()).unwrap();
 
-                    match code {
-                        KeyCode::Char('q') => {
-                            if drawer.accepting_input {
-                                drawer.handle_input(&event);
-                            } else {
-                                self.should_quit = true;
-                            }
+        rename(
+            &self.config.dirs.ratings_file,
+            self.config.dirs.ratings_file.with_extension("json.bak"),
+        )?;
+        write(&self.config.dirs.ratings_file, string)?;
+
+        Ok(())
+    }
+
+    pub fn handle_app_events(
+        &mut self,
+        event: AppEvent,
+        drawer: &mut Drawer,
+    ) -> Result<(), Errors> {
+        match event {
+            AppEvent::KeyEvent(event) => {
+                let kind = event.kind;
+                let code = event.code;
+
+                if kind != KeyEventKind::Press {
+                    return Ok(());
+                }
+
+                match code {
+                    KeyCode::Char('Q') => {
+                        panic!("RELEASE ME");
+                    }
+                    KeyCode::Char('q') => {
+                        if drawer.accepting_input {
+                            drawer.handle_input(event);
+                        } else {
+                            self.should_quit = true;
                         }
-                        KeyCode::Char('a') => {
-                            if drawer.popup.is_none() {
-                                drawer.open_add_movie_popup();
-                                drawer.clear_images = true;
-                            } else if drawer.accepting_input {
-                                drawer.handle_input(&event);
-                            }
+                    }
+                    KeyCode::Char('a') => {
+                        if drawer.active_popup.is_none() {
+                            drawer.open_add_movie_popup();
+                            drawer.clear_images = true;
+                        } else if drawer.accepting_input {
+                            drawer.handle_input(event);
                         }
-                        KeyCode::Char('e') => {
-                            if drawer.popup.is_none() {
-                                drawer.open_edit_movie_popup();
-                                drawer.clear_images = true;
-                            } else if drawer.accepting_input {
-                                drawer.handle_input(&event);
-                            }
+                    }
+                    KeyCode::Char('e') => {
+                        if drawer.active_popup.is_none() {
+                            drawer.open_edit_movie_popup();
+                            drawer.clear_images = true;
+                        } else if drawer.accepting_input {
+                            drawer.handle_input(event);
                         }
-                        KeyCode::Char('d') => {
-                            if drawer.popup.is_none() {
-                                drawer.open_remove_movie_popup();
-                                drawer.clear_images = true;
-                            } else if drawer.accepting_input {
-                                drawer.handle_input(&event);
-                            }
+                    }
+                    KeyCode::Char('d') => {
+                        if drawer.active_popup.is_none() {
+                            drawer.open_remove_movie_popup();
+                            drawer.clear_images = true;
+                        } else if drawer.accepting_input {
+                            drawer.handle_input(event);
                         }
-                        KeyCode::Delete => {
-                            if drawer.popup.is_none() {
-                                drawer.open_remove_movie_popup();
-                                drawer.clear_images = true;
-                            } else if drawer.accepting_input {
-                                drawer.handle_input(&event);
-                            }
+                    }
+                    KeyCode::Delete => {
+                        if drawer.active_popup.is_none() {
+                            drawer.open_remove_movie_popup();
+                            drawer.clear_images = true;
+                        } else if drawer.accepting_input {
+                            drawer.handle_input(event);
                         }
-                        KeyCode::Esc => {
-                            if drawer.popup.is_some() {
+                    }
+                    KeyCode::Esc => {
+                        if drawer.active_popup.is_some() {
+                            drawer.close_popups();
+                            drawer.clear_images(false);
+                        } else {
+                            self.should_quit = true;
+                        }
+                    }
+                    KeyCode::Up => {
+                        drawer.dec_selection(self);
+                    }
+                    KeyCode::Down => {
+                        drawer.inc_selection(self);
+                    }
+                    KeyCode::Right => {
+                        if drawer.accepting_input {
+                            drawer.handle_input(event);
+                        } else {
+                            drawer.inc_selection_horiz(self);
+                        }
+                    }
+                    KeyCode::Left => {
+                        if drawer.accepting_input {
+                            drawer.handle_input(event);
+                        } else {
+                            drawer.dec_selection_horiz(self);
+                        }
+                    }
+                    KeyCode::Enter => match drawer.active_popup {
+                        Some(Popups::AddMovie) => {
+                            if *drawer.add_movie_popup_options.failed.lock().unwrap() {
                                 drawer.close_popups();
                                 drawer.clear_images(false);
-                            } else {
-                                self.should_quit = true;
+                            } else if drawer.add_movie_popup_options.phase == 0
+                                && drawer.add_movie_popup_options.search_input.value() != ""
+                            {
+                                drawer.add_movie_popup_options.finished_search_input = true;
+                                drawer.queue_update();
+                            } else if drawer.add_movie_popup_options.phase == 2 {
+                                drawer.add_movie_popup_options.movie_selected = true;
+                                drawer.queue_update();
+                            } else if drawer.add_movie_popup_options.phase == 3
+                                && drawer.add_movie_popup_options.search_input.value() != ""
+                                && drawer.add_movie_popup_options.user_rating_valid
+                            {
+                                drawer.add_movie_popup_options.got_user_rating = true;
+                                drawer.queue_update();
                             }
                         }
-                        KeyCode::Up => {
-                            drawer.dec_selection(self);
-                        }
-                        KeyCode::Down => {
-                            drawer.inc_selection(self);
-                        }
-                        KeyCode::Right => {
-                            if drawer.accepting_input {
-                                drawer.handle_input(&event);
-                            } else {
-                                drawer.inc_selection_horiz(self);
+                        Some(Popups::EditMovie) => {
+                            if drawer.edit_movie_popup_options.errored {
+                                drawer.close_popups();
+                                drawer.clear_images(false);
+                                drawer.queue_update();
+                            } else if !drawer.edit_movie_popup_options.got_user_rating
+                                && drawer.edit_movie_popup_options.user_rating_input.value() != ""
+                                && drawer.edit_movie_popup_options.user_rating_valid
+                            {
+                                drawer.edit_movie_popup_options.got_user_rating = true;
+                                drawer.queue_update();
                             }
                         }
-                        KeyCode::Left => {
-                            if drawer.accepting_input {
-                                drawer.handle_input(&event);
-                            } else {
-                                drawer.dec_selection_horiz(self);
+                        Some(Popups::RemoveMovie) => {
+                            if drawer.remove_movie_popup_options.errored {
+                                drawer.close_popups();
+                                drawer.clear_images(false);
+                            } else if drawer.remove_movie_popup_options.selected == 1 {
+                                drawer.remove_movie_popup_options.confirmed = true;
+                                drawer.queue_update();
+                            } else if drawer.remove_movie_popup_options.selected == 0 {
+                                drawer.close_popups();
+                                drawer.clear_images(false);
                             }
                         }
-                        KeyCode::Enter => match drawer.popup {
-                            Some(Popup::AddMovie) => {
-                                if *drawer.add_movie_popup_options.failed.lock().unwrap() {
-                                    drawer.close_popups();
-                                    drawer.clear_images(false);
-                                } else if drawer.add_movie_popup_options.phase == 0
-                                    && drawer.add_movie_popup_options.search_input.value() != ""
-                                {
-                                    drawer.add_movie_popup_options.finished_search_input = true;
-                                    drawer.update = true;
-                                } else if drawer.add_movie_popup_options.phase == 2 {
-                                    drawer.add_movie_popup_options.movie_selected = true;
-                                    drawer.update = true;
-                                } else if drawer.add_movie_popup_options.phase == 3
-                                    && drawer.add_movie_popup_options.search_input.value() != ""
-                                    && drawer.add_movie_popup_options.user_rating_valid
-                                {
-                                    drawer.add_movie_popup_options.got_user_rating = true;
-                                    drawer.update = true;
-                                }
-                            }
-                            Some(Popup::EditMovie) => {
-                                if drawer.edit_movie_popup_options.errored {
-                                    drawer.close_popups();
-                                    drawer.clear_images(false);
-                                    drawer.update = true;
-                                } else if !drawer.edit_movie_popup_options.got_user_rating
-                                    && drawer.edit_movie_popup_options.user_rating_input.value()
-                                        != ""
-                                    && drawer.edit_movie_popup_options.user_rating_valid
-                                {
-                                    drawer.edit_movie_popup_options.got_user_rating = true;
-                                    drawer.update = true;
-                                }
-                            }
-                            Some(Popup::RemoveMovie) => {
-                                if drawer.remove_movie_popup_options.errored {
-                                    drawer.close_popups();
-                                    drawer.clear_images(false);
-                                } else if drawer.remove_movie_popup_options.selected == 1 {
-                                    drawer.remove_movie_popup_options.confirmed = true;
-                                    drawer.update = true;
-                                } else if drawer.remove_movie_popup_options.selected == 0 {
-                                    drawer.close_popups();
-                                    drawer.clear_images(false);
-                                }
-                            }
-                            _ => {}
-                        },
-                        _ => {
-                            if drawer.accepting_input {
-                                drawer.handle_input(&event);
-                            }
+                        _ => {}
+                    },
+                    _ => {
+                        if drawer.accepting_input {
+                            drawer.handle_input(event);
                         }
                     }
                 }
-                Event::Resize(_, _) => {
-                    drawer.clear_images(true);
-                }
-                _ => {}
             }
         }
         Ok(())
@@ -287,6 +404,7 @@ impl Movie {
             collection = Some(movie_details.belongs_to_collection.clone().unwrap().name);
             collection_id = Some(movie_details.belongs_to_collection.clone().unwrap().id);
         }
+
         Self {
             name: movie_details.title,
             user_rating,

@@ -4,7 +4,11 @@
 //     AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, PkceCodeChallenge, RedirectUrl,
 //     Scope, TokenResponse, TokenUrl,
 // };
-use crate::{app::Config, config_tmdb::TMDBConfig};
+use crate::{
+    app::{Config, Errors},
+    config_tmdb::TMDBConfig,
+};
+use log::{debug, error, trace};
 use reqwest::{
     blocking::{Client, ClientBuilder, RequestBuilder, Response},
     header::HeaderMap,
@@ -20,7 +24,7 @@ struct RequestTokenResponse {
 }
 
 #[derive(Deserialize, Debug)]
-struct RequestResponseError {
+pub struct RequestResponseError {
     status_code: i32,
     status_message: String,
     // success: bool,
@@ -75,6 +79,23 @@ pub struct TMDBSearchResult {
 }
 
 #[derive(Deserialize, Debug, Default, Clone)]
+pub struct TMDBMovieImagesResponse {
+    pub backdrops: Vec<TMDBMovieImage>,
+    pub posters: Vec<TMDBMovieImage>,
+}
+
+#[derive(Deserialize, Debug, Default, Clone)]
+pub struct TMDBMovieImage {
+    pub aspect_ratio: f32,
+    pub height: u32,
+    pub iso_639_1: String,
+    pub file_path: String,
+    pub vote_average: f32,
+    pub vote_count: u32,
+    pub width: u32,
+}
+
+#[derive(Deserialize, Debug, Default, Clone)]
 pub struct TMDBDetailsResponse {
     // pub adult: bool,
     pub backdrop_path: Option<String>,
@@ -99,6 +120,7 @@ pub struct TMDBDetailsResponse {
     pub vote_average: f64,
     pub vote_count: u32,
 }
+
 #[derive(Deserialize, Debug, Clone)]
 pub struct TMDBCollection {
     pub id: u32,
@@ -121,19 +143,20 @@ struct RequestSessionIDResponse {
 
 // const ALTERNATE_POSTER_FILE: String = String::from("placeholder.png");
 
-pub fn populate_tokens(
-    config: &Config,
-    tmdb_config: &mut TMDBConfig,
-) -> Result<(), Box<dyn Error>> {
+pub fn populate_tokens(config: &Config, tmdb_config: &mut TMDBConfig) -> Result<(), Errors> {
     if !tmdb_config.has_session_id() {
+        debug!("No TMDB session ID found, fetching a new one...");
+
         get_session_id(config, tmdb_config)?
     }
 
     Ok(())
 }
 
-fn get_session_id(config: &Config, tmdb_config: &mut TMDBConfig) -> Result<(), Box<dyn Error>> {
+// https://developer.themoviedb.org/docs/authentication-user
+fn get_session_id(config: &Config, tmdb_config: &mut TMDBConfig) -> Result<(), Errors> {
     let client = ClientBuilder::new().build()?;
+
     let mut headers = HeaderMap::new();
     headers.insert("accept", "application/json".parse().unwrap());
     headers.insert("content-type", "application/json".parse().unwrap());
@@ -144,67 +167,73 @@ fn get_session_id(config: &Config, tmdb_config: &mut TMDBConfig) -> Result<(), B
             .unwrap(),
     );
 
-    let validate_key_response = send_tmdb_request(
-        &client,
-        "https://api.themoviedb.org/3/authentication/token/new",
-        headers.clone(),
-        None,
-        None,
-    )?;
-    if validate_key_response.status().as_u16() != 200 {
-        return Err(Box::new(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "Invalid access token!",
-        )));
-    }
+    // let validate_key_response = send_tmdb_request(
+    //     &client,
+    //     "https://api.themoviedb.org/3/authentication/token/new",
+    //     headers.clone(),
+    //     None,
+    //     None,
+    // )?;
+    // if validate_key_response.status().as_u16() != 200 {
+    //     return Err(Box::new(std::io::Error::new(
+    //         std::io::ErrorKind::Other,
+    //         "Invalid access token!",
+    //     )));
+    // }
 
+    // Step 1: create a request token
     let request_token_response = send_tmdb_request(
         &client,
         "https://api.themoviedb.org/3/authentication/token/new",
-        headers.clone(),
+        &headers,
         None,
         None,
     )?;
 
     if request_token_response.status().as_u16() != 200 {
-        return Err(Box::new(
-            request_token_response.json::<RequestResponseError>()?,
-        ));
+        let result = request_token_response.json::<RequestResponseError>();
+        if let Ok(error) = result {
+            return Err(Errors::TMDBRequest(error));
+        } else {
+            return Err(Errors::Reqwest(result.unwrap_err()));
+        }
     }
 
     let request_token = request_token_response
         .json::<RequestTokenResponse>()?
         .request_token;
 
+    // Step 2: ask the user for permission
     println!(
         "\nPlease visit the following url to authorize the application.\nhttps://www.themoviedb.org/authenticate/{}\n",
         request_token
     );
 
+    // Step 4: finally get the request token
     let mut request_token_response = send_tmdb_request(
         &client,
         &format!(
             "https://www.themoviedb.org/authenticate/{}/allow",
             request_token
         ),
-        headers.clone(),
+        &headers,
         None,
         None,
     )?;
 
+    // once the user gives permission of course...
     let mut retries = 0;
     while request_token_response.status().as_u16() >= 400 {
-        println!(
+        trace!(
             "{:#?} {}",
             request_token_response.status(),
             request_token_response.url()
         );
         retries += 1;
         if retries > 50 {
-            return Err(Box::new(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "Couldn't authenticate request token!",
-            )));
+            return Err(Errors::Other(
+                "couldn't authenticate request token, max retries reached".to_string(),
+            ));
         }
 
         std::thread::sleep(std::time::Duration::from_secs(1));
@@ -214,7 +243,7 @@ fn get_session_id(config: &Config, tmdb_config: &mut TMDBConfig) -> Result<(), B
                 "https://www.themoviedb.org/authenticate/{}/allow",
                 request_token
             ),
-            headers.clone(),
+            &headers,
             None,
             None,
         )?;
@@ -223,35 +252,36 @@ fn get_session_id(config: &Config, tmdb_config: &mut TMDBConfig) -> Result<(), B
     let mut body = HashMap::new();
     body.insert("request_token", request_token.as_str());
 
+    // The request token has been approved by the user
+    // Step 5: create a new session ID
     let create_session_response = send_tmdb_request(
         &client,
         "https://api.themoviedb.org/3/authentication/session/new",
-        headers.clone(),
+        &headers,
         Some(body),
         None,
     )?;
 
     if create_session_response.status().as_u16() != 200 {
-        return Err(Box::new(
-            create_session_response.json::<RequestResponseError>()?,
-        ));
+        let result = create_session_response.json::<RequestResponseError>();
+        if let Ok(error) = result {
+            return Err(Errors::TMDBRequest(error));
+        } else {
+            return Err(Errors::Reqwest(result.unwrap_err()));
+        }
     }
 
     let session_id = create_session_response
         .json::<RequestSessionIDResponse>()?
         .session_id;
 
-    // println!("{session_id}");
     tmdb_config.set_session_id(session_id);
     tmdb_config.save_creds(config)?;
 
     Ok(())
 }
 
-pub fn find_movie(
-    tmdb_config: &TMDBConfig,
-    name: &str,
-) -> Result<TMDBSearchResponse, Box<dyn Error>> {
+pub fn find_movie(tmdb_config: &TMDBConfig, name: &str) -> Result<TMDBSearchResponse, Errors> {
     let client = ClientBuilder::new().build()?;
     let mut headers = HeaderMap::new();
     headers.insert("accept", "application/json".parse().unwrap());
@@ -267,12 +297,17 @@ pub fn find_movie(
     let search_response = send_tmdb_request(
         &client,
         "https://api.themoviedb.org/3/search/movie",
-        headers.clone(),
+        &headers,
         None,
         Some(&query),
     )?;
     if search_response.status().as_u16() != 200 {
-        return Err(Box::new(search_response.json::<RequestResponseError>()?));
+        let result = search_response.json::<RequestResponseError>();
+        if let Ok(error) = result {
+            return Err(Errors::TMDBRequest(error));
+        } else {
+            return Err(Errors::Reqwest(result.unwrap_err()));
+        }
     }
     // println!(
     //     "{}",
@@ -291,8 +326,9 @@ pub fn find_movie(
 pub fn get_movie_details(
     tmdb_config: &TMDBConfig,
     tmdb_id: u32,
-) -> Result<TMDBDetailsResponse, Box<dyn Error>> {
+) -> Result<TMDBDetailsResponse, Errors> {
     let client = ClientBuilder::new().build()?;
+
     let mut headers = HeaderMap::new();
     headers.insert("accept", "application/json".parse().unwrap());
     headers.insert("content-type", "application/json".parse().unwrap());
@@ -306,28 +342,28 @@ pub fn get_movie_details(
     let details_response = send_tmdb_request(
         &client,
         &format!("https://api.themoviedb.org/3/movie/{tmdb_id}"),
-        headers.clone(),
+        &headers,
         None,
         None,
     )?;
     if details_response.status().as_u16() != 200 {
-        return Err(Box::new(details_response.json::<RequestResponseError>()?));
+        let result = details_response.json::<RequestResponseError>();
+        if let Ok(error) = result {
+            return Err(Errors::TMDBRequest(error));
+        } else {
+            return Err(Errors::Reqwest(result.unwrap_err()));
+        }
     }
 
     Ok(details_response.json::<TMDBDetailsResponse>()?)
 }
 
-pub fn get_movie_poster_banner(
-    config: &Config,
+pub fn get_movie_images(
     tmdb_config: &TMDBConfig,
-    id: u32,
-) -> Result<(), Box<dyn Error>> {
-    let poster_cache = config.cache.join("posters");
-    let backdrop_cache = config.cache.join("backdrops");
-    std::fs::create_dir_all(&poster_cache)?;
-    std::fs::create_dir_all(&backdrop_cache)?;
-
+    tmdb_id: u32,
+) -> Result<TMDBMovieImagesResponse, Errors> {
     let client = ClientBuilder::new().build()?;
+
     let mut headers = HeaderMap::new();
     headers.insert("accept", "application/json".parse().unwrap());
     headers.insert("content-type", "application/json".parse().unwrap());
@@ -338,87 +374,160 @@ pub fn get_movie_poster_banner(
             .unwrap(),
     );
 
-    let movie_details = get_movie_details(tmdb_config, id)?;
+    let query = [("include_image_language", "en")];
 
-    // println!(
-    //     "{} {}\n{}",
-    //     movie_details.title, movie_details.release_date, movie_details.id
-    // );
+    let images_response = send_tmdb_request(
+        &client,
+        &format!("https://api.themoviedb.org/3/movie/{tmdb_id}/images"),
+        &headers,
+        None,
+        Some(&query),
+    )?;
+    if images_response.status().as_u16() != 200 {
+        let result = images_response.json::<RequestResponseError>();
+        if let Ok(error) = result {
+            return Err(Errors::TMDBRequest(error));
+        } else {
+            return Err(Errors::Reqwest(result.unwrap_err()));
+        }
+    }
+
+    let mut movie_images = images_response.json::<TMDBMovieImagesResponse>()?;
+    if movie_images.backdrops.is_empty() || movie_images.posters.is_empty() {
+        let response = send_tmdb_request(
+            &client,
+            &format!("https://api.themoviedb.org/3/movie/{tmdb_id}/images"),
+            &headers,
+            None,
+            None,
+        );
+        if response.is_err() {
+            return Ok(movie_images);
+        }
+
+        let images_response = response.unwrap();
+        if images_response.status().as_u16() != 200 {
+            return Ok(movie_images);
+        }
+
+        let result = images_response.json::<TMDBMovieImagesResponse>();
+
+        if let Ok(unfiltered_images) = result {
+            if movie_images.backdrops.is_empty() && !unfiltered_images.backdrops.is_empty() {
+                movie_images.backdrops = unfiltered_images.backdrops;
+            }
+            if movie_images.posters.is_empty() && !unfiltered_images.posters.is_empty() {
+                movie_images.posters = unfiltered_images.posters;
+            }
+        }
+    }
+
+    Ok(movie_images)
+}
+
+pub fn get_movie_poster_banner(
+    config: &Config,
+    tmdb_config: &TMDBConfig,
+    id: u32,
+    add_placeholder: bool,
+) -> Result<bool, Errors> {
+    let client = ClientBuilder::new().build()?;
+    let mut headers = HeaderMap::new();
+
+    headers.insert("accept", "application/json".parse().unwrap());
+    headers.insert("content-type", "application/json".parse().unwrap());
+    headers.insert(
+        "Authorization",
+        format!("Bearer {}", tmdb_config.access_token())
+            .parse()
+            .unwrap(),
+    );
+
+    let movie_images = get_movie_images(tmdb_config, id)?;
 
     let configuration_response = send_tmdb_request(
         &client,
         "https://api.themoviedb.org/3/configuration",
-        headers.clone(),
+        &headers,
         None,
         None,
     )?;
     if configuration_response.status().as_u16() != 200 {
-        return Err(Box::new(
-            configuration_response.json::<RequestResponseError>()?,
-        ));
+        let result = configuration_response.json::<RequestResponseError>();
+        if let Ok(error) = result {
+            return Err(Errors::TMDBRequest(error));
+        } else {
+            return Err(Errors::Reqwest(result.unwrap_err()));
+        }
     }
 
     let images_configurations = configuration_response
         .json::<ConfigurationResponse>()?
         .images;
 
-    if movie_details.poster_path.is_some() {
+    if !add_placeholder && (movie_images.posters.is_empty() || movie_images.backdrops.is_empty()) {
+        return Ok(false);
+    }
+
+    if !movie_images.posters.is_empty() {
         let image_bytes: Vec<_> = reqwest::blocking::get(format!(
             "{}{}{}",
             images_configurations.base_url,
-            images_configurations.poster_sizes[1],
-            movie_details.poster_path.as_ref().unwrap()
-        ))
-        .expect("requesting movie poster failed!")
+            images_configurations.poster_sizes[4], // w92 w154 w185 w342 w500 w780 original
+            movie_images.posters[0].file_path
+        ))?
+        // .expect("requesting movie poster failed!")
         .bytes()?
         .iter()
         .copied()
         .collect();
-        let mut out = File::create(poster_cache.join(format!("{}.jpg", movie_details.id)))
-            .expect("failed to create file");
-        std::io::copy(&mut image_bytes.as_slice(), &mut out).expect("failed to copy content");
-    } else {
+
+        let mut out = File::create(config.dirs.poster_cache.join(format!("{}.jpg", id)))?;
+        // .expect("failed to create file");
+        std::io::copy(&mut image_bytes.as_slice(), &mut out)?; //.expect("failed to copy content");
+    } else if add_placeholder {
         std::fs::copy(
             "poster_placeholder.jpg",
-            poster_cache.join(format!("{}.jpg", movie_details.id)),
-        )
-        .expect("failed to copy placeholder poster!");
+            config.dirs.poster_cache.join(format!("{}.jpg", id)),
+        )?;
+        // .expect("failed to copy placeholder poster!");
     }
 
-    if movie_details.backdrop_path.is_some() {
+    if !movie_images.backdrops.is_empty() {
         let image_bytes: Vec<_> = reqwest::blocking::get(format!(
             "{}{}{}",
             images_configurations.base_url,
-            images_configurations.backdrop_sizes[1],
-            movie_details.backdrop_path.as_ref().unwrap()
-        ))
-        .expect("requesting movie backdrop failed!")
+            images_configurations.backdrop_sizes[2], // w300 w780 w1280 original
+            movie_images.backdrops[0].file_path
+        ))?
+        // .expect("requesting movie backdrop failed!")
         .bytes()?
         .iter()
         .copied()
         .collect();
-        let mut out = File::create(backdrop_cache.join(format!("{}.jpg", movie_details.id)))
-            .expect("failed to create file");
-        std::io::copy::<&[u8], File>(&mut image_bytes.as_slice(), &mut out)
-            .expect("failed to copy content");
-    } else {
+
+        let mut out = File::create(config.dirs.backdrop_cache.join(format!("{}.jpg", id)))?;
+        // .expect("failed to create file");
+        std::io::copy::<&[u8], File>(&mut image_bytes.as_slice(), &mut out)?;
+        // .expect("failed to copy content");
+    } else if add_placeholder {
         std::fs::copy(
             "backdrop_placeholder.jpg",
-            poster_cache.join(format!("{}.jpg", movie_details.id)),
-        )
-        .expect("failed to copy placeholder backdrop!");
+            config.dirs.poster_cache.join(format!("{}.jpg", id)),
+        )?;
+        // .expect("failed to copy placeholder backdrop!");
     }
 
-    Ok(())
+    Ok(true)
 }
 
 fn send_tmdb_request(
     client: &Client,
     url: &str,
-    headers: HeaderMap,
+    headers: &HeaderMap,
     body: Option<HashMap<&str, &str>>,
     query: Option<&[(&str, &str)]>,
-) -> Result<Response, Box<dyn Error>> {
+) -> Result<Response, Errors> {
     let mut request: RequestBuilder;
     if body.is_none() {
         request = client.get(url).headers(headers.clone());

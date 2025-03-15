@@ -1,5 +1,6 @@
-use crate::app::Config;
+use crate::app::{Config, Errors};
 use cocoon::Cocoon;
+use log::{debug, error, info};
 use rand::{distributions::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -8,8 +9,6 @@ use std::{
     io::{stdin, stdout, Write},
 };
 
-const ENCRYPTION_KEY: &str = ".key";
-const ENCRYPTED_FILE: &str = ".credentials_tmdb";
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct TMDBCredentials {
     access_token: Box<str>,
@@ -44,26 +43,31 @@ impl TMDBConfig {
         }
     }
 
-    pub fn init(&mut self, config: &Config) -> Result<(), Box<dyn Error>> {
-        if !config.home.join(ENCRYPTION_KEY).is_file() {
+    pub fn init(&mut self, config: &Config) -> Result<(), Errors> {
+        if !config.dirs.encryption_key_file.is_file() {
             let key: String = rand::thread_rng()
                 .sample_iter(&Alphanumeric)
                 .take(16)
                 .map(char::from)
                 .collect();
 
-            let _ = fs::remove_file(config.home.join(ENCRYPTED_FILE));
+            let _ = fs::remove_file(&config.dirs.tmdb_encrypted_file);
 
-            fs::write(config.home.join(ENCRYPTION_KEY), key)?;
+            fs::write(&config.dirs.encryption_key_file, key)?;
         }
 
-        if config.home.join(ENCRYPTED_FILE).is_file() {
+        if config.dirs.tmdb_encrypted_file.is_file() {
             if self.read_creds(config).is_err() {
+                error!("Error reading TMDB config file, initializing a new config...");
+
                 self.init_creds();
             }
         } else {
+            debug!("Initializing a new TMDB config...");
+
             self.init_creds();
         }
+
         Ok(())
     }
 
@@ -73,23 +77,31 @@ impl TMDBConfig {
         self.tmdb_credentials = TMDBCredentials::new(access_token);
     }
 
-    fn read_creds(&mut self, config: &Config) -> Result<(), Box<dyn Error>> {
-        let key = fs::read(config.home.join(ENCRYPTION_KEY))?;
+    fn read_creds(&mut self, config: &Config) -> Result<(), Errors> {
+        let key = fs::read(&config.dirs.encryption_key_file)?;
         let cocoon = Cocoon::new(&key);
 
-        let mut encrypted_file = File::open(config.home.join(ENCRYPTED_FILE))?;
-        let decrypted_creds = String::from_utf8(cocoon.parse(&mut encrypted_file)?)?;
+        let mut encrypted_file = File::open(&config.dirs.tmdb_encrypted_file)?;
 
-        self.tmdb_credentials = serde_json::from_str(&decrypted_creds)?;
-        // println!("{:#?}", self.trakt_credentials);
+        let result = String::from_utf8(cocoon.parse(&mut encrypted_file)?);
+        if let Ok(decrypted_creds) = result {
+            self.tmdb_credentials = serde_json::from_str(&decrypted_creds)?;
+        } else {
+            return Err(Errors::Other(format!(
+                "TMDB: error decoding utf8: {}",
+                result.unwrap_err()
+            )));
+        }
+
+        // debug!("tmdb credentials: {:#?}", self.tmdb_credentials);
         Ok(())
     }
 
-    pub fn save_creds(&self, config: &Config) -> Result<(), Box<dyn Error>> {
-        let key = fs::read(config.home.join(ENCRYPTION_KEY))?;
+    pub fn save_creds(&self, config: &Config) -> Result<(), Errors> {
+        let key = fs::read(&config.dirs.encryption_key_file)?;
         let mut cocoon = Cocoon::new(&key);
 
-        let mut encrypted_file = File::create(config.home.join(ENCRYPTED_FILE))?;
+        let mut encrypted_file = File::create(&config.dirs.tmdb_encrypted_file)?;
         let dump_json = serde_json::to_string(&self.tmdb_credentials)?;
 
         cocoon.dump(dump_json.into_bytes(), &mut encrypted_file)?;

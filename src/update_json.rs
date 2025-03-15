@@ -1,16 +1,16 @@
 use crate::{
-    app::{Config, Movie},
+    app::{Config, Errors, Movie},
     config_tmdb::TMDBConfig,
     config_trakt::TraktConfig,
     tmdb, trakt,
 };
-use std::{error::Error, fs};
+use std::fs;
 
-pub fn change_ratings() -> Result<(), Box<dyn Error>> {
+pub fn change_ratings() -> Result<(), Errors> {
     let mut config = Config::new();
     config.init_dirs()?;
 
-    let file_path = config.home.join("ratings.json");
+    let file_path = config.dirs.home.join("ratings.json");
 
     let file_contents = fs::read_to_string(&file_path)
         .unwrap_or_else(|_| panic!("Couldn't read database contents at {}", file_path.display()));
@@ -123,7 +123,7 @@ pub fn change_ratings() -> Result<(), Box<dyn Error>> {
 
     let string = serde_json::to_string_pretty(out.as_slice())?;
 
-    fs::write(config.home.join("ratings3.json"), string)?;
+    fs::write(config.dirs.home.join("ratings3.json"), string)?;
 
     Ok(())
 }
