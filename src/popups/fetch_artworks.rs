@@ -1,5 +1,5 @@
 use crate::{
-    app::{App, Errors},
+    app::{App, Errors, Result},
     draw::Drawer,
     tmdb, trakt,
 };
@@ -12,30 +12,35 @@ use std::{
 };
 use style::palette::tailwind;
 
-// #[derive(Default)]
+type movieid = (u32, String);
+
+#[derive(Default)]
 pub struct FetchArtworksPopup {
     pub started: bool,
     pub progress: u32,
 
-    // tx_fetch_request: Sender<u32>,
-    tx_fetch_request: Sender<(u32, String)>,
-    rx_fetch_response: Receiver<((u32, String), Result<(), Errors>)>,
+    tx_fetch_request: Option<Sender<Option<movieid>>>,
+    rx_fetch_response: Option<Receiver<(movieid, Result<()>)>>,
 
     errored: Option<u32>,
 }
 
 impl FetchArtworksPopup {
-    pub fn new(app: &App) -> Self {
-        let (tx_fetch_request, rx_fetch_request) = mpsc::channel::<(u32, String)>();
-        let (tx_fetch_response, rx_fetch_response) =
-            mpsc::channel::<((u32, String), Result<(), Errors>)>();
+    pub fn start_thread(&mut self, app: &App) {
+        let (tx_fetch_request, rx_fetch_request) = mpsc::channel::<Option<movieid>>();
+        let (tx_fetch_response, rx_fetch_response) = mpsc::channel::<((u32, String), Result<()>)>();
 
         let conf = app.config.clone();
         let tmdb_conf = app.tmdb_config.clone();
         let trakt_conf = app.trakt_config.clone();
 
-        thread::spawn(move || loop {
-            for fetch_request in rx_fetch_request.try_iter() {
+        thread::spawn(move || {
+            for fetch_request in rx_fetch_request.iter() {
+                if fetch_request.is_none() {
+                    break;
+                }
+
+                let request = fetch_request.unwrap();
                 let tx_response = tx_fetch_response.clone();
 
                 let conf_owned = conf.clone();
@@ -45,7 +50,7 @@ impl FetchArtworksPopup {
                     let result = trakt::get_movie_poster_banner(
                         &conf_owned,
                         &trakt_conf_owned,
-                        fetch_request.1.clone(),
+                        request.1.clone(),
                         false,
                     );
 
@@ -53,59 +58,60 @@ impl FetchArtworksPopup {
                         let result = tmdb::get_movie_poster_banner(
                             &conf_owned,
                             &tmdb_conf_owned,
-                            fetch_request.0,
+                            request.0,
                             true,
                         );
 
                         if let Err(error) = result {
-                            let _ = tx_response.send((fetch_request, Err(error)));
+                            let _ = tx_response.send((request, Err(error)));
                         } else {
-                            let _ = tx_response.send((fetch_request, Ok(())));
+                            let _ = tx_response.send((request, Ok(())));
                         }
                     } else if result.is_err() {
                         let result = tmdb::get_movie_poster_banner(
                             &conf_owned,
                             &tmdb_conf_owned,
-                            fetch_request.0,
+                            request.0,
                             true,
                         );
 
                         if let Err(error) = result {
-                            let _ = tx_response.send((fetch_request, Err(error)));
+                            let _ = tx_response.send((request, Err(error)));
                         } else {
-                            let _ = tx_response.send((fetch_request, Ok(())));
+                            let _ = tx_response.send((request, Ok(())));
                         }
                     } else {
-                        let _ = tx_response.send((fetch_request, Ok(())));
+                        let _ = tx_response.send((request, Ok(())));
                     }
                 });
             }
         });
 
-        Self {
-            started: false,
-            progress: 0,
-            tx_fetch_request,
-            rx_fetch_response,
-            errored: None,
-        }
-    }
-}
+        self.started = true;
 
-impl FetchArtworksPopup {
-    pub fn begin(&mut self) {
+        self.tx_fetch_request = Some(tx_fetch_request);
+        self.rx_fetch_response = Some(rx_fetch_response);
+    }
+
+    pub fn finish(&mut self) {
         self.started = false;
+
         self.progress = 0;
+        self.errored = None;
+        self.tx_fetch_request = None;
+        self.rx_fetch_response = None;
     }
 }
 
 impl Drawer {
-    fn start_fetch_artworks_thread(&mut self, app: &mut App) -> Result<(), Errors> {
+    pub fn fetch_artworks(&mut self, app: &mut App) -> Result<()> {
         let contents = std::fs::read_to_string(&app.config.dirs.cached_movies_file)?;
         let movies_cached: Vec<_> = contents
             .split_ascii_whitespace()
             .map(|x| x.to_string())
             .collect();
+
+        self.fetch_artwork_popup_options.start_thread(app);
 
         for movie in &app.movies {
             // let movie_id = movie.tmdb_id;
@@ -114,7 +120,9 @@ impl Drawer {
                 let _ = self
                     .fetch_artwork_popup_options
                     .tx_fetch_request
-                    .send(movie_id);
+                    .as_mut()
+                    .unwrap()
+                    .send(Some(movie_id));
             } else {
                 self.fetch_artwork_popup_options.progress += 1;
             }
@@ -123,7 +131,7 @@ impl Drawer {
         Ok(())
     }
 
-    fn read_fetch_threads_responses(&mut self, app: &mut App) -> Result<(), Errors> {
+    fn read_threads_responses(&mut self, app: &mut App) -> Result<()> {
         let contents = std::fs::read_to_string(&app.config.dirs.cached_movies_file)?;
 
         let mut movies_cached: Vec<_> = contents
@@ -134,6 +142,8 @@ impl Drawer {
         for (id, fetch_result) in self
             .fetch_artwork_popup_options
             .rx_fetch_response
+            .as_mut()
+            .unwrap()
             .try_iter()
         {
             if let Err(error) = fetch_result {
@@ -161,21 +171,23 @@ impl Drawer {
         &mut self,
         frame: &mut Frame,
         app: &mut App,
-    ) -> Result<bool, Errors> {
-        let frame_area = frame.area();
-
+    ) -> Result<bool> {
         if !self.fetch_artwork_popup_options.started {
             self.fetch_artwork_popup_options.started = true;
 
-            self.start_fetch_artworks_thread(app)?;
+            self.fetch_artworks(app)?;
         }
 
-        self.read_fetch_threads_responses(app)?;
+        self.read_threads_responses(app)?;
+
+        let frame_area = frame.area();
 
         let progress = self.fetch_artwork_popup_options.progress;
         let num_movies = app.movies.len();
 
         if progress == num_movies as u32 {
+            self.fetch_artwork_popup_options.finish();
+
             return Ok(true);
         }
 
@@ -199,26 +211,12 @@ impl Drawer {
         frame.render_widget(&popup, popup_area);
 
         let layout = vertical![==1, ==1, ==3, ==3, ==1, ==1, ==1].split(popup.inner(popup_area));
-        // let layout = Layout::vertical([
-        //     Constraint::Length(1),
-        //     Constraint::Length(1),
-        //     Constraint::Length(3),
-        //     Constraint::Length(3),
-        //     Constraint::Length(1),
-        //     Constraint::Length(1),
-        //     Constraint::Length(1),
-        // ])
-        // .split(popup.inner(popup_area));
 
         let info_text = "Getting movie posters...";
         let [text_lay, throbber_lay] = horizontal![==(info_text.len() as u16), ==1]
             .flex(Flex::Center)
             .areas(layout[1]);
-        // let [text_lay, throbber_lay] = Layout::horizontal(vec![
-        //     Constraint::Length(info_text.len() as u16),
-        //     Constraint::Length(1),
-        // ])
-        // .flex(Flex::Center)
+
         frame.render_widget(info_text, text_lay);
 
         let throbber = throbber_widgets_tui::Throbber::default()
@@ -229,9 +227,7 @@ impl Drawer {
         let [progress_lay] = horizontal![==(layout[3].width - 6)]
             .flex(Flex::Center)
             .areas(layout[3]);
-        // let [progress_lay] = Layout::horizontal(vec![Constraint::Length(layout[3].width - 6)])
-        //     .flex(Flex::Center)
-        //     .areas(layout[3]);
+
         let progress_guage = Gauge::default()
             .ratio(progress as f64 / num_movies as f64)
             .gauge_style(

@@ -5,7 +5,7 @@
 //     Scope, TokenResponse, TokenUrl,
 // };
 use crate::{
-    app::{Config, Errors},
+    app::{Config, Errors, Result},
     config_trakt::TraktConfig,
 };
 use reqwest::{
@@ -90,7 +90,7 @@ pub struct IDs {
     tmdb: u32,
 }
 
-pub fn populate_tokens(config: &Config, trakt_config: &mut TraktConfig) -> Result<(), Errors> {
+pub fn populate_tokens(config: &Config, trakt_config: &mut TraktConfig) -> Result<()> {
     if !trakt_config.has_tokens() {
         debug!("No Trakt tokens found, fetching new ones...");
 
@@ -115,7 +115,7 @@ pub fn populate_tokens(config: &Config, trakt_config: &mut TraktConfig) -> Resul
 }
 
 // https://trakt.docs.apiary.io/#reference/authentication-oauth/authorize/authorize-application
-fn get_tokens(config: &Config, trakt_config: &mut TraktConfig) -> Result<(), Errors> {
+fn get_tokens(config: &Config, trakt_config: &mut TraktConfig) -> Result<()> {
     let client = reqwest::blocking::Client::new();
 
     // Step 1: ask the user for an authorization token
@@ -201,7 +201,7 @@ fn get_tokens(config: &Config, trakt_config: &mut TraktConfig) -> Result<(), Err
     Ok(())
 }
 
-fn refresh_tokens(trakt_config: &mut TraktConfig) -> Result<(), Errors> {
+fn refresh_tokens(trakt_config: &mut TraktConfig) -> Result<()> {
     let client = ClientBuilder::new().build()?;
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
@@ -250,7 +250,7 @@ fn refresh_tokens(trakt_config: &mut TraktConfig) -> Result<(), Errors> {
 pub fn get_movie_details(
     trakt_config: &TraktConfig,
     imdb_id: &str,
-) -> Result<TraktDetailsResponse, Errors> {
+) -> Result<TraktDetailsResponse> {
     let client = ClientBuilder::new().build()?;
 
     let mut headers = HeaderMap::new();
@@ -286,7 +286,7 @@ pub fn get_movie_poster_banner(
     trakt_config: &TraktConfig,
     id: String,
     add_placeholder: bool,
-) -> Result<bool, Errors> {
+) -> Result<bool> {
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
     headers.insert(USER_AGENT, "reqwest/0.12.8".parse().unwrap());
@@ -373,7 +373,7 @@ fn send_trakt_request(
     headers: &HeaderMap,
     body: Option<HashMap<&str, &str>>,
     query: Option<&[(&str, &str)]>,
-) -> Result<Response, Errors> {
+) -> Result<Response> {
     // let mut retry_attempts = 0;
     // let mut retry_delay = 1;
 

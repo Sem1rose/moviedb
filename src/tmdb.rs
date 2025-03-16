@@ -5,7 +5,7 @@
 //     Scope, TokenResponse, TokenUrl,
 // };
 use crate::{
-    app::{Config, Errors},
+    app::{Config, Errors, Result},
     config_tmdb::TMDBConfig,
 };
 use log::{debug, error, trace};
@@ -143,7 +143,7 @@ struct RequestSessionIDResponse {
 
 // const ALTERNATE_POSTER_FILE: String = String::from("placeholder.png");
 
-pub fn populate_tokens(config: &Config, tmdb_config: &mut TMDBConfig) -> Result<(), Errors> {
+pub fn populate_tokens(config: &Config, tmdb_config: &mut TMDBConfig) -> Result<()> {
     if !tmdb_config.has_session_id() {
         debug!("No TMDB session ID found, fetching a new one...");
 
@@ -154,7 +154,7 @@ pub fn populate_tokens(config: &Config, tmdb_config: &mut TMDBConfig) -> Result<
 }
 
 // https://developer.themoviedb.org/docs/authentication-user
-fn get_session_id(config: &Config, tmdb_config: &mut TMDBConfig) -> Result<(), Errors> {
+fn get_session_id(config: &Config, tmdb_config: &mut TMDBConfig) -> Result<()> {
     let client = ClientBuilder::new().build()?;
 
     let mut headers = HeaderMap::new();
@@ -281,7 +281,7 @@ fn get_session_id(config: &Config, tmdb_config: &mut TMDBConfig) -> Result<(), E
     Ok(())
 }
 
-pub fn find_movie(tmdb_config: &TMDBConfig, name: &str) -> Result<TMDBSearchResponse, Errors> {
+pub fn find_movie(tmdb_config: &TMDBConfig, name: &str) -> Result<TMDBSearchResponse> {
     let client = ClientBuilder::new().build()?;
     let mut headers = HeaderMap::new();
     headers.insert("accept", "application/json".parse().unwrap());
@@ -323,10 +323,7 @@ pub fn find_movie(tmdb_config: &TMDBConfig, name: &str) -> Result<TMDBSearchResp
     // )))
 }
 
-pub fn get_movie_details(
-    tmdb_config: &TMDBConfig,
-    tmdb_id: u32,
-) -> Result<TMDBDetailsResponse, Errors> {
+pub fn get_movie_details(tmdb_config: &TMDBConfig, tmdb_id: u32) -> Result<TMDBDetailsResponse> {
     let client = ClientBuilder::new().build()?;
 
     let mut headers = HeaderMap::new();
@@ -358,10 +355,7 @@ pub fn get_movie_details(
     Ok(details_response.json::<TMDBDetailsResponse>()?)
 }
 
-pub fn get_movie_images(
-    tmdb_config: &TMDBConfig,
-    tmdb_id: u32,
-) -> Result<TMDBMovieImagesResponse, Errors> {
+pub fn get_movie_images(tmdb_config: &TMDBConfig, tmdb_id: u32) -> Result<TMDBMovieImagesResponse> {
     let client = ClientBuilder::new().build()?;
 
     let mut headers = HeaderMap::new();
@@ -430,7 +424,7 @@ pub fn get_movie_poster_banner(
     tmdb_config: &TMDBConfig,
     id: u32,
     add_placeholder: bool,
-) -> Result<bool, Errors> {
+) -> Result<bool> {
     let client = ClientBuilder::new().build()?;
     let mut headers = HeaderMap::new();
 
@@ -527,7 +521,7 @@ fn send_tmdb_request(
     headers: &HeaderMap,
     body: Option<HashMap<&str, &str>>,
     query: Option<&[(&str, &str)]>,
-) -> Result<Response, Errors> {
+) -> Result<Response> {
     let mut request: RequestBuilder;
     if body.is_none() {
         request = client.get(url).headers(headers.clone());

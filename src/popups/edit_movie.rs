@@ -1,5 +1,5 @@
 use crate::{
-    app::{App, Errors},
+    app::{App, Errors, Result},
     draw::Drawer,
 };
 use ratatui::{layout::*, prelude::*, widgets::*, Frame};
@@ -23,11 +23,7 @@ impl EditMoviePopup {
 }
 
 impl Drawer {
-    pub(crate) fn draw_edit_movie_popup(
-        &mut self,
-        frame: &mut Frame,
-        app: &mut App,
-    ) -> Result<(), Errors> {
+    pub(crate) fn draw_edit_movie_popup(&mut self, frame: &mut Frame, app: &mut App) -> Result<()> {
         let frame_area = frame.area();
         let popup_area = self.center(frame_area, Constraint::Percentage(40), Constraint::Max(8));
 
@@ -169,7 +165,7 @@ impl Drawer {
                 frame.render_widget(Paragraph::new(" Ok ").right_aligned().on_red(), areas[4]);
             } else {
                 self.close_popups();
-                self.clear_images(false);
+                // self.clear_images(false);
             }
         }
 

@@ -1,9 +1,8 @@
 use crate::{
-    app::{App, Errors},
+    app::{App, Errors, Result},
     draw::Drawer,
 };
 use ratatui::{layout::*, prelude::*, widgets::*, Frame};
-use std::error::Error;
 use style::palette::tailwind;
 
 #[derive(Default)]
@@ -26,7 +25,7 @@ impl Drawer {
         &mut self,
         frame: &mut Frame,
         app: &mut App,
-    ) -> Result<(), Errors> {
+    ) -> Result<()> {
         let frame_area = frame.area();
         let popup_area = self.center(frame_area, Constraint::Percentage(40), Constraint::Max(7));
 
@@ -67,9 +66,8 @@ impl Drawer {
             frame.render_widget(
                 Paragraph::new(format!(
                     "Do you really want to remove {}?",
-                    app.movies[(self.main_screen_options.scroll_pos
-                        + self.main_screen_options.selected)
-                        as usize]
+                    app.movies
+                        [(self.main_screen_options.scroll_pos + self.main_screen_options.selected)]
                         .name
                 ))
                 .wrap(Wrap { trim: false }),
@@ -115,39 +113,54 @@ impl Drawer {
                 .on_red(),
                 button_areas[0],
             );
-        } else {
-            if !self.remove_movie_popup_options.finished {
-                self.remove_movie_popup_options.finished = true;
-                app.movies.remove(
-                    (self.main_screen_options.scroll_pos + self.main_screen_options.selected)
-                        as usize,
+        } else if !self.remove_movie_popup_options.finished {
+            self.remove_movie_popup_options.finished = true;
+            app.movies
+                .remove(self.main_screen_options.scroll_pos + self.main_screen_options.selected);
+
+            if app.save_movies().is_err() {
+                self.remove_movie_popup_options.errored = true;
+                let areas = Layout::vertical([Constraint::Length(1); 5]).split(horiz);
+                frame.render_widget(
+                    Paragraph::new("Couldn't remove movie!").red().centered(),
+                    areas[2],
                 );
-                if self.main_screen_options.selected + self.main_screen_options.scroll_pos
-                    >= app.movies.len() as u32
-                {
-                    if self.main_screen_options.scroll_pos > 0 {
-                        self.main_screen_options.scroll_pos -= 1;
-                    } else if self.main_screen_options.selected > 0 {
-                        self.main_screen_options.selected -= 1;
-                    }
-                }
-                self.fetch_artwork_popup_options.begin();
+                frame.render_widget(Paragraph::new(" Ok ").right_aligned().on_red(), areas[4]);
             }
 
-            if self.draw_fetch_artworks_popup(frame, app)? {
-                if app.save_movies().is_err() {
-                    self.remove_movie_popup_options.errored = true;
-                    let areas = Layout::vertical([Constraint::Length(1); 5]).split(horiz);
-                    frame.render_widget(
-                        Paragraph::new("Couldn't save new rating!").red().centered(),
-                        areas[2],
-                    );
-                    frame.render_widget(Paragraph::new(" Ok ").right_aligned().on_red(), areas[4]);
-                } else {
-                    self.close_popups();
-                    self.clear_images(false);
+            self.main_screen_options.clear_all_image();
+            if self.main_screen_options.current_movie_index() >= app.movies.len() {
+                if self.main_screen_options.scroll_pos > 0 {
+                    self.main_screen_options.scroll_pos -= 1;
+                } else if self.main_screen_options.selected > 0 {
+                    self.main_screen_options.selected -= 1;
                 }
             }
+
+            // if self.main_screen_options.selected == self.main_screen_options.num_visible_movies - 1
+            // {
+            //     self.main_screen_options.dec_movie_selection();
+            // }
+            // } else if
+            // self.main_screen_options.clear_all_image();
+
+            self.close_popups();
+            // self.fetch_artwork_popup_options.start_thread(&app);
+            // self.open_fetch_artworks_popup(app);
+
+            // if self.draw_fetch_artworks_popup(frame, app)? {
+            //     if app.save_movies().is_err() {
+            //         self.remove_movie_popup_options.errored = true;
+            //         let areas = Layout::vertical([Constraint::Length(1); 5]).split(horiz);
+            //         frame.render_widget(
+            //             Paragraph::new("Couldn't save new rating!").red().centered(),
+            //             areas[2],
+            //         );
+            //         frame.render_widget(Paragraph::new(" Ok ").right_aligned().on_red(), areas[4]);
+            //     } else {
+            //         // self.clear_images(false);
+            //     }
+            // }
         }
         Ok(())
     }

@@ -1,7 +1,7 @@
-use crate::app::{Config, Errors};
+use crate::app::{Config, Errors, Result};
 use cocoon::Cocoon;
 use log::{debug, error, info};
-use rand::{distributions::Alphanumeric, Rng};
+use rand::{distr::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
 use std::{
     error::Error,
@@ -43,9 +43,9 @@ impl TMDBConfig {
         }
     }
 
-    pub fn init(&mut self, config: &Config) -> Result<(), Errors> {
+    pub fn init(&mut self, config: &Config) -> Result<()> {
         if !config.dirs.encryption_key_file.is_file() {
-            let key: String = rand::thread_rng()
+            let key: String = rand::rng()
                 .sample_iter(&Alphanumeric)
                 .take(16)
                 .map(char::from)
@@ -77,7 +77,7 @@ impl TMDBConfig {
         self.tmdb_credentials = TMDBCredentials::new(access_token);
     }
 
-    fn read_creds(&mut self, config: &Config) -> Result<(), Errors> {
+    fn read_creds(&mut self, config: &Config) -> Result<()> {
         let key = fs::read(&config.dirs.encryption_key_file)?;
         let cocoon = Cocoon::new(&key);
 
@@ -97,7 +97,7 @@ impl TMDBConfig {
         Ok(())
     }
 
-    pub fn save_creds(&self, config: &Config) -> Result<(), Errors> {
+    pub fn save_creds(&self, config: &Config) -> Result<()> {
         let key = fs::read(&config.dirs.encryption_key_file)?;
         let mut cocoon = Cocoon::new(&key);
 

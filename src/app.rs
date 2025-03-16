@@ -7,14 +7,15 @@ use crate::{
     trakt::{self, TokenResponseError, TraktDetailsResponse},
 };
 use log::{debug, error};
-use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
+use ratatui::crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
 use serde::Deserialize;
 use std::{
-    error::Error,
     fs::{create_dir, read_to_string, rename, write},
     path::PathBuf,
     sync::mpsc::{self, Receiver, Sender},
 };
+
+pub type Result<T> = std::result::Result<T, Errors>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Errors {
@@ -35,6 +36,12 @@ pub enum Errors {
 
     #[error("cocoon encryption error: {0}")]
     Encryption(#[from] cocoon::Error),
+
+    #[error("image error: {0}")]
+    Image(#[from] image::error::ImageError),
+
+    #[error("ratatui_image error: {0}")]
+    EncodeImage(#[from] ratatui_image::errors::Errors),
 
     #[error("{0}")]
     Other(String),
@@ -96,7 +103,7 @@ impl Config {
         }
     }
 
-    pub fn init_dirs(&mut self) -> Result<(), Errors> {
+    pub fn init_dirs(&mut self) -> Result<()> {
         if !self.dirs.home.is_dir() {
             create_dir(&self.dirs.home)?;
         }
@@ -119,12 +126,6 @@ impl Config {
     }
 }
 
-pub enum AppEvent {
-    KeyEvent(KeyEvent),
-    // DrawImage(usize, Result<ResizeResponse, Errors>),
-    // LoadImage(u64, Result<StatefulProtocol, Errors>),
-}
-
 pub struct App {
     // pub single_shot: bool,
     pub should_quit: bool,
@@ -133,20 +134,19 @@ pub struct App {
     pub config: Config,
     pub tmdb_config: TMDBConfig,
     pub trakt_config: TraktConfig,
-
-    pub tx_main: Sender<AppEvent>,
-    pub rx_main: Receiver<AppEvent>,
+    // pub tx_main: Sender<Event>,
+    // pub rx_main: Receiver<Event>,
 }
 
 impl App {
-    pub fn new() -> Result<Self, Errors> {
+    pub fn new() -> Result<Self> {
         let mut config = Config::new();
         config.init_dirs()?;
 
         let tmdb_config = TMDBConfig::new();
         let trakt_config = TraktConfig::new();
 
-        let (tx_main, rx_main) = mpsc::channel();
+        // let (tx_main, rx_main) = mpsc::channel();
 
         Ok(Self {
             should_quit: false,
@@ -154,12 +154,12 @@ impl App {
             config,
             tmdb_config,
             trakt_config,
-            tx_main,
-            rx_main,
+            // tx_main,
+            // rx_main,
         })
     }
 
-    pub fn init(&mut self) -> Result<(), Errors> {
+    pub fn init(&mut self) -> Result<()> {
         self.tmdb_config.init(&self.config)?;
         tmdb::populate_tokens(&self.config, &mut self.tmdb_config)?;
         debug!("TMDB config init finished successfully.");
@@ -186,7 +186,7 @@ impl App {
         self.movies = _movies;
     }
 
-    pub fn fetch_movies(&mut self) -> Result<(), Errors> {
+    pub fn fetch_movies(&mut self) -> Result<()> {
         let file_path = &self.config.dirs.ratings_file;
 
         let file_contents = read_to_string(file_path).unwrap_or_else(|_| {
@@ -219,7 +219,7 @@ impl App {
         Ok(())
     }
 
-    pub fn save_movies(&self) -> Result<(), Errors> {
+    pub fn save_movies(&self) -> Result<()> {
         let string = serde_json::to_string_pretty(self.movies.as_slice()).unwrap();
 
         rename(
@@ -231,13 +231,9 @@ impl App {
         Ok(())
     }
 
-    pub fn handle_app_events(
-        &mut self,
-        event: AppEvent,
-        drawer: &mut Drawer,
-    ) -> Result<(), Errors> {
+    pub fn handle_app_events(&mut self, event: Event, drawer: &mut Drawer) -> Result<()> {
         match event {
-            AppEvent::KeyEvent(event) => {
+            Event::Key(event) => {
                 let kind = event.kind;
                 let code = event.code;
 
@@ -259,7 +255,7 @@ impl App {
                     KeyCode::Char('a') => {
                         if drawer.active_popup.is_none() {
                             drawer.open_add_movie_popup();
-                            drawer.clear_images = true;
+                            // drawer.clear_images = true;
                         } else if drawer.accepting_input {
                             drawer.handle_input(event);
                         }
@@ -267,7 +263,7 @@ impl App {
                     KeyCode::Char('e') => {
                         if drawer.active_popup.is_none() {
                             drawer.open_edit_movie_popup();
-                            drawer.clear_images = true;
+                            // drawer.clear_images = true;
                         } else if drawer.accepting_input {
                             drawer.handle_input(event);
                         }
@@ -275,15 +271,21 @@ impl App {
                     KeyCode::Char('d') => {
                         if drawer.active_popup.is_none() {
                             drawer.open_remove_movie_popup();
-                            drawer.clear_images = true;
+                            // drawer.clear_images = true;
                         } else if drawer.accepting_input {
                             drawer.handle_input(event);
                         }
                     }
+                    KeyCode::Char('f') => {
+                        drawer.main_screen_options.redraw_all_image(self);
+                    }
+                    KeyCode::Char('g') => {
+                        drawer.main_screen_options.clear_all_image();
+                    }
                     KeyCode::Delete => {
                         if drawer.active_popup.is_none() {
                             drawer.open_remove_movie_popup();
-                            drawer.clear_images = true;
+                            // drawer.clear_images = true;
                         } else if drawer.accepting_input {
                             drawer.handle_input(event);
                         }
@@ -291,7 +293,7 @@ impl App {
                     KeyCode::Esc => {
                         if drawer.active_popup.is_some() {
                             drawer.close_popups();
-                            drawer.clear_images(false);
+                            // drawer.clear_images(false);
                         } else {
                             self.should_quit = true;
                         }
@@ -320,7 +322,7 @@ impl App {
                         Some(Popups::AddMovie) => {
                             if *drawer.add_movie_popup_options.failed.lock().unwrap() {
                                 drawer.close_popups();
-                                drawer.clear_images(false);
+                                // drawer.clear_images(false);
                             } else if drawer.add_movie_popup_options.phase == 0
                                 && drawer.add_movie_popup_options.search_input.value() != ""
                             {
@@ -340,7 +342,7 @@ impl App {
                         Some(Popups::EditMovie) => {
                             if drawer.edit_movie_popup_options.errored {
                                 drawer.close_popups();
-                                drawer.clear_images(false);
+                                // drawer.clear_images(false);
                                 drawer.queue_update();
                             } else if !drawer.edit_movie_popup_options.got_user_rating
                                 && drawer.edit_movie_popup_options.user_rating_input.value() != ""
@@ -353,13 +355,13 @@ impl App {
                         Some(Popups::RemoveMovie) => {
                             if drawer.remove_movie_popup_options.errored {
                                 drawer.close_popups();
-                                drawer.clear_images(false);
+                                // drawer.clear_images(false);
                             } else if drawer.remove_movie_popup_options.selected == 1 {
                                 drawer.remove_movie_popup_options.confirmed = true;
                                 drawer.queue_update();
                             } else if drawer.remove_movie_popup_options.selected == 0 {
                                 drawer.close_popups();
-                                drawer.clear_images(false);
+                                // drawer.clear_images(false);
                             }
                         }
                         _ => {}
@@ -371,7 +373,9 @@ impl App {
                     }
                 }
             }
+            _ => (),
         }
+
         Ok(())
     }
 }

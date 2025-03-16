@@ -1,5 +1,5 @@
 use crate::{
-    app::{App, Errors},
+    app::{App, Errors, Result},
     popups::{
         add_movie::AddMoviePopup, edit_movie::EditMoviePopup, fetch_artworks::FetchArtworksPopup,
         remove_movie::RemoveMoviePopup, Popups,
@@ -25,10 +25,6 @@ use ratatui::{
 //     protocol::{Protocol, StatefulProtocol},
 //     Image, Resize, StatefulImage,
 // };
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
 use tui_input::backend::crossterm::EventHandler;
 
 #[derive(Clone, Copy, PartialEq, Default)]
@@ -39,14 +35,9 @@ pub enum CurrentScreen {
     TermSizeWarn,
 }
 
-// #[derive(Default)]
+#[derive(Default)]
 pub struct Drawer {
     pub(crate) throbber_state: throbber_widgets_tui::ThrobberState,
-
-    pub(crate) images_displayed: Vec<u32>,
-    pub(crate) movie_artworks_requested: Vec<(bool, u32)>,
-
-    pub(crate) movie_artwork: Arc<Mutex<HashMap<(u32, u32), String>>>,
 
     pub(crate) update: bool,
     pub(crate) accepting_input: bool,
@@ -61,48 +52,38 @@ pub struct Drawer {
     pub(crate) edit_movie_popup_options: EditMoviePopup,
     pub(crate) remove_movie_popup_options: RemoveMoviePopup,
     pub(crate) fetch_artwork_popup_options: FetchArtworksPopup,
-
-    pub(crate) backdrop_displayed: bool,
-    pub(crate) all_movies_displayed: bool,
-
-    pub(crate) clear_images: bool,
+    // pub(crate) clear_images: bool,
 }
 
 const MINTERMSIZE: [u32; 2] = [80, 22];
 impl Drawer {
-    pub fn new(app: &App) -> Self {
-        Self {
-            current_screen: CurrentScreen::InitScreen,
-            fetch_artwork_popup_options: FetchArtworksPopup::new(app),
+    // pub fn new(app: &App) -> Self {
+    //     Self {
+    //         current_screen: CurrentScreen::InitScreen,
+    //         fetch_artwork_popup_options: FetchArtworksPopup::new(app),
 
-            update: false,
-            accepting_input: false,
-            backdrop_displayed: false,
-            all_movies_displayed: false,
-            clear_images: false,
-            previous_screen: None,
-            active_popup: None,
-            images_displayed: vec![],
-            movie_artworks_requested: vec![],
+    //         update: false,
+    //         accepting_input: false,
+    //         // clear_images: false,
+    //         previous_screen: None,
+    //         active_popup: None,
 
-            throbber_state: Default::default(),
-            movie_artwork: Default::default(),
-            main_screen_options: Default::default(),
-            init_screen_options: Default::default(),
-            add_movie_popup_options: Default::default(),
-            edit_movie_popup_options: Default::default(),
-            remove_movie_popup_options: Default::default(),
-        }
-    }
-
+    //         throbber_state: Default::default(),
+    //         main_screen_options: Default::default(),
+    //         init_screen_options: Default::default(),
+    //         add_movie_popup_options: Default::default(),
+    //         edit_movie_popup_options: Default::default(),
+    //         remove_movie_popup_options: Default::default(),
+    //     }
+    // }
     pub fn inc_selection(&mut self, app: &App) {
         if CurrentScreen::MainScreen == self.current_screen {
-            if self.active_popup.is_none() && self.main_screen_options.movies_visible > 0 {
+            if self.active_popup.is_none() && self.main_screen_options.num_visible_movies > 0 {
                 if self
                     .main_screen_options
                     .inc_movie_selection(app.movies.len())
                 {
-                    self.clear_images(false);
+                    // self.clear_images(false);
                 }
             } else if !self.add_movie_popup_options.movie_selected {
                 self.add_movie_popup_options.inc_movie_selection();
@@ -115,7 +96,7 @@ impl Drawer {
         if CurrentScreen::MainScreen == self.current_screen {
             if self.active_popup.is_none() {
                 if self.main_screen_options.dec_movie_selection() {
-                    self.clear_images(false);
+                    // self.clear_images(false);
                 }
             } else if !self.add_movie_popup_options.movie_selected {
                 self.add_movie_popup_options.dec_movie_selection();
@@ -165,12 +146,7 @@ impl Drawer {
         self.update = true;
     }
 
-    pub fn render_app(
-        &mut self,
-        frame: &mut Frame,
-        app: &mut App,
-        frame_time: f64,
-    ) -> Result<(), Errors> {
+    pub fn render_app(&mut self, frame: &mut Frame, app: &mut App, frame_time: f64) -> Result<()> {
         self.check_term_size(frame);
 
         self.draw_current_screen(frame, app)?;
@@ -189,20 +165,21 @@ impl Drawer {
 
     pub fn tick(&mut self) {
         self.throbber_state.calc_next();
+        self.main_screen_options.inc_tickets_age();
     }
 
-    pub fn clear_images(&mut self, clear_cache: bool) {
-        self.clear_images = true;
-        self.images_displayed.clear();
-        self.backdrop_displayed = false;
+    // pub fn clear_images(&mut self, clear_cache: bool) {
+    //     self.clear_images = true;
+    //     self.main_screen_options.images_displayed.clear();
+    //     self.main_screen_options.backdrop_displayed = false;
 
-        if clear_cache {
-            self.movie_artwork.lock().unwrap().clear();
-            self.movie_artworks_requested.clear();
-        }
-    }
+    //     if clear_cache {
+    //         self.movie_artwork.lock().unwrap().clear();
+    //         self.movie_artworks_requested.clear();
+    //     }
+    // }
 
-    pub fn draw_current_screen(&mut self, frame: &mut Frame, app: &mut App) -> Result<(), Errors> {
+    pub fn draw_current_screen(&mut self, frame: &mut Frame, app: &mut App) -> Result<()> {
         match self.current_screen {
             CurrentScreen::InitScreen => {
                 self.render_init_screen(frame, app)?;
@@ -218,7 +195,7 @@ impl Drawer {
         Ok(())
     }
 
-    pub fn draw_popup(&mut self, frame: &mut Frame, app: &mut App) -> Result<(), Errors> {
+    pub fn draw_popup(&mut self, frame: &mut Frame, app: &mut App) -> Result<()> {
         match self.active_popup.unwrap() {
             Popups::FetchArtwork => {
                 self.draw_fetch_artworks_popup(frame, app)?;
@@ -240,12 +217,15 @@ impl Drawer {
 
     pub fn close_popups(&mut self) {
         self.active_popup = None;
+
+        self.fetch_artwork_popup_options.finish();
+
         self.accepting_input = false;
     }
 
-    pub fn open_fetch_artworks_popup(&mut self) {
+    pub fn open_fetch_artworks_popup(&mut self, app: &mut App) {
         self.active_popup = Some(Popups::FetchArtwork);
-        self.fetch_artwork_popup_options.begin();
+        self.fetch_artworks(app);
     }
 
     pub fn open_add_movie_popup(&mut self) {
@@ -292,7 +272,7 @@ impl Drawer {
         true
     }
 
-    fn render_term_size_warning(&mut self, frame: &mut Frame) -> Result<(), Errors> {
+    fn render_term_size_warning(&mut self, frame: &mut Frame) -> Result<()> {
         let frame_area = frame.area();
         let lines = vec![
             Line::from_iter([

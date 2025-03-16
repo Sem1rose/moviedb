@@ -1,12 +1,12 @@
 use crate::{
-    app::{Config, Errors, Movie},
+    app::{Config, Errors, Movie, Result},
     config_tmdb::TMDBConfig,
     config_trakt::TraktConfig,
     tmdb, trakt,
 };
 use std::fs;
 
-pub fn change_ratings() -> Result<(), Errors> {
+pub fn change_ratings() -> Result<()> {
     let mut config = Config::new();
     config.init_dirs()?;
 

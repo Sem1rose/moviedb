@@ -1,5 +1,5 @@
 use crate::{
-    app::{App, Errors, Movie},
+    app::{App, Errors, Movie, Result},
     draw::Drawer,
     tmdb::{self, TMDBDetailsResponse, TMDBSearchResponse},
     trakt::{self, TraktDetailsResponse},
@@ -66,11 +66,7 @@ impl AddMoviePopup {
 }
 
 impl Drawer {
-    pub(crate) fn draw_add_movie_popup(
-        &mut self,
-        frame: &mut Frame,
-        app: &mut App,
-    ) -> Result<(), Errors> {
+    pub(crate) fn draw_add_movie_popup(&mut self, frame: &mut Frame, app: &mut App) -> Result<()> {
         let frame_area = frame.area();
         let popup_area = self.center(frame_area, Constraint::Percentage(40), Constraint::Max(7));
 
@@ -477,7 +473,10 @@ impl Drawer {
                         Movie::from(tmdb_movie_details, self.add_movie_popup_options.user_rating)
                             .add_trakt_details(trakt_movie_details),
                     );
-                    self.fetch_artwork_popup_options.begin();
+                    // self.fetch_artwork_popup_options.start_thread(&app);
+                    self.open_fetch_artworks_popup(app);
+
+                    self.main_screen_options.clear_all_image();
                 }
 
                 if self.draw_fetch_artworks_popup(frame, app)? {
@@ -494,12 +493,13 @@ impl Drawer {
                         );
                     } else {
                         self.close_popups();
-                        self.clear_images(false);
+                        // self.clear_images(false);
                     }
 
-                    self.main_screen_options.selected = self.main_screen_options.movies_visible - 1;
+                    self.main_screen_options.selected =
+                        self.main_screen_options.num_visible_movies - 1;
                     self.main_screen_options.scroll_pos =
-                        app.movies.len() as u32 - self.main_screen_options.selected - 1;
+                        app.movies.len() - self.main_screen_options.selected - 1;
                 }
             }
         }

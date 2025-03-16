@@ -1,5 +1,5 @@
 use crate::{
-    app::{App, Errors},
+    app::{App, Errors, Result},
     draw::Drawer,
 };
 use ratatui::{prelude::*, widgets::*, Frame};
@@ -19,14 +19,14 @@ pub struct InitScreen {
 }
 
 impl Drawer {
-    pub fn render_init_screen(&mut self, frame: &mut Frame, app: &mut App) -> Result<(), Errors> {
+    pub fn render_init_screen(&mut self, frame: &mut Frame, app: &mut App) -> Result<()> {
         let frame_area = frame.area();
         frame.render_widget(Block::new().bg(tailwind::SLATE.c900), frame_area);
 
         match self.init_screen_options.init_step {
             InitSteps::FetchArtwork => {
                 if !self.init_screen_options.started_step {
-                    self.open_fetch_artworks_popup();
+                    self.open_fetch_artworks_popup(app);
 
                     self.init_screen_options.started_step = true;
                 }
@@ -50,7 +50,9 @@ impl Drawer {
     }
 
     fn handle_init_screen_fetch_artworks(&mut self, app: &mut App) {
-        if self.fetch_artwork_popup_options.progress == app.movies.len() as u32 {
+        // if self.fetch_artwork_popup_options.progress == app.movies.len() as u32 {
+        if !self.fetch_artwork_popup_options.started {
+            self.fetch_artwork_popup_options.finish();
             self.init_screen_advance_step();
         }
     }

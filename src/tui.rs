@@ -1,8 +1,7 @@
 use crate::{
-    app::{App, AppEvent, Errors},
+    app::{App, Errors, Result},
     draw::Drawer,
 };
-use color_eyre::Result;
 use ratatui::crossterm::{
     execute,
     terminal::{enable_raw_mode, EnterAlternateScreen},
@@ -14,7 +13,6 @@ use ratatui::{
 };
 use std::{
     io::{stdout, Stdout},
-    sync::mpsc::{self},
     thread,
     time::{Duration, Instant},
 };
@@ -26,22 +24,23 @@ pub struct Tui {
 }
 
 impl Tui {
-    pub fn new() -> Result<Self, Errors> {
+    pub fn new() -> Result<Self> {
         let terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
         // let terminal = ratatui::init();
 
         let app = App::new()?;
 
         Ok(Self {
+            drawer: Drawer::default(),
             terminal,
-            drawer: Drawer::new(&app),
             app,
         })
     }
 
-    pub fn init(&mut self) -> Result<(), Errors> {
+    pub fn init(&mut self) -> Result<()> {
         self.app.init()?;
-        self.drawer = Drawer::new(&self.app);
+        // self.drawer.fetch_artwork_popup_options =
+        //     crate::popups::fetch_artworks::FetchArtworksPopup::new(&self.app);
 
         self.set_panic_hook();
         enable_raw_mode()?;
@@ -52,10 +51,9 @@ impl Tui {
         Ok(())
     }
 
-    pub fn run(&mut self) -> Result<(), Errors> {
-        self.init_threads();
-
-        const FRAME_RATE: f32 = 120.0;
+    pub fn run(&mut self) -> Result<()> {
+        // self.init_threads();
+        const FRAME_RATE: f32 = 60.0;
         const TICK_RATE: f32 = 10.0;
 
         let frame_time = Duration::from_secs_f32(1.0 / FRAME_RATE);
@@ -66,10 +64,10 @@ impl Tui {
         let mut last_frame_time = Instant::now();
         loop {
             // TODO remove this piece of shit
-            if self.drawer.clear_images {
-                self.terminal.clear()?;
-                self.drawer.clear_images = false;
-            }
+            // if self.drawer.clear_images {
+            //     self.terminal.clear()?;
+            //     self.drawer.clear_images = false;
+            // }
 
             let elapsed = last_frame_time.elapsed().as_secs_f64();
             last_frame_time = Instant::now();
@@ -79,8 +77,14 @@ impl Tui {
                 .checked_sub(last_frame.elapsed())
                 .unwrap_or_else(|| Duration::from_secs(0));
 
-            if let Ok(event) = self.app.rx_main.recv_timeout(timeout) {
-                self.app.handle_app_events(event, &mut self.drawer)?;
+            // if let Ok(event) = self.app.rx_main.recv_timeout(timeout) {
+            //     self.app.handle_app_events(event, &mut self.drawer)?;
+            // }
+            if ratatui::crossterm::event::poll(timeout)? {
+                if let Ok(event) = event::read() {
+                    self.app.handle_app_events(event, &mut self.drawer)?;
+                    // tx_main_events.send(event).unwrap();
+                }
             }
 
             if last_frame.elapsed() >= frame_time {
@@ -94,29 +98,26 @@ impl Tui {
                 }
             }
 
-            if self.app.should_quit
-                && self.drawer.fetch_artwork_popup_options.progress as usize
-                    == self.app.movies.len()
-            {
+            if self.app.should_quit && !self.drawer.fetch_artwork_popup_options.started {
                 return Ok(());
             }
         }
     }
 
-    fn init_threads(&mut self) {
-        let tx_main_events = self.app.tx_main.clone();
-        thread::spawn(move || -> Result<(), std::io::Error> {
-            loop {
-                if ratatui::crossterm::event::poll(Duration::from_millis(1000))? {
-                    if let Event::Key(key) = event::read()? {
-                        tx_main_events.send(AppEvent::KeyEvent(key)).unwrap();
-                    }
-                }
-            }
-        });
-    }
+    // fn init_threads(&mut self) {
+    //     let tx_main_events = self.app.tx_main.clone();
+    //     thread::spawn(move || -> Result<(), std::io::Error> {
+    //         loop {
+    //             if ratatui::crossterm::event::poll(Duration::from_millis(1000))? {
+    //                 if let Ok(event) = event::read() {
+    //                     tx_main_events.send(event).unwrap();
+    //                 }
+    //             }
+    //         }
+    //     });
+    // }
 
-    pub fn exit() -> Result<(), Errors> {
+    pub fn exit() -> Result<()> {
         if let Err(err) = ratatui::try_restore() {
             eprintln!(
                 "failed to restore terminal. Run `reset` or restart your terminal to recover: {}",
@@ -138,11 +139,13 @@ impl Tui {
     }
 
     // pub fn draw(&mut self) -> Result<CompletedFrame, std::io::Error> {
-    pub fn draw(&mut self, frame_time: f64) -> Result<CompletedFrame, std::io::Error> {
-        self.terminal.draw(|frame| {
-            self.drawer
-                .render_app(frame, &mut self.app, frame_time)
-                .unwrap()
-        })
+    pub fn draw(&mut self, frame_time: f64) -> Result<CompletedFrame> {
+        self.terminal
+            .draw(|frame| {
+                self.drawer
+                    .render_app(frame, &mut self.app, frame_time)
+                    .expect("error rendering app.")
+            })
+            .map_err(|err| Errors::Io(err))
     }
 }
