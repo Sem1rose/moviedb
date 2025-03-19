@@ -34,6 +34,7 @@ impl FetchArtworksPopup {
         let tmdb_conf = app.tmdb_config.clone();
         let trakt_conf = app.trakt_config.clone();
 
+        // TODO: use a threadpool instead
         thread::spawn(move || {
             for fetch_request in rx_fetch_request.iter() {
                 if fetch_request.is_none() {
@@ -45,44 +46,44 @@ impl FetchArtworksPopup {
 
                 let conf_owned = conf.clone();
                 let tmdb_conf_owned = tmdb_conf.clone();
-                let trakt_conf_owned = trakt_conf.clone();
+                // let trakt_conf_owned = trakt_conf.clone();
                 thread::spawn(move || {
-                    let result = trakt::get_movie_poster_banner(
+                    // let result = trakt::get_movie_poster_banner(
+                    //     &conf_owned,
+                    //     &trakt_conf_owned,
+                    //     request.1.clone(),
+                    //     false,
+                    // );
+
+                    // if let Ok(false) = result {
+                    let result = tmdb::get_movie_poster_banner(
                         &conf_owned,
-                        &trakt_conf_owned,
-                        request.1.clone(),
-                        false,
+                        &tmdb_conf_owned,
+                        request.0,
+                        true,
                     );
 
-                    if let Ok(false) = result {
-                        let result = tmdb::get_movie_poster_banner(
-                            &conf_owned,
-                            &tmdb_conf_owned,
-                            request.0,
-                            true,
-                        );
-
-                        if let Err(error) = result {
-                            let _ = tx_response.send((request, Err(error)));
-                        } else {
-                            let _ = tx_response.send((request, Ok(())));
-                        }
-                    } else if result.is_err() {
-                        let result = tmdb::get_movie_poster_banner(
-                            &conf_owned,
-                            &tmdb_conf_owned,
-                            request.0,
-                            true,
-                        );
-
-                        if let Err(error) = result {
-                            let _ = tx_response.send((request, Err(error)));
-                        } else {
-                            let _ = tx_response.send((request, Ok(())));
-                        }
+                    if let Err(error) = result {
+                        let _ = tx_response.send((request, Err(error)));
                     } else {
                         let _ = tx_response.send((request, Ok(())));
                     }
+                    // } else if result.is_err() {
+                    //     let result = tmdb::get_movie_poster_banner(
+                    //         &conf_owned,
+                    //         &tmdb_conf_owned,
+                    //         request.0,
+                    //         true,
+                    //     );
+
+                    //     if let Err(error) = result {
+                    //         let _ = tx_response.send((request, Err(error)));
+                    //     } else {
+                    //         let _ = tx_response.send((request, Ok(())));
+                    //     }
+                    // } else {
+                    //     let _ = tx_response.send((request, Ok(())));
+                    // }
                 });
             }
         });

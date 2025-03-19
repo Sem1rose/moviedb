@@ -4,13 +4,19 @@ use crate::{
     tmdb::{self, TMDBDetailsResponse, TMDBSearchResponse},
     trakt::{self, TraktDetailsResponse},
 };
-use ratatui::{layout::*, prelude::*, widgets::*, Frame};
+use ratatui::{
+    crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind},
+    layout::*,
+    prelude::*,
+    widgets::*,
+    Frame,
+};
 use std::{
     sync::{Arc, Mutex},
     thread,
 };
 use style::palette::tailwind;
-use tui_input::Input;
+use tui_input::{backend::crossterm::EventHandler, Input};
 
 #[derive(Default)]
 pub struct AddMoviePopup {
@@ -40,6 +46,52 @@ impl AddMoviePopup {
         *self = Self::default();
     }
 
+    // pub fn handle_key_events(&mut self, drawer: &mut Drawer, event: KeyEvent) -> Result<()> {
+    //     if drawer.accepting_input {
+    //         self.search_input.handle_event(&Event::Key(event));
+    //     } else {
+    //         let kind = event.kind;
+    //         let code = event.code;
+
+    //         if kind != KeyEventKind::Press {
+    //             return Ok(());
+    //         }
+
+    //         match code {
+    //             KeyCode::Up => {
+    //                 if !self.movie_selected {
+    //                     self.dec_movie_selection();
+    //                 }
+    //             }
+    //             KeyCode::Down => {
+    //                 if !self.movie_selected {
+    //                     self.inc_movie_selection();
+    //                 }
+    //             }
+    //             KeyCode::Enter => {
+    //                 if *self.failed.lock().unwrap() {
+    //                     drawer.close_popups();
+    //                 } else if self.phase == 0 && self.search_input.value() != "" {
+    //                     self.finished_search_input = true;
+    //                 } else if self.phase == 2 {
+    //                     self.movie_selected = true;
+    //                 } else if self.phase == 3
+    //                     && self.search_input.value() != ""
+    //                     && self.user_rating_valid
+    //                 {
+    //                     self.got_user_rating = true;
+    //                 }
+    //             }
+    //             KeyCode::Esc => {
+    //                 drawer.close_popups();
+    //             }
+    //             _ => (),
+    //         }
+    //     }
+
+    //     Ok(())
+    // }
+
     pub fn inc_movie_selection(&mut self) {
         if self.search_result.lock().unwrap().results.is_empty() {
             return;
@@ -65,6 +117,54 @@ impl AddMoviePopup {
 }
 
 impl Drawer {
+    pub fn add_movie_popup_handle_key_events(&mut self, event: KeyEvent) -> Result<()> {
+        let kind = event.kind;
+        let code = event.code;
+
+        if kind != KeyEventKind::Press {
+            return Ok(());
+        }
+
+        match code {
+            KeyCode::Up => {
+                if !self.add_movie_popup_options.movie_selected {
+                    self.add_movie_popup_options.dec_movie_selection();
+                }
+            }
+            KeyCode::Down => {
+                if !self.add_movie_popup_options.movie_selected {
+                    self.add_movie_popup_options.inc_movie_selection();
+                }
+            }
+            KeyCode::Enter => {
+                if *self.add_movie_popup_options.failed.lock().unwrap() {
+                    self.close_popups();
+                } else if self.add_movie_popup_options.phase == 0
+                    && self.add_movie_popup_options.search_input.value() != ""
+                {
+                    self.add_movie_popup_options.finished_search_input = true;
+                } else if self.add_movie_popup_options.phase == 2 {
+                    self.add_movie_popup_options.movie_selected = true;
+                } else if self.add_movie_popup_options.phase == 3
+                    && self.add_movie_popup_options.search_input.value() != ""
+                    && self.add_movie_popup_options.user_rating_valid
+                {
+                    self.add_movie_popup_options.got_user_rating = true;
+                }
+            }
+            KeyCode::Esc => {
+                self.close_popups();
+            }
+            _ => {
+                self.add_movie_popup_options
+                    .search_input
+                    .handle_event(&Event::Key(event));
+            }
+        }
+
+        Ok(())
+    }
+
     pub(crate) fn draw_add_movie_popup(&mut self, frame: &mut Frame, app: &mut App) -> Result<()> {
         let frame_area = frame.area();
         let popup_area = self.center(frame_area, Constraint::Percentage(40), Constraint::Max(7));
@@ -153,7 +253,6 @@ impl Drawer {
             } else {
                 self.add_movie_popup_options.phase += 1;
                 self.accepting_input = false;
-                self.queue_update();
             }
         } else if self.add_movie_popup_options.phase == 1 {
             if !self.add_movie_popup_options.requested_search {
@@ -206,7 +305,6 @@ impl Drawer {
                 frame.render_widget(Paragraph::new(" Ok ").right_aligned().on_red(), areas[4]);
             } else {
                 self.add_movie_popup_options.phase += 1;
-                self.queue_update();
             }
         } else if self.add_movie_popup_options.phase == 2 {
             let results = &self
@@ -261,7 +359,6 @@ impl Drawer {
                 self.accepting_input = true;
                 self.add_movie_popup_options.finished_search_input = false;
                 self.add_movie_popup_options.search_input = "".into();
-                self.update = true;
             }
         } else if self.add_movie_popup_options.phase == 3 {
             if !self.add_movie_popup_options.got_user_rating {
@@ -349,7 +446,6 @@ impl Drawer {
                 .unwrap();
                 self.add_movie_popup_options.phase += 1;
                 self.accepting_input = false;
-                self.queue_update();
             }
         } else if self.add_movie_popup_options.phase == 4 {
             if !self.add_movie_popup_options.requested_movie_details {
@@ -472,10 +568,8 @@ impl Drawer {
                         Movie::from(tmdb_movie_details, self.add_movie_popup_options.user_rating)
                             .add_trakt_details(trakt_movie_details),
                     );
-                    // self.fetch_artwork_popup_options.start_thread(&app);
-                    self.open_fetch_artworks_popup(app);
 
-                    self.main_screen_options.clear_all_image();
+                    self.open_fetch_artworks_popup(app)?;
                 }
 
                 if self.draw_fetch_artworks_popup(frame, app)? {

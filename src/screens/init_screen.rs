@@ -26,7 +26,7 @@ impl Drawer {
         match self.init_screen_options.init_step {
             InitSteps::FetchArtwork => {
                 if !self.init_screen_options.started_step {
-                    self.open_fetch_artworks_popup(app);
+                    self.open_fetch_artworks_popup(app)?;
 
                     self.init_screen_options.started_step = true;
                 }

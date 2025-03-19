@@ -1,28 +1,37 @@
 use crate::{
-    app::{App, Rating},
-    draw::{CurrentScreen, Drawer},
+    app::{App, Errors, Rating, Result},
+    draw::Drawer,
     helpers::ellipsize_string,
+    screens::Screens,
 };
 use log::error;
-use rand::prelude::*;
 use ratatui::style::{Color, Style, Stylize};
-use ratatui::{layout::*, prelude::*, widgets::*, Frame};
+use ratatui::{
+    crossterm::event::{KeyCode, KeyEvent, KeyEventKind},
+    layout::*,
+    prelude::*,
+    widgets::*,
+    Frame,
+};
 use ratatui_image::{
-    errors::Errors,
     picker::Picker,
     protocol::StatefulProtocol,
     thread::{ResizeRequest, ResizeResponse, ThreadImage, ThreadProtocol},
 };
 use ratatui_macros::{horizontal, line, text, vertical};
 use std::{
-    sync::mpsc::{self, Sender},
+    collections::HashMap,
+    sync::mpsc::{self, Receiver, Sender},
     thread,
 };
 use style::palette::tailwind;
+use threadpool::ThreadPool;
+
+type MovieID = (usize, bool);
 
 pub enum ImageEvents {
-    DrawImage(usize, Result<ResizeResponse, Errors>),
-    LoadImage(u64, Result<StatefulProtocol, Errors>),
+    DrawImage(MovieID, Result<ResizeResponse>),
+    LoadImage(MovieID, Result<StatefulProtocol>),
 }
 
 pub struct MainScreen {
@@ -30,18 +39,12 @@ pub struct MainScreen {
     pub scroll_pos: usize,
     pub selected: usize,
 
-    pub rng: ThreadRng,
+    pub hashed_images: HashMap<MovieID, ThreadProtocol>,
 
-    //                                   movie_id  fanart   cache
-    // pub loaded_images_cache: HashMap<(usize, bool), StatefulProtocol>,
-    pub images: Vec<(usize, ThreadProtocol)>,
-    pub image_drawn: Vec<bool>,
-    pub tickets: Vec<Option<u64>>,
-    pub tickets_age: Vec<usize>,
-
-    pub rx_main: mpsc::Receiver<ImageEvents>,
-    pub tx_worker_collector: mpsc::Sender<mpsc::Receiver<ResizeRequest>>,
-    pub tx_load_decode: mpsc::Sender<(u64, String)>,
+    pub rx_main: Receiver<ImageEvents>,
+    pub tx_worker_collector: Sender<(MovieID, Receiver<ResizeRequest>)>,
+    pub tx_load_decode: Sender<(MovieID, String)>,
+    // pub hasher_pool: ThreadPool,
 }
 
 impl Default for MainScreen {
@@ -50,220 +53,32 @@ impl Default for MainScreen {
 
         let (tx_load_decode, tx_worker_collector) = MainScreen::start_workers(tx_main);
 
-        let (tx_fanart_worker, rx_fanart_worker) = mpsc::channel::<ResizeRequest>();
-        let _ = tx_worker_collector.send(rx_fanart_worker);
-
         Self {
             scroll_pos: 0,
             selected: 0,
             num_visible_movies: 0,
 
-            rng: rand::rng(),
-
-            // first element is reserved for the fanart image
-            images: vec![(0, ThreadProtocol::new(tx_fanart_worker, None))],
-            image_drawn: vec![false],
-            tickets: vec![None],
-            tickets_age: vec![0],
+            hashed_images: HashMap::new(),
 
             rx_main,
             tx_load_decode,
             tx_worker_collector,
+            // hasher_pool: ThreadPool::with_name("poster-hashing".into(), 2),
         }
     }
 }
 
 impl MainScreen {
-    fn start_workers(
-        tx_main: Sender<ImageEvents>,
-    ) -> (Sender<(u64, String)>, Sender<mpsc::Receiver<ResizeRequest>>) {
-        let (tx_load_decode, rx_load_decode) = mpsc::channel::<(u64, String)>();
-        let (tx_worker_collector, rx_worker_collector) = mpsc::channel();
-
-        let tx_main_sender = tx_main.clone();
-        let picker =
-            Picker::from_query_stdio().expect("error querying graphics capabilities: {error}");
-        thread::spawn(move || {
-            for (ticket, path) in rx_load_decode.iter() {
-                let tx_main = tx_main_sender.clone();
-                thread::spawn(move || {
-                    let open_result = image::ImageReader::open(path);
-
-                    if let Err(error) = open_result {
-                        let _ =
-                            tx_main.send(ImageEvents::LoadImage(ticket, Err(Errors::Io(error))));
-                    } else if let Ok(reader) = open_result {
-                        let decode_result = reader.decode();
-
-                        if let Err(error) = decode_result {
-                            let _ = tx_main
-                                .send(ImageEvents::LoadImage(ticket, Err(Errors::Image(error))));
-                        } else if let Ok(decoded) = decode_result {
-                            let _ = tx_main.send(ImageEvents::LoadImage(
-                                ticket,
-                                Ok(picker.new_resize_protocol(decoded)),
-                            ));
-                        }
-                    }
-                });
-            }
-        });
-
-        let tx_main_sender = tx_main.clone();
-        let mut rx_workers: Vec<std::sync::mpsc::Receiver<ResizeRequest>> = vec![]; // index 0 is always the fanart image
-        thread::spawn(move || loop {
-            for rx_worker in rx_worker_collector.try_iter() {
-                rx_workers.push(rx_worker);
-            }
-
-            let mut dropped = vec![];
-            for (id, rx_worker) in rx_workers.iter_mut().enumerate() {
-                let message = rx_worker.try_recv();
-
-                if let Ok(request) = message {
-                    tx_main_sender
-                        .send(ImageEvents::DrawImage(id, request.resize_encode()))
-                        .unwrap();
-                } else if let Err(error) = message {
-                    if error == std::sync::mpsc::TryRecvError::Disconnected {
-                        dropped.push(id);
-                    }
-                }
-            }
-
-            for x in dropped {
-                if rx_workers.len() > x {
-                    rx_workers.remove(x);
-                }
-            }
-        });
-
-        (tx_load_decode, tx_worker_collector)
-    }
-
-    pub fn current_movie_index(&self) -> usize {
-        self.scroll_pos + self.selected
-    }
-
-    pub fn read_channels(&mut self) {
-        for image_event in self.rx_main.try_iter() {
-            match image_event {
-                ImageEvents::LoadImage(ticket, result) => {
-                    if let Ok(protocol) = result {
-                        let item = self
-                            .tickets
-                            .iter()
-                            .position(|&x| x.is_some() && x.unwrap() == ticket);
-
-                        if item.is_some() {
-                            self.images[item.unwrap()].1.replace_protocol(protocol);
-                            self.image_drawn[item.unwrap()] = true;
-                            self.tickets[item.unwrap()] = None;
-                        }
-                    } else if let Err(error) = result {
-                        error!("Error while loading: {}", error);
-                    }
-                }
-                ImageEvents::DrawImage(id, result) => {
-                    if let Ok(response) = result {
-                        let item = self.images.iter().position(|&(x, _)| x == id);
-
-                        if let Some(i) = item {
-                            self.images[i].1.update_resized_protocol(response);
-                        }
-                    } else if let Err(error) = result {
-                        println!("Error while drawing: {}", error);
-                    }
-                }
-            }
-        }
-    }
-
-    fn push_poster_image(&mut self) {
-        let (tx_worker, rx_worker) = mpsc::channel::<ResizeRequest>();
-
-        let new_poster_image = ThreadProtocol::new(tx_worker, None);
-        let _ = self.tx_worker_collector.send(rx_worker);
-
-        self.images.push((self.images.len(), new_poster_image));
-        self.image_drawn.push(false);
-        self.tickets.push(None);
-        self.tickets_age.push(0);
-    }
-
-    fn pop_poster_image(&mut self) {
-        let item = self
-            .images
-            .iter()
-            .position(|&(i, _)| i == self.images.len() - 1);
-
-        if let Some(id) = item {
-            self.images.remove(id);
-            self.image_drawn.remove(id);
-            self.tickets.remove(id);
-            self.tickets_age.remove(id);
-        } else {
-            let _ = self.images.pop();
-            let _ = self.image_drawn.pop();
-            let _ = self.tickets.pop();
-            let _ = self.tickets_age.pop();
-        }
-    }
-
-    pub fn set_num_movies_visible(&mut self, num_movies_visible: usize) {
-        if self.num_visible_movies == 0 {
-            self.num_visible_movies = num_movies_visible;
-
-            for _ in 0..num_movies_visible {
-                self.push_poster_image();
-            }
-        } else if self.num_visible_movies != num_movies_visible {
-            if self.num_visible_movies > num_movies_visible {
-                for _ in 0..(self.num_visible_movies - num_movies_visible) {
-                    self.pop_poster_image();
-                }
-            } else {
-                for _ in 0..(num_movies_visible - self.num_visible_movies) {
-                    self.push_poster_image();
-                }
-            }
-
-            // don't know why i did all of this
-            self.num_visible_movies = num_movies_visible;
-            if self.selected >= num_movies_visible {
-                self.selected = num_movies_visible - 1;
-            }
-
-            self.scroll_pos = self.current_movie_index() - self.selected;
-
-            self.clear_all_image();
-            self.clear_tickets();
-        }
-    }
-
     pub fn inc_movie_selection(&mut self, num_movies: usize) -> bool {
         if num_movies == 0 {
             return false;
         }
 
         if self.current_movie_index() < num_movies - 1 {
-            self.clear_image(0, true);
-
             if self.selected < self.num_visible_movies - 1 {
                 self.selected += 1;
             } else {
                 self.scroll_pos += 1;
-
-                if self.images.len() > 1 {
-                    self.images[1..].rotate_left(1);
-                    self.image_drawn[1..].rotate_left(1);
-                    self.tickets[1..].rotate_left(1);
-                    self.tickets_age[1..].rotate_left(1);
-
-                    self.clear_image(self.num_visible_movies - 1, false);
-                } else {
-                    self.clear_all_image();
-                }
             }
 
             return true;
@@ -276,70 +91,169 @@ impl MainScreen {
         if self.selected > 0 {
             self.selected -= 1;
 
-            self.clear_image(0, true);
-
             return true;
         } else if self.scroll_pos > 0 {
             self.scroll_pos -= 1;
-
-            if self.images.len() > 1 {
-                self.images[1..].rotate_right(1);
-                self.image_drawn[1..].rotate_right(1);
-                self.tickets[1..].rotate_right(1);
-                self.tickets_age[1..].rotate_right(1);
-
-                self.clear_image(0, false);
-                self.clear_image(0, true);
-            } else {
-                self.clear_all_image();
-            }
 
             return true;
         }
 
         false
     }
+}
 
-    pub fn clear_tickets(&mut self) {
-        for i in 0..self.tickets.len() {
-            self.tickets[i] = None;
-        }
+impl MainScreen {
+    pub fn current_movie_index(&self) -> usize {
+        self.scroll_pos + self.selected
     }
 
-    pub fn inc_tickets_age(&mut self) {
-        // for i in 0..self.tickets_age.len() {
-        //     if self.tickets[i].is_some() {
-        //         self.tickets_age[i] += 1;
-        //     } else {
-        //         self.tickets_age[i] = 0;
-        //     }
+    fn start_workers(
+        tx_main: Sender<ImageEvents>,
+    ) -> (
+        Sender<(MovieID, String)>,
+        Sender<(MovieID, Receiver<ResizeRequest>)>,
+    ) {
+        let (tx_load_decode, rx_load_decode) = mpsc::channel::<_>();
+        let (tx_worker_collector, rx_worker_collector) = mpsc::channel();
 
-        //     if self.tickets_age[i] > 20 {
-        //         self.tickets_age[i] = 0;
-        //         self.clear_image(i, false);
-        //     }
-        // }
+        let tx_main_sender = tx_main.clone();
+        let mut rx_workers: Vec<(MovieID, Receiver<ResizeRequest>)> = vec![]; // index 0 is always the fanart image
+        thread::spawn(move || loop {
+            for rx_worker in rx_worker_collector.try_iter() {
+                rx_workers.push(rx_worker);
+            }
+
+            let mut dropped = vec![];
+            for (i, (movie_index, rx_worker)) in rx_workers.iter_mut().enumerate() {
+                let message = rx_worker.try_recv();
+
+                if let Ok(request) = message {
+                    let _ = tx_main_sender.send(ImageEvents::DrawImage(
+                        *movie_index,
+                        request
+                            .resize_encode()
+                            .map_or_else(|error| Result::Err(error.into()), Result::Ok),
+                    ));
+                } else if let Err(std::sync::mpsc::TryRecvError::Disconnected) = message {
+                    dropped.push(i);
+                }
+            }
+
+            for x in dropped {
+                if rx_workers.len() > x {
+                    rx_workers.remove(x);
+                }
+            }
+        });
+
+        let tx_main_sender = tx_main.clone();
+        let picker =
+            Picker::from_query_stdio().expect("error querying graphics capabilities: {error}");
+        thread::spawn(move || {
+            let pool = ThreadPool::with_name("image load decode".into(), 16);
+
+            for (movie_id, path) in rx_load_decode.iter() {
+                let tx_main = tx_main_sender.clone();
+
+                pool.execute(move || {
+                    let open_result = image::ImageReader::open(path);
+
+                    if let Err(error) = open_result {
+                        let _ =
+                            tx_main.send(ImageEvents::LoadImage(movie_id, Err(Errors::Io(error))));
+                    } else if let Ok(reader) = open_result {
+                        let decode_result = reader.decode();
+
+                        if let Err(error) = decode_result {
+                            let _ = tx_main
+                                .send(ImageEvents::LoadImage(movie_id, Err(Errors::Image(error))));
+                        } else if let Ok(decoded) = decode_result {
+                            let _ = tx_main.send(ImageEvents::LoadImage(
+                                movie_id,
+                                Ok(picker.new_resize_protocol(decoded)),
+                            ));
+                        }
+                    }
+                });
+            }
+        });
+
+        (tx_load_decode, tx_worker_collector)
     }
 
-    pub fn redraw_all_image(&mut self, app: &App) {
-        for i in 0..self.num_visible_movies {
-            self.draw_image(app, i, false);
-
-            if i == self.selected {
-                self.draw_image(app, 0, true);
+    fn read_channels(&mut self) {
+        for image_event in self.rx_main.try_iter() {
+            match image_event {
+                ImageEvents::LoadImage(key, result) => {
+                    if let Ok(protocol) = result {
+                        if self.hashed_images.contains_key(&key) {
+                            self.hashed_images
+                                .get_mut(&key)
+                                .unwrap()
+                                .replace_protocol(protocol);
+                        }
+                    } else if let Err(error) = result {
+                        error!("Error while loading: {}", error);
+                    }
+                }
+                ImageEvents::DrawImage(key, result) => {
+                    if let Ok(response) = result {
+                        if self.hashed_images.contains_key(&key) {
+                            self.hashed_images
+                                .get_mut(&key)
+                                .unwrap()
+                                .update_resized_protocol(response);
+                        }
+                    } else if let Err(error) = result {
+                        error!("Error while drawing: {}", error);
+                    }
+                }
             }
         }
     }
 
-    // INPUT => image_id -> 0..num_visible_movies if fanart else doesn't matter will be set to 0
-    pub fn draw_image(&mut self, app: &App, image_id: usize, fanart: bool) {
-        let index = if fanart { self.selected } else { image_id };
+    pub fn set_num_movies_visible(&mut self, num_movies_visible: usize) {
+        if self.num_visible_movies == 0 {
+            self.num_visible_movies = num_movies_visible;
+        } else if self.num_visible_movies != num_movies_visible {
+            self.num_visible_movies = num_movies_visible;
 
-        let ticket_id = self.get_image_index(index, fanart);
+            if self.selected >= num_movies_visible {
+                self.selected = num_movies_visible - 1;
+            }
 
-        if self.tickets[ticket_id].is_some() {
-            return;
+            self.scroll_pos = self.current_movie_index() - self.selected;
         }
+    }
+
+    pub fn goto_index(&mut self, num_movies: usize, index: usize) -> bool {
+        if index >= num_movies {
+            return false;
+        }
+
+        if self.num_visible_movies >= num_movies {
+            self.scroll_pos = 0;
+            self.selected = index;
+        } else if num_movies - index < self.num_visible_movies {
+            self.scroll_pos = num_movies - self.num_visible_movies;
+            self.selected = index - self.scroll_pos;
+        } else {
+            self.selected = index % self.num_visible_movies;
+            self.scroll_pos = (index / self.num_visible_movies) * self.num_visible_movies;
+        }
+
+        true
+    }
+
+    pub fn hash_image(&mut self, movie_index: usize, fanart: bool, app: &App) {
+        let (tx_worker, rx_worker) = mpsc::channel::<_>();
+
+        let new_protocol = ThreadProtocol::new(tx_worker, None);
+        self.hashed_images
+            .insert((movie_index, fanart), new_protocol);
+        let _ = self
+            .tx_worker_collector
+            .send(((movie_index, fanart), rx_worker));
 
         let path = format!(
             "{}",
@@ -348,66 +262,128 @@ impl MainScreen {
             } else {
                 &app.config.dirs.poster_cache
             }
-            .join(format!(
-                "{}.jpg",
-                app.movies[self.scroll_pos + index].tmdb_id
-            ))
+            .join(format!("{}.jpg", app.movies[movie_index].tmdb_id))
             .display()
         );
 
-        let ticket = self.create_ticket(ticket_id, fanart);
+        let _ = self
+            .tx_load_decode
+            .send(((movie_index, fanart), path.clone()));
+    }
 
-        let result = self.tx_load_decode.send((ticket, path));
+    pub fn rehash_images(&mut self, app: &App, start_index: usize) {
+        let movie_ids = app.movies[start_index..]
+            .iter()
+            .map(|x| x.tmdb_id)
+            .collect::<Vec<_>>();
 
-        if result.is_ok() {
-            self.tickets[ticket_id] = Some(ticket);
+        for (i, id) in movie_ids.iter().enumerate() {
+            let index = start_index + i;
+
+            if !self.hashed_images.contains_key(&(index, false)) {
+                self.hash_image(index, false, app);
+            } else {
+                let poster_path = format!(
+                    "{}",
+                    &app.config
+                        .dirs
+                        .poster_cache
+                        .join(format!("{}.jpg", id))
+                        .display()
+                );
+
+                let _ = self.tx_load_decode.send(((index, false), poster_path));
+            }
+
+            if !self.hashed_images.contains_key(&(index, true)) {
+                self.hash_image(index, true, app);
+            } else {
+                let fanart_path = format!(
+                    "{}",
+                    &app.config
+                        .dirs
+                        .backdrop_cache
+                        .join(format!("{}.jpg", id))
+                        .display()
+                );
+
+                let _ = self.tx_load_decode.send(((index, true), fanart_path));
+            }
         }
     }
 
-    pub fn clear_all_image(&mut self) {
-        for i in 0..self.num_visible_movies {
-            self.clear_image(i, false);
-        }
-        self.clear_image(0, true);
-    }
+    pub fn rehash_image(&mut self, movie_index: usize, fanart: bool, app: &App) {
+        let path = format!(
+            "{}",
+            if fanart {
+                &app.config.dirs.backdrop_cache
+            } else {
+                &app.config.dirs.poster_cache
+            }
+            .join(format!("{}.jpg", app.movies[movie_index].tmdb_id))
+            .display()
+        );
 
-    pub fn clear_image(&mut self, image_id: usize, fanart: bool) {
-        let id = self.get_image_index(image_id, fanart);
-        self.images[id].1.empty_protocol();
-        self.image_drawn[id] = false;
-        self.tickets[id] = None;
-        self.tickets_age[id] = 0;
-    }
-
-    // i is from 0..num_movies_visible, we add one because the indices always start at 1 because 0 is reserved for the fanart image.
-    fn get_image_index(&self, i: usize, fanart: bool) -> usize {
-        if fanart {
-            0
-        } else {
-            i + 1
-        }
-    }
-
-    fn decode_ticket_id(&self, id: usize) -> (usize, bool) {
-        if id == 0 {
-            (0, true)
-        } else {
-            (id - 1, false)
-        }
-    }
-
-    fn create_ticket(&mut self, id: usize, fanart: bool) -> u64 {
-        self.rng.next_u64()
+        let _ = self
+            .tx_load_decode
+            .send(((movie_index, fanart), path.clone()));
     }
 }
 
 impl Drawer {
-    pub fn open_main_screen(&mut self) {
-        self.close_popups();
-        self.current_screen = CurrentScreen::MainScreen;
+    pub fn main_screen_handle_key_events(&mut self, app: &mut App, event: KeyEvent) -> Result<()> {
+        let kind = event.kind;
+        let code = event.code;
+
+        if kind != KeyEventKind::Press {
+            return Ok(());
+        }
+
+        match code {
+            KeyCode::Char('q') => {
+                app.should_quit = true;
+            }
+            KeyCode::Char('a') => {
+                self.open_add_movie_popup();
+            }
+            KeyCode::Char('e') => {
+                self.open_edit_movie_popup();
+            }
+            KeyCode::Char('d') => {
+                self.open_remove_movie_popup();
+            }
+            KeyCode::Delete => {
+                self.open_remove_movie_popup();
+            }
+            KeyCode::Char('G') => {
+                self.main_screen_options
+                    .goto_index(app.movies.len(), app.movies.len() - 1);
+            }
+            KeyCode::Char('g') => {
+                self.main_screen_options.goto_index(app.movies.len(), 0);
+            }
+            KeyCode::Up => {
+                self.main_screen_options.dec_movie_selection();
+            }
+            KeyCode::Down => {
+                self.main_screen_options
+                    .inc_movie_selection(app.movies.len());
+            }
+            KeyCode::Esc => {
+                self.close_popups();
+            }
+            _ => (),
+        }
+
+        Ok(())
     }
 
-    pub fn render_movies_list(&mut self, frame: &mut Frame, app: &mut App) -> Result<(), Errors> {
+    pub fn open_main_screen(&mut self) {
+        self.close_popups();
+        self.current_screen = Screens::MainScreen;
+    }
+
+    pub fn render_movies_list(&mut self, frame: &mut Frame, app: &mut App) -> Result<()> {
         self.main_screen_options.read_channels();
 
         let frame_area = frame.area();
@@ -421,8 +397,7 @@ impl Drawer {
         frame.render_widget(Block::new().bg(tailwind::SLATE.c900), vert_lay[0]);
         frame.render_widget(Block::new().bg(tailwind::EMERALD.c950), vert_lay[2]);
 
-        let movies_lay = Layout::new(Direction::Vertical, vec![Constraint::Min(8); num_movies])
-            .split(horiz_lay[1]);
+        let movies_lay = Layout::vertical(vec![Constraint::Min(8); num_movies]).split(horiz_lay[1]);
 
         self.main_screen_options.set_num_movies_visible(num_movies);
 
@@ -522,9 +497,9 @@ impl Drawer {
             );
         }
 
-        let index = self.main_screen_options.get_image_index(id, false);
-        if !self.main_screen_options.image_drawn[index] {
-            self.main_screen_options.draw_image(app, id, false);
+        let key = (self.main_screen_options.scroll_pos + id, false);
+        if !self.main_screen_options.hashed_images.contains_key(&key) {
+            self.main_screen_options.hash_image(key.0, key.1, app);
         }
 
         frame.render_stateful_widget(
@@ -532,7 +507,10 @@ impl Drawer {
                 ratatui_image::FilterType::Triangle,
             ))),
             poster_area,
-            &mut self.main_screen_options.images[index].1,
+            self.main_screen_options
+                .hashed_images
+                .get_mut(&key)
+                .unwrap(),
         );
     }
 
@@ -563,17 +541,17 @@ impl Drawer {
 
         frame.render_widget(Block::new().bg(tailwind::SLATE.c800), area);
 
-        if !self.main_screen_options.image_drawn[0] {
-            self.main_screen_options.draw_image(app, 0, true);
-        }
+        // if !self.main_screen_options.image_drawn[0] {
+        //     self.main_screen_options.draw_image(app, 0, true);
+        // }
 
-        frame.render_stateful_widget(
-            ThreadImage::new().resize(ratatui_image::Resize::Scale(Some(
-                ratatui_image::FilterType::Triangle,
-            ))),
-            poster_area,
-            &mut self.main_screen_options.images[0].1,
-        );
+        // frame.render_stateful_widget(
+        //     ThreadImage::new().resize(ratatui_image::Resize::Scale(Some(
+        //         ratatui_image::FilterType::Triangle,
+        //     ))),
+        //     poster_area,
+        //     &mut self.main_screen_options.images[0].1,
+        // );
 
         let subtitle = Line::from_iter([
             "released: ".italic(),
@@ -604,5 +582,21 @@ impl Drawer {
 
         frame.render_widget(Text::from(lines), title_area);
         frame.render_widget(description, description_area);
+
+        let key = (self.main_screen_options.current_movie_index(), true);
+        if !self.main_screen_options.hashed_images.contains_key(&key) {
+            self.main_screen_options.hash_image(key.0, key.1, app);
+        }
+
+        frame.render_stateful_widget(
+            ThreadImage::new().resize(ratatui_image::Resize::Scale(Some(
+                ratatui_image::FilterType::Triangle,
+            ))),
+            poster_area,
+            self.main_screen_options
+                .hashed_images
+                .get_mut(&key)
+                .unwrap(),
+        );
     }
 }

@@ -441,7 +441,7 @@ pub fn get_movie_poster_banner(
         let image_bytes: Vec<_> = reqwest::blocking::get(format!(
             "{}{}{}",
             images_configurations.base_url,
-            images_configurations.poster_sizes[4], // w92 w154 w185 w342 w500 w780 original
+            images_configurations.poster_sizes[3], // w92 w154 w185 w342 w500 w780 original
             movie_images.posters[0].file_path
         ))?
         // .expect("requesting movie poster failed!")
@@ -465,7 +465,7 @@ pub fn get_movie_poster_banner(
         let image_bytes: Vec<_> = reqwest::blocking::get(format!(
             "{}{}{}",
             images_configurations.base_url,
-            images_configurations.backdrop_sizes[2], // w300 w780 w1280 original
+            images_configurations.backdrop_sizes[1], // w300 w780 w1280 original
             movie_images.backdrops[0].file_path
         ))?
         // .expect("requesting movie backdrop failed!")

@@ -2,9 +2,15 @@ use crate::{
     app::{App, Result},
     draw::Drawer,
 };
-use ratatui::{layout::*, prelude::*, widgets::*, Frame};
+use ratatui::{
+    crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind},
+    layout::*,
+    prelude::*,
+    widgets::*,
+    Frame,
+};
 use style::palette::tailwind;
-use tui_input::Input;
+use tui_input::{backend::crossterm::EventHandler, Input};
 
 #[derive(Default)]
 pub struct EditMoviePopup {
@@ -23,6 +29,38 @@ impl EditMoviePopup {
 }
 
 impl Drawer {
+    pub fn edit_movie_popup_handle_key_events(&mut self, event: KeyEvent) -> Result<()> {
+        let kind = event.kind;
+        let code = event.code;
+
+        if kind != KeyEventKind::Press {
+            return Ok(());
+        }
+
+        match code {
+            KeyCode::Enter => {
+                if self.edit_movie_popup_options.errored {
+                    self.close_popups();
+                } else if !self.edit_movie_popup_options.got_user_rating
+                    && self.edit_movie_popup_options.user_rating_input.value() != ""
+                    && self.edit_movie_popup_options.user_rating_valid
+                {
+                    self.edit_movie_popup_options.got_user_rating = true;
+                }
+            }
+            KeyCode::Esc => {
+                self.close_popups();
+            }
+            _ => {
+                self.edit_movie_popup_options
+                    .user_rating_input
+                    .handle_event(&Event::Key(event));
+            }
+        }
+
+        Ok(())
+    }
+
     pub(crate) fn draw_edit_movie_popup(&mut self, frame: &mut Frame, app: &mut App) -> Result<()> {
         let frame_area = frame.area();
         let popup_area = self.center(frame_area, Constraint::Percentage(40), Constraint::Max(8));
@@ -57,10 +95,10 @@ impl Drawer {
         if !self.edit_movie_popup_options.init_ed {
             self.edit_movie_popup_options.init_ed = true;
             self.edit_movie_popup_options.user_rating_input = app.movies
-                [self.main_screen_options.scroll_pos + self.main_screen_options.selected]
-                .user_rating
-                .to_string()
-                .into();
+                [self.main_screen_options.current_movie_index()]
+            .user_rating
+            .to_string()
+            .into();
         }
         if !self.edit_movie_popup_options.got_user_rating {
             let [_, right, left, _] = Layout::horizontal([
@@ -148,8 +186,8 @@ impl Drawer {
             )
             .parse()
             .unwrap();
-            app.movies[self.main_screen_options.scroll_pos + self.main_screen_options.selected]
-                .user_rating = self.edit_movie_popup_options.user_rating;
+            app.movies[self.main_screen_options.current_movie_index()].user_rating =
+                self.edit_movie_popup_options.user_rating;
 
             if app.save_movies().is_err() {
                 self.edit_movie_popup_options.errored = true;

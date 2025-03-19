@@ -3,11 +3,12 @@ use crate::{
     config_trakt::TraktConfig,
     draw::Drawer,
     popups::Popups,
+    screens::Screens,
     tmdb::{self, RequestResponseError, TMDBDetailsResponse},
     trakt::{self, TokenResponseError, TraktDetailsResponse},
 };
 use log::{debug, error};
-use ratatui::crossterm::event::{Event, KeyCode, KeyEventKind};
+use ratatui::crossterm::event::{Event, KeyCode};
 use serde::Deserialize;
 use std::{
     fs::{create_dir, read_to_string, rename, write},
@@ -220,135 +221,171 @@ impl App {
     pub fn handle_app_events(&mut self, event: Event, drawer: &mut Drawer) -> Result<()> {
         match event {
             Event::Key(event) => {
-                let kind = event.kind;
-                let code = event.code;
-
-                if kind != KeyEventKind::Press {
-                    return Ok(());
+                if event.code == KeyCode::Char('Q') {
+                    panic!("RELEASE ME!");
                 }
 
-                match code {
-                    KeyCode::Char('Q') => {
-                        panic!("RELEASE ME");
-                    }
-                    KeyCode::Char('q') => {
-                        if drawer.accepting_input {
-                            drawer.handle_input(event);
-                        } else {
-                            self.should_quit = true;
+                if drawer.active_popup.is_some() {
+                    match drawer.active_popup.unwrap() {
+                        Popups::AddMovie => {
+                            drawer.add_movie_popup_handle_key_events(event)?;
                         }
-                    }
-                    KeyCode::Char('a') => {
-                        if drawer.active_popup.is_none() {
-                            drawer.open_add_movie_popup();
-                        } else if drawer.accepting_input {
-                            drawer.handle_input(event);
+                        Popups::EditMovie => {
+                            drawer.edit_movie_popup_handle_key_events(event)?;
                         }
-                    }
-                    KeyCode::Char('e') => {
-                        if drawer.active_popup.is_none() {
-                            drawer.open_edit_movie_popup();
-                        } else if drawer.accepting_input {
-                            drawer.handle_input(event);
+                        Popups::RemoveMovie => {
+                            drawer.remove_movie_popup_handle_key_events(event)?;
                         }
+                        Popups::FetchArtwork => (),
                     }
-                    KeyCode::Char('d') => {
-                        if drawer.active_popup.is_none() {
-                            drawer.open_remove_movie_popup();
-                        } else if drawer.accepting_input {
-                            drawer.handle_input(event);
+                } else {
+                    match drawer.current_screen {
+                        Screens::InitScreen => (),
+                        Screens::MainScreen => {
+                            drawer.main_screen_handle_key_events(self, event)?;
                         }
-                    }
-                    KeyCode::Char('f') => {
-                        drawer.main_screen_options.redraw_all_image(self);
-                    }
-                    KeyCode::Char('g') => {
-                        drawer.main_screen_options.clear_all_image();
-                    }
-                    KeyCode::Delete => {
-                        if drawer.active_popup.is_none() {
-                            drawer.open_remove_movie_popup();
-                        } else if drawer.accepting_input {
-                            drawer.handle_input(event);
-                        }
-                    }
-                    KeyCode::Esc => {
-                        if drawer.active_popup.is_some() {
-                            drawer.close_popups();
-                        } else {
-                            self.should_quit = true;
-                        }
-                    }
-                    KeyCode::Up => {
-                        drawer.dec_selection();
-                    }
-                    KeyCode::Down => {
-                        drawer.inc_selection(self);
-                    }
-                    KeyCode::Right => {
-                        if drawer.accepting_input {
-                            drawer.handle_input(event);
-                        } else {
-                            drawer.inc_selection_horiz();
-                        }
-                    }
-                    KeyCode::Left => {
-                        if drawer.accepting_input {
-                            drawer.handle_input(event);
-                        } else {
-                            drawer.dec_selection_horiz();
-                        }
-                    }
-                    KeyCode::Enter => match drawer.active_popup {
-                        Some(Popups::AddMovie) => {
-                            if *drawer.add_movie_popup_options.failed.lock().unwrap() {
-                                drawer.close_popups();
-                            } else if drawer.add_movie_popup_options.phase == 0
-                                && drawer.add_movie_popup_options.search_input.value() != ""
-                            {
-                                drawer.add_movie_popup_options.finished_search_input = true;
-                                drawer.queue_update();
-                            } else if drawer.add_movie_popup_options.phase == 2 {
-                                drawer.add_movie_popup_options.movie_selected = true;
-                                drawer.queue_update();
-                            } else if drawer.add_movie_popup_options.phase == 3
-                                && drawer.add_movie_popup_options.search_input.value() != ""
-                                && drawer.add_movie_popup_options.user_rating_valid
-                            {
-                                drawer.add_movie_popup_options.got_user_rating = true;
-                                drawer.queue_update();
-                            }
-                        }
-                        Some(Popups::EditMovie) => {
-                            if drawer.edit_movie_popup_options.errored {
-                                drawer.close_popups();
-                                drawer.queue_update();
-                            } else if !drawer.edit_movie_popup_options.got_user_rating
-                                && drawer.edit_movie_popup_options.user_rating_input.value() != ""
-                                && drawer.edit_movie_popup_options.user_rating_valid
-                            {
-                                drawer.edit_movie_popup_options.got_user_rating = true;
-                                drawer.queue_update();
-                            }
-                        }
-                        Some(Popups::RemoveMovie) => {
-                            if drawer.remove_movie_popup_options.errored {
-                                drawer.close_popups();
-                            } else if drawer.remove_movie_popup_options.selected == 1 {
-                                drawer.remove_movie_popup_options.confirmed = true;
-                                drawer.queue_update();
-                            } else if drawer.remove_movie_popup_options.selected == 0 {
-                                drawer.close_popups();
-                            }
-                        }
-                        _ => {}
-                    },
-                    _ => {
-                        if drawer.accepting_input {
-                            drawer.handle_input(event);
-                        }
+                        Screens::TermSizeWarn => (),
                     }
                 }
+                // let kind = event.kind;
+                // let code = event.code;
+
+                // if kind != KeyEventKind::Press {
+                //     return Ok(());
+                // }
+
+                // match code {
+                //     KeyCode::Char('Q') => {
+                //         panic!("RELEASE ME");
+                //     }
+                //     KeyCode::Char('q') => {
+                //         if drawer.accepting_input {
+                //             drawer.handle_input(event);
+                //         } else {
+                //             self.should_quit = true;
+                //         }
+                //     }
+                //     KeyCode::Char('a') => {
+                //         if drawer.active_popup.is_none() {
+                //             drawer.open_add_movie_popup();
+                //         } else if drawer.accepting_input {
+                //             drawer.handle_input(event);
+                //         }
+                //     }
+                //     KeyCode::Char('e') => {
+                //         if drawer.active_popup.is_none() {
+                //             drawer.open_edit_movie_popup();
+                //         } else if drawer.accepting_input {
+                //             drawer.handle_input(event);
+                //         }
+                //     }
+                //     KeyCode::Char('d') => {
+                //         if drawer.active_popup.is_none() {
+                //             drawer.open_remove_movie_popup();
+                //         } else if drawer.accepting_input {
+                //             drawer.handle_input(event);
+                //         }
+                //     }
+                //     KeyCode::Char('G') => {
+                //         if drawer.accepting_input {
+                //             drawer.handle_input(event);
+                //         } else {
+                //             drawer
+                //                 .main_screen_options
+                //                 .goto_index(self.movies.len(), self.movies.len() - 1);
+                //         }
+                //     }
+                //     KeyCode::Char('g') => {
+                //         if drawer.accepting_input {
+                //             drawer.handle_input(event);
+                //         } else {
+                //             drawer.main_screen_options.goto_index(self.movies.len(), 0);
+                //         }
+                //     }
+                //     KeyCode::Delete => {
+                //         if drawer.active_popup.is_none() {
+                //             drawer.open_remove_movie_popup();
+                //         } else if drawer.accepting_input {
+                //             drawer.handle_input(event);
+                //         }
+                //     }
+                //     KeyCode::Esc => {
+                //         if drawer.active_popup.is_some() {
+                //             drawer.close_popups();
+                //         } else {
+                //             self.should_quit = true;
+                //         }
+                //     }
+                //     KeyCode::Up => {
+                //         drawer.dec_selection();
+                //     }
+                //     KeyCode::Down => {
+                //         drawer.inc_selection(self);
+                //     }
+                //     KeyCode::Right => {
+                //         if drawer.accepting_input {
+                //             drawer.handle_input(event);
+                //         } else {
+                //             drawer.inc_selection_horiz();
+                //         }
+                //     }
+                //     KeyCode::Left => {
+                //         if drawer.accepting_input {
+                //             drawer.handle_input(event);
+                //         } else {
+                //             drawer.dec_selection_horiz();
+                //         }
+                //     }
+                //     KeyCode::Enter => match drawer.active_popup {
+                //         Some(Popups::AddMovie) => {
+                //             if *drawer.add_movie_popup_options.failed.lock().unwrap() {
+                //                 drawer.close_popups();
+                //             } else if drawer.add_movie_popup_options.phase == 0
+                //                 && drawer.add_movie_popup_options.search_input.value() != ""
+                //             {
+                //                 drawer.add_movie_popup_options.finished_search_input = true;
+                //                 drawer.queue_update();
+                //             } else if drawer.add_movie_popup_options.phase == 2 {
+                //                 drawer.add_movie_popup_options.movie_selected = true;
+                //                 drawer.queue_update();
+                //             } else if drawer.add_movie_popup_options.phase == 3
+                //                 && drawer.add_movie_popup_options.search_input.value() != ""
+                //                 && drawer.add_movie_popup_options.user_rating_valid
+                //             {
+                //                 drawer.add_movie_popup_options.got_user_rating = true;
+                //                 drawer.queue_update();
+                //             }
+                //         }
+                //         Some(Popups::EditMovie) => {
+                //             if drawer.edit_movie_popup_options.errored {
+                //                 drawer.close_popups();
+                //                 drawer.queue_update();
+                //             } else if !drawer.edit_movie_popup_options.got_user_rating
+                //                 && drawer.edit_movie_popup_options.user_rating_input.value() != ""
+                //                 && drawer.edit_movie_popup_options.user_rating_valid
+                //             {
+                //                 drawer.edit_movie_popup_options.got_user_rating = true;
+                //                 drawer.queue_update();
+                //             }
+                //         }
+                //         Some(Popups::RemoveMovie) => {
+                //             if drawer.remove_movie_popup_options.errored {
+                //                 drawer.close_popups();
+                //             } else if drawer.remove_movie_popup_options.selected == 1 {
+                //                 drawer.remove_movie_popup_options.confirmed = true;
+                //                 drawer.queue_update();
+                //             } else if drawer.remove_movie_popup_options.selected == 0 {
+                //                 drawer.close_popups();
+                //             }
+                //         }
+                //         _ => {}
+                //     },
+                //     _ => {
+                //         if drawer.accepting_input {
+                //             drawer.handle_input(event);
+                //         }
+                //     }
+                // }
             }
             _ => (),
         }

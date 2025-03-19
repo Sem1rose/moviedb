@@ -28,9 +28,10 @@ impl Tui {
         // let terminal = ratatui::init();
 
         let app = App::new()?;
+        let mut drawer = Drawer::default();
 
         Ok(Self {
-            drawer: Drawer::default(),
+            drawer,
             terminal,
             app,
         })
@@ -38,8 +39,6 @@ impl Tui {
 
     pub fn init(&mut self) -> Result<()> {
         self.app.init()?;
-        // self.drawer.fetch_artwork_popup_options =
-        //     crate::popups::fetch_artworks::FetchArtworksPopup::new(&self.app);
 
         self.set_panic_hook();
         enable_raw_mode()?;
@@ -51,7 +50,6 @@ impl Tui {
     }
 
     pub fn run(&mut self) -> Result<()> {
-        // self.init_threads();
         const FRAME_RATE: f32 = 60.0;
         const TICK_RATE: f32 = 10.0;
 
@@ -61,13 +59,9 @@ impl Tui {
         let mut tick_counter = 0;
 
         let mut last_frame_time = Instant::now();
-        loop {
-            // TODO remove this piece of shit
-            // if self.drawer.clear_images {
-            //     self.terminal.clear()?;
-            //     self.drawer.clear_images = false;
-            // }
 
+        self.drawer.main_screen_options.rehash_images(&self.app, 0);
+        loop {
             let elapsed = last_frame_time.elapsed().as_secs_f64();
             last_frame_time = Instant::now();
             self.draw(elapsed)?;
@@ -76,13 +70,9 @@ impl Tui {
                 .checked_sub(last_frame.elapsed())
                 .unwrap_or_else(|| Duration::from_secs(0));
 
-            // if let Ok(event) = self.app.rx_main.recv_timeout(timeout) {
-            //     self.app.handle_app_events(event, &mut self.drawer)?;
-            // }
             if ratatui::crossterm::event::poll(timeout)? {
                 if let Ok(event) = event::read() {
                     self.app.handle_app_events(event, &mut self.drawer)?;
-                    // tx_main_events.send(event).unwrap();
                 }
             }
 
@@ -102,19 +92,6 @@ impl Tui {
             }
         }
     }
-
-    // fn init_threads(&mut self) {
-    //     let tx_main_events = self.app.tx_main.clone();
-    //     thread::spawn(move || -> Result<(), std::io::Error> {
-    //         loop {
-    //             if ratatui::crossterm::event::poll(Duration::from_millis(1000))? {
-    //                 if let Ok(event) = event::read() {
-    //                     tx_main_events.send(event).unwrap();
-    //                 }
-    //             }
-    //         }
-    //     });
-    // }
 
     pub fn exit() -> Result<()> {
         if let Err(err) = ratatui::try_restore() {
@@ -137,7 +114,6 @@ impl Tui {
         }));
     }
 
-    // pub fn draw(&mut self) -> Result<CompletedFrame, std::io::Error> {
     pub fn draw(&mut self, frame_time: f64) -> Result<CompletedFrame> {
         self.terminal
             .draw(|frame| {
