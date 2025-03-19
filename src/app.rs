@@ -7,15 +7,14 @@ use crate::{
     trakt::{self, TokenResponseError, TraktDetailsResponse},
 };
 use log::{debug, error};
-use ratatui::crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
+use ratatui::crossterm::event::{Event, KeyCode, KeyEventKind};
 use serde::Deserialize;
 use std::{
     fs::{create_dir, read_to_string, rename, write},
     path::PathBuf,
-    sync::mpsc::{self, Receiver, Sender},
 };
 
-pub type Result<T> = std::result::Result<T, Errors>;
+pub type Result<T> = color_eyre::Result<T, Errors>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Errors {
@@ -42,6 +41,9 @@ pub enum Errors {
 
     #[error("ratatui_image error: {0}")]
     EncodeImage(#[from] ratatui_image::errors::Errors),
+
+    #[error("{0}")]
+    EyreReport(#[from] color_eyre::Report),
 
     #[error("{0}")]
     Other(String),
@@ -127,15 +129,12 @@ impl Config {
 }
 
 pub struct App {
-    // pub single_shot: bool,
     pub should_quit: bool,
     pub movies: Vec<Movie>,
 
     pub config: Config,
     pub tmdb_config: TMDBConfig,
     pub trakt_config: TraktConfig,
-    // pub tx_main: Sender<Event>,
-    // pub rx_main: Receiver<Event>,
 }
 
 impl App {
@@ -146,16 +145,12 @@ impl App {
         let tmdb_config = TMDBConfig::new();
         let trakt_config = TraktConfig::new();
 
-        // let (tx_main, rx_main) = mpsc::channel();
-
         Ok(Self {
             should_quit: false,
             movies: vec![],
             config,
             tmdb_config,
             trakt_config,
-            // tx_main,
-            // rx_main,
         })
     }
 
@@ -167,15 +162,6 @@ impl App {
         self.trakt_config.init(&self.config)?;
         trakt::populate_tokens(&self.config, &mut self.trakt_config)?;
         debug!("Trakt config init finished successfully.");
-
-        // let x =
-        //     trakt::get_movie_poster_banner(&self.config, &self.trakt_config, "tt1130884".into());
-
-        // if x.is_err() {
-        //     panic!("{}", x.unwrap_err());
-        // } else {
-        //     panic!("{}", x.unwrap());
-        // }
 
         self.fetch_movies()?;
 
@@ -255,7 +241,6 @@ impl App {
                     KeyCode::Char('a') => {
                         if drawer.active_popup.is_none() {
                             drawer.open_add_movie_popup();
-                            // drawer.clear_images = true;
                         } else if drawer.accepting_input {
                             drawer.handle_input(event);
                         }
@@ -263,7 +248,6 @@ impl App {
                     KeyCode::Char('e') => {
                         if drawer.active_popup.is_none() {
                             drawer.open_edit_movie_popup();
-                            // drawer.clear_images = true;
                         } else if drawer.accepting_input {
                             drawer.handle_input(event);
                         }
@@ -271,7 +255,6 @@ impl App {
                     KeyCode::Char('d') => {
                         if drawer.active_popup.is_none() {
                             drawer.open_remove_movie_popup();
-                            // drawer.clear_images = true;
                         } else if drawer.accepting_input {
                             drawer.handle_input(event);
                         }
@@ -285,7 +268,6 @@ impl App {
                     KeyCode::Delete => {
                         if drawer.active_popup.is_none() {
                             drawer.open_remove_movie_popup();
-                            // drawer.clear_images = true;
                         } else if drawer.accepting_input {
                             drawer.handle_input(event);
                         }
@@ -293,13 +275,12 @@ impl App {
                     KeyCode::Esc => {
                         if drawer.active_popup.is_some() {
                             drawer.close_popups();
-                            // drawer.clear_images(false);
                         } else {
                             self.should_quit = true;
                         }
                     }
                     KeyCode::Up => {
-                        drawer.dec_selection(self);
+                        drawer.dec_selection();
                     }
                     KeyCode::Down => {
                         drawer.inc_selection(self);
@@ -308,21 +289,20 @@ impl App {
                         if drawer.accepting_input {
                             drawer.handle_input(event);
                         } else {
-                            drawer.inc_selection_horiz(self);
+                            drawer.inc_selection_horiz();
                         }
                     }
                     KeyCode::Left => {
                         if drawer.accepting_input {
                             drawer.handle_input(event);
                         } else {
-                            drawer.dec_selection_horiz(self);
+                            drawer.dec_selection_horiz();
                         }
                     }
                     KeyCode::Enter => match drawer.active_popup {
                         Some(Popups::AddMovie) => {
                             if *drawer.add_movie_popup_options.failed.lock().unwrap() {
                                 drawer.close_popups();
-                                // drawer.clear_images(false);
                             } else if drawer.add_movie_popup_options.phase == 0
                                 && drawer.add_movie_popup_options.search_input.value() != ""
                             {
@@ -342,7 +322,6 @@ impl App {
                         Some(Popups::EditMovie) => {
                             if drawer.edit_movie_popup_options.errored {
                                 drawer.close_popups();
-                                // drawer.clear_images(false);
                                 drawer.queue_update();
                             } else if !drawer.edit_movie_popup_options.got_user_rating
                                 && drawer.edit_movie_popup_options.user_rating_input.value() != ""
@@ -355,13 +334,11 @@ impl App {
                         Some(Popups::RemoveMovie) => {
                             if drawer.remove_movie_popup_options.errored {
                                 drawer.close_popups();
-                                // drawer.clear_images(false);
                             } else if drawer.remove_movie_popup_options.selected == 1 {
                                 drawer.remove_movie_popup_options.confirmed = true;
                                 drawer.queue_update();
                             } else if drawer.remove_movie_popup_options.selected == 0 {
                                 drawer.close_popups();
-                                // drawer.clear_images(false);
                             }
                         }
                         _ => {}

@@ -1,30 +1,18 @@
 use crate::{
-    app::{App, Errors, Result},
+    app::{App, Result},
     popups::{
         add_movie::AddMoviePopup, edit_movie::EditMoviePopup, fetch_artworks::FetchArtworksPopup,
         remove_movie::RemoveMoviePopup, Popups,
     },
-    screens::{
-        init_screen::{InitScreen, InitSteps},
-        main_screen::MainScreen,
-    },
+    screens::{init_screen::InitScreen, main_screen::MainScreen},
 };
 use ratatui::{
-    crossterm::{
-        event::{Event, KeyEvent},
-        ExecutableCommand,
-    },
+    crossterm::event::{Event, KeyEvent},
     layout::*,
     prelude::*,
     widgets::*,
     Frame,
 };
-// use image::DynamicImage;
-// use ratatui_image::{
-//     picker::Picker,
-//     protocol::{Protocol, StatefulProtocol},
-//     Image, Resize, StatefulImage,
-// };
 use tui_input::backend::crossterm::EventHandler;
 
 #[derive(Clone, Copy, PartialEq, Default)]
@@ -92,7 +80,7 @@ impl Drawer {
         }
     }
 
-    pub fn dec_selection(&mut self, app: &App) {
+    pub fn dec_selection(&mut self) {
         if CurrentScreen::MainScreen == self.current_screen {
             if self.active_popup.is_none() {
                 if self.main_screen_options.dec_movie_selection() {
@@ -105,7 +93,7 @@ impl Drawer {
         }
     }
 
-    pub fn inc_selection_horiz(&mut self, app: &App) {
+    pub fn inc_selection_horiz(&mut self) {
         if let Some(Popups::RemoveMovie) = self.active_popup {
             self.remove_movie_popup_options.selected += 1;
             if self.remove_movie_popup_options.selected >= RemoveMoviePopup::BUTTONS {
@@ -115,7 +103,7 @@ impl Drawer {
         }
     }
 
-    pub fn dec_selection_horiz(&mut self, app: &App) {
+    pub fn dec_selection_horiz(&mut self) {
         if let Some(Popups::RemoveMovie) = self.active_popup {
             self.remove_movie_popup_options.selected -= 1;
             if self.remove_movie_popup_options.selected < 0 {
@@ -209,7 +197,6 @@ impl Drawer {
             Popups::RemoveMovie => {
                 self.draw_remove_movie_popup(frame, app)?;
             }
-            _ => {}
         }
 
         Ok(())

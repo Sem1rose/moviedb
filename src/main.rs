@@ -11,14 +11,11 @@ mod trakt;
 mod tui;
 mod update_json;
 
-use app::App;
-use clap::Parser;
-use color_eyre::{eyre::WrapErr, Result};
-use log::{debug, info};
-use std::error::Error;
+use app::Result;
+use log::debug;
 use tui::Tui;
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> Result<()> {
     env_logger::init();
 
     color_eyre::install()?;
@@ -32,7 +29,5 @@ fn main() -> Result<(), Box<dyn Error>> {
     tui.run()?;
     Tui::exit()?;
 
-    // use update_json;
-    // update_json::change_ratings()?;
     Ok(())
 }

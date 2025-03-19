@@ -1,5 +1,5 @@
 use crate::{
-    app::{App, Errors, Result},
+    app::{App, Result},
     draw::Drawer,
 };
 use ratatui::{prelude::*, widgets::*, Frame};
@@ -31,7 +31,7 @@ impl Drawer {
                     self.init_screen_options.started_step = true;
                 }
 
-                self.handle_init_screen_fetch_artworks(app);
+                self.handle_init_screen_fetch_artworks();
             }
         }
 
@@ -49,8 +49,7 @@ impl Drawer {
         }
     }
 
-    fn handle_init_screen_fetch_artworks(&mut self, app: &mut App) {
-        // if self.fetch_artwork_popup_options.progress == app.movies.len() as u32 {
+    fn handle_init_screen_fetch_artworks(&mut self) {
         if !self.fetch_artwork_popup_options.started {
             self.fetch_artwork_popup_options.finish();
             self.init_screen_advance_step();

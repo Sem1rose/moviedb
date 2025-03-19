@@ -1,17 +1,11 @@
-// use oauth2::basic::BasicClient;
-// use oauth2::reqwest::http_client;
-// use oauth2::{
-//     AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, PkceCodeChallenge, RedirectUrl,
-//     Scope, TokenResponse, TokenUrl,
-// };
 use crate::{
     app::{Config, Errors, Result},
     config_trakt::TraktConfig,
 };
+use log::{debug, error};
 use reqwest::{
     blocking::{Client, ClientBuilder, RequestBuilder, Response},
     header::{HeaderMap, CONTENT_TYPE, USER_AGENT},
-    Body,
 };
 use serde::Deserialize;
 use std::{
@@ -21,9 +15,6 @@ use std::{
     fs::{self, File},
     io::{self, stdin, stdout, Write},
 };
-// use trakt_rs::smo::*;
-// use trakt_rs::{Request, Response as Rewponse};
-use log::{debug, error, info};
 
 #[derive(Deserialize, Debug)]
 struct TokenResponse {
@@ -163,12 +154,6 @@ fn get_tokens(config: &Config, trakt_config: &mut TraktConfig) -> Result<()> {
     body.insert("redirect_uri", "urn:ietf:wg:oauth:2.0:oob");
     body.insert("grant_type", "authorization_code");
 
-    // let mut token_response = client
-    //     .post("http://api.trakt.tv/oauth/token")
-    //     .headers(headers)
-    //     .body("{}")
-    //     .send()?;
-    // let mut token_response = isahc::post("https://api.trakt.tv/oauth/token", "{}").unwrap();
     let token_response = send_trakt_request(
         &client,
         "https://api.trakt.tv/oauth/token",
@@ -176,7 +161,6 @@ fn get_tokens(config: &Config, trakt_config: &mut TraktConfig) -> Result<()> {
         Some(body),
         None,
     )?;
-    // debug!("{:#?}", token_response);
 
     if token_response.status().as_u16() >= 400 {
         let result = token_response.json::<TokenResponseError>();
@@ -187,8 +171,6 @@ fn get_tokens(config: &Config, trakt_config: &mut TraktConfig) -> Result<()> {
         }
     }
     let token_response = token_response.json::<TokenResponse>()?;
-
-    // debug!("{:#?}", token_response);
 
     trakt_config.set_trakt_tokens(
         token_response.access_token,
@@ -374,10 +356,6 @@ fn send_trakt_request(
     body: Option<HashMap<&str, &str>>,
     query: Option<&[(&str, &str)]>,
 ) -> Result<Response> {
-    // let mut retry_attempts = 0;
-    // let mut retry_delay = 1;
-
-    // while retry_attempts < 2 {
     let mut request: RequestBuilder;
     if body.is_none() {
         request = client.get(url).headers(headers.clone());
@@ -389,59 +367,8 @@ fn send_trakt_request(
             .post(url)
             .headers(headers.clone())
             .json(&body.clone().unwrap());
-        // .body("{}");
-        //             .body(
-        //                 String::from_utf8(
-        //                     br#"{
-        //   "code": "3e93e253",
-        //   "client_id": "ca62495662f16852d7e6da10004b6f301928cb900b5bb20773628456054ebe82",
-        //   "client_secret": "ec4af5a8cb34d39055239adb5993aeadf7a7f22d941b6da7c574f0a8eabcb336",
-        //   "redirect_uri": "urn:ietf:wg:oauth:2.0:oob",
-        //   "grant_type": "authorization_code"
-        // }
-        // "#
-        //                     .to_vec(),
-        //                 )
-        //                 .unwrap(),
-        //             );
     }
-
-    // println!("{:#?}", request.try_clone().unwrap().build().unwrap());
-    // println!(
-    //     "{:#?}",
-    //     request
-    //         .try_clone()
-    //         .unwrap()
-    //         .build()
-    //         .unwrap()
-    //         .body()
-    //         .unwrap()
-    // );
 
     let response = request.send()?;
     Ok(response)
-    // if response.status().as_u16() <= 204 {
-    // return Ok(response);
-    // } else if response.status().as_u16() <= 522 {
-    //     retry_attempts += 1;
-    //     println!("{retry_attempts}Retrying {}", response.status());
-    //     std::thread::sleep(std::time::Duration::from_secs(retry_delay));
-    //     retry_delay *= 2;
-    // }
-    // else {
-    //     return Err(Box::new(std::io::Error::new(
-    //         std::io::ErrorKind::Other,
-    //         format!(
-    //             "Unrecognized status code {} when requesting from {}",
-    //             response.status(),
-    //             url
-    //         ),
-    //     )));
-    // }
-    // }
-
-    // Err(Box::new(std::io::Error::new(
-    //     std::io::ErrorKind::Other,
-    //     format!("Maximum retries reached while requesting {}", url),
-    // )))
 }

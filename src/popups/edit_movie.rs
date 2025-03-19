@@ -1,5 +1,5 @@
 use crate::{
-    app::{App, Errors, Result},
+    app::{App, Result},
     draw::Drawer,
 };
 use ratatui::{layout::*, prelude::*, widgets::*, Frame};
@@ -56,11 +56,8 @@ impl Drawer {
 
         if !self.edit_movie_popup_options.init_ed {
             self.edit_movie_popup_options.init_ed = true;
-            self.edit_movie_popup_options.user_rating_input = app.movies[(self
-                .main_screen_options
-                .scroll_pos
-                + self.main_screen_options.selected)
-                as usize]
+            self.edit_movie_popup_options.user_rating_input = app.movies
+                [self.main_screen_options.scroll_pos + self.main_screen_options.selected]
                 .user_rating
                 .to_string()
                 .into();
@@ -151,8 +148,7 @@ impl Drawer {
             )
             .parse()
             .unwrap();
-            app.movies[(self.main_screen_options.scroll_pos + self.main_screen_options.selected)
-                as usize]
+            app.movies[self.main_screen_options.scroll_pos + self.main_screen_options.selected]
                 .user_rating = self.edit_movie_popup_options.user_rating;
 
             if app.save_movies().is_err() {

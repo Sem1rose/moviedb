@@ -7,13 +7,12 @@ use ratatui::crossterm::{
     terminal::{enable_raw_mode, EnterAlternateScreen},
 };
 use ratatui::{
-    crossterm::event::{self, Event},
+    crossterm::event::{self},
     prelude::*,
     CompletedFrame,
 };
 use std::{
     io::{stdout, Stdout},
-    thread,
     time::{Duration, Instant},
 };
 
@@ -146,6 +145,6 @@ impl Tui {
                     .render_app(frame, &mut self.app, frame_time)
                     .expect("error rendering app.")
             })
-            .map_err(|err| Errors::Io(err))
+            .map_err(Errors::Io)
     }
 }

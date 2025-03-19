@@ -3,22 +3,19 @@ use crate::{
     draw::{CurrentScreen, Drawer},
     helpers::ellipsize_string,
 };
-use log::{debug, error};
+use log::error;
 use rand::prelude::*;
 use ratatui::style::{Color, Style, Stylize};
-use ratatui::{crossterm::ExecutableCommand, layout::*, prelude::*, widgets::*, Frame};
+use ratatui::{layout::*, prelude::*, widgets::*, Frame};
 use ratatui_image::{
     errors::Errors,
     picker::Picker,
     protocol::StatefulProtocol,
     thread::{ResizeRequest, ResizeResponse, ThreadImage, ThreadProtocol},
 };
-use ratatui_macros::{constraints, horizontal, line, span, text, vertical};
+use ratatui_macros::{horizontal, line, text, vertical};
 use std::{
-    collections::HashMap,
-    io::stdout,
-    process::{Command, Stdio},
-    sync::mpsc::{self, Receiver, Sender},
+    sync::mpsc::{self, Sender},
     thread,
 };
 use style::palette::tailwind;
@@ -63,8 +60,6 @@ impl Default for MainScreen {
 
             rng: rand::rng(),
 
-            // loaded_images_cache: HashMap::new(),
-
             // first element is reserved for the fanart image
             images: vec![(0, ThreadProtocol::new(tx_fanart_worker, None))],
             image_drawn: vec![false],
@@ -85,33 +80,25 @@ impl MainScreen {
         let (tx_load_decode, rx_load_decode) = mpsc::channel::<(u64, String)>();
         let (tx_worker_collector, rx_worker_collector) = mpsc::channel();
 
-        // let (tx_thread_decode, rx_thread_decode) = mpsc::channel();
         let tx_main_sender = tx_main.clone();
         let picker =
             Picker::from_query_stdio().expect("error querying graphics capabilities: {error}");
         thread::spawn(move || {
-            // if let Ok((ticket, path)) =
-            //     rx_load_decode.recv_timeout(std::time::Duration::from_millis(100))
             for (ticket, path) in rx_load_decode.iter() {
                 let tx_main = tx_main_sender.clone();
                 thread::spawn(move || {
                     let open_result = image::ImageReader::open(path);
 
                     if let Err(error) = open_result {
-                        // let _ = tx_main.send(Err((ticket, Errors::Io(error))));
                         let _ =
                             tx_main.send(ImageEvents::LoadImage(ticket, Err(Errors::Io(error))));
                     } else if let Ok(reader) = open_result {
                         let decode_result = reader.decode();
 
                         if let Err(error) = decode_result {
-                            // let _ = tx_decode.send(Err((ticket, Errors::Image(error))));
-
                             let _ = tx_main
                                 .send(ImageEvents::LoadImage(ticket, Err(Errors::Image(error))));
                         } else if let Ok(decoded) = decode_result {
-                            // let _ = tx_decode.send(Ok((ticket, decoded)));
-
                             let _ = tx_main.send(ImageEvents::LoadImage(
                                 ticket,
                                 Ok(picker.new_resize_protocol(decoded)),
@@ -129,7 +116,6 @@ impl MainScreen {
                 rx_workers.push(rx_worker);
             }
 
-            // let num_workers = rx_workers.len();
             let mut dropped = vec![];
             for (id, rx_worker) in rx_workers.iter_mut().enumerate() {
                 let message = rx_worker.try_recv();
@@ -139,7 +125,6 @@ impl MainScreen {
                         .send(ImageEvents::DrawImage(id, request.resize_encode()))
                         .unwrap();
                 } else if let Err(error) = message {
-                    // if error == std::sync::mpsc::RecvTimeoutError::Disconnected {
                     if error == std::sync::mpsc::TryRecvError::Disconnected {
                         dropped.push(id);
                     }
@@ -160,59 +145,31 @@ impl MainScreen {
         self.scroll_pos + self.selected
     }
 
-    pub fn read_channels(&mut self, app: &mut App) {
+    pub fn read_channels(&mut self) {
         for image_event in self.rx_main.try_iter() {
             match image_event {
                 ImageEvents::LoadImage(ticket, result) => {
                     if let Ok(protocol) = result {
-                        // let mut id = None;
-                        // let item = self.tickets.iter().find(|x| *x.1 == ticket);
                         let item = self
                             .tickets
                             .iter()
                             .position(|&x| x.is_some() && x.unwrap() == ticket);
 
                         if item.is_some() {
-                            // let (decoded_id, fanart) = self.decode_ticket_id(item.unwrap());
-                            // let index =
-                            //     self.scroll_pos + if fanart { self.selected } else { decoded_id };
-
-                            // if !self.loaded_images_cache.contains_key(&(index, fanart)) {
-                            //     self.loaded_images_cache.insert((index, fanart), protocol);
-                            // }
-
                             self.images[item.unwrap()].1.replace_protocol(protocol);
                             self.image_drawn[item.unwrap()] = true;
                             self.tickets[item.unwrap()] = None;
                         }
-
-                        // if let Some(i) = id {}
                     } else if let Err(error) = result {
                         error!("Error while loading: {}", error);
                     }
                 }
                 ImageEvents::DrawImage(id, result) => {
                     if let Ok(response) = result {
-                        // let (id, fanart) = self.decode_ticket_id(id);
-
-                        // if fanart {
-                        //     self.fanart_image.update_resized_protocol(response);
-                        //     // self.fanart_drawn = true;
-                        // } else
-
                         let item = self.images.iter().position(|&(x, _)| x == id);
 
                         if let Some(i) = item {
-                            // if self.images.len() > id {
                             self.images[i].1.update_resized_protocol(response);
-
-                            // self.poster_drawn[id] = true;
-                            // } else {
-                            //     error!(
-                            //         "Draw index {id} was larger than array length {}",
-                            //         self.poster_images.len()
-                            //     );
-                            // }
                         }
                     } else if let Err(error) = result {
                         println!("Error while drawing: {}", error);
@@ -303,27 +260,8 @@ impl MainScreen {
                     self.tickets[1..].rotate_left(1);
                     self.tickets_age[1..].rotate_left(1);
 
-                    // let _ = self
-                    //     .tx_worker_collector
-                    //     .send(WorkerCollectorEvents::RotateLeft);
-
-                    // self.poster_drawn[self.poster_images.len() - 1] = false;
-                    // self.clear_tickets();
-
                     self.clear_image(self.num_visible_movies - 1, false);
-                    // self.tickets[self.num_visible_movies - 1] = None;
-
-                    // self.clear_all_image();
-
-                    // let item = self
-                    //     .drawn_movies
-                    //     .iter()
-                    //     .position(|&x| x == self.poster_images.len() - 1);
-                    // if let Some(id) = item {
-                    //     self.drawn_movies.remove(id);
-                    // }
                 } else {
-                    // self.clear_tickets();
                     self.clear_all_image();
                 }
             }
@@ -344,31 +282,15 @@ impl MainScreen {
         } else if self.scroll_pos > 0 {
             self.scroll_pos -= 1;
 
-            self.clear_image(0, true);
-
             if self.images.len() > 1 {
                 self.images[1..].rotate_right(1);
                 self.image_drawn[1..].rotate_right(1);
                 self.tickets[1..].rotate_right(1);
                 self.tickets_age[1..].rotate_right(1);
 
-                // let _ = self
-                //     .tx_worker_collector
-                //     .send(WorkerCollectorEvents::RotateRight);
-
                 self.clear_image(0, false);
-
-                // self.clear_all_image();
-
-                // let item = self.drawn_movies.iter().position(|&x| x == 0);
-                // if let Some(id) = item {
-                //     self.drawn_movies.remove(id);
-                // }
-
-                // self.poster_drawn[0] = false;
-                // self.clear_tickets();
+                self.clear_image(0, true);
             } else {
-                // self.clear_tickets();
                 self.clear_all_image();
             }
 
@@ -433,9 +355,6 @@ impl MainScreen {
             .display()
         );
 
-        // debug!("{}", path);
-
-        // self.async_images[image_id].empty_protocol();
         let ticket = self.create_ticket(ticket_id, fanart);
 
         let result = self.tx_load_decode.send((ticket, path));
@@ -446,37 +365,18 @@ impl MainScreen {
     }
 
     pub fn clear_all_image(&mut self) {
-        // self.clear_tickets();
-
         for i in 0..self.num_visible_movies {
             self.clear_image(i, false);
         }
         self.clear_image(0, true);
-
-        // for image in self.poster_images.iter_mut() {
-        //     image.empty_protocol();
-        // }
-        // self.fanart_image.empty_protocol();
     }
 
     pub fn clear_image(&mut self, image_id: usize, fanart: bool) {
         let id = self.get_image_index(image_id, fanart);
-        // if fanart {
-        //     self.fanart_image.empty_protocol();
-
-        //     self.fanart_drawn = false;
-        // } else {
-
         self.images[id].1.empty_protocol();
         self.image_drawn[id] = false;
         self.tickets[id] = None;
         self.tickets_age[id] = 0;
-
-        // let item = self.drawn_movies.iter().position(|&x| x == image_id);
-        // if let Some(id) = item {
-        //     self.drawn_movies.remove(id);
-        // }
-        // }
     }
 
     // i is from 0..num_movies_visible, we add one because the indices always start at 1 because 0 is reserved for the fanart image.
@@ -508,7 +408,7 @@ impl Drawer {
     }
 
     pub fn render_movies_list(&mut self, frame: &mut Frame, app: &mut App) -> Result<(), Errors> {
-        self.main_screen_options.read_channels(app);
+        self.main_screen_options.read_channels();
 
         let frame_area = frame.area();
 
@@ -526,21 +426,10 @@ impl Drawer {
 
         self.main_screen_options.set_num_movies_visible(num_movies);
 
-        // self.main_screen_options.all_movies_displayed = true;
         for (i, area) in movies_lay.iter().enumerate() {
             if !app.movies.is_empty()
                 && (i + self.main_screen_options.scroll_pos) < app.movies.len()
             {
-                // let display_poster = !self
-                //     .main_screen_options
-                //     .images_displayed
-                //     .iter()
-                //     .any(|x| *x == i as u32)
-                //     && self.active_popup.is_none();
-                // if display_poster {
-                //     self.main_screen_options.all_movies_displayed = false;
-                // }
-
                 self.draw_movie_widget(i, app, frame, *area);
             } else {
                 frame.render_widget(
@@ -555,13 +444,7 @@ impl Drawer {
         }
 
         if !app.movies.is_empty() {
-            // Must be called after the draw_movie_widget for reasons....
-            self.draw_movie_description(
-                app,
-                frame,
-                horiz_lay[0],
-                // !self.main_screen_options.backdrop_displayed && self.active_popup.is_none(),
-            );
+            self.draw_movie_description(app, frame, horiz_lay[0]);
 
             let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
                 .begin_symbol(Some("🢑"))
@@ -587,7 +470,6 @@ impl Drawer {
         let alt = (self.main_screen_options.scroll_pos + id) % 2 == 0;
         let movie_id = id + self.main_screen_options.scroll_pos;
         let movie = app.movies[movie_id].clone();
-        // let poster = get_movie_poster(movie);
 
         // TODO: create a themes framework, maybe in the config
         let (background, text, border, selection_highlight) = if selected {
@@ -638,15 +520,6 @@ impl Drawer {
                 text![line!["▐"]; highlight_area.height as usize].fg(selection_highlight),
                 highlight_area,
             );
-            // } else {
-            //     frame.render_widget(
-            //         text!["▔".repeat(vert_lay[0].width as usize)].fg(border),
-            //         vert_lay[0],
-            //     );
-            //     frame.render_widget(
-            //         text!["▁".repeat(vert_lay[2].width as usize)].fg(border),
-            //         vert_lay[2],
-            //     );
         }
 
         let index = self.main_screen_options.get_image_index(id, false);
@@ -661,40 +534,9 @@ impl Drawer {
             poster_area,
             &mut self.main_screen_options.images[index].1,
         );
-
-        // if draw_poster {
-        //     if posters.contains_key(&(0, movie_id)) {
-        //         let poster = posters.get(&(0, movie_id));
-
-        //         let _ = stdout().execute(ratatui::crossterm::cursor::MoveTo(
-        //             poster_area.x,
-        //             poster_area.y,
-        //         ));
-        //         println!("{}", poster.cloned().unwrap());
-
-        //         // self.main_screen_options.images_displayed.push(id as u32);
-        //     } else {
-        //         drop(posters);
-
-        //         if !self
-        //             .movie_artworks_requested
-        //             .iter()
-        //             .any(|(_, x)| *x == movie_id)
-        //         {
-        //             self.movie_artworks_requested.push((false, movie_id));
-        //             // self.request_artwork_async(app, movie_id, poster_area, true, 0);
-        //         }
-        //     }
-        // }
     }
 
-    fn draw_movie_description(
-        &mut self,
-        app: &mut App,
-        frame: &mut Frame,
-        area: Rect,
-        // draw_backdrop: bool,
-    ) {
+    fn draw_movie_description(&mut self, app: &mut App, frame: &mut Frame, area: Rect) {
         let movie = &app.movies[self.main_screen_options.current_movie_index()];
 
         let [_, vert, _] = Layout::vertical([
@@ -714,7 +556,6 @@ impl Drawer {
         let backdrop_height = ((vert.width - 4) as f32 * 9.0 / 32.0).ceil() as u16;
         let [poster_area, title_area, description_area] = Layout::vertical(vec![
             Constraint::Length(backdrop_height),
-            // Constraint::Length(1),
             Constraint::Length(3),
             Constraint::Min(1),
         ])
@@ -733,29 +574,6 @@ impl Drawer {
             poster_area,
             &mut self.main_screen_options.images[0].1,
         );
-
-        // if draw_backdrop {
-        //     let backdrops = self.movie_artwork.lock().unwrap();
-        //     if backdrops.contains_key(&(1, movie_id)) {
-        //         let poster = backdrops.get(&(1, movie_id));
-
-        //         let _ = stdout().execute(crossterm::cursor::MoveTo(poster_area.x, poster_area.y));
-        //         println!("{}", poster.cloned().unwrap());
-
-        //         // self.main_screen_options.backdrop_displayed = true;
-        //     } else {
-        //         drop(backdrops);
-
-        //         if !self
-        //             .movie_artworks_requested
-        //             .iter()
-        //             .any(|(y, x)| *x == movie_id && *y)
-        //         {
-        //             self.movie_artworks_requested.push((true, movie_id));
-        //             // self.request_artwork_async(app, movie_id, poster_area, false, 0);
-        //         }
-        //     }
-        // }
 
         let subtitle = Line::from_iter([
             "released: ".italic(),
@@ -787,46 +605,4 @@ impl Drawer {
         frame.render_widget(Text::from(lines), title_area);
         frame.render_widget(description, description_area);
     }
-
-    // fn request_artwork_async(
-    //     &mut self,
-    //     app: &App,
-    //     id: u32,
-    //     area: Rect,
-    //     poster: bool,
-    //     expand_width: u16,
-    // ) {
-    //     // let artworks = Arc::clone(&self.movie_artwork);
-
-    //     .join(format!("{}.jpg", app.movies[id as usize].tmdb_id))
-    //     .to_str()
-    //     .unwrap()
-    //     .to_string();
-
-    //     thread::spawn(move || {
-    //         let data = String::from_utf8_lossy(
-    //             &Command::new("chafa")
-    //                 .args([
-    //                     // "--align",
-    //                     // "top,center",
-    //                     "--relative",
-    //                     "on",
-    //                     "--fit-width",
-    //                     "--view-size",
-    //                     &format!("{}x{}", area.width + expand_width, area.height),
-    //                     &path,
-    //                 ])
-    //                 .stdout(Stdio::piped())
-    //                 .output()
-    //                 .unwrap()
-    //                 .stdout,
-    //         )
-    //         .to_string();
-
-    //         artworks
-    //             .lock()
-    //             .unwrap()
-    //             .insert((if poster { 0 } else { 1 }, id), data);
-    //     });
-    // }
 }

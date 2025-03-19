@@ -1,33 +1,33 @@
 use crate::{
-    app::{App, Errors, Result},
+    app::{App, Result},
     draw::Drawer,
     tmdb, trakt,
 };
-use log::{debug, error};
+use log::error;
 use ratatui::{layout::*, prelude::*, widgets::*, Frame};
-use ratatui_macros::{constraints, horizontal, line, span, text, vertical};
+use ratatui_macros::{horizontal, vertical};
 use std::{
     sync::mpsc::{self, Receiver, Sender},
     thread,
 };
 use style::palette::tailwind;
 
-type movieid = (u32, String);
+type MovieID = (u32, String);
 
 #[derive(Default)]
 pub struct FetchArtworksPopup {
     pub started: bool,
     pub progress: u32,
 
-    tx_fetch_request: Option<Sender<Option<movieid>>>,
-    rx_fetch_response: Option<Receiver<(movieid, Result<()>)>>,
+    tx_fetch_request: Option<Sender<Option<MovieID>>>,
+    rx_fetch_response: Option<Receiver<(MovieID, Result<()>)>>,
 
     errored: Option<u32>,
 }
 
 impl FetchArtworksPopup {
     pub fn start_thread(&mut self, app: &App) {
-        let (tx_fetch_request, rx_fetch_request) = mpsc::channel::<Option<movieid>>();
+        let (tx_fetch_request, rx_fetch_request) = mpsc::channel::<Option<MovieID>>();
         let (tx_fetch_response, rx_fetch_response) = mpsc::channel::<((u32, String), Result<()>)>();
 
         let conf = app.config.clone();

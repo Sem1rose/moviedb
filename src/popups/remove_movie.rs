@@ -1,5 +1,5 @@
 use crate::{
-    app::{App, Errors, Result},
+    app::{App, Result},
     draw::Drawer,
 };
 use ratatui::{layout::*, prelude::*, widgets::*, Frame};
@@ -67,7 +67,7 @@ impl Drawer {
                 Paragraph::new(format!(
                     "Do you really want to remove {}?",
                     app.movies
-                        [(self.main_screen_options.scroll_pos + self.main_screen_options.selected)]
+                        [self.main_screen_options.scroll_pos + self.main_screen_options.selected]
                         .name
                 ))
                 .wrap(Wrap { trim: false }),

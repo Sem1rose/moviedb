@@ -1,10 +1,9 @@
 use crate::app::{Config, Errors, Result};
 use cocoon::Cocoon;
-use log::{debug, error, info};
+use log::{debug, error};
 use rand::{distr::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
 use std::{
-    error::Error,
     fs::{self, File},
     io::{stdin, stdout, Write},
 };

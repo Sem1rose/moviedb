@@ -1,14 +1,8 @@
-// use oauth2::basic::BasicClient;
-// use oauth2::reqwest::http_client;
-// use oauth2::{
-//     AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, PkceCodeChallenge, RedirectUrl,
-//     Scope, TokenResponse, TokenUrl,
-// };
 use crate::{
     app::{Config, Errors, Result},
     config_tmdb::TMDBConfig,
 };
-use log::{debug, error, trace};
+use log::{debug, trace};
 use reqwest::{
     blocking::{Client, ClientBuilder, RequestBuilder, Response},
     header::HeaderMap,
@@ -141,8 +135,6 @@ struct RequestSessionIDResponse {
     session_id: String,
 }
 
-// const ALTERNATE_POSTER_FILE: String = String::from("placeholder.png");
-
 pub fn populate_tokens(config: &Config, tmdb_config: &mut TMDBConfig) -> Result<()> {
     if !tmdb_config.has_session_id() {
         debug!("No TMDB session ID found, fetching a new one...");
@@ -166,20 +158,6 @@ fn get_session_id(config: &Config, tmdb_config: &mut TMDBConfig) -> Result<()> {
             .parse()
             .unwrap(),
     );
-
-    // let validate_key_response = send_tmdb_request(
-    //     &client,
-    //     "https://api.themoviedb.org/3/authentication/token/new",
-    //     headers.clone(),
-    //     None,
-    //     None,
-    // )?;
-    // if validate_key_response.status().as_u16() != 200 {
-    //     return Err(Box::new(std::io::Error::new(
-    //         std::io::ErrorKind::Other,
-    //         "Invalid access token!",
-    //     )));
-    // }
 
     // Step 1: create a request token
     let request_token_response = send_tmdb_request(
@@ -317,10 +295,6 @@ pub fn find_movie(tmdb_config: &TMDBConfig, name: &str) -> Result<TMDBSearchResp
     let json = search_response.json::<TMDBSearchResponse>()?;
     // println!("{:#?}", json);
     Ok(json)
-    // Err(Box::new(std::io::Error::new(
-    //     std::io::ErrorKind::Other,
-    //     "ass",
-    // )))
 }
 
 pub fn get_movie_details(tmdb_config: &TMDBConfig, tmdb_id: u32) -> Result<TMDBDetailsResponse> {

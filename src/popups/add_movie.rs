@@ -1,12 +1,11 @@
 use crate::{
-    app::{App, Errors, Movie, Result},
+    app::{App, Movie, Result},
     draw::Drawer,
     tmdb::{self, TMDBDetailsResponse, TMDBSearchResponse},
     trakt::{self, TraktDetailsResponse},
 };
 use ratatui::{layout::*, prelude::*, widgets::*, Frame};
 use std::{
-    error::Error,
     sync::{Arc, Mutex},
     thread,
 };

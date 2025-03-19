@@ -1,5 +1,5 @@
 use crate::{
-    app::{Config, Errors, Movie, Result},
+    app::{Config, Movie, Result},
     config_tmdb::TMDBConfig,
     config_trakt::TraktConfig,
     tmdb, trakt,
