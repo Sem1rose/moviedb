@@ -27,13 +27,10 @@ impl Tui {
         let terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
         // let terminal = ratatui::init();
 
-        let app = App::new()?;
-        let mut drawer = Drawer::default();
-
         Ok(Self {
-            drawer,
+            drawer: Drawer::default(),
             terminal,
-            app,
+            app: App::new()?,
         })
     }
 
@@ -87,7 +84,7 @@ impl Tui {
                 }
             }
 
-            if self.app.should_quit && !self.drawer.fetch_artwork_popup_options.started {
+            if self.app.should_quit && self.drawer.fetch_artwork_popup_options.done {
                 return Ok(());
             }
         }

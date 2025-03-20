@@ -1,6 +1,7 @@
 use crate::{
     app::{App, Result},
     draw::Drawer,
+    helpers::center_rect,
 };
 use ratatui::{
     crossterm::event::{KeyCode, KeyEvent, KeyEventKind},
@@ -9,27 +10,34 @@ use ratatui::{
     widgets::*,
     Frame,
 };
+use ratatui_macros::{horizontal, vertical};
 use style::palette::tailwind;
 
 #[derive(Default)]
+enum Phase {
+    #[default]
+    Confirm,
+    Finish,
+}
+
+#[derive(Default)]
 pub struct RemoveMoviePopup {
-    pub errored: bool,
-    pub confirmed: bool,
-    pub selected: i32,
-    pub finished: bool,
+    pub selected: usize,
+
+    phase: Phase,
 }
 
 impl RemoveMoviePopup {
-    pub const NUMBUTTONS: i32 = 2;
+    pub const NUMBUTTONS: usize = 2;
     pub fn begin(&mut self) {
         *self = Self::default();
     }
 
     fn dec_selection_horiz(&mut self) {
-        self.selected -= 1;
-        if self.selected < 0 {
-            self.selected = RemoveMoviePopup::NUMBUTTONS - 1;
-        }
+        self.selected = self
+            .selected
+            .checked_sub(1)
+            .unwrap_or(RemoveMoviePopup::NUMBUTTONS - 1);
     }
 
     fn inc_selection_horiz(&mut self) {
@@ -37,6 +45,13 @@ impl RemoveMoviePopup {
         if self.selected >= RemoveMoviePopup::NUMBUTTONS {
             self.selected = 0;
         }
+    }
+
+    pub fn advance_phase(&mut self) {
+        self.phase = match self.phase {
+            Phase::Confirm => Phase::Finish,
+            _ => Phase::Confirm,
+        };
     }
 }
 
@@ -57,12 +72,10 @@ impl Drawer {
                 self.remove_movie_popup_options.dec_selection_horiz();
             }
             KeyCode::Enter => {
-                if self.remove_movie_popup_options.errored
-                    || self.remove_movie_popup_options.selected == 0
-                {
+                if self.remove_movie_popup_options.selected == 0 {
                     self.close_popups();
                 } else if self.remove_movie_popup_options.selected == 1 {
-                    self.remove_movie_popup_options.confirmed = true;
+                    self.remove_movie_popup_options.advance_phase();
                 }
             }
             KeyCode::Esc => {
@@ -80,7 +93,7 @@ impl Drawer {
         app: &mut App,
     ) -> Result<()> {
         let frame_area = frame.area();
-        let popup_area = self.center(frame_area, Constraint::Percentage(40), Constraint::Max(7));
+        let popup_area = center_rect(frame_area, Constraint::Percentage(40), Constraint::Max(7));
 
         let popup = Block::new()
             .bg(tailwind::INDIGO.c950)
@@ -95,102 +108,91 @@ impl Drawer {
         frame.render_widget(Clear, popup_area);
         frame.render_widget(&popup, popup_area);
 
-        let [_, vert, _] = Layout::vertical([
-            Constraint::Length(1),
-            Constraint::Min(1),
-            Constraint::Length(1),
-        ])
-        .areas(popup_area);
-        let [_, horiz, _] = Layout::horizontal([
-            Constraint::Length(2),
-            Constraint::Min(1),
-            Constraint::Length(2),
-        ])
-        .areas(vert);
+        let [_, vert, _] = vertical![==1, >=1, ==1].areas(popup_area);
+        let [_, horiz, _] = horizontal![==2, >=1, ==2].areas(vert);
 
-        if !self.remove_movie_popup_options.confirmed {
-            let areas = Layout::vertical([
-                Constraint::Length(1),
-                Constraint::Min(1),
-                Constraint::Length(1),
-            ])
-            .split(horiz);
+        match self.remove_movie_popup_options.phase {
+            Phase::Confirm => {
+                let areas = vertical![==1, >=1, ==1].split(horiz);
 
-            frame.render_widget(
-                Paragraph::new(format!(
-                    "Do you really want to remove {}?",
-                    app.movies[self.main_screen_options.current_movie_index()].name
-                ))
-                .wrap(Wrap { trim: false }),
-                areas[1],
-            );
-
-            let button_areas =
-                Layout::horizontal([Constraint::Min(1), Constraint::Min(1), Constraint::Min(1)])
-                    .split(areas[2]);
-            frame.render_widget(
-                Paragraph::new(format!(
-                    "{}Cancel{}",
-                    if self.remove_movie_popup_options.selected == 0 {
-                        ">"
-                    } else {
-                        " "
-                    },
-                    if self.remove_movie_popup_options.selected == 0 {
-                        "<"
-                    } else {
-                        " "
-                    },
-                ))
-                .centered()
-                .on_green(),
-                button_areas[2],
-            );
-            frame.render_widget(
-                Paragraph::new(format!(
-                    "{}Yes{}",
-                    if self.remove_movie_popup_options.selected == 1 {
-                        ">"
-                    } else {
-                        " "
-                    },
-                    if self.remove_movie_popup_options.selected == 1 {
-                        "<"
-                    } else {
-                        " "
-                    },
-                ))
-                .centered()
-                .on_red(),
-                button_areas[0],
-            );
-        } else if !self.remove_movie_popup_options.finished {
-            self.remove_movie_popup_options.finished = true;
-            app.movies
-                .remove(self.main_screen_options.current_movie_index());
-
-            if app.save_movies().is_err() {
-                self.remove_movie_popup_options.errored = true;
-                let areas = Layout::vertical([Constraint::Length(1); 5]).split(horiz);
                 frame.render_widget(
-                    Paragraph::new("Couldn't remove movie!").red().centered(),
-                    areas[2],
+                    Paragraph::new(format!(
+                        "Do you really want to remove {}?",
+                        app.movies[self.main_screen_options.current_movie_index()].name
+                    ))
+                    .wrap(Wrap { trim: false }),
+                    areas[1],
                 );
-                frame.render_widget(Paragraph::new(" Ok ").right_aligned().on_red(), areas[4]);
-            }
 
-            if self.main_screen_options.current_movie_index() >= app.movies.len() {
-                if self.main_screen_options.scroll_pos > 0 {
-                    self.main_screen_options.scroll_pos -= 1;
-                } else if self.main_screen_options.selected > 0 {
-                    self.main_screen_options.selected -= 1;
-                }
-            } else {
+                let button_areas = horizontal![>=1, >=1, >=1].split(areas[2]);
+                frame.render_widget(
+                    Paragraph::new(format!(
+                        "{}Cancel{}",
+                        if self.remove_movie_popup_options.selected == 0 {
+                            ">"
+                        } else {
+                            " "
+                        },
+                        if self.remove_movie_popup_options.selected == 0 {
+                            "<"
+                        } else {
+                            " "
+                        },
+                    ))
+                    .centered()
+                    .black()
+                    .on_green(),
+                    button_areas[2],
+                );
+                frame.render_widget(
+                    Paragraph::new(format!(
+                        "{}Yes{}",
+                        if self.remove_movie_popup_options.selected == 1 {
+                            ">"
+                        } else {
+                            " "
+                        },
+                        if self.remove_movie_popup_options.selected == 1 {
+                            "<"
+                        } else {
+                            " "
+                        },
+                    ))
+                    .centered()
+                    .on_red(),
+                    button_areas[0],
+                );
+            }
+            Phase::Finish => {
                 self.main_screen_options
-                    .rehash_images(app, self.main_screen_options.current_movie_index());
-            }
+                    .hashed_images
+                    .remove(&(self.main_screen_options.current_movie_index(), false));
+                self.main_screen_options
+                    .hashed_images
+                    .remove(&(self.main_screen_options.current_movie_index(), true));
 
-            self.close_popups();
+                app.movies
+                    .remove(self.main_screen_options.current_movie_index());
+
+                if app.save_movies().is_err() {
+                    self.open_error_popup("Couldn't remove movie!".into());
+
+                    return Ok(());
+                }
+
+                if self.main_screen_options.current_movie_index() >= app.movies.len() {
+                    if self.main_screen_options.scroll_pos > 0 {
+                        self.main_screen_options.scroll_pos -= 1;
+                    } else if self.main_screen_options.selected > 0 {
+                        self.main_screen_options.selected -= 1;
+                    }
+                } else {
+                    self.main_screen_options
+                        .rehash_images(app, self.main_screen_options.current_movie_index());
+                }
+
+                self.close_popups();
+            }
         }
         Ok(())
     }

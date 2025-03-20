@@ -1,5 +1,6 @@
 use crate::{
     app::{App, Result},
+    helpers::center_rect,
     popups::{
         add_movie::AddMoviePopup, edit_movie::EditMoviePopup, fetch_artworks::FetchArtworksPopup,
         remove_movie::RemoveMoviePopup, Popups,
@@ -12,14 +13,13 @@ use ratatui::{layout::*, prelude::*, widgets::*, Frame};
 pub struct Drawer {
     pub(crate) throbber_state: throbber_widgets_tui::ThrobberState,
 
-    pub(crate) accepting_input: bool,
-
     pub(crate) previous_screen: Option<Screens>,
     pub(crate) current_screen: Screens,
     pub(crate) active_popup: Option<Popups>,
 
     pub(crate) main_screen_options: MainScreen,
     pub(crate) init_screen_options: InitScreen,
+    pub(crate) error_popup_error: String,
     pub(crate) add_movie_popup_options: AddMoviePopup,
     pub(crate) edit_movie_popup_options: EditMoviePopup,
     pub(crate) remove_movie_popup_options: RemoveMoviePopup,
@@ -30,6 +30,7 @@ const MINTERMSIZE: [u32; 2] = [80, 22];
 impl Drawer {
     pub fn render_app(&mut self, frame: &mut Frame, app: &mut App, frame_time: f64) -> Result<()> {
         self.check_term_size(frame);
+        self.check_popups();
 
         self.draw_current_screen(frame, app)?;
 
@@ -65,7 +66,7 @@ impl Drawer {
     }
 
     pub fn draw_popup(&mut self, frame: &mut Frame, app: &mut App) -> Result<()> {
-        match self.active_popup.unwrap() {
+        match self.active_popup.as_ref().unwrap() {
             Popups::FetchArtwork => {
                 self.draw_fetch_artworks_popup(frame, app)?;
             }
@@ -78,22 +79,40 @@ impl Drawer {
             Popups::RemoveMovie => {
                 self.draw_remove_movie_popup(frame, app)?;
             }
+            Popups::Error => {
+                self.draw_error_popup(frame)?;
+            }
         }
 
         Ok(())
     }
 
+    pub fn check_popups(&mut self) {
+        if let Some(popup) = self.active_popup.as_ref() {
+            match popup {
+                Popups::FetchArtwork => {
+                    if self.fetch_artwork_popup_options.done {
+                        self.close_popups();
+                    }
+                }
+                _ => (),
+            }
+        }
+    }
+
     pub fn close_popups(&mut self) {
         self.active_popup = None;
 
-        self.fetch_artwork_popup_options.finish();
+        // self.fetch_artwork_popup_options.reset();
 
-        self.accepting_input = false;
+        // self.main_screen_options.rehash_visible_images(app);
     }
 
     pub fn open_fetch_artworks_popup(&mut self, app: &mut App) -> Result<()> {
         self.active_popup = Some(Popups::FetchArtwork);
+        self.fetch_artwork_popup_options.reset();
         self.fetch_artworks(app)?;
+
         Ok(())
     }
 
@@ -101,32 +120,24 @@ impl Drawer {
         self.active_popup = Some(Popups::AddMovie);
 
         self.add_movie_popup_options.begin();
-
-        self.accepting_input = true;
     }
 
-    pub fn open_edit_movie_popup(&mut self) {
+    pub fn open_edit_movie_popup(&mut self, app: &mut App) {
         self.active_popup = Some(Popups::EditMovie);
 
-        self.edit_movie_popup_options.begin();
-
-        self.accepting_input = true;
+        self.edit_movie_popup_options
+            .begin(app, self.main_screen_options.current_movie_index());
     }
 
     pub fn open_remove_movie_popup(&mut self) {
         self.active_popup = Some(Popups::RemoveMovie);
 
         self.remove_movie_popup_options.begin();
-
-        self.accepting_input = false;
     }
 
-    pub(crate) fn center(&self, area: Rect, horizontal: Constraint, vertical: Constraint) -> Rect {
-        let [area] = Layout::horizontal([horizontal])
-            .flex(Flex::Center)
-            .areas(area);
-        let [area] = Layout::vertical([vertical]).flex(Flex::Center).areas(area);
-        area
+    pub fn open_error_popup(&mut self, message: String) {
+        self.active_popup = Some(Popups::Error);
+        self.error_popup_error = message;
     }
 
     fn check_term_size(&mut self, frame: &Frame) -> bool {
@@ -164,7 +175,7 @@ impl Drawer {
                 MINTERMSIZE[1].to_string().green(),
             ]),
         ];
-        let area = self.center(
+        let area = center_rect(
             frame_area,
             Constraint::Min(0),
             Constraint::Length(lines.len() as u16),

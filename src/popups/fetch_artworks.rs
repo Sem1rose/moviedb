@@ -1,12 +1,14 @@
 use crate::{
     app::{App, Result},
     draw::Drawer,
+    helpers::center_rect,
     tmdb, trakt,
 };
 use log::error;
 use ratatui::{layout::*, prelude::*, widgets::*, Frame};
 use ratatui_macros::{horizontal, vertical};
 use std::{
+    collections::HashSet,
     sync::mpsc::{self, Receiver, Sender},
     thread,
 };
@@ -16,8 +18,9 @@ type MovieID = (u32, String);
 
 #[derive(Default)]
 pub struct FetchArtworksPopup {
-    pub started: bool,
-    pub progress: u32,
+    pub done: bool,
+
+    pub progress: usize,
 
     tx_fetch_request: Option<Sender<Option<MovieID>>>,
     rx_fetch_response: Option<Receiver<(MovieID, Result<()>)>>,
@@ -88,23 +91,41 @@ impl FetchArtworksPopup {
             }
         });
 
-        self.started = true;
-
         self.tx_fetch_request = Some(tx_fetch_request);
         self.rx_fetch_response = Some(rx_fetch_response);
     }
 
-    pub fn finish(&mut self) {
-        self.started = false;
+    pub fn check_done(&mut self, app: &App) -> bool {
+        if self.progress == app.movies.len() {
+            self.done = true;
+        }
+        self.done
+    }
 
-        self.progress = 0;
-        self.errored = None;
-        self.tx_fetch_request = None;
-        self.rx_fetch_response = None;
+    pub fn reset(&mut self) {
+        *self = Self::default();
     }
 }
 
 impl Drawer {
+    fn check_artwork_fetched(&self, config: &crate::app::Config, id: u32) -> bool {
+        if config
+            .dirs
+            .poster_cache
+            .join(format!("{}.jpg", id))
+            .is_file()
+            && config
+                .dirs
+                .backdrop_cache
+                .join(format!("{}.jpg", id))
+                .is_file()
+        {
+            return true;
+        }
+
+        false
+    }
+
     pub fn fetch_artworks(&mut self, app: &mut App) -> Result<()> {
         let contents = std::fs::read_to_string(&app.config.dirs.cached_movies_file)?;
         let movies_cached: Vec<_> = contents
@@ -115,13 +136,14 @@ impl Drawer {
         self.fetch_artwork_popup_options.start_thread(app);
 
         for movie in &app.movies {
-            // let movie_id = movie.tmdb_id;
             let movie_id = (movie.tmdb_id, movie.imdb_id.clone());
-            if !movies_cached.contains(&movie_id.0.to_string()) {
+            if !movies_cached.contains(&movie_id.0.to_string())
+                || !self.check_artwork_fetched(&app.config, movie_id.0)
+            {
                 let _ = self
                     .fetch_artwork_popup_options
                     .tx_fetch_request
-                    .as_mut()
+                    .as_ref()
                     .unwrap()
                     .send(Some(movie_id));
             } else {
@@ -135,7 +157,7 @@ impl Drawer {
     fn read_threads_responses(&mut self, app: &mut App) -> Result<()> {
         let contents = std::fs::read_to_string(&app.config.dirs.cached_movies_file)?;
 
-        let mut movies_cached: Vec<_> = contents
+        let mut movies_cached: HashSet<_> = contents
             .split_ascii_whitespace()
             .map(|x| x.to_string())
             .collect();
@@ -143,7 +165,7 @@ impl Drawer {
         for (id, fetch_result) in self
             .fetch_artwork_popup_options
             .rx_fetch_response
-            .as_mut()
+            .as_ref()
             .unwrap()
             .try_iter()
         {
@@ -156,13 +178,13 @@ impl Drawer {
             } else {
                 self.fetch_artwork_popup_options.progress += 1;
 
-                movies_cached.push(id.0.to_string());
+                movies_cached.insert(id.0.to_string());
             }
         }
 
         std::fs::write(
             &app.config.dirs.cached_movies_file,
-            movies_cached.join("\n"),
+            movies_cached.into_iter().collect::<Vec<_>>().join("\n"),
         )?;
 
         Ok(())
@@ -172,27 +194,18 @@ impl Drawer {
         &mut self,
         frame: &mut Frame,
         app: &mut App,
-    ) -> Result<bool> {
-        if !self.fetch_artwork_popup_options.started {
-            self.fetch_artwork_popup_options.started = true;
-
-            self.fetch_artworks(app)?;
-        }
-
+    ) -> Result<()> {
         self.read_threads_responses(app)?;
+        if self.fetch_artwork_popup_options.check_done(app) {
+            return Ok(());
+        }
 
         let frame_area = frame.area();
 
         let progress = self.fetch_artwork_popup_options.progress;
         let num_movies = app.movies.len();
 
-        if progress == num_movies as u32 {
-            self.fetch_artwork_popup_options.finish();
-
-            return Ok(true);
-        }
-
-        let popup_area = self.center(
+        let popup_area = center_rect(
             frame_area,
             Constraint::Percentage(50),
             Constraint::Length(12),
@@ -244,18 +257,14 @@ impl Drawer {
 
         if let Some(id) = self.fetch_artwork_popup_options.errored {
             let errored_text = format!("movie {id} errored, retrying!!");
-            // let [text_lay] =
-            //     Layout::horizontal(vec![Constraint::Length(errored_text.len() as u16)])
-            //         .flex(Flex::Center)
-            //         .areas(layout[1]);
 
             let [text_lay] = horizontal![==(errored_text.len() as u16)]
                 .flex(Flex::Center)
-                .areas(layout[1]);
+                .areas(layout[5]);
 
             frame.render_widget(errored_text, text_lay);
         }
 
-        Ok(false)
+        Ok(())
     }
 }

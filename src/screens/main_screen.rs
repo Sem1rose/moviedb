@@ -312,6 +312,50 @@ impl MainScreen {
         }
     }
 
+    pub fn rehash_visible_images(&mut self, app: &App) {
+        let start_index = self.scroll_pos;
+        let movie_ids = app.movies[start_index..(start_index + self.num_visible_movies)]
+            .iter()
+            .map(|x| x.tmdb_id)
+            .collect::<Vec<_>>();
+
+        for (i, id) in movie_ids.iter().enumerate() {
+            let index = start_index + i;
+
+            if !self.hashed_images.contains_key(&(index, false)) {
+                self.hash_image(index, false, app);
+            } else {
+                let poster_path = format!(
+                    "{}",
+                    &app.config
+                        .dirs
+                        .poster_cache
+                        .join(format!("{}.jpg", id))
+                        .display()
+                );
+
+                let _ = self.tx_load_decode.send(((index, false), poster_path));
+            }
+
+            if index == self.current_movie_index() {
+                if !self.hashed_images.contains_key(&(index, true)) {
+                    self.hash_image(index, true, app);
+                } else {
+                    let fanart_path = format!(
+                        "{}",
+                        &app.config
+                            .dirs
+                            .backdrop_cache
+                            .join(format!("{}.jpg", id))
+                            .display()
+                    );
+
+                    let _ = self.tx_load_decode.send(((index, true), fanart_path));
+                }
+            }
+        }
+    }
+
     pub fn rehash_image(&mut self, movie_index: usize, fanart: bool, app: &App) {
         let path = format!(
             "{}",
@@ -347,7 +391,7 @@ impl Drawer {
                 self.open_add_movie_popup();
             }
             KeyCode::Char('e') => {
-                self.open_edit_movie_popup();
+                self.open_edit_movie_popup(app);
             }
             KeyCode::Char('d') => {
                 self.open_remove_movie_popup();
@@ -380,6 +424,7 @@ impl Drawer {
 
     pub fn open_main_screen(&mut self) {
         self.close_popups();
+
         self.current_screen = Screens::MainScreen;
     }
 
@@ -497,21 +542,24 @@ impl Drawer {
             );
         }
 
-        let key = (self.main_screen_options.scroll_pos + id, false);
-        if !self.main_screen_options.hashed_images.contains_key(&key) {
-            self.main_screen_options.hash_image(key.0, key.1, app);
-        }
+        if let Some(crate::popups::Popups::FetchArtwork) = self.active_popup {
+        } else {
+            let key = (self.main_screen_options.scroll_pos + id, false);
+            if !self.main_screen_options.hashed_images.contains_key(&key) {
+                self.main_screen_options.hash_image(key.0, key.1, app);
+            }
 
-        frame.render_stateful_widget(
-            ThreadImage::new().resize(ratatui_image::Resize::Scale(Some(
-                ratatui_image::FilterType::Triangle,
-            ))),
-            poster_area,
-            self.main_screen_options
-                .hashed_images
-                .get_mut(&key)
-                .unwrap(),
-        );
+            frame.render_stateful_widget(
+                ThreadImage::new().resize(ratatui_image::Resize::Scale(Some(
+                    ratatui_image::FilterType::Triangle,
+                ))),
+                poster_area,
+                self.main_screen_options
+                    .hashed_images
+                    .get_mut(&key)
+                    .unwrap(),
+            );
+        }
     }
 
     fn draw_movie_description(&mut self, app: &mut App, frame: &mut Frame, area: Rect) {
@@ -583,20 +631,23 @@ impl Drawer {
         frame.render_widget(Text::from(lines), title_area);
         frame.render_widget(description, description_area);
 
-        let key = (self.main_screen_options.current_movie_index(), true);
-        if !self.main_screen_options.hashed_images.contains_key(&key) {
-            self.main_screen_options.hash_image(key.0, key.1, app);
-        }
+        if let Some(crate::popups::Popups::FetchArtwork) = self.active_popup {
+        } else {
+            let key = (self.main_screen_options.current_movie_index(), true);
+            if !self.main_screen_options.hashed_images.contains_key(&key) {
+                self.main_screen_options.hash_image(key.0, key.1, app);
+            }
 
-        frame.render_stateful_widget(
-            ThreadImage::new().resize(ratatui_image::Resize::Scale(Some(
-                ratatui_image::FilterType::Triangle,
-            ))),
-            poster_area,
-            self.main_screen_options
-                .hashed_images
-                .get_mut(&key)
-                .unwrap(),
-        );
+            frame.render_stateful_widget(
+                ThreadImage::new().resize(ratatui_image::Resize::Scale(Some(
+                    ratatui_image::FilterType::Triangle,
+                ))),
+                poster_area,
+                self.main_screen_options
+                    .hashed_images
+                    .get_mut(&key)
+                    .unwrap(),
+            );
+        }
     }
 }

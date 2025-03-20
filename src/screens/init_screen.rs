@@ -6,14 +6,14 @@ use ratatui::{prelude::*, widgets::*, Frame};
 use style::palette::tailwind;
 
 #[derive(Default)]
-pub enum InitSteps {
+pub enum Phase {
     #[default]
     FetchArtwork,
 }
 
 #[derive(Default)]
 pub struct InitScreen {
-    pub init_step: InitSteps,
+    pub phase: Phase,
 
     started_step: bool,
 }
@@ -23,8 +23,8 @@ impl Drawer {
         let frame_area = frame.area();
         frame.render_widget(Block::new().bg(tailwind::SLATE.c900), frame_area);
 
-        match self.init_screen_options.init_step {
-            InitSteps::FetchArtwork => {
+        match self.init_screen_options.phase {
+            Phase::FetchArtwork => {
                 if !self.init_screen_options.started_step {
                     self.open_fetch_artworks_popup(app)?;
 
@@ -38,21 +38,19 @@ impl Drawer {
         Ok(())
     }
 
-    fn init_screen_advance_step(&mut self) {
-        // self.close_popups();
+    fn init_screen_advance_phase(&mut self) {
         self.init_screen_options.started_step = false;
 
-        match self.init_screen_options.init_step {
-            InitSteps::FetchArtwork => {
+        match self.init_screen_options.phase {
+            Phase::FetchArtwork => {
                 self.open_main_screen();
             }
         }
     }
 
     fn handle_init_screen_fetch_artworks(&mut self) {
-        if !self.fetch_artwork_popup_options.started {
-            self.fetch_artwork_popup_options.finish();
-            self.init_screen_advance_step();
+        if self.fetch_artwork_popup_options.done {
+            self.init_screen_advance_phase();
         }
     }
 }

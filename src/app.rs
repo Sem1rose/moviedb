@@ -226,15 +226,18 @@ impl App {
                 }
 
                 if drawer.active_popup.is_some() {
-                    match drawer.active_popup.unwrap() {
+                    match drawer.active_popup.as_ref().unwrap() {
                         Popups::AddMovie => {
-                            drawer.add_movie_popup_handle_key_events(event)?;
+                            drawer.add_movie_popup_handle_key_events(self, event)?;
                         }
                         Popups::EditMovie => {
                             drawer.edit_movie_popup_handle_key_events(event)?;
                         }
                         Popups::RemoveMovie => {
                             drawer.remove_movie_popup_handle_key_events(event)?;
+                        }
+                        Popups::Error => {
+                            drawer.error_popup_handle_key_events(event)?;
                         }
                         Popups::FetchArtwork => (),
                     }
