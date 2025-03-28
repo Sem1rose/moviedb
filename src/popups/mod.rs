@@ -3,6 +3,8 @@ pub mod edit_movie;
 pub mod error;
 pub mod fetch_artworks;
 pub mod remove_movie;
+pub mod tmdb_init;
+pub mod trakt_init;
 
 #[derive(Clone, PartialEq)]
 pub enum Popups {
@@ -11,4 +13,6 @@ pub enum Popups {
     EditMovie,
     RemoveMovie,
     Error,
+    TraktInit,
+    TMDBInit,
 }

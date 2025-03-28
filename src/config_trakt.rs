@@ -1,4 +1,4 @@
-use crate::app::{Config, Errors, Result};
+use crate::app::{Config, Errors, OptionalResult, Result};
 use cocoon::Cocoon;
 use log::{debug, error};
 use rand::{distr::Alphanumeric, Rng};
@@ -6,32 +6,35 @@ use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File},
     io::{stdin, stdout, Write},
+    sync::mpsc::Sender,
+    thread,
 };
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct TraktCredentials {
-    client_secret: Box<str>,
-    client_id: Box<str>,
-    access_token: Box<str>,
-    refresh_token: Box<str>,
+    client_secret: String,
+    client_id: String,
+    access_token: String,
+    refresh_token: String,
     expires_on: i32,
 }
 
-impl TraktCredentials {
-    pub fn new(client_secret: String, client_id: String) -> Self {
+impl Default for TraktCredentials {
+    fn default() -> Self {
         Self {
-            client_secret: client_secret.into_boxed_str(),
-            client_id: client_id.into_boxed_str(),
+            client_secret: "".into(),
+            client_id: "".into(),
             access_token: "".into(),
             refresh_token: "".into(),
             expires_on: -1,
         }
     }
-
-    pub fn default() -> Self {
+}
+impl TraktCredentials {
+    pub fn new(client_secret: String, client_id: String) -> Self {
         Self {
-            client_secret: "".into(),
-            client_id: "".into(),
+            client_secret,
+            client_id,
             access_token: "".into(),
             refresh_token: "".into(),
             expires_on: -1,
@@ -42,16 +45,19 @@ impl TraktCredentials {
 #[derive(Clone)]
 pub struct TraktConfig {
     trakt_credentials: TraktCredentials,
+
+    tx_init: Sender<OptionalResult<String>>,
 }
 
 impl TraktConfig {
-    pub fn new() -> Self {
+    pub fn new(tx_init: Sender<OptionalResult<String>>) -> Self {
         Self {
+            tx_init,
             trakt_credentials: TraktCredentials::default(),
         }
     }
 
-    pub fn init(&mut self, config: &Config) -> Result<()> {
+    fn try_init(&mut self, config: &Config) -> Result<bool> {
         if !config.dirs.encryption_key_file.is_file() {
             let key: String = rand::rng()
                 .sample_iter(&Alphanumeric)
@@ -65,44 +71,70 @@ impl TraktConfig {
         }
 
         if config.dirs.trakt_encrypted_file.is_file() {
-            if self.read_creds(config).is_err() {
-                error!("Error reading Trakt config file, initializing a new config...");
+            // self.read_creds(config)?;
 
-                self.init_creds();
-            }
+            Ok(true)
         } else {
-            debug!("Initializing a new Trakt config...");
-
-            self.init_creds();
+            Ok(false)
         }
-        Ok(())
     }
 
-    fn init_creds(&mut self) {
-        let client_id = self.get_input(String::from("Enter your client id:"));
-        let client_secret = self.get_input(String::from("Enter your client secret:"));
+    pub fn init(&mut self, config: &Config) {
+        let result = self.try_init(config);
+        if let Ok(true) = result {
+            let tx_result = self.tx_init.clone();
+            let conf_cloned = config.clone();
 
-        self.trakt_credentials = TraktCredentials::new(client_secret, client_id);
+            thread::spawn(move || {
+                tx_result.send(TraktConfig::read_creds(&conf_cloned).map_err(|error| Some(error)))
+            });
+        } else if let Ok(false) = result {
+            // debug!("Initializing a new Trakt config...");
+
+            let _ = self.tx_init.send(Err(None));
+
+            // self.init_creds();
+        } else if let Err(error) = result {
+            // error!("Error reading Trakt config file, initializing a new config...");
+
+            let _ = self.tx_init.send(Err(Some(error)));
+
+            // self.init_creds();
+            // } else {
+            //     let _ = self.tx_init.send(Ok(()));
+        }
     }
 
-    fn read_creds(&mut self, config: &Config) -> Result<()> {
+    fn read_creds(config: &Config) -> Result<String> {
         let key = fs::read(&config.dirs.encryption_key_file)?;
         let cocoon = Cocoon::new(&key);
 
         let mut encrypted_file = File::open(&config.dirs.trakt_encrypted_file)?;
 
         let result = String::from_utf8(cocoon.parse(&mut encrypted_file)?);
-        if let Ok(decrypted_creds) = result {
-            self.trakt_credentials = serde_json::from_str(&decrypted_creds)?;
-        } else {
-            return Err(Errors::Other(format!(
-                "Trakt: error decoding utf8: {}",
-                result.unwrap_err()
-            )));
-        }
 
-        // debug!("trakt credentials: {:#?}", self.trakt_credentials);
+        result.map_err(|error| Errors::Other(format!("Trakt: error decoding utf8: {}", error)))
+        // if let Ok(decrypted_creds) = result {
+        //     self.set_creds(decrypted_creds)
+        // } else {
+        //     Err(Errors::Other(format!(
+        //         "Trakt: error decoding utf8: {}",
+        //         result.unwrap_err()
+        //     )))
+        // }
+    }
+
+    pub fn set_creds(&mut self, data: String) -> Result<()> {
+        self.trakt_credentials = serde_json::from_str(&data)?;
+
         Ok(())
+    }
+
+    pub fn init_creds(&mut self, client_id: String, client_secret: String) {
+        // let client_id = self.get_input(String::from("Enter your client id:"));
+        // let client_secret = self.get_input(String::from("Enter your client secret:"));
+
+        self.trakt_credentials = TraktCredentials::new(client_secret, client_id);
     }
 
     pub fn save_creds(&self, config: &Config) -> Result<()> {
@@ -117,23 +149,23 @@ impl TraktConfig {
         Ok(())
     }
 
-    fn get_input(&self, prompt: String) -> String {
-        print!("{prompt} ");
-        let _ = stdout().flush();
+    // fn get_input(&self, prompt: String) -> String {
+    //     print!("{prompt} ");
+    //     let _ = stdout().flush();
 
-        let mut input = String::new();
-        stdin()
-            .read_line(&mut input)
-            .expect("Did not enter a correct string");
-        if let Some('\n') = input.chars().next_back() {
-            input.pop();
-        }
-        if let Some('\r') = input.chars().next_back() {
-            input.pop();
-        }
+    //     let mut input = String::new();
+    //     stdin()
+    //         .read_line(&mut input)
+    //         .expect("Did not enter a correct string");
+    //     if let Some('\n') = input.chars().next_back() {
+    //         input.pop();
+    //     }
+    //     if let Some('\r') = input.chars().next_back() {
+    //         input.pop();
+    //     }
 
-        input
-    }
+    //     input
+    // }
 
     pub fn set_trakt_tokens(
         &mut self,
@@ -142,14 +174,14 @@ impl TraktConfig {
         created_at: i32,
         expires_in: i32,
     ) {
-        self.trakt_credentials.access_token = access_token.into_boxed_str();
-        self.trakt_credentials.refresh_token = refresh_token.into_boxed_str();
+        self.trakt_credentials.access_token = access_token;
+        self.trakt_credentials.refresh_token = refresh_token;
         self.trakt_credentials.expires_on = created_at + expires_in;
     }
 
     pub fn has_tokens(&self) -> bool {
-        self.trakt_credentials.access_token != "".into()
-            && self.trakt_credentials.refresh_token != "".into()
+        self.trakt_credentials.access_token != String::from("")
+            && self.trakt_credentials.refresh_token != String::from("")
     }
 
     pub fn client_id(&self) -> &str {

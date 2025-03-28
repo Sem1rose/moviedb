@@ -28,7 +28,7 @@ enum Phase {
     SelectMovie,
     GetRating,
     GettingDetails,
-    Finish,
+    Done,
 }
 
 #[derive(Default)]
@@ -151,7 +151,7 @@ impl AddMoviePopup {
 
                 Phase::GettingDetails
             }
-            Phase::GettingDetails => Phase::Finish,
+            Phase::GettingDetails => Phase::Done,
             _ => Phase::GetName,
         };
     }
@@ -284,12 +284,12 @@ impl Drawer {
 
         match self.add_movie_popup_options.phase {
             Phase::GetName => {
-                let [_, right, left, _] = horizontal![==2, ==6, >=1, ==2].areas(horiz);
+                let [_, left, right, _] = horizontal![==2, ==6, >=1, ==2].areas(horiz);
 
-                let prompt_area = Layout::vertical([Constraint::Length(1); 5]).split(right)[2];
+                let prompt_area = Layout::vertical([Constraint::Length(1); 5]).split(left)[2];
 
                 let [_, search_top, search_center, search_bottom, _] =
-                    Layout::vertical([Constraint::Length(1); 5]).areas(left);
+                    Layout::vertical([Constraint::Length(1); 5]).areas(right);
 
                 let [_, search_input_area, _] = horizontal![==1, >=1, ==1].areas(search_center);
 
@@ -383,12 +383,12 @@ impl Drawer {
                 }
             }
             Phase::GetRating => {
-                let [_, right, left, _] = horizontal![==2, ==8, >=1, ==2].areas(horiz);
+                let [_, left, right, _] = horizontal![==2, ==8, >=1, ==2].areas(horiz);
 
-                let prompt_area = Layout::vertical([Constraint::Length(1); 5]).split(right)[2];
+                let prompt_area = Layout::vertical([Constraint::Length(1); 5]).split(left)[2];
 
                 let [_, search_top, search_center, search_bottom, _] =
-                    Layout::vertical([Constraint::Length(1); 5]).areas(left);
+                    Layout::vertical([Constraint::Length(1); 5]).areas(right);
 
                 let [_, search_input_area, _] = horizontal![==1, >=1, ==1].areas(search_center);
 
@@ -453,7 +453,7 @@ impl Drawer {
                 frame.render_stateful_widget(throbber, throbber_area, &mut self.throbber_state);
                 frame.render_widget(Paragraph::new(" Getting movie details..."), text_area);
             }
-            Phase::Finish => {
+            Phase::Done => {
                 let tmdb_movie_details = self
                     .add_movie_popup_options
                     .tmdb_movie_details_result
@@ -475,14 +475,18 @@ impl Drawer {
                 } else {
                     self.open_fetch_artworks_popup(app)?;
 
-                    self.main_screen_options.selected =
-                        self.main_screen_options.num_visible_movies - 1;
+                    self.main_screen_options.movies_list_options.selected = self
+                        .main_screen_options
+                        .movies_list_options
+                        .num_visible_movies
+                        - 1;
 
-                    self.main_screen_options.scroll_pos =
-                        app.movies.len() - self.main_screen_options.selected - 1;
+                    self.main_screen_options.movies_list_options.scroll_pos = app.movies.len()
+                        - self.main_screen_options.movies_list_options.selected
+                        - 1;
 
                     self.main_screen_options
-                        .rehash_images(app, self.main_screen_options.selected);
+                        .rehash_images(app, self.main_screen_options.movies_list_options.selected);
                 }
             }
         }

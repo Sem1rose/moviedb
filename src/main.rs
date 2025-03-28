@@ -9,7 +9,7 @@ mod screens;
 mod tmdb;
 mod trakt;
 mod tui;
-mod update_json;
+// mod update_json;
 
 use app::Result;
 use log::debug;

@@ -33,7 +33,7 @@ impl Drawer {
 
     pub(crate) fn draw_error_popup(&mut self, frame: &mut Frame) -> Result<()> {
         let frame_area = frame.area();
-        let popup_area = center_rect(frame_area, Constraint::Percentage(20), Constraint::Max(8));
+        let popup_area = center_rect(frame_area, Constraint::Percentage(30), Constraint::Max(8));
 
         let popup = Block::new()
             .bg(tailwind::INDIGO.c950)

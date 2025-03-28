@@ -84,7 +84,7 @@ impl Tui {
                 }
             }
 
-            if self.app.should_quit && self.drawer.fetch_artwork_popup_options.done {
+            if self.drawer.can_quit() {
                 return Ok(());
             }
         }

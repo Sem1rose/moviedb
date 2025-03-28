@@ -18,7 +18,7 @@ use tui_input::{backend::crossterm::EventHandler, Input};
 enum Phase {
     #[default]
     GetNewRating,
-    Finish,
+    Done,
 }
 
 #[derive(Default)]
@@ -42,7 +42,7 @@ impl EditMoviePopup {
 
     pub fn advance_phase(&mut self) {
         self.phase = match self.phase {
-            Phase::GetNewRating => Phase::Finish,
+            Phase::GetNewRating => Phase::Done,
             _ => Phase::GetNewRating,
         };
     }
@@ -167,7 +167,7 @@ impl Drawer {
                     );
                 }
             }
-            Phase::Finish => {
+            Phase::Done => {
                 self.edit_movie_popup_options.user_rating = format!(
                     "{:.1}",
                     self.edit_movie_popup_options
@@ -179,8 +179,11 @@ impl Drawer {
                 .parse()
                 .unwrap();
 
-                app.movies[self.main_screen_options.current_movie_index()].user_rating =
-                    self.edit_movie_popup_options.user_rating;
+                app.movies[self
+                    .main_screen_options
+                    .movies_list_options
+                    .current_movie_index()]
+                .user_rating = self.edit_movie_popup_options.user_rating;
 
                 if app.save_movies().is_err() {
                     self.open_error_popup("Couldn't save new rating!".into());

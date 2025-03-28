@@ -4,18 +4,20 @@ use crate::{
     draw::Drawer,
     popups::Popups,
     screens::Screens,
-    tmdb::{self, RequestResponseError, TMDBDetailsResponse},
-    trakt::{self, TokenResponseError, TraktDetailsResponse},
+    tmdb::{RequestResponseError, TMDBDetailsResponse},
+    trakt::{TokenResponseError, TraktDetailsResponse},
 };
 use log::{debug, error};
-use ratatui::crossterm::event::{Event, KeyCode};
+use ratatui::crossterm::event::{Event, KeyCode, KeyModifiers};
 use serde::Deserialize;
 use std::{
     fs::{create_dir, read_to_string, rename, write},
     path::PathBuf,
+    sync::mpsc::{channel, Receiver},
 };
 
 pub type Result<T> = color_eyre::Result<T, Errors>;
+pub type OptionalResult<T> = color_eyre::Result<T, Option<Errors>>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Errors {
@@ -130,12 +132,15 @@ impl Config {
 }
 
 pub struct App {
-    pub should_quit: bool,
-    pub movies: Vec<Movie>,
-
     pub config: Config,
+
+    pub rx_tmdb: Receiver<OptionalResult<String>>,
     pub tmdb_config: TMDBConfig,
+
+    pub rx_trakt: Receiver<OptionalResult<String>>,
     pub trakt_config: TraktConfig,
+
+    pub movies: Vec<Movie>,
 }
 
 impl App {
@@ -143,26 +148,32 @@ impl App {
         let mut config = Config::new();
         config.init_dirs()?;
 
-        let tmdb_config = TMDBConfig::new();
-        let trakt_config = TraktConfig::new();
+        let (tx_tmdb, rx_tmdb) = channel();
+        let tmdb_config = TMDBConfig::new(tx_tmdb);
+
+        let (tx_trakt, rx_trakt) = channel();
+        let trakt_config = TraktConfig::new(tx_trakt);
 
         Ok(Self {
-            should_quit: false,
             movies: vec![],
             config,
+
+            rx_tmdb,
             tmdb_config,
+
+            rx_trakt,
             trakt_config,
         })
     }
 
     pub fn init(&mut self) -> Result<()> {
-        self.tmdb_config.init(&self.config)?;
-        tmdb::populate_tokens(&self.config, &mut self.tmdb_config)?;
-        debug!("TMDB config init finished successfully.");
+        // self.tmdb_config.init(&self.config)?;
+        // tmdb::populate_tokens(&self.config, &mut self.tmdb_config)?;
+        // debug!("TMDB config init finished successfully.");
 
-        self.trakt_config.init(&self.config)?;
-        trakt::populate_tokens(&self.config, &mut self.trakt_config)?;
-        debug!("Trakt config init finished successfully.");
+        // self.trakt_config.init(&self.config)?;
+        // trakt::populate_tokens(&self.config, &mut self.trakt_config)?;
+        // debug!("Trakt config init finished successfully.");
 
         self.fetch_movies()?;
 
@@ -221,7 +232,7 @@ impl App {
     pub fn handle_app_events(&mut self, event: Event, drawer: &mut Drawer) -> Result<()> {
         match event {
             Event::Key(event) => {
-                if event.code == KeyCode::Char('Q') {
+                if event.code == KeyCode::Char('*') {
                     panic!("RELEASE ME!");
                 }
 
@@ -239,6 +250,12 @@ impl App {
                         Popups::Error => {
                             drawer.error_popup_handle_key_events(event)?;
                         }
+                        Popups::TMDBInit => {
+                            drawer.tmdb_init_popup_handle_key_events(event)?;
+                        }
+                        Popups::TraktInit => {
+                            // drawer.error_popup_handle_key_events(event)?;
+                        }
                         Popups::FetchArtwork => (),
                     }
                 } else {
@@ -250,145 +267,6 @@ impl App {
                         Screens::TermSizeWarn => (),
                     }
                 }
-                // let kind = event.kind;
-                // let code = event.code;
-
-                // if kind != KeyEventKind::Press {
-                //     return Ok(());
-                // }
-
-                // match code {
-                //     KeyCode::Char('Q') => {
-                //         panic!("RELEASE ME");
-                //     }
-                //     KeyCode::Char('q') => {
-                //         if drawer.accepting_input {
-                //             drawer.handle_input(event);
-                //         } else {
-                //             self.should_quit = true;
-                //         }
-                //     }
-                //     KeyCode::Char('a') => {
-                //         if drawer.active_popup.is_none() {
-                //             drawer.open_add_movie_popup();
-                //         } else if drawer.accepting_input {
-                //             drawer.handle_input(event);
-                //         }
-                //     }
-                //     KeyCode::Char('e') => {
-                //         if drawer.active_popup.is_none() {
-                //             drawer.open_edit_movie_popup();
-                //         } else if drawer.accepting_input {
-                //             drawer.handle_input(event);
-                //         }
-                //     }
-                //     KeyCode::Char('d') => {
-                //         if drawer.active_popup.is_none() {
-                //             drawer.open_remove_movie_popup();
-                //         } else if drawer.accepting_input {
-                //             drawer.handle_input(event);
-                //         }
-                //     }
-                //     KeyCode::Char('G') => {
-                //         if drawer.accepting_input {
-                //             drawer.handle_input(event);
-                //         } else {
-                //             drawer
-                //                 .main_screen_options
-                //                 .goto_index(self.movies.len(), self.movies.len() - 1);
-                //         }
-                //     }
-                //     KeyCode::Char('g') => {
-                //         if drawer.accepting_input {
-                //             drawer.handle_input(event);
-                //         } else {
-                //             drawer.main_screen_options.goto_index(self.movies.len(), 0);
-                //         }
-                //     }
-                //     KeyCode::Delete => {
-                //         if drawer.active_popup.is_none() {
-                //             drawer.open_remove_movie_popup();
-                //         } else if drawer.accepting_input {
-                //             drawer.handle_input(event);
-                //         }
-                //     }
-                //     KeyCode::Esc => {
-                //         if drawer.active_popup.is_some() {
-                //             drawer.close_popups();
-                //         } else {
-                //             self.should_quit = true;
-                //         }
-                //     }
-                //     KeyCode::Up => {
-                //         drawer.dec_selection();
-                //     }
-                //     KeyCode::Down => {
-                //         drawer.inc_selection(self);
-                //     }
-                //     KeyCode::Right => {
-                //         if drawer.accepting_input {
-                //             drawer.handle_input(event);
-                //         } else {
-                //             drawer.inc_selection_horiz();
-                //         }
-                //     }
-                //     KeyCode::Left => {
-                //         if drawer.accepting_input {
-                //             drawer.handle_input(event);
-                //         } else {
-                //             drawer.dec_selection_horiz();
-                //         }
-                //     }
-                //     KeyCode::Enter => match drawer.active_popup {
-                //         Some(Popups::AddMovie) => {
-                //             if *drawer.add_movie_popup_options.failed.lock().unwrap() {
-                //                 drawer.close_popups();
-                //             } else if drawer.add_movie_popup_options.phase == 0
-                //                 && drawer.add_movie_popup_options.search_input.value() != ""
-                //             {
-                //                 drawer.add_movie_popup_options.finished_search_input = true;
-                //                 drawer.queue_update();
-                //             } else if drawer.add_movie_popup_options.phase == 2 {
-                //                 drawer.add_movie_popup_options.movie_selected = true;
-                //                 drawer.queue_update();
-                //             } else if drawer.add_movie_popup_options.phase == 3
-                //                 && drawer.add_movie_popup_options.search_input.value() != ""
-                //                 && drawer.add_movie_popup_options.user_rating_valid
-                //             {
-                //                 drawer.add_movie_popup_options.got_user_rating = true;
-                //                 drawer.queue_update();
-                //             }
-                //         }
-                //         Some(Popups::EditMovie) => {
-                //             if drawer.edit_movie_popup_options.errored {
-                //                 drawer.close_popups();
-                //                 drawer.queue_update();
-                //             } else if !drawer.edit_movie_popup_options.got_user_rating
-                //                 && drawer.edit_movie_popup_options.user_rating_input.value() != ""
-                //                 && drawer.edit_movie_popup_options.user_rating_valid
-                //             {
-                //                 drawer.edit_movie_popup_options.got_user_rating = true;
-                //                 drawer.queue_update();
-                //             }
-                //         }
-                //         Some(Popups::RemoveMovie) => {
-                //             if drawer.remove_movie_popup_options.errored {
-                //                 drawer.close_popups();
-                //             } else if drawer.remove_movie_popup_options.selected == 1 {
-                //                 drawer.remove_movie_popup_options.confirmed = true;
-                //                 drawer.queue_update();
-                //             } else if drawer.remove_movie_popup_options.selected == 0 {
-                //                 drawer.close_popups();
-                //             }
-                //         }
-                //         _ => {}
-                //     },
-                //     _ => {
-                //         if drawer.accepting_input {
-                //             drawer.handle_input(event);
-                //         }
-                //     }
-                // }
             }
             _ => (),
         }

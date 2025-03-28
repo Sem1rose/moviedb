@@ -102,7 +102,7 @@ impl FetchArtworksPopup {
         self.done
     }
 
-    pub fn reset(&mut self) {
+    pub fn begin(&mut self) {
         *self = Self::default();
     }
 }

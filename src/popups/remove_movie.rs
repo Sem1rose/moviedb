@@ -17,7 +17,7 @@ use style::palette::tailwind;
 enum Phase {
     #[default]
     Confirm,
-    Finish,
+    Done,
 }
 
 #[derive(Default)]
@@ -49,7 +49,7 @@ impl RemoveMoviePopup {
 
     pub fn advance_phase(&mut self) {
         self.phase = match self.phase {
-            Phase::Confirm => Phase::Finish,
+            Phase::Confirm => Phase::Done,
             _ => Phase::Confirm,
         };
     }
@@ -118,7 +118,11 @@ impl Drawer {
                 frame.render_widget(
                     Paragraph::new(format!(
                         "Do you really want to remove {}?",
-                        app.movies[self.main_screen_options.current_movie_index()].name
+                        app.movies[self
+                            .main_screen_options
+                            .movies_list_options
+                            .current_movie_index()]
+                        .name
                     ))
                     .wrap(Wrap { trim: false }),
                     areas[1],
@@ -163,16 +167,25 @@ impl Drawer {
                     button_areas[0],
                 );
             }
-            Phase::Finish => {
-                self.main_screen_options
-                    .hashed_images
-                    .remove(&(self.main_screen_options.current_movie_index(), false));
-                self.main_screen_options
-                    .hashed_images
-                    .remove(&(self.main_screen_options.current_movie_index(), true));
+            Phase::Done => {
+                self.main_screen_options.hashed_images.remove(&(
+                    self.main_screen_options
+                        .movies_list_options
+                        .current_movie_index(),
+                    false,
+                ));
+                self.main_screen_options.hashed_images.remove(&(
+                    self.main_screen_options
+                        .movies_list_options
+                        .current_movie_index(),
+                    true,
+                ));
 
-                app.movies
-                    .remove(self.main_screen_options.current_movie_index());
+                app.movies.remove(
+                    self.main_screen_options
+                        .movies_list_options
+                        .current_movie_index(),
+                );
 
                 if app.save_movies().is_err() {
                     self.open_error_popup("Couldn't remove movie!".into());
@@ -180,15 +193,24 @@ impl Drawer {
                     return Ok(());
                 }
 
-                if self.main_screen_options.current_movie_index() >= app.movies.len() {
-                    if self.main_screen_options.scroll_pos > 0 {
-                        self.main_screen_options.scroll_pos -= 1;
-                    } else if self.main_screen_options.selected > 0 {
-                        self.main_screen_options.selected -= 1;
+                if self
+                    .main_screen_options
+                    .movies_list_options
+                    .current_movie_index()
+                    >= app.movies.len()
+                {
+                    if self.main_screen_options.movies_list_options.scroll_pos > 0 {
+                        self.main_screen_options.movies_list_options.scroll_pos -= 1;
+                    } else if self.main_screen_options.movies_list_options.selected > 0 {
+                        self.main_screen_options.movies_list_options.selected -= 1;
                     }
                 } else {
-                    self.main_screen_options
-                        .rehash_images(app, self.main_screen_options.current_movie_index());
+                    self.main_screen_options.rehash_images(
+                        app,
+                        self.main_screen_options
+                            .movies_list_options
+                            .current_movie_index(),
+                    );
                 }
 
                 self.close_popups();

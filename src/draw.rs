@@ -3,7 +3,8 @@ use crate::{
     helpers::center_rect,
     popups::{
         add_movie::AddMoviePopup, edit_movie::EditMoviePopup, fetch_artworks::FetchArtworksPopup,
-        remove_movie::RemoveMoviePopup, Popups,
+        remove_movie::RemoveMoviePopup, tmdb_init::TMDBInitPopup, trakt_init::TraktInitPopup,
+        Popups,
     },
     screens::{init_screen::InitScreen, main_screen::MainScreen, Screens},
 };
@@ -11,6 +12,8 @@ use ratatui::{layout::*, prelude::*, widgets::*, Frame};
 
 #[derive(Default)]
 pub struct Drawer {
+    pub should_quit: bool,
+
     pub(crate) throbber_state: throbber_widgets_tui::ThrobberState,
 
     pub(crate) previous_screen: Option<Screens>,
@@ -19,11 +22,14 @@ pub struct Drawer {
 
     pub(crate) main_screen_options: MainScreen,
     pub(crate) init_screen_options: InitScreen,
-    pub(crate) error_popup_error: String,
+
     pub(crate) add_movie_popup_options: AddMoviePopup,
     pub(crate) edit_movie_popup_options: EditMoviePopup,
     pub(crate) remove_movie_popup_options: RemoveMoviePopup,
     pub(crate) fetch_artwork_popup_options: FetchArtworksPopup,
+    pub(crate) error_popup_error: String,
+    pub(crate) tmdb_init_popup_options: TMDBInitPopup,
+    pub(crate) trakt_init_popup_options: TraktInitPopup,
 }
 
 const MINTERMSIZE: [u32; 2] = [80, 22];
@@ -55,7 +61,7 @@ impl Drawer {
                 self.render_init_screen(frame, app)?;
             }
             Screens::MainScreen => {
-                self.render_movies_list(frame, app)?;
+                self.render_main_screen(frame, app)?;
             }
             Screens::TermSizeWarn => {
                 self.render_term_size_warning(frame)?;
@@ -81,6 +87,12 @@ impl Drawer {
             }
             Popups::Error => {
                 self.draw_error_popup(frame)?;
+            }
+            Popups::TMDBInit => {
+                self.draw_tmdb_init_popup(frame)?;
+            }
+            Popups::TraktInit => {
+                self.draw_trakt_init_popup(frame, app)?;
             }
         }
 
@@ -110,7 +122,8 @@ impl Drawer {
 
     pub fn open_fetch_artworks_popup(&mut self, app: &mut App) -> Result<()> {
         self.active_popup = Some(Popups::FetchArtwork);
-        self.fetch_artwork_popup_options.reset();
+
+        self.fetch_artwork_popup_options.begin();
         self.fetch_artworks(app)?;
 
         Ok(())
@@ -125,8 +138,12 @@ impl Drawer {
     pub fn open_edit_movie_popup(&mut self, app: &mut App) {
         self.active_popup = Some(Popups::EditMovie);
 
-        self.edit_movie_popup_options
-            .begin(app, self.main_screen_options.current_movie_index());
+        self.edit_movie_popup_options.begin(
+            app,
+            self.main_screen_options
+                .movies_list_options
+                .current_movie_index(),
+        );
     }
 
     pub fn open_remove_movie_popup(&mut self) {
@@ -137,7 +154,24 @@ impl Drawer {
 
     pub fn open_error_popup(&mut self, message: String) {
         self.active_popup = Some(Popups::Error);
+
         self.error_popup_error = message;
+    }
+
+    pub fn open_tmdb_init_popup(&mut self) {
+        self.active_popup = Some(Popups::TMDBInit);
+
+        self.tmdb_init_popup_options.begin();
+    }
+
+    pub fn open_trakt_init_popup(&mut self) {
+        self.active_popup = Some(Popups::TraktInit);
+
+        self.trakt_init_popup_options.begin();
+    }
+
+    pub fn can_quit(&self) -> bool {
+        self.should_quit && self.fetch_artwork_popup_options.done
     }
 
     fn check_term_size(&mut self, frame: &Frame) -> bool {
@@ -158,7 +192,7 @@ impl Drawer {
         true
     }
 
-    fn render_term_size_warning(&mut self, frame: &mut Frame) -> Result<()> {
+    fn render_term_size_warning(&self, frame: &mut Frame) -> Result<()> {
         let frame_area = frame.area();
         let lines = vec![
             Line::from_iter([

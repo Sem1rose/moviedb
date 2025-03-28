@@ -8,7 +8,7 @@ use reqwest::{
     header::HeaderMap,
 };
 use serde::Deserialize;
-use std::{collections::HashMap, error::Error, fmt::Display, fs::File};
+use std::{collections::HashMap, error::Error, fmt::Display, fs::File, sync::mpsc::Sender};
 
 #[derive(Deserialize, Debug)]
 struct RequestTokenResponse {
@@ -135,18 +135,19 @@ struct RequestSessionIDResponse {
     session_id: String,
 }
 
-pub fn populate_tokens(config: &Config, tmdb_config: &mut TMDBConfig) -> Result<()> {
-    if !tmdb_config.has_session_id() {
-        debug!("No TMDB session ID found, fetching a new one...");
+// pub fn populate_tokens(config: &Config, tmdb_config: &mut TMDBConfig) -> Result<()> {
+//     if !tmdb_config.has_session_id() {
+//         debug!("No TMDB session ID found, fetching a new one...");
 
-        get_session_id(config, tmdb_config)?
-    }
+//         tmdb_config.set_session_id(get_session_id(tmdb_config.access_token())?);
+//         tmdb_config.save_creds(config);
+//     }
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 // https://developer.themoviedb.org/docs/authentication-user
-fn get_session_id(config: &Config, tmdb_config: &mut TMDBConfig) -> Result<()> {
+pub fn get_session_id(access_token: &str, tx_authorization_url: Sender<String>) -> Result<String> {
     let client = ClientBuilder::new().build()?;
 
     let mut headers = HeaderMap::new();
@@ -154,9 +155,7 @@ fn get_session_id(config: &Config, tmdb_config: &mut TMDBConfig) -> Result<()> {
     headers.insert("content-type", "application/json".parse().unwrap());
     headers.insert(
         "Authorization",
-        format!("Bearer {}", tmdb_config.access_token())
-            .parse()
-            .unwrap(),
+        format!("Bearer {}", access_token).parse().unwrap(),
     );
 
     // Step 1: create a request token
@@ -181,13 +180,16 @@ fn get_session_id(config: &Config, tmdb_config: &mut TMDBConfig) -> Result<()> {
         .json::<RequestTokenResponse>()?
         .request_token;
 
-    // Step 2: ask the user for permission
-    println!(
-        "\nPlease visit the following url to authorize the application.\nhttps://www.themoviedb.org/authenticate/{}\n",
-        request_token
-    );
+    let url = format!("https://www.themoviedb.org/authenticate/{}", request_token);
+    let _ = tx_authorization_url.send(url.clone());
 
-    // Step 4: finally get the request token
+    // Step 2: ask the user for permission
+    // println!(
+    //     "\nPlease visit the following url to authorize the application.\n{}\n",
+    //     url
+    // );
+
+    // Step 3: finally get the request token
     let mut request_token_response = send_tmdb_request(
         &client,
         &format!(
@@ -231,7 +233,7 @@ fn get_session_id(config: &Config, tmdb_config: &mut TMDBConfig) -> Result<()> {
     body.insert("request_token", request_token.as_str());
 
     // The request token has been approved by the user
-    // Step 5: create a new session ID
+    // Step 4: create a new session ID
     let create_session_response = send_tmdb_request(
         &client,
         "https://api.themoviedb.org/3/authentication/session/new",
@@ -253,10 +255,10 @@ fn get_session_id(config: &Config, tmdb_config: &mut TMDBConfig) -> Result<()> {
         .json::<RequestSessionIDResponse>()?
         .session_id;
 
-    tmdb_config.set_session_id(session_id);
-    tmdb_config.save_creds(config)?;
+    // tmdb_config.set_session_id(session_id);
+    // tmdb_config.save_creds(config)?;
 
-    Ok(())
+    Ok(session_id)
 }
 
 pub fn find_movie(tmdb_config: &TMDBConfig, name: &str) -> Result<TMDBSearchResponse> {
