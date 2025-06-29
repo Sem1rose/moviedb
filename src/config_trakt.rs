@@ -89,13 +89,13 @@ impl TraktConfig {
                 tx_result.send(TraktConfig::read_creds(&conf_cloned).map_err(|error| Some(error)))
             });
         } else if let Ok(false) = result {
-            // debug!("Initializing a new Trakt config...");
+            debug!("Initializing a new Trakt config...");
 
             let _ = self.tx_init.send(Err(None));
 
             // self.init_creds();
         } else if let Err(error) = result {
-            // error!("Error reading Trakt config file, initializing a new config...");
+            error!("Error reading Trakt config file, initializing a new config...");
 
             let _ = self.tx_init.send(Err(Some(error)));
 

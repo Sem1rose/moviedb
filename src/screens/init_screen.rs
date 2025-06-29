@@ -113,6 +113,9 @@ impl Drawer {
                         .access_token_input
                         .value()
                         .to_string();
+
+                    app.tmdb_config.set_access_token(access_token.clone());
+
                     thread::spawn(move || {
                         tx_session_id
                             .send(tmdb::get_session_id(&access_token, tx_authorization_url))
@@ -144,6 +147,7 @@ impl Drawer {
 
                         let _ = self.init_screen_options.rx_authorization_url.take();
                     }
+
                     // else if let Err(error) = result {
                     //     self.tmdb_init_popup_options.phase =
                     //         crate::popups::tmdb_init::Phase::GetInput;
@@ -158,8 +162,8 @@ impl Drawer {
                         if let Ok(session_id) = result {
                             self.tmdb_init_popup_options.advance_phase();
 
-                            // app.tmdb_config.set_session_id(session_id);
-                            // app.tmdb_config.save_creds(&app.config)?;
+                            app.tmdb_config.set_session_id(session_id);
+                            app.tmdb_config.save_creds(&app.config)?;
 
                             self.init_screen_advance_phase();
 
@@ -169,8 +173,8 @@ impl Drawer {
                                 crate::popups::tmdb_init::Phase::GetInput;
                             self.tmdb_init_popup_options.access_token_input.reset();
 
-                            // panic!("Error while getting TMDB session_id: {error}");
                             let _ = self.init_screen_options.tmdb_rx_session_id.take();
+                            // panic!("Error while getting TMDB session_id: {error}");
                         }
                     }
                 }

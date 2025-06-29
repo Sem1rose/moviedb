@@ -210,7 +210,7 @@ impl App {
 
             write(&self.config.dirs.ratings_file, "[]")?;
         } else {
-            let movies = result.unwrap();
+            let movies: Vec<Movie> = result.unwrap();
             self.set_movies(movies);
         }
 

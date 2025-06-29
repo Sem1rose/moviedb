@@ -57,7 +57,7 @@ impl Tui {
 
         let mut last_frame_time = Instant::now();
 
-        self.drawer.main_screen_options.rehash_images(&self.app, 0);
+        // self.drawer.main_screen_options.rehash_images(&self.app, 0);
         loop {
             let elapsed = last_frame_time.elapsed().as_secs_f64();
             last_frame_time = Instant::now();

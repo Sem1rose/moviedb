@@ -415,6 +415,11 @@ pub fn get_movie_poster_banner(
 
     let movie_images = get_movie_images(tmdb_config, id)?;
 
+    // print!(
+    //     "{:#?}\n{:#?}",
+    //     movie_images.backdrops[0], movie_images.posters[0]
+    // );
+
     let configuration_response = send_tmdb_request(
         &client,
         "https://api.themoviedb.org/3/configuration",
@@ -435,10 +440,13 @@ pub fn get_movie_poster_banner(
         .json::<ConfigurationResponse>()?
         .images;
 
+    // print!("{:#?}", images_configurations);
+
     if !add_placeholder && (movie_images.posters.is_empty() || movie_images.backdrops.is_empty()) {
         return Ok(false);
     }
 
+    let poster_path = config.dirs.poster_cache.join(format!("{}.jpg", id));
     if !movie_images.posters.is_empty() {
         let image_bytes: Vec<_> = reqwest::blocking::get(format!(
             "{}{}{}",
@@ -452,9 +460,40 @@ pub fn get_movie_poster_banner(
         .copied()
         .collect();
 
-        let mut out = File::create(config.dirs.poster_cache.join(format!("{}.jpg", id)))?;
-        // .expect("failed to create file");
-        std::io::copy(&mut image_bytes.as_slice(), &mut out)?; //.expect("failed to copy content");
+        // let mut out = File::create(config.dirs.poster_cache.join(format!("{}.jpg", id)))?;
+        // // .expect("failed to create file");
+        // std::io::copy(&mut image_bytes.as_slice(), &mut out)?; //.expect("failed to copy content");
+
+        let img = image::load_from_memory(&image_bytes);
+
+        if img.is_ok() {
+            img.unwrap().save(poster_path)?;
+        } else if let Err(error) = img {
+            // print!("{:#?}", error);
+
+            let image_bytes: Vec<_> = reqwest::blocking::get(format!(
+                "{}{}{}",
+                images_configurations.base_url,
+                images_configurations.poster_sizes.last().unwrap(), // w92 w154 w185 w342 w500 w780 original
+                movie_images.posters[0].file_path
+            ))?
+            .bytes()?
+            .iter()
+            .copied()
+            .collect();
+
+            let new_img = image::load_from_memory(&image_bytes);
+
+            if new_img.is_ok() {
+                new_img
+                    .unwrap()
+                    .resize(342, 10000, ratatui_image::FilterType::CatmullRom)
+                    .save(poster_path)?;
+            } else if let Err(_) = new_img {
+                // print!("{:#?}", error);
+                std::fs::copy("backdrop_placeholder.jpg", poster_path)?;
+            }
+        }
     } else if add_placeholder {
         std::fs::copy(
             "poster_placeholder.jpg",
@@ -463,6 +502,7 @@ pub fn get_movie_poster_banner(
         // .expect("failed to copy placeholder poster!");
     }
 
+    let backdrop_path = config.dirs.backdrop_cache.join(format!("{}.jpg", id));
     if !movie_images.backdrops.is_empty() {
         let image_bytes: Vec<_> = reqwest::blocking::get(format!(
             "{}{}{}",
@@ -476,9 +516,41 @@ pub fn get_movie_poster_banner(
         .copied()
         .collect();
 
-        let mut out = File::create(config.dirs.backdrop_cache.join(format!("{}.jpg", id)))?;
-        // .expect("failed to create file");
-        std::io::copy::<&[u8], File>(&mut image_bytes.as_slice(), &mut out)?;
+        // let mut out = File::create(config.dirs.backdrop_cache.join(format!("{}.jpg", id)))?;
+        // // .expect("failed to create file");
+        // std::io::copy::<&[u8], File>(&mut image_bytes.as_slice(), &mut out)?;
+
+        let img = image::load_from_memory(&image_bytes);
+
+        if img.is_ok() {
+            img.unwrap().save(backdrop_path)?;
+        } else if let Err(error) = img {
+            // print!("{:#?}", error);
+
+            let image_bytes: Vec<_> = reqwest::blocking::get(format!(
+                "{}{}{}",
+                images_configurations.base_url,
+                images_configurations.backdrop_sizes.last().unwrap(), // w300 w780 w1280 original
+                movie_images.backdrops[0].file_path
+            ))?
+            .bytes()?
+            .iter()
+            .copied()
+            .collect();
+
+            let new_img = image::load_from_memory(&image_bytes);
+
+            if new_img.is_ok() {
+                new_img
+                    .unwrap()
+                    .resize(780, 10000, ratatui_image::FilterType::CatmullRom)
+                    .save(backdrop_path)?;
+            } else if let Err(_) = new_img {
+                // print!("{:#?}", error);
+                std::fs::copy("backdrop_placeholder.jpg", backdrop_path)?;
+            }
+        }
+
         // .expect("failed to copy content");
     } else if add_placeholder {
         std::fs::copy(

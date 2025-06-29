@@ -76,16 +76,16 @@ impl TMDBConfig {
             let conf_cloned = config.clone();
 
             thread::spawn(move || {
-                tx_result.send(TMDBConfig::read_creds(&conf_cloned).map_err(|error| Some(error)))
+                tx_result.send(TMDBConfig::read_creds(&conf_cloned).map_err(Some))
             });
         } else if let Ok(false) = result {
-            // debug!("Initializing a new TMDB config...");
+            debug!("Initializing a new TMDB config...");
 
             let _ = self.tx_init.send(Err(None));
 
             // self.init_creds();
         } else if let Err(error) = result {
-            // error!("Error reading TMDB config file, initializing a new config...");
+            error!("Error reading TMDB config file, initializing a new config...");
 
             let _ = self.tx_init.send(Err(Some(error)));
 
@@ -176,6 +176,10 @@ impl TMDBConfig {
 
     pub fn set_session_id(&mut self, session_id: String) {
         self.tmdb_credentials.session_id = session_id;
+    }
+
+    pub fn set_access_token(&mut self, access_token: String) {
+        self.tmdb_credentials.access_token = access_token;
     }
 
     pub fn has_session_id(&self) -> bool {

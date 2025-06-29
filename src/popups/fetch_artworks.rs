@@ -14,6 +14,7 @@ use std::{
 };
 use style::palette::tailwind;
 
+//           tmdb_id  imdb_id
 type MovieID = (u32, String);
 
 #[derive(Default)]

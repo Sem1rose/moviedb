@@ -1,6 +1,5 @@
 mod movie_description;
 mod movies_list;
-
 use crate::{
     app::{App, Errors, Result},
     draw::Drawer,
@@ -23,6 +22,7 @@ use ratatui_image::{
     thread::{ResizeRequest, ResizeResponse, ThreadProtocol},
 };
 use ratatui_macros::{horizontal, vertical};
+use std::io::prelude::*;
 use std::{
     collections::HashMap,
     sync::mpsc::{self, Receiver, Sender},
@@ -31,6 +31,7 @@ use std::{
 use style::palette::tailwind;
 use threadpool::ThreadPool;
 
+//                    id     backdrop/poster
 pub type MovieID = (usize, bool);
 
 pub enum ImageEvents {
@@ -77,7 +78,7 @@ impl MainScreen {
         Sender<(MovieID, String)>,
         Sender<(MovieID, Receiver<ResizeRequest>)>,
     ) {
-        let (tx_load_decode, rx_load_decode) = mpsc::channel::<_>();
+        let (tx_load_decode, rx_load_decode) = mpsc::channel::<(MovieID, String)>();
         let (tx_worker_collector, rx_worker_collector) = mpsc::channel();
 
         let tx_main_sender = tx_main.clone();
@@ -114,31 +115,67 @@ impl MainScreen {
         let picker =
             Picker::from_query_stdio().expect("error querying graphics capabilities: {error}");
         thread::spawn(move || {
-            let pool = ThreadPool::with_name("image load decode".into(), 16);
+            let poster_pool = ThreadPool::with_name("poster load decode".into(), 16);
+            let fanart_pool = ThreadPool::with_name("fanart load decode".into(), 16);
 
             for (movie_id, path) in rx_load_decode.iter() {
                 let tx_main = tx_main_sender.clone();
 
-                pool.execute(move || {
-                    let open_result = image::ImageReader::open(path);
+                if movie_id.1 {
+                    fanart_pool.execute(move || {
+                        let open_result = image::ImageReader::open(path.clone());
 
-                    if let Err(error) = open_result {
-                        let _ =
-                            tx_main.send(ImageEvents::LoadImage(movie_id, Err(Errors::Io(error))));
-                    } else if let Ok(reader) = open_result {
-                        let decode_result = reader.decode();
-
-                        if let Err(error) = decode_result {
+                        if let Err(error) = open_result {
                             let _ = tx_main
-                                .send(ImageEvents::LoadImage(movie_id, Err(Errors::Image(error))));
-                        } else if let Ok(decoded) = decode_result {
-                            let _ = tx_main.send(ImageEvents::LoadImage(
-                                movie_id,
-                                Ok(picker.new_resize_protocol(decoded)),
-                            ));
+                                .send(ImageEvents::LoadImage(movie_id, Err(Errors::Io(error))));
+                            // std::fs::File::create(format!("/home/semirose/{}backdrop", movie_id.0))
+                            //     .unwrap()
+                            //     .write_all(path.as_bytes());
+                            // std::process::exit(1);
+                        } else if let Ok(reader) = open_result {
+                            let decode_result = reader.decode();
+
+                            if let Err(error) = decode_result {
+                                let _ = tx_main.send(ImageEvents::LoadImage(
+                                    movie_id,
+                                    Err(Errors::Image(error)),
+                                ));
+                            } else if let Ok(decoded) = decode_result {
+                                let _ = tx_main.send(ImageEvents::LoadImage(
+                                    movie_id,
+                                    Ok(picker.new_resize_protocol(decoded)),
+                                ));
+                            }
                         }
-                    }
-                });
+                    });
+                } else {
+                    poster_pool.execute(move || {
+                        let open_result = image::ImageReader::open(path.clone());
+
+                        if let Err(error) = open_result {
+                            let _ = tx_main
+                                .send(ImageEvents::LoadImage(movie_id, Err(Errors::Io(error))));
+                            // std::fs::File::create(format!("/home/semirose/{}poster", movie_id.0))
+                            //     .unwrap()
+                            //     .write_all(path.as_bytes());
+                            // std::process::exit(1);
+                        } else if let Ok(reader) = open_result {
+                            let decode_result = reader.decode();
+
+                            if let Err(error) = decode_result {
+                                let _ = tx_main.send(ImageEvents::LoadImage(
+                                    movie_id,
+                                    Err(Errors::Image(error)),
+                                ));
+                            } else if let Ok(decoded) = decode_result {
+                                let _ = tx_main.send(ImageEvents::LoadImage(
+                                    movie_id,
+                                    Ok(picker.new_resize_protocol(decoded)),
+                                ));
+                            }
+                        }
+                    });
+                }
             }
         });
 
