@@ -1,14 +1,14 @@
 use crate::{
-    app::{Config, Errors, Result},
-    config_tmdb::TMDBConfig,
+    config::{config_tmdb::TMDBConfig, Config},
+    types::*,
 };
-use log::{debug, trace};
+use log::{debug, error, trace};
 use reqwest::{
     blocking::{Client, ClientBuilder, RequestBuilder, Response},
     header::HeaderMap,
 };
 use serde::Deserialize;
-use std::{collections::HashMap, error::Error, fmt::Display, fs::File, sync::mpsc::Sender};
+use std::{collections::HashMap, error::Error, fmt::Display, path::PathBuf, sync::mpsc::Sender};
 
 #[derive(Deserialize, Debug)]
 struct RequestTokenResponse {
@@ -42,8 +42,8 @@ struct ConfigurationResponse {
 #[derive(Deserialize, Debug)]
 struct ImagesConfiguration {
     base_url: String,
-    backdrop_sizes: Vec<String>,
-    poster_sizes: Vec<String>,
+    backdrop_sizes: Vec<String>, // w92 w154 w185 w342 w500 w780 original
+    poster_sizes: Vec<String>,   // w92 w154 w185 w342 w500 w780 original
 }
 
 #[derive(PartialEq, Deserialize, Debug, Default)]
@@ -80,30 +80,30 @@ pub struct TMDBMovieImagesResponse {
 
 #[derive(Deserialize, Debug, Default, Clone)]
 pub struct TMDBMovieImage {
-    pub aspect_ratio: f32,
-    pub height: u32,
-    pub iso_639_1: String,
+    // pub aspect_ratio: f32,
+    // pub height: u32,
+    // pub iso_639_1: String,
     pub file_path: String,
-    pub vote_average: f32,
-    pub vote_count: u32,
-    pub width: u32,
+    // pub vote_average: f32,
+    // pub vote_count: u32,
+    // pub width: u32,
 }
 
 #[derive(Deserialize, Debug, Default, Clone)]
 pub struct TMDBDetailsResponse {
     // pub adult: bool,
-    pub backdrop_path: Option<String>,
+    // pub backdrop_path: Option<String>,
     pub belongs_to_collection: Option<TMDBCollection>,
     // pub budget: u32,
     pub genres: Vec<TMDBGenre>,
-    pub homepage: Option<String>,
+    // pub homepage: Option<String>,
     pub id: u32,
     pub imdb_id: String,
     pub original_language: String,
     // pub original_title: String,
     pub overview: String,
     // pub popularity: f32,
-    pub poster_path: Option<String>,
+    // pub poster_path: Option<String>,
     pub release_date: String,
     // pub revenue: u32,
     pub runtime: u32,
@@ -119,13 +119,13 @@ pub struct TMDBDetailsResponse {
 pub struct TMDBCollection {
     pub id: u32,
     pub name: String,
-    pub poster_path: Option<String>,
-    pub backdrop_path: Option<String>,
+    // pub poster_path: Option<String>,
+    // pub backdrop_path: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct TMDBGenre {
-    pub id: u32,
+    // pub id: u32,
     pub name: String,
 }
 
@@ -180,8 +180,8 @@ pub fn get_session_id(access_token: &str, tx_authorization_url: Sender<String>) 
         .json::<RequestTokenResponse>()?
         .request_token;
 
-    let url = format!("https://www.themoviedb.org/authenticate/{}", request_token);
-    let _ = tx_authorization_url.send(url.clone());
+    let authorization_url = format!("https://www.themoviedb.org/authenticate/{}", request_token);
+    let _ = tx_authorization_url.send(authorization_url.clone());
 
     // Step 2: ask the user for permission
     // println!(
@@ -204,15 +204,15 @@ pub fn get_session_id(access_token: &str, tx_authorization_url: Sender<String>) 
     // once the user gives permission of course...
     let mut retries = 0;
     while request_token_response.status().as_u16() >= 400 {
-        trace!(
-            "{:#?} {}",
-            request_token_response.status(),
-            request_token_response.url()
-        );
+        // trace!(
+        //     "{:#?} {}",
+        //     request_token_response.status(),
+        //     request_token_response.url()
+        // );
         retries += 1;
         if retries > 50 {
             return Err(Errors::Other(
-                "couldn't authenticate request token, max retries reached".to_string(),
+                "TMDB: couldn't authenticate request token, max retries reached".to_string(),
             ));
         }
 
@@ -446,36 +446,53 @@ pub fn get_movie_poster_banner(
         return Ok(false);
     }
 
-    let poster_path = config.dirs.poster_cache.join(format!("{}.jpg", id));
-    if !movie_images.posters.is_empty() {
+    let try_get_artwork = |images_configurations: &ImagesConfiguration,
+                           movie_images: &TMDBMovieImagesResponse,
+                           path: &PathBuf,
+                           backdrop: bool,
+                           id: usize|
+     -> Result<u8> {
+        if (backdrop && id >= movie_images.posters.len()) || id >= movie_images.backdrops.len() {
+            return Ok(2);
+        }
+
         let image_bytes: Vec<_> = reqwest::blocking::get(format!(
             "{}{}{}",
             images_configurations.base_url,
-            images_configurations.poster_sizes[3], // w92 w154 w185 w342 w500 w780 original
-            movie_images.posters[0].file_path
+            if backdrop {
+                images_configurations.backdrop_sizes[1].clone()
+            } else {
+                images_configurations.poster_sizes[3].clone()
+            },
+            if backdrop {
+                movie_images.backdrops[id].file_path.clone()
+            } else {
+                movie_images.posters[id].file_path.clone()
+            }
         ))?
-        // .expect("requesting movie poster failed!")
         .bytes()?
         .iter()
         .copied()
         .collect();
 
-        // let mut out = File::create(config.dirs.poster_cache.join(format!("{}.jpg", id)))?;
-        // // .expect("failed to create file");
-        // std::io::copy(&mut image_bytes.as_slice(), &mut out)?; //.expect("failed to copy content");
-
         let img = image::load_from_memory(&image_bytes);
 
         if img.is_ok() {
-            img.unwrap().save(poster_path)?;
-        } else if let Err(error) = img {
-            // print!("{:#?}", error);
-
+            img.unwrap().save(path)?;
+        } else if img.is_err() {
             let image_bytes: Vec<_> = reqwest::blocking::get(format!(
                 "{}{}{}",
                 images_configurations.base_url,
-                images_configurations.poster_sizes.last().unwrap(), // w92 w154 w185 w342 w500 w780 original
-                movie_images.posters[0].file_path
+                if backdrop {
+                    images_configurations.backdrop_sizes.last().unwrap().clone()
+                } else {
+                    images_configurations.poster_sizes.last().unwrap().clone()
+                },
+                if backdrop {
+                    movie_images.backdrops[id].file_path.clone()
+                } else {
+                    movie_images.posters[id].file_path.clone()
+                }
             ))?
             .bytes()?
             .iter()
@@ -488,76 +505,74 @@ pub fn get_movie_poster_banner(
                 new_img
                     .unwrap()
                     .resize(342, 10000, ratatui_image::FilterType::CatmullRom)
-                    .save(poster_path)?;
-            } else if let Err(_) = new_img {
-                // print!("{:#?}", error);
-                std::fs::copy("backdrop_placeholder.jpg", poster_path)?;
+                    .save(path)?;
+            } else if new_img.is_err() {
+                return Ok(1);
             }
         }
-    } else if add_placeholder {
-        std::fs::copy(
-            "poster_placeholder.jpg",
-            config.dirs.poster_cache.join(format!("{}.jpg", id)),
-        )?;
-        // .expect("failed to copy placeholder poster!");
+
+        Ok(0)
+    };
+
+    let poster_path = config.dirs.poster_cache.join(format!("{}.jpg", id));
+    if !movie_images.posters.is_empty() {
+        let mut success = false;
+        for i in 0..5 {
+            let result = try_get_artwork(
+                &images_configurations,
+                &movie_images,
+                &poster_path,
+                false,
+                i,
+            )?;
+            match result {
+                0 => {
+                    success = true;
+                    break;
+                }
+                2 => {
+                    break;
+                }
+                _ => (),
+            }
+        }
+        if !success {
+            std::fs::copy("poster_placeholder.jpg", poster_path)?;
+        }
+    } else {
+        std::fs::copy("poster_placeholder.jpg", poster_path)?;
     }
 
     let backdrop_path = config.dirs.backdrop_cache.join(format!("{}.jpg", id));
     if !movie_images.backdrops.is_empty() {
-        let image_bytes: Vec<_> = reqwest::blocking::get(format!(
-            "{}{}{}",
-            images_configurations.base_url,
-            images_configurations.backdrop_sizes[1], // w300 w780 w1280 original
-            movie_images.backdrops[0].file_path
-        ))?
-        // .expect("requesting movie backdrop failed!")
-        .bytes()?
-        .iter()
-        .copied()
-        .collect();
-
-        // let mut out = File::create(config.dirs.backdrop_cache.join(format!("{}.jpg", id)))?;
-        // // .expect("failed to create file");
-        // std::io::copy::<&[u8], File>(&mut image_bytes.as_slice(), &mut out)?;
-
-        let img = image::load_from_memory(&image_bytes);
-
-        if img.is_ok() {
-            img.unwrap().save(backdrop_path)?;
-        } else if let Err(error) = img {
-            // print!("{:#?}", error);
-
-            let image_bytes: Vec<_> = reqwest::blocking::get(format!(
-                "{}{}{}",
-                images_configurations.base_url,
-                images_configurations.backdrop_sizes.last().unwrap(), // w300 w780 w1280 original
-                movie_images.backdrops[0].file_path
-            ))?
-            .bytes()?
-            .iter()
-            .copied()
-            .collect();
-
-            let new_img = image::load_from_memory(&image_bytes);
-
-            if new_img.is_ok() {
-                new_img
-                    .unwrap()
-                    .resize(780, 10000, ratatui_image::FilterType::CatmullRom)
-                    .save(backdrop_path)?;
-            } else if let Err(_) = new_img {
-                // print!("{:#?}", error);
-                std::fs::copy("backdrop_placeholder.jpg", backdrop_path)?;
+        let mut success = false;
+        for i in 0..5 {
+            let result = try_get_artwork(
+                &images_configurations,
+                &movie_images,
+                &backdrop_path,
+                true,
+                i,
+            )?;
+            match result {
+                0 => {
+                    success = true;
+                    break;
+                }
+                2 => {
+                    break;
+                }
+                _ => (),
             }
         }
-
-        // .expect("failed to copy content");
-    } else if add_placeholder {
+        if !success {
+            std::fs::copy("backdrop_placeholder.jpg", backdrop_path)?;
+        }
+    } else {
         std::fs::copy(
             "backdrop_placeholder.jpg",
             config.dirs.poster_cache.join(format!("{}.jpg", id)),
         )?;
-        // .expect("failed to copy placeholder backdrop!");
     }
 
     Ok(true)

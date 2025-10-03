@@ -1,4 +1,4 @@
-use crate::{app::Result, draw::Drawer, helpers::center_rect};
+use crate::{custom::helpers::center_rect, draw::Drawer, types::Result};
 use ratatui::{
     crossterm::event::{KeyCode, KeyEvent, KeyEventKind},
     layout::*,
@@ -10,25 +10,25 @@ use ratatui_macros::{horizontal, vertical};
 use style::palette::tailwind;
 
 impl Drawer {
-    pub fn error_popup_handle_key_events(&mut self, event: KeyEvent) -> Result<()> {
+    pub fn error_popup_handle_key_events(&mut self, event: KeyEvent) -> bool {
         let kind = event.kind;
         let code = event.code;
 
         if kind != KeyEventKind::Press {
-            return Ok(());
+            return false;
         }
 
         match code {
             KeyCode::Enter => {
-                self.close_popups();
+                return true;
             }
             KeyCode::Esc => {
-                self.close_popups();
+                return true;
             }
             _ => (),
         }
 
-        Ok(())
+        false
     }
 
     pub(crate) fn draw_error_popup(&mut self, frame: &mut Frame) -> Result<()> {

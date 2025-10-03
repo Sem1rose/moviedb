@@ -1,10 +1,7 @@
-use crate::{
-    app::{App, Rating},
-    draw::Drawer,
-};
+use crate::{app::App, draw::Drawer, types::*};
 use ratatui::style::Stylize;
-use ratatui::{layout::*, prelude::*, widgets::*, Frame};
-use ratatui_image::thread::ThreadImage;
+use ratatui::{layout::Rect, prelude::*, widgets::*, Frame};
+use ratatui_macros::vertical;
 use style::palette::tailwind;
 
 #[derive(Default)]
@@ -22,12 +19,7 @@ impl Drawer {
         let movie = if app.movies.is_empty() {
             None
         } else {
-            Some(
-                &app.movies[self
-                    .main_screen_options
-                    .movies_list_options
-                    .current_movie_index()],
-            )
+            Some(&app.movies[self.main_screen.movies_list.current_movie_index()])
         };
 
         let [_, vert, _] = Layout::vertical([
@@ -45,12 +37,8 @@ impl Drawer {
         .areas(vert);
 
         let backdrop_height = ((vert.width - 4) as f32 * 9.0 / 32.0).ceil() as u16;
-        let [poster_area, title_area, description_area] = Layout::vertical(vec![
-            Constraint::Length(backdrop_height),
-            Constraint::Length(3),
-            Constraint::Min(1),
-        ])
-        .areas(horiz);
+        let [backdrop_area, title_area, description_area] =
+            vertical![==backdrop_height, ==3, >=1].areas(horiz);
 
         frame.render_widget(Block::new().bg(tailwind::SLATE.c800), area);
 
@@ -60,9 +48,9 @@ impl Drawer {
                 movie.year.as_str().bold().italic(),
                 " ".repeat((title_area.width - 11 - 14).into()).into(),
                 "rating: ".italic(),
-                if let Rating::TMDB(rating, count) = movie.ratings[1] {
+                if let Rating::TMDB(rating, _) = movie.ratings[1] {
                     format!("{:.1}", rating).italic().bold()
-                } else if let Rating::Trakt(rating, count) = movie.ratings[1] {
+                } else if let Rating::Trakt(rating, _) = movie.ratings[1] {
                     format!("{:.1}", rating).italic().bold()
                 } else {
                     "nan".into()
@@ -88,30 +76,18 @@ impl Drawer {
             // TODO
         }
 
-        if let Some(crate::popups::Popups::FetchArtwork) = self.active_popup {
-        } else if movie.is_some() {
-            let key = (
-                self.main_screen_options
-                    .movies_list_options
-                    .current_movie_index(),
+        // if let Some(crate::popups::Popups::FetchArtwork) = self.active_popup {
+        // } else
+        if movie.is_some() {
+            self.image_backend.draw_image(
+                app,
+                self.main_screen.movies_list.current_movie_index(),
                 true,
-            );
-            if !self.main_screen_options.hashed_images.contains_key(&key) {
-                self.main_screen_options.hash_image(key.0, key.1, app);
-            }
-
-            frame.render_stateful_widget(
-                ThreadImage::new().resize(ratatui_image::Resize::Scale(Some(
-                    ratatui_image::FilterType::Triangle,
-                ))),
-                poster_area,
-                self.main_screen_options
-                    .hashed_images
-                    .get_mut(&key)
-                    .unwrap(),
+                backdrop_area,
+                frame,
             );
         } else {
-            frame.render_widget(Block::new().bg(tailwind::SLATE.c700), poster_area);
+            frame.render_widget(Block::new().bg(tailwind::SLATE.c700), backdrop_area);
         }
     }
 }

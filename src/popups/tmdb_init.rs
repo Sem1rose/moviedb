@@ -1,7 +1,10 @@
 use crate::{
-    app::{App, Result},
+    custom::{
+        helpers::{center_rect, v_center},
+        hyperlink::Hyperlink,
+    },
     draw::Drawer,
-    helpers::{center_rect, v_center},
+    types::*,
 };
 use ratatui::{
     crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind},
@@ -51,10 +54,8 @@ impl TMDBInitPopup {
     pub fn get_authorization(&mut self, authorization_url: String) {
         self.phase = Phase::GetAuthorization(authorization_url);
     }
-}
 
-impl Drawer {
-    pub fn tmdb_init_popup_handle_key_events(&mut self, event: KeyEvent) -> Result<()> {
+    pub fn handle_key_events(&mut self, event: KeyEvent) -> Result<()> {
         let kind = event.kind;
         let code = event.code;
 
@@ -63,43 +64,28 @@ impl Drawer {
         }
 
         match code {
-            KeyCode::Enter => match self.tmdb_init_popup_options.phase {
-                Phase::GetInput => {
-                    if !self
-                        .tmdb_init_popup_options
-                        .access_token_input
-                        .value()
-                        .is_empty()
-                    {
-                        self.tmdb_init_popup_options.advance_phase();
+            KeyCode::Enter => {
+                if let Phase::GetInput = self.phase {
+                    if !self.access_token_input.value().is_empty() {
+                        self.advance_phase();
                     }
                 }
-                _ => (),
-            },
-            // KeyCode::Tab => match self.tmdb_init_popup_options.phase {
-            //     Phase::GetInput => {}
-            //     _ => (),
-            // },
-            // KeyCode::BackTab => match self.tmdb_init_popup_options.phase {
-            //     Phase::GetInput => {}
-            //     _ => (),
-            // },
-            _ => match self.tmdb_init_popup_options.phase {
-                Phase::GetInput => {
-                    self.tmdb_init_popup_options
-                        .access_token_input
-                        .handle_event(&Event::Key(event));
+            }
+            _ => {
+                if let Phase::GetInput = self.phase {
+                    self.access_token_input.handle_event(&Event::Key(event));
                 }
-                _ => (),
-            },
+            }
         }
 
         Ok(())
     }
+}
 
+impl Drawer {
     pub(crate) fn draw_tmdb_init_popup(&mut self, frame: &mut Frame) -> Result<()> {
         let frame_area = frame.area();
-        let popup_area = center_rect(frame_area, Constraint::Percentage(75), Constraint::Max(7));
+        let popup_area = center_rect(frame_area, Constraint::Percentage(40), Constraint::Max(10));
 
         let popup = Block::new()
             .bg(tailwind::INDIGO.c950)
@@ -117,7 +103,7 @@ impl Drawer {
         let [_, vert, _] = vertical![==1, >=1, ==1].areas(popup_area);
         let [_, horiz, _] = horizontal![==2, >=1, ==2].areas(vert);
 
-        match &self.tmdb_init_popup_options.phase {
+        match &self.tmdb_init_popup.phase {
             Phase::Initializing => {
                 let [_, throbber_area, _, text_area, _] = Layout::horizontal([
                     Constraint::Length(2),
@@ -145,31 +131,28 @@ impl Drawer {
             Phase::GetInput => {
                 let [_, left, right, _] = horizontal![==2, >=1, >=1, ==2].areas(horiz);
 
-                let [_, search_top, search_center, search_bottom, _] =
+                let [_, input_top, input_center, input_bottom, _] =
                     vertical![>=0, ==1, ==1, ==1,>=0].areas(right);
 
-                let [_, search_input_area, _] = horizontal![==1, >=1, ==1].areas(search_center);
+                let [_, input_area, _] = horizontal![==1, >=1, ==1].areas(input_center);
 
                 // ▄▀█ ▂🮂▗▖▘▝
                 frame.render_widget(
-                    Paragraph::new("🮃".repeat(search_bottom.width as usize)).fg(tailwind::RED.c700),
-                    search_bottom,
+                    Paragraph::new("🮃".repeat(input_bottom.width as usize)).fg(tailwind::RED.c700),
+                    input_bottom,
                 );
                 frame.render_widget(
-                    Paragraph::new("▂".repeat(search_top.width as usize)).fg(tailwind::RED.c700),
-                    search_top,
+                    Paragraph::new("▂".repeat(input_top.width as usize)).fg(tailwind::RED.c700),
+                    input_top,
                 );
                 frame.render_widget(Paragraph::new("Enter access token: "), v_center(left));
-                frame.render_widget(Block::new().bg(tailwind::RED.c700), search_center);
+                frame.render_widget(Block::new().bg(tailwind::RED.c700), input_center);
 
-                let width = search_input_area.width as usize - 1;
-                let start = self
-                    .tmdb_init_popup_options
-                    .access_token_input
-                    .visual_scroll(width);
-                let cursor_pos = self.tmdb_init_popup_options.access_token_input.cursor() - start;
+                let width = input_area.width as usize - 1;
+                let start = self.tmdb_init_popup.access_token_input.visual_scroll(width);
+                let cursor_pos = self.tmdb_init_popup.access_token_input.cursor() - start;
                 let mut chars = self
-                    .tmdb_init_popup_options
+                    .tmdb_init_popup
                     .access_token_input
                     .value()
                     .chars()
@@ -184,7 +167,7 @@ impl Drawer {
                         input_string.push(c.to_string().into());
                     }
                 }
-                frame.render_widget(Line::from_iter(input_string), search_input_area);
+                frame.render_widget(Line::from_iter(input_string), input_area);
             }
             Phase::GotInput => {
                 let [_, throbber_area, text_area, _] = horizontal![==2, >=1, >=1, ==2].areas(horiz);
@@ -217,7 +200,13 @@ impl Drawer {
                     //         .blue(),
                     //     span!(" link to authorize the application.")
                     // ]
-                    span!(url).bold(),
+                    &Hyperlink::new(
+                        span!("Click here to go to the authorization url.")
+                            .bold()
+                            .underlined()
+                            .blue(),
+                        url,
+                    ),
                     v_center(prompt_area),
                 );
             }

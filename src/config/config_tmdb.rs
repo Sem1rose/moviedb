@@ -1,11 +1,10 @@
-use crate::app::{Config, Errors, OptionalResult, Result};
+use crate::{config::Config, types::*};
 use cocoon::Cocoon;
 use log::{debug, error};
 use rand::{distr::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File},
-    io::{stdin, stdout, Write},
     sync::mpsc::Sender,
     thread,
 };
@@ -20,13 +19,6 @@ impl TMDBCredentials {
     pub fn new(access_token: String) -> Self {
         Self {
             access_token,
-            session_id: "".into(),
-        }
-    }
-
-    pub fn default() -> Self {
-        Self {
-            access_token: "".into(),
             session_id: "".into(),
         }
     }
@@ -47,7 +39,7 @@ impl TMDBConfig {
         }
     }
 
-    fn try_init(&mut self, config: &Config) -> Result<bool> {
+    fn check_files(&mut self, config: &Config) -> Result<bool> {
         if !config.dirs.encryption_key_file.is_file() {
             let key: String = rand::rng()
                 .sample_iter(&Alphanumeric)
@@ -55,12 +47,12 @@ impl TMDBConfig {
                 .map(char::from)
                 .collect();
 
-            let _ = fs::remove_file(&config.dirs.tmdb_encrypted_file);
+            let _ = fs::remove_file(&config.dirs.tmdb_encrypted_creds_file);
 
             fs::write(&config.dirs.encryption_key_file, key)?;
         }
 
-        if config.dirs.tmdb_encrypted_file.is_file() {
+        if config.dirs.tmdb_encrypted_creds_file.is_file() {
             // self.read_creds(config)?;
 
             Ok(true)
@@ -70,7 +62,7 @@ impl TMDBConfig {
     }
 
     pub fn init(&mut self, config: &Config) {
-        let result = self.try_init(config);
+        let result = self.check_files(config);
         if let Ok(true) = result {
             let tx_result = self.tx_init.clone();
             let conf_cloned = config.clone();
@@ -79,13 +71,13 @@ impl TMDBConfig {
                 tx_result.send(TMDBConfig::read_creds(&conf_cloned).map_err(Some))
             });
         } else if let Ok(false) = result {
-            debug!("Initializing a new TMDB config...");
+            // debug!("Initializing a new TMDB config...");
 
             let _ = self.tx_init.send(Err(None));
 
             // self.init_creds();
         } else if let Err(error) = result {
-            error!("Error reading TMDB config file, initializing a new config...");
+            // error!("Error reading TMDB config file, initializing a new config...");
 
             let _ = self.tx_init.send(Err(Some(error)));
 
@@ -97,7 +89,7 @@ impl TMDBConfig {
         let key = fs::read(&config.dirs.encryption_key_file)?;
         let cocoon = Cocoon::new(&key);
 
-        let mut encrypted_file = File::open(&config.dirs.tmdb_encrypted_file)?;
+        let mut encrypted_file = File::open(&config.dirs.tmdb_encrypted_creds_file)?;
 
         let result = String::from_utf8(cocoon.parse(&mut encrypted_file)?);
 
@@ -148,7 +140,7 @@ impl TMDBConfig {
         let key = fs::read(&config.dirs.encryption_key_file)?;
         let mut cocoon = Cocoon::new(&key);
 
-        let mut encrypted_file = File::create(&config.dirs.tmdb_encrypted_file)?;
+        let mut encrypted_file = File::create(&config.dirs.tmdb_encrypted_creds_file)?;
         let dump_json = serde_json::to_string(&self.tmdb_credentials)?;
 
         cocoon.dump(dump_json.into_bytes(), &mut encrypted_file)?;
@@ -156,30 +148,30 @@ impl TMDBConfig {
         Ok(())
     }
 
-    fn get_input(&self, prompt: String) -> String {
-        print!("{prompt} ");
-        let _ = stdout().flush();
+    // fn get_input(&self, prompt: String) -> String {
+    //     print!("{prompt} ");
+    //     let _ = stdout().flush();
 
-        let mut input = String::new();
-        stdin()
-            .read_line(&mut input)
-            .expect("Did not enter a correct string");
-        if let Some('\n') = input.chars().next_back() {
-            input.pop();
-        }
-        if let Some('\r') = input.chars().next_back() {
-            input.pop();
-        }
+    //     let mut input = String::new();
+    //     stdin()
+    //         .read_line(&mut input)
+    //         .expect("Did not enter a correct string");
+    //     if let Some('\n') = input.chars().next_back() {
+    //         input.pop();
+    //     }
+    //     if let Some('\r') = input.chars().next_back() {
+    //         input.pop();
+    //     }
 
-        input
+    //     input
+    // }
+
+    pub fn session_id(&self) -> &str {
+        &self.tmdb_credentials.session_id
     }
 
     pub fn set_session_id(&mut self, session_id: String) {
         self.tmdb_credentials.session_id = session_id;
-    }
-
-    pub fn set_access_token(&mut self, access_token: String) {
-        self.tmdb_credentials.access_token = access_token;
     }
 
     pub fn has_session_id(&self) -> bool {
@@ -190,7 +182,7 @@ impl TMDBConfig {
         &self.tmdb_credentials.access_token
     }
 
-    pub fn session_id(&self) -> &str {
-        &self.tmdb_credentials.session_id
+    pub fn set_access_token(&mut self, access_token: String) {
+        self.tmdb_credentials.access_token = access_token;
     }
 }

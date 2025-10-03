@@ -1,6 +1,6 @@
 use crate::{
-    app::{Config, Errors, Result},
-    config_trakt::TraktConfig,
+    config::{config_trakt::TraktConfig, Config},
+    types::*,
 };
 use log::{debug, error};
 use reqwest::{
@@ -13,16 +13,17 @@ use std::{
     error::Error,
     fmt::Display,
     fs::{self, File},
-    io::{self, stdin, stdout, Write},
+    io,
+    sync::mpsc::{Receiver, Sender},
 };
 
 #[derive(Deserialize, Debug)]
 struct TokenResponse {
     access_token: String,
-    token_type: String,
+    // token_type: String,
     expires_in: i32,
     refresh_token: String,
-    scope: String,
+    // scope: String,
     created_at: i32,
 }
 
@@ -75,19 +76,26 @@ pub struct TraktMovieImages {
 
 #[derive(Deserialize, Debug, Default, Clone)]
 pub struct IDs {
-    trakt: u32,
-    slug: String,
-    imdb: String,
-    tmdb: u32,
+    pub trakt: u32,
+    pub slug: String,
+    pub imdb: String,
+    pub tmdb: u32,
 }
 
-pub fn populate_tokens(config: &Config, trakt_config: &mut TraktConfig) -> Result<()> {
-    if !trakt_config.has_tokens() {
-        debug!("No Trakt tokens found, fetching new ones...");
+pub struct TraktTokens {
+    pub access_token: String,
+    pub refresh_token: String,
+    pub expires_on: i32,
+}
 
-        get_tokens(config, trakt_config)?
-    } else if unix_ts::Timestamp::now().seconds() - trakt_config.tokens_expiration_date() as i64 > 0
-    {
+pub fn check_tokens(trakt_config: &TraktConfig) -> bool {
+    // if !trakt_config.has_tokens() {
+    //     debug!("No Trakt tokens found, fetching new ones...");
+
+    //     // get_tokens(config, trakt_config)?
+    //     return Ok(1);
+    // } else
+    if unix_ts::Timestamp::now().seconds() - trakt_config.tokens_expiration_date() as i64 > 0 {
         debug!(
             "Trakt tokens outdated {} {} {}, refreshing...",
             unix_ts::Timestamp::now().seconds(),
@@ -95,49 +103,63 @@ pub fn populate_tokens(config: &Config, trakt_config: &mut TraktConfig) -> Resul
             unix_ts::Timestamp::now().seconds() - trakt_config.tokens_expiration_date() as i64
         );
 
-        if let Err(error) = refresh_tokens(trakt_config) {
-            error!("Error while refreshing Trakt tokens: {error}, getting new tokens...");
+        return false;
+        // if let Err(error) = refresh_tokens(trakt_config) {
+        //     error!("Error while refreshing Trakt tokens: {error}, getting new tokens...");
 
-            get_tokens(config, trakt_config)?
-        }
+        //     // get_tokens(config, trakt_config)?
+        //     return Ok(1);
+        // }
     }
 
-    Ok(())
+    true
 }
 
 // https://trakt.docs.apiary.io/#reference/authentication-oauth/authorize/authorize-application
-fn get_tokens(config: &Config, trakt_config: &mut TraktConfig) -> Result<()> {
+pub fn get_tokens(
+    client_id: &str,
+    client_secret: &str,
+    tx_authorization_url: Sender<String>,
+    rx_auth_code: Receiver<String>,
+) -> Result<TraktTokens> {
     let client = reqwest::blocking::Client::new();
 
     // Step 1: ask the user for an authorization token
     let authorization_url = client
         .get("https://trakt.tv/oauth/authorize")
         .query(&[
-            ("response_type", "code"),
-            ("client_id", trakt_config.client_id()),
+            ("client_id", client_id),
             ("redirect_uri", "urn:ietf:wg:oauth:2.0:oob"),
+            ("response_type", "code"),
         ])
+        .header("Content-Type", "application/json")
         .build()?
         .url()
         .to_string();
 
-    println!(
-        "\nPlease visit the following url to authorize the application.\n{}\n",
-        authorization_url
-    );
+    // println!(
+    //     "\nPlease visit the following url to authorize the application.\n{}\n",
+    //     authorization_url
+    // );
+    let _ = tx_authorization_url.send(authorization_url);
 
-    let mut auth_code = String::new();
-    print!("Please enter the auth code from the url: ");
-    let _ = stdout().flush();
-    stdin()
-        .read_line(&mut auth_code)
-        .expect("Did not enter a correct string");
-    if let Some('\n') = auth_code.chars().next_back() {
-        auth_code.pop();
+    let auth_code = rx_auth_code.recv().unwrap_or_default();
+    if auth_code.is_empty() {
+        return Err(Errors::Other("Trakt: no auth code received".into()));
     }
-    if let Some('\r') = auth_code.chars().next_back() {
-        auth_code.pop();
-    }
+
+    // let mut auth_code = String::new();
+    // print!("Please enter the auth code from the url: ");
+    // let _ = stdout().flush();
+    // stdin()
+    //     .read_line(&mut auth_code)
+    //     .expect("Did not enter a correct string");
+    // if let Some('\n') = auth_code.chars().next_back() {
+    //     auth_code.pop();
+    // }
+    // if let Some('\r') = auth_code.chars().next_back() {
+    //     auth_code.pop();
+    // }
     // let auth_code = String::from("ef1b4a95");
 
     // Step 2: exchange authorization code for access token
@@ -145,12 +167,12 @@ fn get_tokens(config: &Config, trakt_config: &mut TraktConfig) -> Result<()> {
     headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
     headers.insert(USER_AGENT, "reqwest/0.12.8".parse().unwrap());
     headers.insert("trakt-api-version", "2".parse().unwrap());
-    headers.insert("trakt-api-key", trakt_config.client_id().parse().unwrap());
+    headers.insert("trakt-api-key", client_id.parse().unwrap());
 
     let mut body = HashMap::new();
     body.insert("code", auth_code.as_str());
-    body.insert("client_id", trakt_config.client_id());
-    body.insert("client_secret", trakt_config.client_secret());
+    body.insert("client_id", client_id);
+    body.insert("client_secret", client_secret);
     body.insert("redirect_uri", "urn:ietf:wg:oauth:2.0:oob");
     body.insert("grant_type", "authorization_code");
 
@@ -172,29 +194,29 @@ fn get_tokens(config: &Config, trakt_config: &mut TraktConfig) -> Result<()> {
     }
     let token_response = token_response.json::<TokenResponse>()?;
 
-    trakt_config.set_trakt_tokens(
-        token_response.access_token,
-        token_response.refresh_token,
-        token_response.created_at,
-        token_response.expires_in,
-    );
-    trakt_config.save_creds(config)?;
-
-    Ok(())
+    Ok(TraktTokens {
+        access_token: token_response.access_token,
+        refresh_token: token_response.refresh_token,
+        expires_on: token_response.created_at + token_response.expires_in,
+    })
 }
 
-fn refresh_tokens(trakt_config: &mut TraktConfig) -> Result<()> {
+pub fn refresh_tokens(
+    client_id: &str,
+    client_secret: &str,
+    refresh_token: &str,
+) -> Result<TraktTokens> {
     let client = ClientBuilder::new().build()?;
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
     headers.insert(USER_AGENT, "reqwest/0.12.8".parse().unwrap());
     headers.insert("trakt-api-version", "2".parse().unwrap());
-    headers.insert("trakt-api-key", trakt_config.client_id().parse().unwrap());
+    headers.insert("trakt-api-key", client_id.parse().unwrap());
 
     let mut body = HashMap::new();
-    body.insert("refresh_token", trakt_config.refresh_token());
-    body.insert("client_id", trakt_config.client_id());
-    body.insert("client_secret", trakt_config.client_secret());
+    body.insert("refresh_token", refresh_token);
+    body.insert("client_id", client_id);
+    body.insert("client_secret", client_secret);
     body.insert("redirect_uri", "urn:ietf:wg:oauth:2.0:oob");
     body.insert("grant_type", "refresh_token");
 
@@ -206,7 +228,7 @@ fn refresh_tokens(trakt_config: &mut TraktConfig) -> Result<()> {
         None,
     )?;
 
-    debug!("{:#?}", token_response);
+    // debug!("{:#?}", token_response);
 
     if token_response.status().as_u16() >= 400 {
         let result = token_response.json::<TokenResponseError>();
@@ -217,16 +239,13 @@ fn refresh_tokens(trakt_config: &mut TraktConfig) -> Result<()> {
         }
     }
     let token_response = token_response.json::<TokenResponse>()?;
-    debug!("{:#?}", token_response);
+    // debug!("{:#?}", token_response);
 
-    trakt_config.set_trakt_tokens(
-        token_response.access_token,
-        token_response.refresh_token,
-        token_response.created_at,
-        token_response.expires_in,
-    );
-
-    Ok(())
+    Ok(TraktTokens {
+        access_token: token_response.access_token,
+        refresh_token: token_response.refresh_token,
+        expires_on: token_response.created_at + token_response.expires_in,
+    })
 }
 
 pub fn get_movie_details(

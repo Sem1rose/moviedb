@@ -1,19 +1,20 @@
 mod app;
 mod args;
-mod config_tmdb;
-mod config_trakt;
+mod config;
+mod custom;
 mod draw;
-mod helpers;
+mod image_backends;
 mod popups;
 mod screens;
 mod tmdb;
 mod trakt;
 mod tui;
+mod types;
 // mod update_json;
 
-use app::Result;
 use log::debug;
 use tui::Tui;
+use types::Result;
 
 fn main() -> Result<()> {
     env_logger::init();

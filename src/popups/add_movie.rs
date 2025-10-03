@@ -1,9 +1,10 @@
 use crate::{
-    app::{App, Movie, Result},
+    app::App,
+    custom::helpers::{center_rect, ellipsize_string},
     draw::Drawer,
-    helpers::{center_rect, ellipsize_string},
     tmdb::{self, TMDBDetailsResponse, TMDBSearchResponse, TMDBSearchResult},
     trakt::{self, TraktDetailsResponse},
+    types::*,
 };
 use ratatui::{
     crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind},
@@ -202,62 +203,60 @@ impl AddMoviePopup {
 
         Ok(())
     }
-}
 
-impl Drawer {
-    pub fn add_movie_popup_handle_key_events(&mut self, app: &App, event: KeyEvent) -> Result<()> {
+    pub fn handle_key_events(&mut self, app: &App, event: KeyEvent) -> bool {
         let kind = event.kind;
         let code = event.code;
 
         if kind != KeyEventKind::Press {
-            return Ok(());
+            return false;
         }
 
         match code {
             KeyCode::Up => {
-                if let Phase::SelectMovie = self.add_movie_popup_options.phase {
-                    self.add_movie_popup_options.dec_movie_selection();
+                if let Phase::SelectMovie = self.phase {
+                    self.dec_movie_selection();
                 }
             }
             KeyCode::Down => {
-                if let Phase::SelectMovie = self.add_movie_popup_options.phase {
-                    self.add_movie_popup_options.inc_movie_selection();
+                if let Phase::SelectMovie = self.phase {
+                    self.inc_movie_selection();
                 }
             }
-            KeyCode::Enter => match self.add_movie_popup_options.phase {
+            KeyCode::Enter => match self.phase {
                 Phase::GetName => {
-                    if self.add_movie_popup_options.input.value() != "" {
-                        self.add_movie_popup_options.advance_phase(Some(app));
+                    if self.input.value() != "" {
+                        self.advance_phase(Some(app));
                     }
                 }
                 Phase::SelectMovie => {
-                    self.add_movie_popup_options.advance_phase(Some(app));
+                    self.advance_phase(Some(app));
                 }
                 Phase::GetRating => {
-                    if self.add_movie_popup_options.check_input_rating() {
-                        self.add_movie_popup_options.advance_phase(Some(app));
+                    if self.check_input_rating() {
+                        self.advance_phase(Some(app));
                     }
                 }
                 _ => (),
             },
             KeyCode::Esc => {
-                self.close_popups();
+                return true;
             }
-            _ => match self.add_movie_popup_options.phase {
+            _ => match self.phase {
                 Phase::GetRating | Phase::GetName => {
-                    self.add_movie_popup_options
-                        .input
-                        .handle_event(&Event::Key(event));
+                    self.input.handle_event(&Event::Key(event));
                 }
                 _ => (),
             },
         }
 
-        Ok(())
+        false
     }
+}
 
+impl Drawer {
     pub(crate) fn draw_add_movie_popup(&mut self, frame: &mut Frame, app: &mut App) -> Result<()> {
-        if let Err(error) = self.add_movie_popup_options.read_channels() {
+        if let Err(error) = self.add_movie_popup.read_channels() {
             self.open_error_popup(error);
 
             return Ok(());
@@ -282,7 +281,7 @@ impl Drawer {
         let [_, vert, _] = vertical![==1, >=1 ,==1].areas(popup_area);
         let [_, horiz, _] = horizontal![==2, >=1, ==2].areas(vert);
 
-        match self.add_movie_popup_options.phase {
+        match self.add_movie_popup.phase {
             Phase::GetName => {
                 let [_, left, right, _] = horizontal![==2, ==6, >=1, ==2].areas(horiz);
 
@@ -306,14 +305,9 @@ impl Drawer {
                 frame.render_widget(Block::new().bg(tailwind::RED.c700), search_center);
 
                 let width = search_input_area.width as usize - 1;
-                let start = self.add_movie_popup_options.input.visual_scroll(width);
-                let cursor_pos = self.add_movie_popup_options.input.cursor() - start;
-                let mut chars = self
-                    .add_movie_popup_options
-                    .input
-                    .value()
-                    .chars()
-                    .skip(start);
+                let start = self.add_movie_popup.input.visual_scroll(width);
+                let cursor_pos = self.add_movie_popup.input.cursor() - start;
+                let mut chars = self.add_movie_popup.input.value().chars().skip(start);
 
                 let mut search_string: Vec<Span> = vec![];
                 for i in 0..=(start + width) {
@@ -344,10 +338,7 @@ impl Drawer {
                 frame.render_widget(Paragraph::new(" Searching for movie..."), text_area);
             }
             Phase::SelectMovie => {
-                let results = self
-                    .add_movie_popup_options
-                    .try_get_search_result()
-                    .unwrap();
+                let results = self.add_movie_popup.try_get_search_result().unwrap();
 
                 if results.is_empty() {
                     self.open_error_popup("Couldn't find movie!".into());
@@ -362,7 +353,7 @@ impl Drawer {
                     if i >= results.len() {
                         break;
                     }
-                    let movie = &results[self.add_movie_popup_options.scroll_pos + i];
+                    let movie = &results[self.add_movie_popup.scroll_pos + i];
 
                     let title_width = (area.width - 20) as usize;
 
@@ -370,7 +361,7 @@ impl Drawer {
 
                     let text = format!(
                         "{}{name} - {} - {:.1}",
-                        if i == self.add_movie_popup_options.selected {
+                        if i == self.add_movie_popup.selected {
                             ">"
                         } else {
                             " "
@@ -405,14 +396,9 @@ impl Drawer {
                 frame.render_widget(Block::new().bg(tailwind::RED.c700), search_center);
 
                 let width = search_input_area.width as usize - 1;
-                let start = self.add_movie_popup_options.input.visual_scroll(width);
-                let cursor_pos = self.add_movie_popup_options.input.cursor() - start;
-                let mut chars = self
-                    .add_movie_popup_options
-                    .input
-                    .value()
-                    .chars()
-                    .skip(start);
+                let start = self.add_movie_popup.input.visual_scroll(width);
+                let cursor_pos = self.add_movie_popup.input.cursor() - start;
+                let mut chars = self.add_movie_popup.input.value().chars().skip(start);
 
                 let mut search_string: Vec<Span> = vec![];
                 for i in 0..=(start + width) {
@@ -425,7 +411,7 @@ impl Drawer {
                 }
                 frame.render_widget(Line::from_iter(search_string), search_input_area);
 
-                if !self.add_movie_popup_options.check_input_rating() {
+                if !self.add_movie_popup.check_input_rating() {
                     let error_area = Layout::vertical([Constraint::Length(1); 5]).split(horiz);
 
                     frame.render_widget(
@@ -455,18 +441,18 @@ impl Drawer {
             }
             Phase::Done => {
                 let tmdb_movie_details = self
-                    .add_movie_popup_options
+                    .add_movie_popup
                     .tmdb_movie_details_result
                     .take()
                     .unwrap();
                 let trakt_movie_details = self
-                    .add_movie_popup_options
+                    .add_movie_popup
                     .trakt_movie_details_result
                     .take()
                     .unwrap();
 
                 app.movies.push(
-                    Movie::from(tmdb_movie_details, self.add_movie_popup_options.user_rating)
+                    Movie::from(tmdb_movie_details, self.add_movie_popup.user_rating)
                         .add_trakt_details(trakt_movie_details),
                 );
 
@@ -475,18 +461,14 @@ impl Drawer {
                 } else {
                     self.open_fetch_artworks_popup(app)?;
 
-                    self.main_screen_options.movies_list_options.selected = self
-                        .main_screen_options
-                        .movies_list_options
-                        .num_visible_movies
-                        - 1;
+                    self.main_screen.movies_list.selected =
+                        self.main_screen.movies_list.num_visible_movies - 1;
 
-                    self.main_screen_options.movies_list_options.scroll_pos = app.movies.len()
-                        - self.main_screen_options.movies_list_options.selected
-                        - 1;
+                    self.main_screen.movies_list.scroll_pos =
+                        app.movies.len() - self.main_screen.movies_list.selected - 1;
 
-                    self.main_screen_options
-                        .rehash_images(app, self.main_screen_options.movies_list_options.selected);
+                    // self.image_backend
+                    //     .reload_images(app, self.main_screen.movies_list.selected);
                 }
             }
         }

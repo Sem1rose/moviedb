@@ -1,21 +1,15 @@
 use crate::{
-    app::{App, Result},
-    draw::Drawer,
-    helpers::center_rect,
-    tmdb, trakt,
+    app::App, config::Config, custom::helpers::center_rect, draw::Drawer, tmdb, trakt, types::*,
 };
 use log::error;
 use ratatui::{layout::*, prelude::*, widgets::*, Frame};
 use ratatui_macros::{horizontal, vertical};
 use std::{
     collections::HashSet,
-    sync::mpsc::{self, Receiver, Sender},
+    sync::mpsc::{channel, Receiver, Sender},
     thread,
 };
 use style::palette::tailwind;
-
-//           tmdb_id  imdb_id
-type MovieID = (u32, String);
 
 #[derive(Default)]
 pub struct FetchArtworksPopup {
@@ -30,13 +24,18 @@ pub struct FetchArtworksPopup {
 }
 
 impl FetchArtworksPopup {
+    pub fn begin(&mut self, app: &mut App) -> Result<()> {
+        *self = Self::default();
+        self.fetch_artworks(app)
+    }
+
     pub fn start_thread(&mut self, app: &App) {
-        let (tx_fetch_request, rx_fetch_request) = mpsc::channel::<Option<MovieID>>();
-        let (tx_fetch_response, rx_fetch_response) = mpsc::channel::<((u32, String), Result<()>)>();
+        let (tx_fetch_request, rx_fetch_request) = channel::<Option<MovieID>>();
+        let (tx_fetch_response, rx_fetch_response) = channel::<(MovieID, Result<()>)>();
 
         let conf = app.config.clone();
         let tmdb_conf = app.tmdb_config.clone();
-        let trakt_conf = app.trakt_config.clone();
+        // let trakt_conf = app.trakt_config.clone();
 
         // TODO: use a threadpool instead
         thread::spawn(move || {
@@ -55,7 +54,7 @@ impl FetchArtworksPopup {
                     // let result = trakt::get_movie_poster_banner(
                     //     &conf_owned,
                     //     &trakt_conf_owned,
-                    //     request.1.clone(),
+                    //     request.imdb_id.clone(),
                     //     false,
                     // );
 
@@ -63,7 +62,7 @@ impl FetchArtworksPopup {
                     let result = tmdb::get_movie_poster_banner(
                         &conf_owned,
                         &tmdb_conf_owned,
-                        request.0,
+                        request.tmdb,
                         true,
                     );
 
@@ -76,7 +75,7 @@ impl FetchArtworksPopup {
                     //     let result = tmdb::get_movie_poster_banner(
                     //         &conf_owned,
                     //         &tmdb_conf_owned,
-                    //         request.0,
+                    //         request.tmdb,
                     //         true,
                     //     );
 
@@ -103,14 +102,8 @@ impl FetchArtworksPopup {
         self.done
     }
 
-    pub fn begin(&mut self) {
-        *self = Self::default();
-    }
-}
-
-impl Drawer {
-    fn check_artwork_fetched(&self, config: &crate::app::Config, id: u32) -> bool {
-        if config
+    fn check_artwork_fetched(&self, config: &Config, id: u32) -> bool {
+        config
             .dirs
             .poster_cache
             .join(format!("{}.jpg", id))
@@ -120,35 +113,27 @@ impl Drawer {
                 .backdrop_cache
                 .join(format!("{}.jpg", id))
                 .is_file()
-        {
-            return true;
-        }
-
-        false
     }
 
     pub fn fetch_artworks(&mut self, app: &mut App) -> Result<()> {
         let contents = std::fs::read_to_string(&app.config.dirs.cached_movies_file)?;
-        let movies_cached: Vec<_> = contents
+        let cached_movies: Vec<u32> = contents
             .split_ascii_whitespace()
-            .map(|x| x.to_string())
+            .map(|x| x.parse::<u32>().unwrap())
             .collect();
 
-        self.fetch_artwork_popup_options.start_thread(app);
-
+        self.start_thread(app);
         for movie in &app.movies {
-            let movie_id = (movie.tmdb_id, movie.imdb_id.clone());
-            if !movies_cached.contains(&movie_id.0.to_string())
-                || !self.check_artwork_fetched(&app.config, movie_id.0)
+            if !cached_movies.contains(&movie.id.tmdb)
+                || !self.check_artwork_fetched(&app.config, movie.id.tmdb)
             {
                 let _ = self
-                    .fetch_artwork_popup_options
                     .tx_fetch_request
                     .as_ref()
                     .unwrap()
-                    .send(Some(movie_id));
+                    .send(Some(movie.id.clone()));
             } else {
-                self.fetch_artwork_popup_options.progress += 1;
+                self.progress += 1;
             }
         }
 
@@ -158,52 +143,52 @@ impl Drawer {
     fn read_threads_responses(&mut self, app: &mut App) -> Result<()> {
         let contents = std::fs::read_to_string(&app.config.dirs.cached_movies_file)?;
 
-        let mut movies_cached: HashSet<_> = contents
+        let mut movies_cached: HashSet<u32> = contents
             .split_ascii_whitespace()
-            .map(|x| x.to_string())
+            .map(|x| x.parse().unwrap())
             .collect();
 
-        for (id, fetch_result) in self
-            .fetch_artwork_popup_options
-            .rx_fetch_response
-            .as_ref()
-            .unwrap()
-            .try_iter()
-        {
+        for (id, fetch_result) in self.rx_fetch_response.as_ref().unwrap().try_iter() {
             if let Err(error) = fetch_result {
-                error!("error while downloading {}: {error}", id.0);
+                error!("error while downloading {}: {error}", id.tmdb);
 
-                self.fetch_artwork_popup_options.errored = Some(id.0);
+                self.errored = Some(id.tmdb);
 
                 // let _ = self.fetch_artwork_popup_options.tx_fetch_request.send(id);
             } else {
-                self.fetch_artwork_popup_options.progress += 1;
+                self.progress += 1;
 
-                movies_cached.insert(id.0.to_string());
+                movies_cached.insert(id.tmdb);
             }
         }
 
         std::fs::write(
             &app.config.dirs.cached_movies_file,
-            movies_cached.into_iter().collect::<Vec<_>>().join("\n"),
+            movies_cached
+                .into_iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<_>>()
+                .join("\n"),
         )?;
 
         Ok(())
     }
+}
 
+impl Drawer {
     pub(crate) fn draw_fetch_artworks_popup(
         &mut self,
         frame: &mut Frame,
         app: &mut App,
     ) -> Result<()> {
-        self.read_threads_responses(app)?;
-        if self.fetch_artwork_popup_options.check_done(app) {
+        self.fetch_artwork_popup.read_threads_responses(app)?;
+        if self.fetch_artwork_popup.check_done(app) {
             return Ok(());
         }
 
         let frame_area = frame.area();
 
-        let progress = self.fetch_artwork_popup_options.progress;
+        let progress = self.fetch_artwork_popup.progress;
         let num_movies = app.movies.len();
 
         let popup_area = center_rect(
@@ -256,7 +241,7 @@ impl Drawer {
 
         frame.render_widget(progress_guage, progress_lay);
 
-        if let Some(id) = self.fetch_artwork_popup_options.errored {
+        if let Some(id) = self.fetch_artwork_popup.errored {
             let errored_text = format!("movie {id} errored, retrying!!");
 
             let [text_lay] = horizontal![==(errored_text.len() as u16)]

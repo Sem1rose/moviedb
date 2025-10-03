@@ -1,11 +1,10 @@
-use crate::app::{Config, Errors, OptionalResult, Result};
+use crate::{config::Config, trakt::TraktTokens, types::*};
 use cocoon::Cocoon;
 use log::{debug, error};
 use rand::{distr::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File},
-    io::{stdin, stdout, Write},
     sync::mpsc::Sender,
     thread,
 };
@@ -57,7 +56,7 @@ impl TraktConfig {
         }
     }
 
-    fn try_init(&mut self, config: &Config) -> Result<bool> {
+    fn check_files(&mut self, config: &Config) -> Result<bool> {
         if !config.dirs.encryption_key_file.is_file() {
             let key: String = rand::rng()
                 .sample_iter(&Alphanumeric)
@@ -65,12 +64,12 @@ impl TraktConfig {
                 .map(char::from)
                 .collect();
 
-            let _ = fs::remove_file(&config.dirs.trakt_encrypted_file);
+            let _ = fs::remove_file(&config.dirs.trakt_encrypted_creds_file);
 
             fs::write(&config.dirs.encryption_key_file, key)?;
         }
 
-        if config.dirs.trakt_encrypted_file.is_file() {
+        if config.dirs.trakt_encrypted_creds_file.is_file() {
             // self.read_creds(config)?;
 
             Ok(true)
@@ -80,22 +79,22 @@ impl TraktConfig {
     }
 
     pub fn init(&mut self, config: &Config) {
-        let result = self.try_init(config);
+        let result = self.check_files(config);
         if let Ok(true) = result {
             let tx_result = self.tx_init.clone();
             let conf_cloned = config.clone();
 
             thread::spawn(move || {
-                tx_result.send(TraktConfig::read_creds(&conf_cloned).map_err(|error| Some(error)))
+                tx_result.send(TraktConfig::read_creds(&conf_cloned).map_err(Some))
             });
         } else if let Ok(false) = result {
-            debug!("Initializing a new Trakt config...");
+            // debug!("Initializing a new Trakt config...");
 
             let _ = self.tx_init.send(Err(None));
 
             // self.init_creds();
         } else if let Err(error) = result {
-            error!("Error reading Trakt config file, initializing a new config...");
+            // error!("Error reading Trakt config file, initializing a new config...");
 
             let _ = self.tx_init.send(Err(Some(error)));
 
@@ -109,7 +108,7 @@ impl TraktConfig {
         let key = fs::read(&config.dirs.encryption_key_file)?;
         let cocoon = Cocoon::new(&key);
 
-        let mut encrypted_file = File::open(&config.dirs.trakt_encrypted_file)?;
+        let mut encrypted_file = File::open(&config.dirs.trakt_encrypted_creds_file)?;
 
         let result = String::from_utf8(cocoon.parse(&mut encrypted_file)?);
 
@@ -141,7 +140,7 @@ impl TraktConfig {
         let key = fs::read(&config.dirs.encryption_key_file)?;
         let mut cocoon = Cocoon::new(&key);
 
-        let mut encrypted_file = File::create(&config.dirs.trakt_encrypted_file)?;
+        let mut encrypted_file = File::create(&config.dirs.trakt_encrypted_creds_file)?;
         let dump_json = serde_json::to_string(&self.trakt_credentials)?;
 
         cocoon.dump(dump_json.into_bytes(), &mut encrypted_file)?;
@@ -167,21 +166,20 @@ impl TraktConfig {
     //     input
     // }
 
-    pub fn set_trakt_tokens(
-        &mut self,
-        access_token: String,
-        refresh_token: String,
-        created_at: i32,
-        expires_in: i32,
-    ) {
-        self.trakt_credentials.access_token = access_token;
-        self.trakt_credentials.refresh_token = refresh_token;
-        self.trakt_credentials.expires_on = created_at + expires_in;
+    pub fn set_secrets(&mut self, client_id: &str, client_secret: &str) {
+        self.trakt_credentials.client_id = client_id.to_string();
+        self.trakt_credentials.client_secret = client_secret.to_string();
+    }
+
+    pub fn set_tokens(&mut self, tokens: TraktTokens) {
+        self.trakt_credentials.access_token = tokens.access_token;
+        self.trakt_credentials.refresh_token = tokens.refresh_token;
+        self.trakt_credentials.expires_on = tokens.expires_on;
     }
 
     pub fn has_tokens(&self) -> bool {
-        self.trakt_credentials.access_token != String::from("")
-            && self.trakt_credentials.refresh_token != String::from("")
+        !self.trakt_credentials.access_token.is_empty()
+            && !self.trakt_credentials.refresh_token.is_empty()
     }
 
     pub fn client_id(&self) -> &str {
@@ -198,6 +196,22 @@ impl TraktConfig {
 
     pub fn refresh_token(&self) -> &str {
         &self.trakt_credentials.refresh_token
+    }
+
+    pub fn client_id_owned(&self) -> String {
+        self.trakt_credentials.client_id.clone()
+    }
+
+    pub fn client_secret_owned(&self) -> String {
+        self.trakt_credentials.client_secret.clone()
+    }
+
+    pub fn access_token_owned(&self) -> String {
+        self.trakt_credentials.access_token.clone()
+    }
+
+    pub fn refresh_token_owned(&self) -> String {
+        self.trakt_credentials.refresh_token.clone()
     }
 
     pub fn tokens_expiration_date(&self) -> i32 {

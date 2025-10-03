@@ -1,11 +1,6 @@
-use crate::{
-    app::{App, Result},
-    draw::Drawer,
-    helpers::ellipsize_string,
-};
+use crate::{app::App, custom::helpers::ellipsize_string, draw::Drawer, types::*};
 use ratatui::style::{Color, Style, Stylize};
 use ratatui::{layout::*, prelude::*, widgets::*, Frame};
-use ratatui_image::thread::ThreadImage;
 use ratatui_macros::{horizontal, line, text, vertical};
 use style::palette::tailwind;
 
@@ -97,13 +92,13 @@ impl Drawer {
     ) -> Result<()> {
         let movies_lay = Layout::vertical(vec![Constraint::Min(8); num_movies]).split(area);
 
-        self.main_screen_options
-            .movies_list_options
+        self.main_screen
+            .movies_list
             .set_num_movies_visible(num_movies);
 
         for (i, area) in movies_lay.iter().enumerate() {
             if !app.movies.is_empty()
-                && (i + self.main_screen_options.movies_list_options.scroll_pos) < app.movies.len()
+                && (i + self.main_screen.movies_list.scroll_pos) < app.movies.len()
             {
                 self.draw_movie_widget(i, app, frame, *area);
             } else {
@@ -130,7 +125,7 @@ impl Drawer {
                 .end_style(Style::new().fg(Color::DarkGray).bold());
 
             let mut scrollbar_state = ScrollbarState::new(app.movies.len() - num_movies)
-                .position(self.main_screen_options.movies_list_options.scroll_pos);
+                .position(self.main_screen.movies_list.scroll_pos);
 
             frame.render_stateful_widget(scrollbar, area, &mut scrollbar_state);
         }
@@ -139,9 +134,9 @@ impl Drawer {
     }
 
     fn draw_movie_widget(&mut self, id: usize, app: &mut App, frame: &mut Frame, area: Rect) {
-        let selected = self.main_screen_options.movies_list_options.selected == id;
-        let alt = (self.main_screen_options.movies_list_options.scroll_pos + id) % 2 == 0;
-        let movie_id = id + self.main_screen_options.movies_list_options.scroll_pos;
+        let selected = self.main_screen.movies_list.selected == id;
+        let alt = (self.main_screen.movies_list.scroll_pos + id) % 2 == 0;
+        let movie_id = id + self.main_screen.movies_list.scroll_pos;
         let movie = app.movies[movie_id].clone();
 
         // TODO: create a themes framework, maybe in the config
@@ -195,26 +190,15 @@ impl Drawer {
             );
         }
 
-        if let Some(crate::popups::Popups::FetchArtwork) = self.active_popup {
-        } else {
-            let key = (
-                self.main_screen_options.movies_list_options.scroll_pos + id,
-                false,
-            );
-            if !self.main_screen_options.hashed_images.contains_key(&key) {
-                self.main_screen_options.hash_image(key.0, key.1, app);
-            }
-
-            frame.render_stateful_widget(
-                ThreadImage::new().resize(ratatui_image::Resize::Scale(Some(
-                    ratatui_image::FilterType::Triangle,
-                ))),
-                poster_area,
-                self.main_screen_options
-                    .hashed_images
-                    .get_mut(&key)
-                    .unwrap(),
-            );
-        }
+        // if let Some(crate::popups::Popups::FetchArtwork) = self.active_popup {
+        // } else {
+        self.image_backend.draw_image(
+            app,
+            self.main_screen.movies_list.scroll_pos + id,
+            false,
+            poster_area,
+            frame,
+        );
+        // }
     }
 }

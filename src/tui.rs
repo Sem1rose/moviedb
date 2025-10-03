@@ -1,7 +1,4 @@
-use crate::{
-    app::{App, Errors, Result},
-    draw::Drawer,
-};
+use crate::{app::App, draw::Drawer, types::*};
 use ratatui::crossterm::{
     execute,
     terminal::{enable_raw_mode, EnterAlternateScreen},
@@ -52,7 +49,7 @@ impl Tui {
 
         let frame_time = Duration::from_secs_f32(1.0 / FRAME_RATE);
         let frames_per_tick = (FRAME_RATE / TICK_RATE).floor() as u32;
-        let mut last_frame = std::time::Instant::now();
+        let mut last_frame = Instant::now();
         let mut tick_counter = 0;
 
         let mut last_frame_time = Instant::now();
@@ -67,10 +64,14 @@ impl Tui {
                 .checked_sub(last_frame.elapsed())
                 .unwrap_or_else(|| Duration::from_secs(0));
 
-            if ratatui::crossterm::event::poll(timeout)? {
+            if event::poll(timeout)? {
                 if let Ok(event) = event::read() {
                     self.app.handle_app_events(event, &mut self.drawer)?;
                 }
+            }
+
+            if self.drawer.can_quit() {
+                return Ok(());
             }
 
             if last_frame.elapsed() >= frame_time {
@@ -82,10 +83,6 @@ impl Tui {
 
                     self.drawer.tick();
                 }
-            }
-
-            if self.drawer.can_quit() {
-                return Ok(());
             }
         }
     }

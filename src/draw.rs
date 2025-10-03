@@ -1,18 +1,28 @@
 use crate::{
-    app::{App, Result},
-    helpers::center_rect,
+    app::App,
+    custom::helpers::center_rect,
+    image_backends::{ratatui_image::RatatuiImage, ImageBackend},
     popups::{
         add_movie::AddMoviePopup, edit_movie::EditMoviePopup, fetch_artworks::FetchArtworksPopup,
         remove_movie::RemoveMoviePopup, tmdb_init::TMDBInitPopup, trakt_init::TraktInitPopup,
         Popups,
     },
     screens::{init_screen::InitScreen, main_screen::MainScreen, Screens},
+    types::*,
 };
 use ratatui::{layout::*, prelude::*, widgets::*, Frame};
+
+impl Default for Box<dyn ImageBackend> {
+    fn default() -> Self {
+        Box::new(RatatuiImage::new())
+    }
+}
 
 #[derive(Default)]
 pub struct Drawer {
     pub should_quit: bool,
+
+    pub(crate) image_backend: Box<dyn ImageBackend>,
 
     pub(crate) throbber_state: throbber_widgets_tui::ThrobberState,
 
@@ -20,23 +30,25 @@ pub struct Drawer {
     pub(crate) current_screen: Screens,
     pub(crate) active_popup: Option<Popups>,
 
-    pub(crate) main_screen_options: MainScreen,
-    pub(crate) init_screen_options: InitScreen,
+    pub(crate) main_screen: MainScreen,
+    pub(crate) init_screen: InitScreen,
 
-    pub(crate) add_movie_popup_options: AddMoviePopup,
-    pub(crate) edit_movie_popup_options: EditMoviePopup,
-    pub(crate) remove_movie_popup_options: RemoveMoviePopup,
-    pub(crate) fetch_artwork_popup_options: FetchArtworksPopup,
+    pub(crate) add_movie_popup: AddMoviePopup,
+    pub(crate) edit_movie_popup: EditMoviePopup,
+    pub(crate) remove_movie_popup: RemoveMoviePopup,
+    pub(crate) fetch_artwork_popup: FetchArtworksPopup,
+    pub(crate) tmdb_init_popup: TMDBInitPopup,
+    pub(crate) trakt_init_popup: TraktInitPopup,
+
     pub(crate) error_popup_error: String,
-    pub(crate) tmdb_init_popup_options: TMDBInitPopup,
-    pub(crate) trakt_init_popup_options: TraktInitPopup,
 }
 
 const MINTERMSIZE: [u32; 2] = [80, 22];
 impl Drawer {
     pub fn render_app(&mut self, frame: &mut Frame, app: &mut App, frame_time: f64) -> Result<()> {
         self.check_term_size(frame);
-        self.check_popups();
+        self.check_popups(app);
+        self.image_backend.update();
 
         self.draw_current_screen(frame, app)?;
 
@@ -99,15 +111,25 @@ impl Drawer {
         Ok(())
     }
 
-    pub fn check_popups(&mut self) {
+    pub fn check_popups(&mut self, app: &App) {
         if let Some(popup) = self.active_popup.as_ref() {
             match popup {
                 Popups::FetchArtwork => {
-                    if self.fetch_artwork_popup_options.done {
+                    if self.fetch_artwork_popup.done {
                         self.close_popups();
+                        self.image_backend.reload_images(
+                            app,
+                            self.main_screen.movies_list.scroll_pos,
+                            Some(self.main_screen.movies_list.num_visible_movies),
+                        );
                     }
                 }
-                _ => (),
+                Popups::AddMovie => (),
+                Popups::EditMovie => (),
+                Popups::RemoveMovie => (),
+                Popups::Error => (),
+                Popups::TraktInit => (),
+                Popups::TMDBInit => (),
             }
         }
     }
@@ -120,11 +142,22 @@ impl Drawer {
         // self.main_screen_options.rehash_visible_images(app);
     }
 
+    pub fn open_tmdb_init_popup(&mut self) {
+        self.active_popup = Some(Popups::TMDBInit);
+
+        self.tmdb_init_popup.begin();
+    }
+
+    pub fn open_trakt_init_popup(&mut self) {
+        self.active_popup = Some(Popups::TraktInit);
+
+        self.trakt_init_popup.begin();
+    }
+
     pub fn open_fetch_artworks_popup(&mut self, app: &mut App) -> Result<()> {
         self.active_popup = Some(Popups::FetchArtwork);
 
-        self.fetch_artwork_popup_options.begin();
-        self.fetch_artworks(app)?;
+        self.fetch_artwork_popup.begin(app)?;
 
         Ok(())
     }
@@ -132,24 +165,20 @@ impl Drawer {
     pub fn open_add_movie_popup(&mut self) {
         self.active_popup = Some(Popups::AddMovie);
 
-        self.add_movie_popup_options.begin();
+        self.add_movie_popup.begin();
     }
 
     pub fn open_edit_movie_popup(&mut self, app: &mut App) {
         self.active_popup = Some(Popups::EditMovie);
 
-        self.edit_movie_popup_options.begin(
-            app,
-            self.main_screen_options
-                .movies_list_options
-                .current_movie_index(),
-        );
+        self.edit_movie_popup
+            .begin(app, self.main_screen.movies_list.current_movie_index());
     }
 
     pub fn open_remove_movie_popup(&mut self) {
         self.active_popup = Some(Popups::RemoveMovie);
 
-        self.remove_movie_popup_options.begin();
+        self.remove_movie_popup.begin();
     }
 
     pub fn open_error_popup(&mut self, message: String) {
@@ -158,20 +187,8 @@ impl Drawer {
         self.error_popup_error = message;
     }
 
-    pub fn open_tmdb_init_popup(&mut self) {
-        self.active_popup = Some(Popups::TMDBInit);
-
-        self.tmdb_init_popup_options.begin();
-    }
-
-    pub fn open_trakt_init_popup(&mut self) {
-        self.active_popup = Some(Popups::TraktInit);
-
-        self.trakt_init_popup_options.begin();
-    }
-
     pub fn can_quit(&self) -> bool {
-        self.should_quit && self.fetch_artwork_popup_options.done
+        self.should_quit && self.fetch_artwork_popup.done
     }
 
     fn check_term_size(&mut self, frame: &Frame) -> bool {

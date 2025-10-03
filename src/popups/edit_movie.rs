@@ -1,8 +1,4 @@
-use crate::{
-    app::{App, Result},
-    draw::Drawer,
-    helpers::center_rect,
-};
+use crate::{app::App, custom::helpers::center_rect, draw::Drawer, types::*};
 use ratatui::{
     crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind},
     layout::*,
@@ -55,38 +51,36 @@ impl EditMoviePopup {
         let input_parsed = self.user_rating_input.value().parse::<f64>();
         input_parsed.is_ok() && input_parsed.unwrap() <= 10.0
     }
-}
 
-impl Drawer {
-    pub fn edit_movie_popup_handle_key_events(&mut self, event: KeyEvent) -> Result<()> {
+    pub fn handle_key_events(&mut self, event: KeyEvent) -> bool {
         let kind = event.kind;
         let code = event.code;
 
         if kind != KeyEventKind::Press {
-            return Ok(());
+            return false;
         }
 
         match code {
             KeyCode::Enter => {
-                if let Phase::GetNewRating = self.edit_movie_popup_options.phase {
-                    if self.edit_movie_popup_options.check_input_rating() {
-                        self.edit_movie_popup_options.advance_phase();
+                if let Phase::GetNewRating = self.phase {
+                    if self.check_input_rating() {
+                        self.advance_phase();
                     }
                 }
             }
             KeyCode::Esc => {
-                self.close_popups();
+                return true;
             }
             _ => {
-                self.edit_movie_popup_options
-                    .user_rating_input
-                    .handle_event(&Event::Key(event));
+                self.user_rating_input.handle_event(&Event::Key(event));
             }
         }
 
-        Ok(())
+        false
     }
+}
 
+impl Drawer {
     pub(crate) fn draw_edit_movie_popup(&mut self, frame: &mut Frame, app: &mut App) -> Result<()> {
         let frame_area = frame.area();
         let popup_area = center_rect(frame_area, Constraint::Percentage(35), Constraint::Max(10));
@@ -107,7 +101,7 @@ impl Drawer {
         let [_, vert, _] = vertical![==1, >=1, ==1].areas(popup_area);
         let [_, horiz, _] = horizontal![==2, >=1, ==2].areas(vert);
 
-        match self.edit_movie_popup_options.phase {
+        match self.edit_movie_popup.phase {
             Phase::GetNewRating => {
                 let [_, right, left, _] = horizontal![==2, ==12, >=1, ==2].areas(horiz);
                 let prompt_area = Layout::vertical([Constraint::Length(1); 6]).split(right)[2];
@@ -135,13 +129,10 @@ impl Drawer {
                 frame.render_widget(text![" Ok "].on_red().right_aligned(), button_area);
 
                 let width = input_area.width as usize - 1;
-                let start = self
-                    .edit_movie_popup_options
-                    .user_rating_input
-                    .visual_scroll(width);
-                let cursor_pos = self.edit_movie_popup_options.user_rating_input.cursor() - start;
+                let start = self.edit_movie_popup.user_rating_input.visual_scroll(width);
+                let cursor_pos = self.edit_movie_popup.user_rating_input.cursor() - start;
                 let mut chars = self
-                    .edit_movie_popup_options
+                    .edit_movie_popup
                     .user_rating_input
                     .value()
                     .chars()
@@ -158,7 +149,7 @@ impl Drawer {
                 }
                 frame.render_widget(Line::from_iter(input_string), input_area);
 
-                if !self.edit_movie_popup_options.check_input_rating() {
+                if !self.edit_movie_popup.check_input_rating() {
                     frame.render_widget(
                         Paragraph::new("Please enter a valid rating!")
                             .red()
@@ -168,9 +159,9 @@ impl Drawer {
                 }
             }
             Phase::Done => {
-                self.edit_movie_popup_options.user_rating = format!(
+                self.edit_movie_popup.user_rating = format!(
                     "{:.1}",
-                    self.edit_movie_popup_options
+                    self.edit_movie_popup
                         .user_rating_input
                         .value()
                         .parse::<f32>()
@@ -179,11 +170,8 @@ impl Drawer {
                 .parse()
                 .unwrap();
 
-                app.movies[self
-                    .main_screen_options
-                    .movies_list_options
-                    .current_movie_index()]
-                .user_rating = self.edit_movie_popup_options.user_rating;
+                app.movies[self.main_screen.movies_list.current_movie_index()].user_rating =
+                    self.edit_movie_popup.user_rating;
 
                 if app.save_movies().is_err() {
                     self.open_error_popup("Couldn't save new rating!".into());
