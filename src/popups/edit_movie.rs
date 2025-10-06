@@ -27,13 +27,10 @@ pub struct EditMoviePopup {
 }
 
 impl EditMoviePopup {
-    pub fn begin(&mut self, app: &App, selected_movie_index: usize) {
+    pub fn begin(&mut self, user_rating: f64) {
         *self = Self::default();
 
-        self.user_rating_input = app.movies[selected_movie_index]
-            .user_rating
-            .to_string()
-            .into();
+        self.user_rating_input = user_rating.to_string().into();
     }
 
     pub fn advance_phase(&mut self) {
@@ -170,8 +167,13 @@ impl Drawer {
                 .parse()
                 .unwrap();
 
-                app.movies[self.main_screen.movies_list.current_movie_index()].user_rating =
-                    self.edit_movie_popup.user_rating;
+                let index = app
+                    .movies
+                    .iter()
+                    .position(|x| *x == self.main_screen.current_movie())
+                    .unwrap();
+                app.movies[index].user_rating = self.edit_movie_popup.user_rating;
+                self.main_screen.filter_sort_movies(app);
 
                 if app.save_movies().is_err() {
                     self.open_error_popup("Couldn't save new rating!".into());

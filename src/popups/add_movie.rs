@@ -455,17 +455,24 @@ impl Drawer {
                     Movie::from(tmdb_movie_details, self.add_movie_popup.user_rating)
                         .add_trakt_details(trakt_movie_details),
                 );
+                self.main_screen.filter_sort_movies(app);
 
                 if app.save_movies().is_err() {
                     self.open_error_popup("Couldn't save new rating!".into());
                 } else {
                     self.open_fetch_artworks_popup(app)?;
 
-                    self.main_screen.movies_list.selected =
-                        self.main_screen.movies_list.num_visible_movies - 1;
+                    self.main_screen.movies_list.selected = self
+                        .main_screen
+                        .movies_list
+                        .num_visible_movies
+                        .min(self.main_screen.filtered_movies.len())
+                        - 1;
 
                     self.main_screen.movies_list.scroll_pos =
-                        app.movies.len() - self.main_screen.movies_list.selected - 1;
+                        self.main_screen.filtered_movies.len()
+                            - self.main_screen.movies_list.selected
+                            - 1;
 
                     // self.image_backend
                     //     .reload_images(app, self.main_screen.movies_list.selected);

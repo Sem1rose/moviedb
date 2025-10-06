@@ -33,6 +33,7 @@ impl Tui {
 
     pub fn init(&mut self) -> Result<()> {
         self.app.init()?;
+        self.drawer.main_screen.filter_sort_movies(&self.app);
 
         self.set_panic_hook();
         enable_raw_mode()?;

@@ -97,8 +97,9 @@ impl Drawer {
             .set_num_movies_visible(num_movies);
 
         for (i, area) in movies_lay.iter().enumerate() {
-            if !app.movies.is_empty()
-                && (i + self.main_screen.movies_list.scroll_pos) < app.movies.len()
+            if !self.main_screen.filtered_movies.is_empty()
+                && (i + self.main_screen.movies_list.scroll_pos)
+                    < self.main_screen.filtered_movies.len()
             {
                 self.draw_movie_widget(i, app, frame, *area);
             } else {
@@ -113,7 +114,7 @@ impl Drawer {
             }
         }
 
-        if app.movies.len() > num_movies {
+        if self.main_screen.filtered_movies.len() > num_movies {
             let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
                 .begin_symbol(Some("🢑"))
                 .end_symbol(Some("🢓"))
@@ -124,8 +125,9 @@ impl Drawer {
                 .begin_style(Style::new().fg(Color::DarkGray).bold())
                 .end_style(Style::new().fg(Color::DarkGray).bold());
 
-            let mut scrollbar_state = ScrollbarState::new(app.movies.len() - num_movies)
-                .position(self.main_screen.movies_list.scroll_pos);
+            let mut scrollbar_state =
+                ScrollbarState::new(self.main_screen.filtered_movies.len() - num_movies)
+                    .position(self.main_screen.movies_list.scroll_pos);
 
             frame.render_stateful_widget(scrollbar, area, &mut scrollbar_state);
         }
@@ -137,7 +139,7 @@ impl Drawer {
         let selected = self.main_screen.movies_list.selected == id;
         let alt = (self.main_screen.movies_list.scroll_pos + id) % 2 == 0;
         let movie_id = id + self.main_screen.movies_list.scroll_pos;
-        let movie = app.movies[movie_id].clone();
+        let movie = self.main_screen.filtered_movies[movie_id].clone();
 
         // TODO: create a themes framework, maybe in the config
         let (background, text, border, selection_highlight) = if selected {
@@ -194,7 +196,9 @@ impl Drawer {
         // } else {
         self.image_backend.draw_image(
             app,
-            self.main_screen.movies_list.scroll_pos + id,
+            self.main_screen.filtered_movies[self.main_screen.movies_list.scroll_pos + id]
+                .id
+                .tmdb,
             false,
             poster_area,
             frame,

@@ -1,4 +1,4 @@
-use crate::{app::App, image_backends::ImageBackend, types::*};
+use crate::{app::App, config::Config, image_backends::ImageBackend, types::*};
 use ratatui::{prelude::Rect, Frame};
 use ratatui_image::thread::ThreadImage;
 use ratatui_image::{
@@ -14,7 +14,7 @@ use std::{
 
 #[derive(Eq, Hash, PartialEq, Clone, Copy)]
 pub struct ArtworkID {
-    pub id: usize,
+    pub tmdb_id: u32,
     pub backdrop: bool,
 }
 
@@ -45,12 +45,12 @@ impl RatatuiImage {
             }
 
             let mut dropped = vec![];
-            for (i, (movie_index, rx_worker)) in rx_workers.iter_mut().enumerate() {
+            for (i, (tmdb_id, rx_worker)) in rx_workers.iter_mut().enumerate() {
                 let message = rx_worker.try_recv();
 
                 if let Ok(request) = message {
                     let _ = tx_main_sender.send(ImageEvents::DrawImage(
-                        *movie_index,
+                        *tmdb_id,
                         request
                             .resize_encode()
                             .map_or_else(|error| Err(error.into()), Result::Ok),
@@ -80,7 +80,7 @@ impl RatatuiImage {
             // let poster_pool = ThreadPool::with_name("poster load decode".into(), 16);
             // let fanart_pool = ThreadPool::with_name("fanart load decode".into(), 16);
 
-            for (movie_id, path) in rx_load_decode.iter() {
+            for (tmdb_id, path) in rx_load_decode.iter() {
                 let tx_main = tx_main_sender.clone();
 
                 // if movie_id.backdrop {
@@ -89,7 +89,7 @@ impl RatatuiImage {
 
                     if let Err(error) = open_result {
                         let _ =
-                            tx_main.send(ImageEvents::LoadImage(movie_id, Err(Errors::Io(error))));
+                            tx_main.send(ImageEvents::LoadImage(tmdb_id, Err(Errors::Io(error))));
                         // std::fs::File::create(format!("/home/semirose/{}backdrop", movie_id.0))
                         //     .unwrap()
                         //     .write_all(path.as_bytes());
@@ -99,10 +99,10 @@ impl RatatuiImage {
 
                         if let Err(error) = decode_result {
                             let _ = tx_main
-                                .send(ImageEvents::LoadImage(movie_id, Err(Errors::Image(error))));
+                                .send(ImageEvents::LoadImage(tmdb_id, Err(Errors::Image(error))));
                         } else if let Ok(decoded) = decode_result {
                             let _ = tx_main.send(ImageEvents::LoadImage(
-                                movie_id,
+                                tmdb_id,
                                 Ok(picker.new_resize_protocol(decoded)),
                             ));
                         }
@@ -145,7 +145,7 @@ impl RatatuiImage {
         tx_load_decode
     }
 
-    fn hash_image(&mut self, artwork_id: ArtworkID, app: &App) {
+    fn hash_image(&mut self, artwork_id: ArtworkID, config: &Config) {
         let (tx_worker, rx_worker) = mpsc::channel();
 
         let new_protocol = ThreadProtocol::new(tx_worker, None);
@@ -155,11 +155,11 @@ impl RatatuiImage {
         let path = format!(
             "{}",
             if artwork_id.backdrop {
-                &app.config.dirs.backdrop_cache
+                &config.dirs.backdrop_cache
             } else {
-                &app.config.dirs.poster_cache
+                &config.dirs.poster_cache
             }
-            .join(format!("{}.jpg", app.movies[artwork_id.id].id.tmdb))
+            .join(format!("{}.jpg", artwork_id.tmdb_id))
             .display()
         );
 
@@ -268,9 +268,10 @@ impl ImageBackend for RatatuiImage {
                                 .unwrap()
                                 .replace_protocol(protocol);
                         }
-                    } else if let Err(_) = result {
+                    } else if result.is_err() {
+                        // } else if let Err(_) = result {
                         // error!("Error while loading: {}", error);
-                        errored_ids.push(key.id);
+                        errored_ids.push(key.tmdb_id);
                     }
                 }
                 ImageEvents::DrawImage(key, result) => {
@@ -281,9 +282,10 @@ impl ImageBackend for RatatuiImage {
                                 .unwrap()
                                 .update_resized_protocol(response);
                         }
-                    } else if let Err(_) = result {
+                    } else if result.is_err() {
+                        // } else if let Err(_) = result {
                         // error!("Error while loading: {}", error);
-                        errored_ids.push(key.id);
+                        errored_ids.push(key.tmdb_id);
                     }
                 }
             }
@@ -296,17 +298,14 @@ impl ImageBackend for RatatuiImage {
     fn draw_image(
         &mut self,
         app: &App,
-        index: usize,
+        tmdb_id: u32,
         backdrop: bool,
         area: Rect,
         frame: &mut Frame,
     ) {
-        let key = ArtworkID {
-            id: index,
-            backdrop,
-        };
+        let key = ArtworkID { tmdb_id, backdrop };
         if !self.hashed_images.contains_key(&key) {
-            self.hash_image(key, app);
+            self.hash_image(key, &app.config);
         }
         frame.render_stateful_widget(
             ThreadImage::new().resize(ratatui_image::Resize::Scale(
@@ -324,22 +323,20 @@ impl ImageBackend for RatatuiImage {
             .map(|x| x.id.tmdb)
             .collect::<Vec<_>>();
 
-        for (i, id) in movie_ids.iter().enumerate() {
-            let index = start_index + i;
-
+        for tmdb_id in movie_ids.iter() {
             let key = ArtworkID {
-                id: index,
+                tmdb_id: *tmdb_id,
                 backdrop: false,
             };
             if !self.hashed_images.contains_key(&key) {
-                self.hash_image(key, app);
+                self.hash_image(key, &app.config);
             } else {
                 let poster_path = format!(
                     "{}",
                     &app.config
                         .dirs
                         .poster_cache
-                        .join(format!("{}.jpg", id))
+                        .join(format!("{}.jpg", tmdb_id))
                         .display()
                 );
 
@@ -347,18 +344,18 @@ impl ImageBackend for RatatuiImage {
             }
 
             let key = ArtworkID {
-                id: index,
+                tmdb_id: *tmdb_id,
                 backdrop: true,
             };
             if !self.hashed_images.contains_key(&key) {
-                self.hash_image(key, app);
+                self.hash_image(key, &app.config);
             } else {
                 let fanart_path = format!(
                     "{}",
                     &app.config
                         .dirs
                         .backdrop_cache
-                        .join(format!("{}.jpg", id))
+                        .join(format!("{}.jpg", tmdb_id))
                         .display()
                 );
 
@@ -367,13 +364,13 @@ impl ImageBackend for RatatuiImage {
         }
     }
 
-    fn remove_cached_image(&mut self, index: usize) {
+    fn remove_cached_image(&mut self, tmdb_id: u32) {
         self.hashed_images.remove(&ArtworkID {
-            id: index,
+            tmdb_id,
             backdrop: true,
         });
         self.hashed_images.remove(&ArtworkID {
-            id: index,
+            tmdb_id,
             backdrop: false,
         });
     }

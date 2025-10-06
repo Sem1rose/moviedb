@@ -12,10 +12,10 @@ pub trait ImageBackend {
     fn draw_image(
         &mut self,
         app: &App,
-        index: usize,
+        tmdb_id: u32,
         backdrop: bool,
         area: Rect,
         frame: &mut Frame,
     );
-    fn remove_cached_image(&mut self, index: usize);
+    fn remove_cached_image(&mut self, tmdb_id: u32);
 }

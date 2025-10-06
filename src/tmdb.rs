@@ -2,7 +2,7 @@ use crate::{
     config::{config_tmdb::TMDBConfig, Config},
     types::*,
 };
-use log::{debug, error, trace};
+// use log::{debug, error, trace};
 use reqwest::{
     blocking::{Client, ClientBuilder, RequestBuilder, Response},
     header::HeaderMap,

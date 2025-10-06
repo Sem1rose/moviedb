@@ -16,10 +16,13 @@ impl MovieDescription {
 
 impl Drawer {
     pub fn draw_movie_description(&mut self, app: &mut App, frame: &mut Frame, area: Rect) {
-        let movie = if app.movies.is_empty() {
+        let movie = if self.main_screen.filtered_movies.is_empty() {
             None
         } else {
-            Some(&app.movies[self.main_screen.movies_list.current_movie_index()])
+            Some(
+                &self.main_screen.filtered_movies
+                    [self.main_screen.movies_list.current_movie_index()],
+            )
         };
 
         let [_, vert, _] = Layout::vertical([
@@ -81,7 +84,7 @@ impl Drawer {
         if movie.is_some() {
             self.image_backend.draw_image(
                 app,
-                self.main_screen.movies_list.current_movie_index(),
+                self.main_screen.current_movie().id.tmdb,
                 true,
                 backdrop_area,
                 frame,

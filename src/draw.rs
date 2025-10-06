@@ -172,7 +172,7 @@ impl Drawer {
         self.active_popup = Some(Popups::EditMovie);
 
         self.edit_movie_popup
-            .begin(app, self.main_screen.movies_list.current_movie_index());
+            .begin(self.main_screen.current_movie().user_rating);
     }
 
     pub fn open_remove_movie_popup(&mut self) {
@@ -215,14 +215,14 @@ impl Drawer {
             Line::from_iter([
                 "Terminal is too small: ".into(),
                 frame_area.width.to_string().red(),
-                "X".into(),
+                "x".into(),
                 frame_area.height.to_string().red(),
             ]),
             Line::default(),
             Line::from_iter([
                 "Minimum size is: ".into(),
                 MINTERMSIZE[0].to_string().green(),
-                "X".into(),
+                "x".into(),
                 MINTERMSIZE[1].to_string().green(),
             ]),
         ];

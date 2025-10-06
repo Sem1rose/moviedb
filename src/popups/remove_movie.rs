@@ -114,7 +114,9 @@ impl Drawer {
                 frame.render_widget(
                     Paragraph::new(format!(
                         "Do you really want to remove {}?",
-                        app.movies[self.main_screen.movies_list.current_movie_index()].name
+                        self.main_screen.filtered_movies
+                            [self.main_screen.movies_list.current_movie_index()]
+                        .name
                     ))
                     .wrap(Wrap { trim: false }),
                     areas[1],
@@ -161,10 +163,15 @@ impl Drawer {
             }
             Phase::Done => {
                 self.image_backend
-                    .remove_cached_image(self.main_screen.movies_list.current_movie_index());
+                    .remove_cached_image(self.main_screen.current_movie().id.tmdb);
 
-                app.movies
-                    .remove(self.main_screen.movies_list.current_movie_index());
+                let index = app
+                    .movies
+                    .iter()
+                    .position(|x| *x == self.main_screen.current_movie())
+                    .unwrap();
+                app.movies.remove(index);
+                self.main_screen.filter_sort_movies(app);
 
                 if app.save_movies().is_err() {
                     self.open_error_popup("Couldn't remove movie!".into());
@@ -172,19 +179,21 @@ impl Drawer {
                     return Ok(());
                 }
 
-                if self.main_screen.movies_list.current_movie_index() >= app.movies.len() {
+                if self.main_screen.movies_list.current_movie_index()
+                    >= self.main_screen.filtered_movies.len()
+                {
                     if self.main_screen.movies_list.scroll_pos > 0 {
                         self.main_screen.movies_list.scroll_pos -= 1;
                     } else if self.main_screen.movies_list.selected > 0 {
                         self.main_screen.movies_list.selected -= 1;
                     }
-                    // } else {
-                    //     self.image_backend.reload_images(
-                    //         app,
-                    //         self.main_screen.movies_list.current_movie_index(),
-                    //         Some(self.main_screen.movies_list.num_visible_movies),
-                    //     );
                 }
+                // } else {
+                //     self.image_backend.reload_images(
+                //         app,
+                //         self.main_screen.movies_list.current_movie_index(),
+                //         Some(self.main_screen.movies_list.num_visible_movies),
+                //     );
 
                 self.close_popups();
             }

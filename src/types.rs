@@ -117,3 +117,9 @@ impl Movie {
         self
     }
 }
+
+impl std::cmp::PartialEq<&Movie> for Movie {
+    fn eq(&self, other: &&Movie) -> bool {
+        self.id.imdb == other.id.imdb
+    }
+}
