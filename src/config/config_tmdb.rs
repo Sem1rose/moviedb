@@ -1,33 +1,35 @@
-use crate::{config::Config, types::*};
+use crate::{
+    config::{Config, Credentials},
+    types::*,
+};
 use cocoon::Cocoon;
 use log::{debug, error};
 use rand::{distr::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
 use std::{
-    fs::{self, File},
+    fs::{self, read_to_string, File},
     sync::mpsc::Sender,
     thread,
 };
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 struct TMDBCredentials {
-    access_token: String,
     session_id: String,
 }
 
-impl TMDBCredentials {
-    pub fn new(access_token: String) -> Self {
-        Self {
-            access_token,
-            session_id: "".into(),
-        }
-    }
-}
+// impl TMDBCredentials {
+//     pub fn new() -> Self {
+//         Self {
+//             session_id: "".into(),
+//         }
+//     }
+// }
 
 #[derive(Clone)]
 pub struct TMDBConfig {
     tmdb_credentials: TMDBCredentials,
 
+    access_token: String,
     tx_init: Sender<OptionalResult<String>>,
 }
 
@@ -35,6 +37,7 @@ impl TMDBConfig {
     pub fn new(tx_init: Sender<OptionalResult<String>>) -> Self {
         Self {
             tx_init,
+            access_token: "".into(),
             tmdb_credentials: TMDBCredentials::default(),
         }
     }
@@ -62,6 +65,13 @@ impl TMDBConfig {
     }
 
     pub fn init(&mut self, config: &Config) {
+        let file_contents =
+            read_to_string(".credentials").expect("Couldn't read credentials from .credentials!");
+        let creds: Credentials = serde_json::from_str(&file_contents)
+            .expect("Couldn't deserialize credentials at .credentials");
+
+        self.set_access_token(creds.tmdb_access_token);
+
         let result = self.check_files(config);
         if let Ok(true) = result {
             let tx_result = self.tx_init.clone();
@@ -130,11 +140,11 @@ impl TMDBConfig {
         Ok(())
     }
 
-    pub fn init_creds(&mut self, access_token: String) {
-        // let access_token = self.get_input(String::from("Enter your access token:"));
+    // pub fn init_creds(&mut self, access_token: String) {
+    //     // let access_token = self.get_input(String::from("Enter your access token:"));
 
-        self.tmdb_credentials = TMDBCredentials::new(access_token);
-    }
+    //     self.tmdb_credentials = TMDBCredentials::new(access_token);
+    // }
 
     pub fn save_creds(&self, config: &Config) -> Result<()> {
         let key = fs::read(&config.dirs.encryption_key_file)?;
@@ -166,8 +176,24 @@ impl TMDBConfig {
     //     input
     // }
 
+    pub fn access_token(&self) -> &str {
+        &self.access_token
+    }
+
+    pub fn access_token_owned(&self) -> String {
+        self.access_token.clone()
+    }
+
+    pub fn set_access_token(&mut self, access_token: String) {
+        self.access_token = access_token;
+    }
+
     pub fn session_id(&self) -> &str {
         &self.tmdb_credentials.session_id
+    }
+
+    pub fn session_id_owned(&self) -> String {
+        self.tmdb_credentials.session_id.clone()
     }
 
     pub fn set_session_id(&mut self, session_id: String) {
@@ -176,13 +202,5 @@ impl TMDBConfig {
 
     pub fn has_session_id(&self) -> bool {
         self.tmdb_credentials.session_id != *""
-    }
-
-    pub fn access_token(&self) -> &str {
-        &self.tmdb_credentials.access_token
-    }
-
-    pub fn set_access_token(&mut self, access_token: String) {
-        self.tmdb_credentials.access_token = access_token;
     }
 }

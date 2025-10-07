@@ -21,17 +21,17 @@ use tui_input::{backend::crossterm::EventHandler, Input};
 pub enum Phase {
     #[default]
     Initializing,
-    GetInput,
-    GotInput,
+    // GetInput,
+    // GotInput,
     GetAuthorization(String),
     Done,
+    Error(Errors),
 }
 
 #[derive(Default)]
 pub struct TMDBInitPopup {
     pub phase: Phase,
-
-    pub access_token_input: Input,
+    // pub access_token_input: Input,
 }
 
 impl TMDBInitPopup {
@@ -41,11 +41,11 @@ impl TMDBInitPopup {
 
     pub fn advance_phase(&mut self) {
         self.phase = match self.phase {
-            Phase::Initializing => {
-                self.access_token_input.reset();
-                Phase::GetInput
-            }
-            Phase::GetInput => Phase::GotInput,
+            // Phase::Initializing => {
+            //     self.access_token_input.reset();
+            //     Phase::GetInput
+            // }
+            // Phase::GetInput => Phase::GotInput,
             Phase::GetAuthorization(_) => Phase::Done,
             _ => Phase::Initializing,
         };
@@ -65,16 +65,19 @@ impl TMDBInitPopup {
 
         match code {
             KeyCode::Enter => {
-                if let Phase::GetInput = self.phase {
-                    if !self.access_token_input.value().is_empty() {
-                        self.advance_phase();
-                    }
+                // if let Phase::GetInput = self.phase {
+                //     if !self.access_token_input.value().is_empty() {
+                //         self.advance_phase();
+                //     }
+                // }
+                if let Phase::Error(_) = self.phase {
+                    self.phase = Phase::default();
                 }
             }
             _ => {
-                if let Phase::GetInput = self.phase {
-                    self.access_token_input.handle_event(&Event::Key(event));
-                }
+                // if let Phase::GetInput = self.phase {
+                //     self.access_token_input.handle_event(&Event::Key(event));
+                // }
             }
         }
 
@@ -128,64 +131,23 @@ impl Drawer {
                     v_center(text_area),
                 );
             }
-            Phase::GetInput => {
-                let [_, left, right, _] = horizontal![==2, >=1, >=1, ==2].areas(horiz);
+            // Phase::GotInput => {
+            //     let [_, throbber_area, text_area, _] = horizontal![==2, >=1, >=1, ==2].areas(horiz);
 
-                let [_, input_top, input_center, input_bottom, _] =
-                    vertical![>=0, ==1, ==1, ==1,>=0].areas(right);
+            //     let throbber = throbber_widgets_tui::Throbber::default()
+            //         .throbber_set(throbber_widgets_tui::BRAILLE_SIX_DOUBLE)
+            //         .throbber_style(Style::new().bold().fg(tailwind::VIOLET.c400));
 
-                let [_, input_area, _] = horizontal![==1, >=1, ==1].areas(input_center);
-
-                // ▄▀█ ▂🮂▗▖▘▝
-                frame.render_widget(
-                    Paragraph::new("🮃".repeat(input_bottom.width as usize)).fg(tailwind::RED.c700),
-                    input_bottom,
-                );
-                frame.render_widget(
-                    Paragraph::new("▂".repeat(input_top.width as usize)).fg(tailwind::RED.c700),
-                    input_top,
-                );
-                frame.render_widget(Paragraph::new("Enter access token: "), v_center(left));
-                frame.render_widget(Block::new().bg(tailwind::RED.c700), input_center);
-
-                let width = input_area.width as usize - 1;
-                let start = self.tmdb_init_popup.access_token_input.visual_scroll(width);
-                let cursor_pos = self.tmdb_init_popup.access_token_input.cursor() - start;
-                let mut chars = self
-                    .tmdb_init_popup
-                    .access_token_input
-                    .value()
-                    .chars()
-                    .skip(start);
-
-                let mut input_string: Vec<Span> = vec![];
-                for i in 0..=(start + width) {
-                    let c = chars.next().unwrap_or(' ');
-                    if i == cursor_pos {
-                        input_string.push(c.to_string().reversed());
-                    } else {
-                        input_string.push(c.to_string().into());
-                    }
-                }
-                frame.render_widget(Line::from_iter(input_string), input_area);
-            }
-            Phase::GotInput => {
-                let [_, throbber_area, text_area, _] = horizontal![==2, >=1, >=1, ==2].areas(horiz);
-
-                let throbber = throbber_widgets_tui::Throbber::default()
-                    .throbber_set(throbber_widgets_tui::BRAILLE_SIX_DOUBLE)
-                    .throbber_style(Style::new().bold().fg(tailwind::VIOLET.c400));
-
-                frame.render_stateful_widget(
-                    throbber,
-                    v_center(throbber_area),
-                    &mut self.throbber_state,
-                );
-                frame.render_widget(
-                    Paragraph::new("Getting Authorization URL..."),
-                    v_center(text_area),
-                );
-            }
+            //     frame.render_stateful_widget(
+            //         throbber,
+            //         v_center(throbber_area),
+            //         &mut self.throbber_state,
+            //     );
+            //     frame.render_widget(
+            //         Paragraph::new("Getting Authorization URL..."),
+            //         v_center(text_area),
+            //     );
+            // }
             Phase::GetAuthorization(url) => {
                 //'\e]8;;https://google.com\e\\ass\e]8;;\e\ '
                 let [_, prompt_area, _] = vertical![>=1,==1,>=1].areas(horiz);
@@ -214,6 +176,39 @@ impl Drawer {
                 let [_, prompt_area, _] = vertical![>=1,==1,>=1].areas(horiz);
 
                 frame.render_widget(span!("TMDB Initialization done!"), v_center(prompt_area));
+            }
+            Phase::Error(errors) => {
+                let frame_area = frame.area();
+                let popup_area =
+                    center_rect(frame_area, Constraint::Percentage(30), Constraint::Max(8));
+
+                let popup = Block::new()
+                    .bg(tailwind::INDIGO.c950)
+                    .fg(tailwind::INDIGO.c300)
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Thick)
+                    .border_style(Style::new().fg(tailwind::EMERALD.c400))
+                    .title_top("Error encountered")
+                    .title_alignment(Alignment::Center)
+                    .title_style(Style::new().fg(tailwind::AMBER.c300));
+
+                frame.render_widget(Clear, popup_area);
+                frame.render_widget(&popup, popup_area);
+
+                let [_, vert, _] = vertical![==1, >=1, ==1].areas(popup_area);
+                let [_, horiz, _] = horizontal![==2, >=1, ==2].areas(vert);
+
+                let v_areas = Layout::vertical([Constraint::Length(1); 5]).split(horiz);
+                let h_areas = horizontal![>=1, ==6].split(v_areas[4]);
+
+                frame.render_widget(
+                    Paragraph::new(errors.to_string())
+                        .red()
+                        .centered()
+                        .wrap(Wrap { trim: true }),
+                    v_areas[2],
+                );
+                frame.render_widget(Paragraph::new(" Ok ").centered().on_red(), h_areas[1]);
             }
         }
 

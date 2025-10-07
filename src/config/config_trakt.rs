@@ -1,18 +1,20 @@
-use crate::{config::Config, trakt::TraktTokens, types::*};
+use crate::{
+    config::{Config, Credentials},
+    trakt::TraktTokens,
+    types::*,
+};
 use cocoon::Cocoon;
 use log::{debug, error};
 use rand::{distr::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
 use std::{
-    fs::{self, File},
+    fs::{self, read_to_string, File},
     sync::mpsc::Sender,
     thread,
 };
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct TraktCredentials {
-    client_secret: String,
-    client_id: String,
     access_token: String,
     refresh_token: String,
     expires_on: i32,
@@ -21,30 +23,28 @@ struct TraktCredentials {
 impl Default for TraktCredentials {
     fn default() -> Self {
         Self {
-            client_secret: "".into(),
-            client_id: "".into(),
             access_token: "".into(),
             refresh_token: "".into(),
             expires_on: -1,
         }
     }
 }
-impl TraktCredentials {
-    pub fn new(client_secret: String, client_id: String) -> Self {
-        Self {
-            client_secret,
-            client_id,
-            access_token: "".into(),
-            refresh_token: "".into(),
-            expires_on: -1,
-        }
-    }
-}
+// impl TraktCredentials {
+//     pub fn new() -> Self {
+//         Self {
+//             access_token: "".into(),
+//             refresh_token: "".into(),
+//             expires_on: -1,
+//         }
+//     }
+// }
 
 #[derive(Clone)]
 pub struct TraktConfig {
     trakt_credentials: TraktCredentials,
 
+    client_secret: String,
+    client_id: String,
     tx_init: Sender<OptionalResult<String>>,
 }
 
@@ -52,6 +52,8 @@ impl TraktConfig {
     pub fn new(tx_init: Sender<OptionalResult<String>>) -> Self {
         Self {
             tx_init,
+            client_id: "".into(),
+            client_secret: "".into(),
             trakt_credentials: TraktCredentials::default(),
         }
     }
@@ -79,6 +81,13 @@ impl TraktConfig {
     }
 
     pub fn init(&mut self, config: &Config) {
+        let file_contents =
+            read_to_string(".credentials").expect("Couldn't read credentials from .credentials!");
+        let creds: Credentials = serde_json::from_str(&file_contents)
+            .expect("Couldn't deserialize credentials at .credentials");
+
+        self.set_secrets(creds.trakt_client_id, creds.trakt_client_secret);
+
         let result = self.check_files(config);
         if let Ok(true) = result {
             let tx_result = self.tx_init.clone();
@@ -129,12 +138,12 @@ impl TraktConfig {
         Ok(())
     }
 
-    pub fn init_creds(&mut self, client_id: String, client_secret: String) {
-        // let client_id = self.get_input(String::from("Enter your client id:"));
-        // let client_secret = self.get_input(String::from("Enter your client secret:"));
+    // pub fn init_creds(&mut self, client_id: String, client_secret: String) {
+    //     // let client_id = self.get_input(String::from("Enter your client id:"));
+    //     // let client_secret = self.get_input(String::from("Enter your client secret:"));
 
-        self.trakt_credentials = TraktCredentials::new(client_secret, client_id);
-    }
+    //     self.trakt_credentials = TraktCredentials::new(client_secret, client_id);
+    // }
 
     pub fn save_creds(&self, config: &Config) -> Result<()> {
         let key = fs::read(&config.dirs.encryption_key_file)?;
@@ -166,9 +175,9 @@ impl TraktConfig {
     //     input
     // }
 
-    pub fn set_secrets(&mut self, client_id: &str, client_secret: &str) {
-        self.trakt_credentials.client_id = client_id.to_string();
-        self.trakt_credentials.client_secret = client_secret.to_string();
+    pub fn set_secrets(&mut self, client_id: String, client_secret: String) {
+        self.client_id = client_id;
+        self.client_secret = client_secret;
     }
 
     pub fn set_tokens(&mut self, tokens: TraktTokens) {
@@ -183,11 +192,11 @@ impl TraktConfig {
     }
 
     pub fn client_id(&self) -> &str {
-        &self.trakt_credentials.client_id
+        &self.client_id
     }
 
     pub fn client_secret(&self) -> &str {
-        &self.trakt_credentials.client_secret
+        &self.client_secret
     }
 
     pub fn access_token(&self) -> &str {
@@ -199,11 +208,11 @@ impl TraktConfig {
     }
 
     pub fn client_id_owned(&self) -> String {
-        self.trakt_credentials.client_id.clone()
+        self.client_id.clone()
     }
 
     pub fn client_secret_owned(&self) -> String {
-        self.trakt_credentials.client_secret.clone()
+        self.client_secret.clone()
     }
 
     pub fn access_token_owned(&self) -> String {

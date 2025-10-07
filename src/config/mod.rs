@@ -2,10 +2,19 @@ pub mod config_tmdb;
 pub mod config_trakt;
 
 use crate::types::Result;
+use serde::{Deserialize, Serialize};
 use std::{
     fs::{create_dir, write},
     path::PathBuf,
 };
+
+#[derive(Deserialize)]
+pub struct Credentials {
+    pub trakt_client_id: String,
+    pub trakt_client_secret: String,
+    pub tmdb_access_token: String,
+    pub omdb_key: String,
+}
 
 #[derive(Clone)]
 pub struct Dirs {

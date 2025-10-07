@@ -98,6 +98,7 @@ impl Drawer {
     fn handle_init_screen_tmdb_init(&mut self, app: &mut App) -> Result<()> {
         use crate::popups::tmdb_init::Phase as TMDBPhase;
 
+        #[allow(clippy::single_match)]
         match self.tmdb_init_popup.phase {
             TMDBPhase::Initializing => {
                 if let Ok(result) = app.rx_tmdb.try_recv() {
@@ -106,35 +107,29 @@ impl Drawer {
 
                         self.init_screen_advance_phase();
                     } else if result.is_err() {
-                        self.tmdb_init_popup.advance_phase();
+                        // if self.init_screen.tmdb_rx_session_id.is_none() {
+                        let (tx_authorization_url, rx_authorization_url) = channel();
+                        let (tx_session_id, rx_session_id) = channel();
+
+                        // let access_token = self.tmdb_init_popup.access_token_input.value().to_string();
+                        // app.tmdb_config.set_access_token(access_token.clone());
+
+                        let access_token = app.tmdb_config.access_token_owned();
+
+                        thread::spawn(move || {
+                            tx_session_id
+                                .send(tmdb::get_session_id(&access_token, tx_authorization_url))
+                        });
+
+                        self.init_screen.tmdb_rx_authorization_url = Some(rx_authorization_url);
+                        self.init_screen.tmdb_rx_session_id = Some(rx_session_id);
+                        // }
                     }
                 }
             }
-            TMDBPhase::GotInput => {
-                if self.init_screen.tmdb_rx_session_id.is_none() {
-                    let (tx_authorization_url, rx_authorization_url) = channel();
-                    let (tx_session_id, rx_session_id) = channel();
-
-                    let access_token = self.tmdb_init_popup.access_token_input.value().to_string();
-
-                    app.tmdb_config.set_access_token(access_token.clone());
-
-                    thread::spawn(move || {
-                        tx_session_id
-                            .send(tmdb::get_session_id(&access_token, tx_authorization_url))
-                    });
-
-                    self.init_screen.tmdb_rx_authorization_url = Some(rx_authorization_url);
-                    self.init_screen.tmdb_rx_session_id = Some(rx_session_id);
-                }
-
-                self.read_init_screen_channels(app)?;
-            }
-            TMDBPhase::GetAuthorization(_) => {
-                self.read_init_screen_channels(app)?;
-            }
             _ => (),
         }
+        self.read_init_screen_channels(app)?;
 
         Ok(())
     }
@@ -169,15 +164,16 @@ impl Drawer {
                             app.tmdb_config.save_creds(&app.config)?;
 
                             self.init_screen_advance_phase();
-
-                            let _ = self.init_screen.tmdb_rx_session_id.take();
                         } else if let Err(error) = result {
-                            self.tmdb_init_popup.phase = crate::popups::tmdb_init::Phase::GetInput;
-                            self.tmdb_init_popup.access_token_input.reset();
+                            // self.tmdb_init_popup.phase = crate::popups::tmdb_init::Phase::GetInput;
+                            // self.tmdb_init_popup.access_token_input.reset();
+                            self.tmdb_init_popup.phase =
+                                crate::popups::tmdb_init::Phase::Error(error);
 
-                            let _ = self.init_screen.tmdb_rx_session_id.take();
                             // panic!("Error while getting TMDB session_id: {error}");
                         }
+
+                        let _ = self.init_screen.tmdb_rx_session_id.take();
                     }
                 }
             }
@@ -201,16 +197,17 @@ impl Drawer {
                             app.trakt_config.save_creds(&app.config)?;
 
                             self.init_screen_advance_phase();
-
-                            let _ = self.init_screen.trakt_rx_tokens.take();
                         } else if let Err(error) = result {
+                            // self.trakt_init_popup.phase =
+                            //     crate::popups::trakt_init::Phase::Initializing;
+                            // self.trakt_init_popup.advance_phase();
                             self.trakt_init_popup.phase =
-                                crate::popups::trakt_init::Phase::Initializing;
-                            self.trakt_init_popup.advance_phase();
+                                crate::popups::trakt_init::Phase::Error(error);
 
-                            let _ = self.init_screen.trakt_rx_tokens.take();
                             // panic!("Error while getting TMDB session_id: {error}");
                         }
+
+                        let _ = self.init_screen.trakt_rx_tokens.take();
                     }
                 }
             }
@@ -250,40 +247,38 @@ impl Drawer {
                             self.init_screen.trakt_rx_tokens = Some(rx_tokens);
                         }
                     } else if result.is_err() {
-                        self.trakt_init_popup.advance_phase();
+                        // self.trakt_init_popup.advance_phase();
+                        // if self.init_screen.trakt_rx_authorization_url.is_none() {
+                        let (tx_authorization_url, rx_authorization_url) = channel();
+                        let (tx_auth_code, rx_auth_code) = channel();
+                        let (tx_tokens, rx_tokens) = channel();
+
+                        // let client_id = self.trakt_init_popup.cliend_id_input.value().to_string();
+                        // let client_secret = self
+                        //     .trakt_init_popup
+                        //     .client_secret_input
+                        //     .value()
+                        //     .to_string();
+                        // app.trakt_config.set_secrets(&client_id, &client_secret);
+
+                        let client_id = app.trakt_config.client_id_owned();
+                        let client_secret = app.trakt_config.client_secret_owned();
+
+                        thread::spawn(move || {
+                            tx_tokens.send(trakt::get_tokens(
+                                &client_id,
+                                &client_secret,
+                                tx_authorization_url,
+                                rx_auth_code,
+                            ))
+                        });
+
+                        self.init_screen.trakt_rx_authorization_url = Some(rx_authorization_url);
+                        self.init_screen.trakt_tx_auth_code = Some(tx_auth_code);
+                        self.init_screen.trakt_rx_tokens = Some(rx_tokens);
+                        // }
                     }
                 }
-            }
-            TraktPhase::GotSecrets => {
-                if self.init_screen.trakt_rx_authorization_url.is_none() {
-                    let (tx_authorization_url, rx_authorization_url) = channel();
-                    let (tx_auth_code, rx_auth_code) = channel();
-                    let (tx_tokens, rx_tokens) = channel();
-
-                    let client_id = self.trakt_init_popup.cliend_id_input.value().to_string();
-                    let client_secret = self
-                        .trakt_init_popup
-                        .client_secret_input
-                        .value()
-                        .to_string();
-
-                    app.trakt_config.set_secrets(&client_id, &client_secret);
-
-                    thread::spawn(move || {
-                        tx_tokens.send(trakt::get_tokens(
-                            &client_id,
-                            &client_secret,
-                            tx_authorization_url,
-                            rx_auth_code,
-                        ))
-                    });
-
-                    self.init_screen.trakt_rx_authorization_url = Some(rx_authorization_url);
-                    self.init_screen.trakt_tx_auth_code = Some(tx_auth_code);
-                    self.init_screen.trakt_rx_tokens = Some(rx_tokens);
-                }
-
-                self.read_init_screen_channels(app)?;
             }
             TraktPhase::GotAuthorization => {
                 if self.init_screen.trakt_tx_auth_code.is_some() {
@@ -296,14 +291,11 @@ impl Drawer {
                         .unwrap()
                         .send(auth_code);
                 }
-
-                self.read_init_screen_channels(app)?;
-            }
-            TraktPhase::RefreshingTokens => {
-                self.read_init_screen_channels(app)?;
             }
             _ => (),
         }
+
+        self.read_init_screen_channels(app)?;
 
         Ok(())
     }
