@@ -1,130 +1,124 @@
-// use crate::{
-//     app::{Config, Movie, Result},
-//     config_tmdb::TMDBConfig,
-//     config_trakt::TraktConfig,
-//     tmdb, trakt,
-// };
-// use std::fs;
+use crate::{
+    config::{
+        config_omdb::OMDBConfig, config_tmdb::TMDBConfig, config_trakt::TraktConfig, Config,
+        Credentials,
+    },
+    omdb::{self},
+    tmdb::{self},
+    trakt::{self},
+    types::*,
+};
+use serde::Deserialize;
+use std::{
+    fs::{self, read_to_string},
+    sync::mpsc::channel,
+};
 
-// pub fn change_ratings() -> Result<()> {
-//     let mut config = Config::new();
-//     config.init_dirs()?;
+pub fn update_movies() -> Result<()> {
+    let mut config = Config::default();
+    config.init_dirs()?;
 
-//     let file_path = config.dirs.home.join("ratings.json");
+    let file_path = config.dirs.home.join("ratings.json");
 
-//     let file_contents = fs::read_to_string(&file_path)
-//         .unwrap_or_else(|_| panic!("Couldn't read database contents at {}", file_path.display()));
-//     let json_contents = json::parse(&file_contents).unwrap_or_else(|_| {
-//         panic!(
-//             "Couldn't parse database contents at {}",
-//             file_path.display()
-//         )
-//     });
+    let file_contents =
+        read_to_string(".credentials").expect("Couldn't read credentials from .credentials!");
+    let creds: Credentials = serde_json::from_str(&file_contents)
+        .expect("Couldn't deserialize credentials at .credentials");
 
-//     let user_ratings = json_contents
-//         .members()
-//         .map(|x| {
-//             x["user_rating"]
-//                 .to_string()
-//                 .parse()
-//                 .expect("couldn't parse ratings!")
-//         })
-//         .collect::<Vec<f64>>();
+    let (tx, _) = channel();
+    let mut tmdb_config = TMDBConfig::new(tx);
+    tmdb_config.set_access_token(creds.tmdb_access_token);
+    tmdb_config.set_creds(TMDBConfig::read_creds(&config).expect("error reading tmdb creds"))?;
 
-//     let mut tmdb_config = TMDBConfig::new();
-//     tmdb_config.init(&config)?;
+    let (tx, _) = channel();
+    let mut trakt_config = TraktConfig::new(tx);
+    trakt_config.set_secrets(creds.trakt_client_id, creds.trakt_client_secret);
+    trakt_config.set_creds(TraktConfig::read_creds(&config).expect("error reading trakt creds"))?;
 
-//     let mut trakt_config = TraktConfig::new();
-//     trakt_config.init(&config)?;
+    let mut omdb_config = OMDBConfig::new();
+    omdb_config.set_key(creds.omdb_key);
 
-//     tmdb::populate_tokens(&config, &mut tmdb_config)?;
-//     trakt::populate_tokens(&config, &mut trakt_config)?;
+    // let mut out: Vec<Movie> = vec![];
 
-//     let mut out: Vec<Movie> = vec![];
+    let file_contents = fs::read_to_string(&file_path)
+        .unwrap_or_else(|_| panic!("Couldn't read database contents at {}", file_path.display()));
+    let mut movies: Vec<Movie> = serde_json::from_str(&file_contents).unwrap();
+    let mut ids = vec![];
+    for (i, movie) in movies.iter().enumerate() {
+        if let Rating::IMDB(0.0, 0) = movie.ratings[3] {
+            ids.push(i);
+        } else if let Rating::Metascore(0) = movie.ratings[2] {
+            ids.push(i);
+        }
+    }
 
-//     let titles = json_contents
-//         .members()
-//         .map(|x| x["name"].to_string())
-//         .collect::<Vec<String>>();
-//     let movies = json_contents
-//         .members()
-//         .map(|x| x["id"].to_string().parse().unwrap())
-//         .collect::<Vec<u32>>();
+    for (i, id) in ids.iter().enumerate() {
+        println!("{}/{}: {}", i + 1, ids.len(), movies[*id].name);
 
-//     for (i, x) in movies.iter().enumerate() {
-//         println!("{}", titles[i]);
+        let omdb_result = omdb::get_movie_details(&omdb_config, &movies[*id].id.imdb)
+            .map(Some)
+            .unwrap_or(None);
 
-//         let tmdb_movie_details =
-//             tmdb::get_movie_details(&tmdb_config, *x).expect("couldn't get movie details");
-//         let trakt_movie_details =
-//             trakt::get_movie_details(&trakt_config, &tmdb_movie_details.imdb_id)
-//                 .expect("couldn't get movie details");
+        if let Some(omdb) = omdb_result {
+            println!("\tgot omdb");
+            movies[*id].add_omdb_details(omdb);
+        }
+        std::thread::sleep(std::time::Duration::from_secs(5));
+    }
+    // let json_contents = json::parse(&file_contents).unwrap_or_else(|_| {
+    //     panic!(
+    //         "Couldn't parse database contents at {}",
+    //         file_path.display()
+    //     )
+    // });
 
-//         out.push(
-//             Movie::from(tmdb_movie_details, user_ratings[i]).add_trakt_details(trakt_movie_details),
-//         );
-//     }
+    // let titles = json_contents
+    //     .members()
+    //     .map(|x| x["name"].to_string())
+    //     .collect::<Vec<_>>();
+    // let ratings = json_contents
+    //     .members()
+    //     .map(|x| x["user_rating"].to_string().parse().unwrap())
+    //     .collect::<Vec<f64>>();
+    // let tmdb_ids = json_contents
+    //     .members()
+    //     .map(|x| x["id"]["tmdb"].to_string().parse().unwrap())
+    //     .collect::<Vec<u32>>();
 
-//     // let movies = json_contents
-//     //     .members()
-//     //     .map(|x| x["name"].to_string())
-//     //     .collect::<Vec<String>>();
-//     // for (i, x) in movies.iter().enumerate() {
-//     //     let x = tmdb::find_movie(&config, x.as_str())
-//     //         .unwrap_or_else(|_| panic!("couldn't get for movie {x}"));
-//     //     for y in x.iter() {
-//     //         println!(
-//     //             "{} - {} - {} - {}",
-//     //             y.id, y.title, y.release_date, y.vote_average
-//     //         );
-//     //     }
+    // for i in 0..tmdb_ids.len() {
+    //     println!("{}/{}: {}", i + 1, tmdb_ids.len(), titles[i]);
 
-//     //     print!("Choose: ");
-//     //     let _ = stdout().flush();
+    //     let tmdb_result = tmdb::get_movie_details(&tmdb_config, tmdb_ids[i]);
+    //     println!("\tgot tmdb");
 
-//     //     let mut input = String::new();
-//     //     let mut j: u32 = 0;
+    //     if let Ok(tmdb_response) = tmdb_result {
+    //         let trakt_result = trakt::get_movie_details(&trakt_config, &tmdb_response.imdb_id)
+    //             .map(Some)
+    //             .unwrap_or(None);
+    //         println!("\tgot trakt");
+    //         let omdb_result = omdb::get_movie_details(&omdb_config, &tmdb_response.imdb_id)
+    //             .map(Some)
+    //             .unwrap_or(None);
+    //         println!("\tgot omdb");
 
-//     //     if stdin().read_line(&mut input).is_ok() && input.trim() != "" {
-//     //         if let Some('\n') = input.chars().next_back() {
-//     //             input.pop();
-//     //         }
-//     //         if let Some('\r') = input.chars().next_back() {
-//     //             input.pop();
-//     //         }
+    //         let mut movie = Movie::from(tmdb_response, ratings[i]);
+    //         if let Some(trakt) = trakt_result {
+    //             movie.add_trakt_details(trakt);
+    //         }
+    //         if let Some(omdb) = omdb_result {
+    //             movie.add_omdb_details(omdb);
+    //         }
 
-//     //         j = input.parse().expect("couldn't parse input");
-//     //     }
-//     //     let movie_details = tmdb::get_movie_details(&config, x[j as usize].id as u32)
-//     //         .expect("couldn't get movie details");
+    //         println!("\tdone");
+    //         out.push(movie);
+    //     } else if let Err(error) = tmdb_result {
+    //         panic!("\t Error: {}", error);
+    //     }
+    // }
 
-//     //     out.push(Movie::new(
-//     //         movie_details.title,
-//     //         user_ratings[i],
-//     //         movie_details.vote_average,
-//     //         movie_details.release_date.split('-').collect::<Vec<_>>()[0].to_string(),
-//     //         movie_details.id,
-//     //         movie_details
-//     //             .genres
-//     //             .iter()
-//     //             .map(|x| x.name.to_string())
-//     //             .collect(),
-//     //         movie_details.overview,
-//     //         if movie_details.belongs_to_collection.is_some() {
-//     //             Some(movie_details.belongs_to_collection.unwrap().name)
-//     //         } else {
-//     //             None
-//     //         },
-//     //         movie_details.runtime,
-//     //         movie_details.status == "Released",
-//     //         movie_details.tagline,
-//     //         movie_details.vote_count,
-//     //     ));
-//     // }
+    let string = serde_json::to_string_pretty(movies.as_slice())?;
 
-//     let string = serde_json::to_string_pretty(out.as_slice())?;
+    fs::write(config.dirs.home.join("new_ratings2.json"), string)?;
 
-//     fs::write(config.dirs.home.join("ratings3.json"), string)?;
-
-//     Ok(())
-// }
+    Ok(())
+}

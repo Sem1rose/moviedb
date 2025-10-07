@@ -44,7 +44,7 @@ impl Drawer {
             Phase::TMDBInit => {
                 if !self.init_screen.started_step {
                     self.open_tmdb_init_popup();
-                    app.tmdb_config.init(&app.config);
+                    // app.tmdb_config.init(&app.config);
 
                     self.init_screen.started_step = true;
                 }
@@ -54,7 +54,7 @@ impl Drawer {
             Phase::TraktInit => {
                 if !self.init_screen.started_step {
                     self.open_trakt_init_popup();
-                    app.trakt_config.init(&app.config);
+                    // app.trakt_config.init(&app.config);
 
                     self.init_screen.started_step = true;
                 }

@@ -116,17 +116,15 @@ impl FetchArtworksPopup {
     }
 
     pub fn fetch_artworks(&mut self, app: &mut App) -> Result<()> {
-        let contents = std::fs::read_to_string(&app.config.dirs.cached_movies_file)?;
-        let cached_movies: Vec<u32> = contents
-            .split_ascii_whitespace()
-            .map(|x| x.parse::<u32>().unwrap())
-            .collect();
+        // let contents = std::fs::read_to_string(&app.config.dirs.cached_movies_file)?;
+        // let cached_movies: Vec<u32> = contents
+        //     .split_ascii_whitespace()
+        //     .map(|x| x.parse::<u32>().unwrap())
+        //     .collect();
 
         self.start_thread(app);
         for movie in &app.movies {
-            if !cached_movies.contains(&movie.id.tmdb)
-                || !self.check_artwork_fetched(&app.config, movie.id.tmdb)
-            {
+            if !self.check_artwork_fetched(&app.config, movie.id.tmdb) {
                 let _ = self
                     .tx_fetch_request
                     .as_ref()
@@ -140,13 +138,13 @@ impl FetchArtworksPopup {
         Ok(())
     }
 
-    fn read_threads_responses(&mut self, app: &mut App) -> Result<()> {
-        let contents = std::fs::read_to_string(&app.config.dirs.cached_movies_file)?;
+    pub fn read_threads_responses(&mut self) -> Result<()> {
+        // let contents = std::fs::read_to_string(&app.config.dirs.cached_movies_file)?;
 
-        let mut movies_cached: HashSet<u32> = contents
-            .split_ascii_whitespace()
-            .map(|x| x.parse().unwrap())
-            .collect();
+        // let mut movies_cached: HashSet<u32> = contents
+        //     .split_ascii_whitespace()
+        //     .map(|x| x.parse().unwrap())
+        //     .collect();
 
         for (id, fetch_result) in self.rx_fetch_response.as_ref().unwrap().try_iter() {
             if let Err(error) = fetch_result {
@@ -158,18 +156,18 @@ impl FetchArtworksPopup {
             } else {
                 self.progress += 1;
 
-                movies_cached.insert(id.tmdb);
+                // movies_cached.insert(id.tmdb);
             }
         }
 
-        std::fs::write(
-            &app.config.dirs.cached_movies_file,
-            movies_cached
-                .into_iter()
-                .map(|x| x.to_string())
-                .collect::<Vec<_>>()
-                .join("\n"),
-        )?;
+        // std::fs::write(
+        //     &app.config.dirs.cached_movies_file,
+        //     movies_cached
+        //         .into_iter()
+        //         .map(|x| x.to_string())
+        //         .collect::<Vec<_>>()
+        //         .join("\n"),
+        // )?;
 
         Ok(())
     }
@@ -181,11 +179,6 @@ impl Drawer {
         frame: &mut Frame,
         app: &mut App,
     ) -> Result<()> {
-        self.fetch_artwork_popup.read_threads_responses(app)?;
-        if self.fetch_artwork_popup.check_done(app) {
-            return Ok(());
-        }
-
         let frame_area = frame.area();
 
         let progress = self.fetch_artwork_popup.progress;

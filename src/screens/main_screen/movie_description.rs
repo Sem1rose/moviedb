@@ -51,7 +51,7 @@ impl Drawer {
                 movie.year.as_str().bold().italic(),
                 " ".repeat((title_area.width - 11 - 14).into()).into(),
                 "rating: ".italic(),
-                if let Rating::TMDB(rating, _) = movie.ratings[1] {
+                if let Rating::IMDB(rating, _) = movie.ratings[3] {
                     format!("{:.1}", rating).italic().bold()
                 } else if let Rating::Trakt(rating, _) = movie.ratings[1] {
                     format!("{:.1}", rating).italic().bold()

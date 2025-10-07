@@ -72,8 +72,6 @@ impl TraktConfig {
         }
 
         if config.dirs.trakt_encrypted_creds_file.is_file() {
-            // self.read_creds(config)?;
-
             Ok(true)
         } else {
             Ok(false)
@@ -100,16 +98,10 @@ impl TraktConfig {
             // debug!("Initializing a new Trakt config...");
 
             let _ = self.tx_init.send(Err(None));
-
-            // self.init_creds();
         } else if let Err(error) = result {
             // error!("Error reading Trakt config file, initializing a new config...");
 
             let _ = self.tx_init.send(Err(Some(error)));
-
-            // self.init_creds();
-            // } else {
-            //     let _ = self.tx_init.send(Ok(()));
         }
     }
 

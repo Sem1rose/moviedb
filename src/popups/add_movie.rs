@@ -2,6 +2,7 @@ use crate::{
     app::App,
     custom::helpers::{center_rect, ellipsize_string},
     draw::Drawer,
+    omdb::{self, OMDBDetailsResponse},
     tmdb::{self, TMDBDetailsResponse, TMDBSearchResponse, TMDBSearchResult},
     trakt::{self, TraktDetailsResponse},
     types::*,
@@ -32,6 +33,12 @@ enum Phase {
     Done,
 }
 
+pub struct DetailsResponse {
+    pub trakt: Option<TraktDetailsResponse>,
+    pub tmdb: TMDBDetailsResponse,
+    pub omdb: Option<OMDBDetailsResponse>,
+}
+
 #[derive(Default)]
 pub struct AddMoviePopup {
     phase: Phase,
@@ -46,9 +53,10 @@ pub struct AddMoviePopup {
 
     pub user_rating: f64,
 
-    pub rx_details_response: Option<Receiver<Result<(TMDBDetailsResponse, TraktDetailsResponse)>>>,
+    pub rx_details_response: Option<Receiver<Result<DetailsResponse>>>,
     pub tmdb_movie_details_result: Option<TMDBDetailsResponse>,
     pub trakt_movie_details_result: Option<TraktDetailsResponse>,
+    pub omdb_movie_details_result: Option<OMDBDetailsResponse>,
 }
 
 impl AddMoviePopup {
@@ -110,6 +118,7 @@ impl AddMoviePopup {
 
         let tmdb_conf_cloned = app.tmdb_config.clone();
         let trakt_conf_cloned = app.trakt_config.clone();
+        let omdb_conf_cloned = app.omdb_config.clone();
         let movie_id = self.try_get_search_result().unwrap()[self.current_movie_index()].id;
 
         thread::spawn(move || {
@@ -118,12 +127,14 @@ impl AddMoviePopup {
             if let Ok(tmdb_response) = tmdb_result {
                 let trakt_result =
                     trakt::get_movie_details(&trakt_conf_cloned, &tmdb_response.imdb_id);
+                let omdb_result =
+                    omdb::get_movie_details(&omdb_conf_cloned, &tmdb_response.imdb_id);
 
-                if let Ok(trakt_response) = trakt_result {
-                    let _ = tx_details_request.send(Ok((tmdb_response, trakt_response)));
-                } else if let Err(error) = trakt_result {
-                    let _ = tx_details_request.send(Err(error));
-                }
+                let _ = tx_details_request.send(Ok(DetailsResponse {
+                    trakt: trakt_result.map(Some).unwrap_or(None),
+                    tmdb: tmdb_response,
+                    omdb: omdb_result.map(Some).unwrap_or(None),
+                }));
             } else if let Err(error) = tmdb_result {
                 let _ = tx_details_request.send(Err(error));
             }
@@ -185,10 +196,11 @@ impl AddMoviePopup {
                 let result = self.rx_details_response.as_ref().unwrap().try_recv();
                 if let Ok(details_response) = result {
                     if let Ok(search_response) = details_response {
-                        let (tmdb_details_result, trakt_details_result) = search_response;
+                        let details_response = search_response;
 
-                        self.tmdb_movie_details_result = Some(tmdb_details_result);
-                        self.trakt_movie_details_result = Some(trakt_details_result);
+                        self.tmdb_movie_details_result = Some(details_response.tmdb);
+                        self.trakt_movie_details_result = details_response.trakt;
+                        self.omdb_movie_details_result = details_response.omdb;
 
                         self.advance_phase(None);
                     } else if let Err(error) = details_response {
@@ -445,16 +457,18 @@ impl Drawer {
                     .tmdb_movie_details_result
                     .take()
                     .unwrap();
-                let trakt_movie_details = self
-                    .add_movie_popup
-                    .trakt_movie_details_result
-                    .take()
-                    .unwrap();
+                let trakt_movie_details = self.add_movie_popup.trakt_movie_details_result.take();
+                let omdb_movie_details = self.add_movie_popup.omdb_movie_details_result.take();
 
-                app.movies.push(
-                    Movie::from(tmdb_movie_details, self.add_movie_popup.user_rating)
-                        .add_trakt_details(trakt_movie_details),
-                );
+                let mut movie = Movie::from(tmdb_movie_details, self.add_movie_popup.user_rating);
+                if let Some(trakt) = trakt_movie_details {
+                    movie.add_trakt_details(trakt);
+                }
+                if let Some(omdb) = omdb_movie_details {
+                    movie.add_omdb_details(omdb);
+                }
+                app.movies.push(movie);
+
                 self.main_screen.filter_sort_movies(app);
 
                 if app.save_movies().is_err() {

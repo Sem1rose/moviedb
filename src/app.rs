@@ -1,5 +1,5 @@
 use crate::{
-    config::{config_tmdb::TMDBConfig, config_trakt::TraktConfig, Config},
+    config::{config_omdb::OMDBConfig, config_tmdb::TMDBConfig, config_trakt::TraktConfig, Config},
     draw::Drawer,
     popups::Popups,
     screens::Screens,
@@ -21,6 +21,8 @@ pub struct App {
     pub rx_trakt: Receiver<OptionalResult<String>>,
     pub trakt_config: TraktConfig,
 
+    pub omdb_config: OMDBConfig,
+
     pub movies: Vec<Movie>,
 }
 
@@ -30,10 +32,15 @@ impl App {
         config.init_dirs()?;
 
         let (tx_tmdb, rx_tmdb) = channel();
-        let tmdb_config = TMDBConfig::new(tx_tmdb);
+        let mut tmdb_config = TMDBConfig::new(tx_tmdb);
+        tmdb_config.init(&config);
 
         let (tx_trakt, rx_trakt) = channel();
-        let trakt_config = TraktConfig::new(tx_trakt);
+        let mut trakt_config = TraktConfig::new(tx_trakt);
+        trakt_config.init(&config);
+
+        let mut omdb_config = OMDBConfig::default();
+        omdb_config.init();
 
         Ok(Self {
             movies: vec![],
@@ -44,6 +51,8 @@ impl App {
 
             rx_trakt,
             trakt_config,
+
+            omdb_config,
         })
     }
 

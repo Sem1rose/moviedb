@@ -26,11 +26,7 @@ pub struct RequestResponseError {
 impl Error for RequestResponseError {}
 impl Display for RequestResponseError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
-            f,
-            "Error code {}: {}",
-            self.status_code, self.status_message
-        )
+        write!(f, "{}: {}", self.status_code, self.status_message)
     }
 }
 

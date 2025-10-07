@@ -4,6 +4,7 @@ mod config;
 mod custom;
 mod draw;
 mod image_backends;
+mod omdb;
 mod popups;
 mod screens;
 mod tmdb;
@@ -12,7 +13,7 @@ mod tui;
 mod types;
 // mod update_json;
 
-use log::debug;
+// use log::debug;
 use tui::Tui;
 use types::Result;
 
@@ -24,11 +25,12 @@ fn main() -> Result<()> {
 
     let mut tui = Tui::new()?;
 
-    debug!("Starting the app...");
+    // debug!("Starting the app...");
 
     tui.init()?;
     tui.run()?;
     Tui::exit()?;
+    // update_json::update_movies()?;
 
     Ok(())
 }

@@ -1,4 +1,5 @@
 use crate::{
+    omdb::{DetailsResponseError, OMDBDetailsResponse},
     tmdb::{RequestResponseError, TMDBDetailsResponse},
     trakt::{TokenResponseError, TraktDetailsResponse},
 };
@@ -12,10 +13,15 @@ pub type OptionalResult<T> = color_eyre::Result<T, Option<Errors>>;
 pub enum Rating {
     Trakt(f64, u32),
     TMDB(f64, u32),
+    Metascore(u32),
+    IMDB(f64, u32),
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum Errors {
+    #[error("OMDB request error: {0}")]
+    OMDBRequest(#[from] DetailsResponseError),
+
     #[error("TMDB request error: {0}")]
     TMDBRequest(#[from] RequestResponseError),
 
@@ -60,7 +66,7 @@ pub struct Movie {
     pub year: String,
     pub user_rating: f64,
     pub language: String,
-    pub ratings: [Rating; 2],
+    pub ratings: [Rating; 4],
     pub genres: Vec<String>,
     pub collection: Option<String>,
     pub collection_id: Option<u32>,
@@ -87,6 +93,8 @@ impl Movie {
             ratings: [
                 Rating::TMDB(movie_details.vote_average, movie_details.vote_count),
                 Rating::Trakt(0.0, 0),
+                Rating::Metascore(0),
+                Rating::IMDB(0.0, 0),
             ],
             year: movie_details.release_date.split('-').collect::<Vec<_>>()[0].to_string(),
             language: movie_details.original_language,
@@ -110,11 +118,22 @@ impl Movie {
         }
     }
 
-    pub fn add_trakt_details(mut self, trakt_details: TraktDetailsResponse) -> Self {
+    pub fn add_trakt_details(&mut self, trakt_details: TraktDetailsResponse) {
         self.ratings[1] = Rating::Trakt(trakt_details.rating, trakt_details.votes);
         self.trailer = trakt_details.trailer;
-
-        self
+    }
+    pub fn add_omdb_details(&mut self, omdb_details: OMDBDetailsResponse) {
+        self.ratings[2] = Rating::Metascore(omdb_details.Metascore.parse().unwrap_or(0));
+        self.ratings[3] = Rating::IMDB(
+            omdb_details.imdbRating.parse().unwrap_or(0.0),
+            omdb_details
+                .imdbVotes
+                .chars()
+                .filter(|char| char.is_ascii_digit())
+                .collect::<String>()
+                .parse()
+                .unwrap_or(0),
+        );
     }
 }
 

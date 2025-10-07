@@ -47,7 +47,7 @@ const MINTERMSIZE: [u32; 2] = [80, 22];
 impl Drawer {
     pub fn render_app(&mut self, frame: &mut Frame, app: &mut App, frame_time: f64) -> Result<()> {
         self.check_term_size(frame);
-        self.check_popups(app);
+        self.check_popups(app)?;
         self.image_backend.update();
 
         self.draw_current_screen(frame, app)?;
@@ -111,11 +111,11 @@ impl Drawer {
         Ok(())
     }
 
-    pub fn check_popups(&mut self, app: &App) {
+    pub fn check_popups(&mut self, app: &App) -> Result<()> {
         if let Some(popup) = self.active_popup.as_ref() {
             match popup {
                 Popups::FetchArtwork => {
-                    if self.fetch_artwork_popup.done {
+                    if self.fetch_artwork_popup.check_done(app) {
                         self.close_popups();
                         self.image_backend.reload_images(
                             app,
@@ -123,6 +123,8 @@ impl Drawer {
                             Some(self.main_screen.movies_list.num_visible_movies),
                         );
                     }
+
+                    self.fetch_artwork_popup.read_threads_responses()?;
                 }
                 Popups::AddMovie => (),
                 Popups::EditMovie => (),
@@ -132,6 +134,8 @@ impl Drawer {
                 Popups::TMDBInit => (),
             }
         }
+
+        Ok(())
     }
 
     pub fn close_popups(&mut self) {

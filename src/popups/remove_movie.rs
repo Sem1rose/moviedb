@@ -179,15 +179,15 @@ impl Drawer {
                     return Ok(());
                 }
 
-                if self.main_screen.movies_list.current_movie_index()
-                    >= self.main_screen.filtered_movies.len()
-                {
-                    if self.main_screen.movies_list.scroll_pos > 0 {
-                        self.main_screen.movies_list.scroll_pos -= 1;
-                    } else if self.main_screen.movies_list.selected > 0 {
-                        self.main_screen.movies_list.selected -= 1;
-                    }
-                }
+                // if self.main_screen.movies_list.current_movie_index()
+                //     >= self.main_screen.filtered_movies.len()
+                // {
+                //     if self.main_screen.movies_list.scroll_pos > 0 {
+                //         self.main_screen.movies_list.scroll_pos -= 1;
+                //     } else if self.main_screen.movies_list.selected > 0 {
+                //         self.main_screen.movies_list.selected -= 1;
+                //     }
+                // }
                 // } else {
                 //     self.image_backend.reload_images(
                 //         app,

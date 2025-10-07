@@ -20,6 +20,7 @@ use ratatui::{
     Frame,
 };
 use ratatui_macros::{horizontal, vertical};
+use std::cmp::Ordering;
 use style::palette::tailwind;
 use tui_input::{backend::crossterm::EventHandler, Input};
 // use threadpool::ThreadPool;
@@ -41,7 +42,7 @@ pub enum Sort {
     AddedDate,
     UserRating,
     Relevance,
-    TraktRating,
+    IMDBRating,
     Name,
     ReleaseDate,
 }
@@ -87,13 +88,30 @@ impl MainScreen {
 
     pub fn filter_sort_movies(&mut self, app: &App) {
         self.filter_movies(app, false);
+
+        if self.movies_list.current_movie_index() >= self.filtered_movies.len() {
+            self.movies_list.selected = self
+                .movies_list
+                .num_visible_movies
+                .min(self.filtered_movies.len())
+                .max(1)
+                - 1;
+
+            self.movies_list.scroll_pos =
+                if self.filtered_movies.len() <= self.movies_list.num_visible_movies {
+                    0
+                } else {
+                    self.filtered_movies.len() - 1 - self.movies_list.selected
+                }
+        }
+
         if let Sort::AddedDate = self.sort {
             return;
         }
         self.sort_movies(app);
     }
 
-    pub fn filter_movies(&mut self, app: &App, sort: bool) {
+    fn filter_movies(&mut self, app: &App, sort: bool) {
         // if self.search_input.value().is_empty() {
         //     self.filtered_movies = app.movies.clone();
         // } else {
@@ -161,7 +179,80 @@ impl MainScreen {
         }
     }
 
-    pub fn sort_movies(&mut self, app: &App) {
+    fn cmp_ratings(a: &Movie, b: &Movie) -> Ordering {
+        let mut rating_a: f64 = 0.0;
+        let mut rating_b: f64 = 0.0;
+
+        for i in (0..a.ratings.len()).rev() {
+            if let Rating::IMDB(r_a, c_a) = a.ratings[i] {
+                if let Rating::IMDB(r_b, c_b) = b.ratings[i] {
+                    if r_a == 0.0 || r_b == 0.0 {
+                        continue;
+                    }
+
+                    if r_a != r_b {
+                        rating_a = r_a;
+                        rating_b = r_b;
+                    } else {
+                        rating_a = c_a as f64;
+                        rating_b = c_b as f64;
+                    }
+
+                    break;
+                }
+            }
+            if let Rating::Trakt(r_a, c_a) = a.ratings[i] {
+                if let Rating::Trakt(r_b, c_b) = b.ratings[i] {
+                    if r_a == 0.0 || r_b == 0.0 {
+                        continue;
+                    }
+
+                    if r_a != r_b {
+                        rating_a = r_a;
+                        rating_b = r_b;
+                    } else {
+                        rating_a = c_a as f64;
+                        rating_b = c_b as f64;
+                    }
+
+                    break;
+                }
+            }
+            if let Rating::TMDB(r_a, c_a) = a.ratings[i] {
+                if let Rating::TMDB(r_b, c_b) = b.ratings[i] {
+                    if r_a == 0.0 || r_b == 0.0 {
+                        continue;
+                    }
+
+                    if r_a != r_b {
+                        rating_a = r_a;
+                        rating_b = r_b;
+                    } else {
+                        rating_a = c_a as f64;
+                        rating_b = c_b as f64;
+                    }
+
+                    break;
+                }
+            }
+            if let Rating::Metascore(r_a) = a.ratings[i] {
+                if let Rating::Metascore(r_b) = b.ratings[i] {
+                    if r_a == 0 || r_b == 0 {
+                        continue;
+                    }
+
+                    rating_a = r_a as f64;
+                    rating_b = r_b as f64;
+
+                    break;
+                }
+            }
+        }
+
+        rating_a.partial_cmp(&rating_b).unwrap()
+    }
+
+    fn sort_movies(&mut self, app: &App) {
         match self.sort {
             Sort::AddedDate => self.filter_movies(app, false),
             Sort::Relevance => self.filter_movies(app, true),
@@ -172,17 +263,9 @@ impl MainScreen {
                     self.filtered_movies.reverse();
                 }
             }
-            Sort::TraktRating => {
-                self.filtered_movies.sort_by(|x, y| match x.ratings[0] {
-                    Rating::Trakt(rating1, _) => match y.ratings[0] {
-                        Rating::Trakt(rating2, _) => rating1.partial_cmp(&rating2).unwrap(),
-                        Rating::TMDB(rating2, _) => rating1.partial_cmp(&rating2).unwrap(),
-                    },
-                    Rating::TMDB(rating1, _) => match y.ratings[0] {
-                        Rating::Trakt(rating2, _) => rating1.partial_cmp(&rating2).unwrap(),
-                        Rating::TMDB(rating2, _) => rating1.partial_cmp(&rating2).unwrap(),
-                    },
-                });
+            Sort::IMDBRating => {
+                self.filtered_movies
+                    .sort_by(|a, b| MainScreen::cmp_ratings(a, b));
                 if !self.sort_ascending {
                     self.filtered_movies.reverse();
                 }

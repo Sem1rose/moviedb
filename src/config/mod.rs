@@ -1,3 +1,4 @@
+pub mod config_omdb;
 pub mod config_tmdb;
 pub mod config_trakt;
 

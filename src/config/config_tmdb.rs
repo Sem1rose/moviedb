@@ -84,14 +84,10 @@ impl TMDBConfig {
             // debug!("Initializing a new TMDB config...");
 
             let _ = self.tx_init.send(Err(None));
-
-            // self.init_creds();
         } else if let Err(error) = result {
             // error!("Error reading TMDB config file, initializing a new config...");
 
             let _ = self.tx_init.send(Err(Some(error)));
-
-            // self.init_creds();
         }
     }
 
@@ -104,16 +100,6 @@ impl TMDBConfig {
         let result = String::from_utf8(cocoon.parse(&mut encrypted_file)?);
 
         result.map_err(|error| Errors::Other(format!("TMDB: error decoding utf8: {}", error)))
-
-        // if let Ok(decrypted_creds) = result {
-        //     Ok(decrypted_creds)
-        //     // self.set_creds(decrypted_creds)
-        // } else {
-        //     Err(Errors::Other(format!(
-        //         "TMDB: error decoding utf8: {}",
-        //         result.unwrap_err()
-        //     )))
-        // }
     }
 
     // fn try_read_creds(config: &Config, tx_init: Sender<Result<String>>) -> Result<()> {
