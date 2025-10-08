@@ -9,7 +9,7 @@ pub type Result<T> = color_eyre::Result<T, Errors>;
 pub type OptionalResult<T> = color_eyre::Result<T, Option<Errors>>;
 
 #[allow(clippy::upper_case_acronyms)]
-#[derive(serde::Serialize, Clone, Deserialize, Debug)]
+#[derive(serde::Serialize, Clone, Copy, Deserialize, Debug)]
 pub enum Rating {
     Trakt(f64, u32),
     TMDB(f64, u32),

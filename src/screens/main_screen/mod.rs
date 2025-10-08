@@ -366,6 +366,12 @@ impl Drawer {
                         .movies_list
                         .inc_movie_selection(self.main_screen.filtered_movies.len());
                 }
+                KeyCode::Right => {
+                    self.main_screen.movie_description.next_tab();
+                }
+                KeyCode::Left => {
+                    self.main_screen.movie_description.prev_tab();
+                }
                 KeyCode::Char('r') => {
                     if event.modifiers.contains(KeyModifiers::CONTROL) {
                         self.image_backend.reload_images(
@@ -407,6 +413,12 @@ impl Drawer {
                 KeyCode::Char('g') => {}
                 KeyCode::Up => {}
                 KeyCode::Down => {}
+                KeyCode::Right => {
+                    self.main_screen.movie_description.next_tab();
+                }
+                KeyCode::Left => {
+                    self.main_screen.movie_description.prev_tab();
+                }
                 _ => (),
             },
             MainScreenEventRecievers::Search => match code {
