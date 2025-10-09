@@ -10,7 +10,7 @@ use crate::{
     screens::{init_screen::InitScreen, main_screen::MainScreen, Screens},
     types::*,
 };
-use ratatui::{layout::*, prelude::*, widgets::*, Frame};
+use ratatui::{layout::*, prelude::*, Frame};
 
 impl Default for Box<dyn ImageBackend> {
     fn default() -> Self {
@@ -45,21 +45,17 @@ pub struct Drawer {
 
 const MINTERMSIZE: [u32; 2] = [80, 22];
 impl Drawer {
-    pub fn render_app(&mut self, frame: &mut Frame, app: &mut App, frame_time: f64) -> Result<()> {
+    pub fn render_app(&mut self, frame: &mut Frame, app: &mut App) -> Result<()> {
         self.check_term_size(frame);
-        self.check_popups(app)?;
         self.image_backend.update();
 
         self.draw_current_screen(frame, app)?;
 
+        self.check_popups(app)?;
         if self.active_popup.is_some() {
             self.draw_popup(frame, app)?;
         }
 
-        frame.render_widget(
-            Paragraph::new(format!("{:.1}", 1.0 / frame_time)),
-            frame.area(),
-        );
         Ok(())
     }
 
@@ -140,10 +136,6 @@ impl Drawer {
 
     pub fn close_popups(&mut self) {
         self.active_popup = None;
-
-        // self.fetch_artwork_popup_options.reset();
-
-        // self.main_screen_options.rehash_visible_images(app);
     }
 
     pub fn open_tmdb_init_popup(&mut self) {
@@ -172,7 +164,7 @@ impl Drawer {
         self.add_movie_popup.begin();
     }
 
-    pub fn open_edit_movie_popup(&mut self, app: &mut App) {
+    pub fn open_edit_movie_popup(&mut self) {
         self.active_popup = Some(Popups::EditMovie);
 
         self.edit_movie_popup

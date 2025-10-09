@@ -13,6 +13,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+const FRAME_RATE: f32 = 60.0;
+const TICK_RATE: f32 = 10.0;
+
 pub struct Tui {
     terminal: Terminal<CrosstermBackend<Stdout>>,
     app: App,
@@ -22,7 +25,6 @@ pub struct Tui {
 impl Tui {
     pub fn new() -> Result<Self> {
         let terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
-        // let terminal = ratatui::init();
 
         Ok(Self {
             drawer: Drawer::default(),
@@ -34,6 +36,9 @@ impl Tui {
     pub fn init(&mut self) -> Result<()> {
         self.app.init()?;
         self.drawer.main_screen.filter_sort_movies(&self.app);
+        if true {
+            self.drawer.init_screen.skip_authorization();
+        }
 
         self.set_panic_hook();
         enable_raw_mode()?;
@@ -45,21 +50,13 @@ impl Tui {
     }
 
     pub fn run(&mut self) -> Result<()> {
-        const FRAME_RATE: f32 = 60.0;
-        const TICK_RATE: f32 = 10.0;
-
         let frame_time = Duration::from_secs_f32(1.0 / FRAME_RATE);
         let frames_per_tick = (FRAME_RATE / TICK_RATE).floor() as u32;
         let mut last_frame = Instant::now();
         let mut tick_counter = 0;
 
-        let mut last_frame_time = Instant::now();
-
-        // self.drawer.main_screen_options.rehash_images(&self.app, 0);
         loop {
-            let elapsed = last_frame_time.elapsed().as_secs_f64();
-            last_frame_time = Instant::now();
-            self.draw(elapsed)?;
+            self.draw()?;
 
             let timeout = frame_time
                 .checked_sub(last_frame.elapsed())
@@ -109,11 +106,11 @@ impl Tui {
         }));
     }
 
-    pub fn draw(&mut self, frame_time: f64) -> Result<CompletedFrame> {
+    pub fn draw(&mut self) -> Result<CompletedFrame> {
         self.terminal
             .draw(|frame| {
                 self.drawer
-                    .render_app(frame, &mut self.app, frame_time)
+                    .render_app(frame, &mut self.app) //, frame_time)
                     .expect("error rendering app.")
             })
             .map_err(Errors::Io)

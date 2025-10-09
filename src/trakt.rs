@@ -277,7 +277,7 @@ pub fn get_movie_details(
     }
 
     // let movies = details_response.text()?;
-    // println!("{:#}", json::parse(movies.as_str()).unwrap());
+    // panic!("{:#}", json::parse(movies.as_str()).unwrap());
     let json = details_response.json::<TraktDetailsResponse>()?;
     Ok(json)
 }
@@ -297,31 +297,42 @@ pub fn get_movie_poster_banner(
     let movie_details = get_movie_details(trakt_config, &id)?;
 
     if !add_placeholder
-        && (movie_details.images.banner.is_empty() || movie_details.images.poster.is_empty())
+        && ((movie_details.images.banner.is_empty() && movie_details.images.fanart.is_empty())
+            || movie_details.images.poster.is_empty())
     {
         return Ok(false);
     }
 
+    // HAHA SCREW YOU CLOUDFLARE
+    // https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/User-Agent/Firefox
+    // long live the firefox docs
+    let client = Client::builder()
+        .user_agent("Mozilla/5.0 (X11; Linux x86_64; rv:143.0) Gecko/20100101 Firefox/143.0")
+        .build()?;
+
     if !movie_details.images.poster.is_empty() {
+        let path = config
+            .dirs
+            .poster_cache
+            .join(format!("{}.jpg", movie_details.ids.tmdb));
         let mut image_url = movie_details.images.poster[0].as_str();
         if let Some(stripped) = image_url.strip_suffix(".webp") {
             image_url = stripped;
         }
 
-        let image_bytes: Vec<_> = reqwest::blocking::get(format!("https://{image_url}"))?
+        let image_bytes: Vec<_> = client
+            .get(format!("https://{image_url}"))
+            .send()?
             .bytes()?
             .iter()
             .copied()
             .collect();
-
-        let mut out = File::create(
-            config
-                .dirs
-                .poster_cache
-                .join(format!("{}.jpg", movie_details.ids.tmdb)),
-        )?;
-        // .expect("failed to create file");
-        io::copy(&mut image_bytes.as_slice(), &mut out)?; //.expect("failed to copy content");
+        let img = image::load_from_memory(&image_bytes);
+        if img.is_ok() {
+            img.unwrap().save(path)?;
+        } else if img.is_err() && add_placeholder {
+            fs::copy("poster_placeholder.jpg", path)?;
+        }
     } else if add_placeholder {
         fs::copy(
             "poster_placeholder.jpg",
@@ -333,27 +344,51 @@ pub fn get_movie_poster_banner(
     }
 
     if !movie_details.images.fanart.is_empty() {
+        let path = config
+            .dirs
+            .backdrop_cache
+            .join(format!("{}.jpg", movie_details.ids.tmdb));
         let mut image_url = movie_details.images.fanart[0].as_str();
         if let Some(stripped) = image_url.strip_suffix(".webp") {
             image_url = stripped;
         }
 
-        let image_bytes: Vec<_> = reqwest::blocking::get(format!("https://{image_url}"))?
-            // .expect("requesting movie backdrop failed!")
+        let image_bytes: Vec<_> = client
+            .get(format!("https://{image_url}"))
+            .send()?
             .bytes()?
             .iter()
             .copied()
             .collect();
+        let img = image::load_from_memory(&image_bytes);
+        if img.is_ok() {
+            img.unwrap().save(path)?;
+        } else if img.is_err() && add_placeholder {
+            fs::copy("poster_placeholder.jpg", path)?;
+        }
+    } else if !movie_details.images.banner.is_empty() {
+        let path = config
+            .dirs
+            .backdrop_cache
+            .join(format!("{}.jpg", movie_details.ids.tmdb));
+        let mut image_url = movie_details.images.banner[0].as_str();
+        if let Some(stripped) = image_url.strip_suffix(".webp") {
+            image_url = stripped;
+        }
 
-        let mut out = File::create(
-            config
-                .dirs
-                .backdrop_cache
-                .join(format!("{}.jpg", movie_details.ids.tmdb)),
-        )?;
-        // .expect("failed to create file");
-        io::copy::<&[u8], File>(&mut image_bytes.as_slice(), &mut out)?;
-        // .expect("failed to copy content");
+        let image_bytes: Vec<_> = client
+            .get(format!("https://{image_url}"))
+            .send()?
+            .bytes()?
+            .iter()
+            .copied()
+            .collect();
+        let img = image::load_from_memory(&image_bytes);
+        if img.is_ok() {
+            img.unwrap().save(path)?;
+        } else if img.is_err() && add_placeholder {
+            fs::copy("poster_placeholder.jpg", path)?;
+        }
     } else if add_placeholder {
         fs::copy(
             "backdrop_placeholder.jpg",
@@ -362,7 +397,6 @@ pub fn get_movie_poster_banner(
                 .poster_cache
                 .join(format!("{}.jpg", movie_details.ids.tmdb)),
         )?;
-        // .expect("failed to copy placeholder backdrop!");
     }
 
     Ok(true)

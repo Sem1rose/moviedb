@@ -1,5 +1,8 @@
 use crate::{
-    config::{config_omdb::OMDBConfig, config_tmdb::TMDBConfig, config_trakt::TraktConfig, Config},
+    config::{
+        config_omdb::OMDBConfig, config_tmdb::TMDBConfig, config_trakt::TraktConfig, Config,
+        Credentials,
+    },
     draw::Drawer,
     popups::Popups,
     screens::Screens,
@@ -31,16 +34,28 @@ impl App {
         let mut config = Config::default();
         config.init_dirs()?;
 
+        // TODO: ditch the .credentials file and instead use a config file
+        let file_contents =
+            read_to_string(".credentials").expect("Couldn't read credentials from .credentials!");
+        let creds: Credentials = serde_json::from_str(&file_contents)
+            .expect("Couldn't deserialize credentials at .credentials");
+
         let (tx_tmdb, rx_tmdb) = channel();
         let mut tmdb_config = TMDBConfig::new(tx_tmdb);
+        tmdb_config.set_access_token(creds.tmdb_access_token.clone());
         tmdb_config.init(&config);
 
         let (tx_trakt, rx_trakt) = channel();
         let mut trakt_config = TraktConfig::new(tx_trakt);
+        trakt_config.set_secrets(
+            creds.trakt_client_id.clone(),
+            creds.trakt_client_secret.clone(),
+        );
         trakt_config.init(&config);
 
         let mut omdb_config = OMDBConfig::default();
-        omdb_config.init();
+        omdb_config.set_key(creds.omdb_key.clone());
+        // omdb_config.init(&creds);
 
         Ok(Self {
             movies: vec![],
@@ -57,14 +72,6 @@ impl App {
     }
 
     pub fn init(&mut self) -> Result<()> {
-        // self.tmdb_config.init(&self.config)?;
-        // tmdb::populate_tokens(&self.config, &mut self.tmdb_config)?;
-        // debug!("TMDB config init finished successfully.");
-
-        // self.trakt_config.init(&self.config)?;
-        // trakt::populate_tokens(&self.config, &mut self.trakt_config)?;
-        // debug!("Trakt config init finished successfully.");
-
         self.fetch_movies()?;
 
         Ok(())
@@ -149,10 +156,14 @@ impl App {
                             }
                         }
                         Popups::TMDBInit => {
-                            drawer.tmdb_init_popup.handle_key_events(event)?;
+                            if drawer.tmdb_init_popup.handle_key_events(event, self)? {
+                                drawer.init_screen_advance_phase();
+                            }
                         }
                         Popups::TraktInit => {
-                            drawer.trakt_init_popup.handle_key_events(event)?;
+                            if drawer.trakt_init_popup.handle_key_events(event, self)? {
+                                drawer.init_screen_advance_phase();
+                            }
                         }
                         Popups::FetchArtwork => (),
                     }

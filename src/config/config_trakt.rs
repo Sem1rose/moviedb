@@ -29,15 +29,6 @@ impl Default for TraktCredentials {
         }
     }
 }
-// impl TraktCredentials {
-//     pub fn new() -> Self {
-//         Self {
-//             access_token: "".into(),
-//             refresh_token: "".into(),
-//             expires_on: -1,
-//         }
-//     }
-// }
 
 #[derive(Clone)]
 pub struct TraktConfig {
@@ -79,13 +70,6 @@ impl TraktConfig {
     }
 
     pub fn init(&mut self, config: &Config) {
-        let file_contents =
-            read_to_string(".credentials").expect("Couldn't read credentials from .credentials!");
-        let creds: Credentials = serde_json::from_str(&file_contents)
-            .expect("Couldn't deserialize credentials at .credentials");
-
-        self.set_secrets(creds.trakt_client_id, creds.trakt_client_secret);
-
         let result = self.check_files(config);
         if let Ok(true) = result {
             let tx_result = self.tx_init.clone();
@@ -114,14 +98,6 @@ impl TraktConfig {
         let result = String::from_utf8(cocoon.parse(&mut encrypted_file)?);
 
         result.map_err(|error| Errors::Other(format!("Trakt: error decoding utf8: {}", error)))
-        // if let Ok(decrypted_creds) = result {
-        //     self.set_creds(decrypted_creds)
-        // } else {
-        //     Err(Errors::Other(format!(
-        //         "Trakt: error decoding utf8: {}",
-        //         result.unwrap_err()
-        //     )))
-        // }
     }
 
     pub fn set_creds(&mut self, data: String) -> Result<()> {
@@ -129,13 +105,6 @@ impl TraktConfig {
 
         Ok(())
     }
-
-    // pub fn init_creds(&mut self, client_id: String, client_secret: String) {
-    //     // let client_id = self.get_input(String::from("Enter your client id:"));
-    //     // let client_secret = self.get_input(String::from("Enter your client secret:"));
-
-    //     self.trakt_credentials = TraktCredentials::new(client_secret, client_id);
-    // }
 
     pub fn save_creds(&self, config: &Config) -> Result<()> {
         let key = fs::read(&config.dirs.encryption_key_file)?;
@@ -148,24 +117,6 @@ impl TraktConfig {
 
         Ok(())
     }
-
-    // fn get_input(&self, prompt: String) -> String {
-    //     print!("{prompt} ");
-    //     let _ = stdout().flush();
-
-    //     let mut input = String::new();
-    //     stdin()
-    //         .read_line(&mut input)
-    //         .expect("Did not enter a correct string");
-    //     if let Some('\n') = input.chars().next_back() {
-    //         input.pop();
-    //     }
-    //     if let Some('\r') = input.chars().next_back() {
-    //         input.pop();
-    //     }
-
-    //     input
-    // }
 
     pub fn set_secrets(&mut self, client_id: String, client_secret: String) {
         self.client_id = client_id;

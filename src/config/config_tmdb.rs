@@ -17,14 +17,6 @@ struct TMDBCredentials {
     session_id: String,
 }
 
-// impl TMDBCredentials {
-//     pub fn new() -> Self {
-//         Self {
-//             session_id: "".into(),
-//         }
-//     }
-// }
-
 #[derive(Clone)]
 pub struct TMDBConfig {
     tmdb_credentials: TMDBCredentials,
@@ -56,8 +48,6 @@ impl TMDBConfig {
         }
 
         if config.dirs.tmdb_encrypted_creds_file.is_file() {
-            // self.read_creds(config)?;
-
             Ok(true)
         } else {
             Ok(false)
@@ -65,13 +55,6 @@ impl TMDBConfig {
     }
 
     pub fn init(&mut self, config: &Config) {
-        let file_contents =
-            read_to_string(".credentials").expect("Couldn't read credentials from .credentials!");
-        let creds: Credentials = serde_json::from_str(&file_contents)
-            .expect("Couldn't deserialize credentials at .credentials");
-
-        self.set_access_token(creds.tmdb_access_token);
-
         let result = self.check_files(config);
         if let Ok(true) = result {
             let tx_result = self.tx_init.clone();
@@ -102,35 +85,11 @@ impl TMDBConfig {
         result.map_err(|error| Errors::Other(format!("TMDB: error decoding utf8: {}", error)))
     }
 
-    // fn try_read_creds(config: &Config, tx_init: Sender<Result<String>>) -> Result<()> {
-    //     let key = fs::read(&config.dirs.encryption_key_file)?;
-    //     let cocoon = Cocoon::new(&key);
-
-    //     let mut encrypted_file = File::open(&config.dirs.tmdb_encrypted_file)?;
-
-    //     let result = String::from_utf8(cocoon.parse(&mut encrypted_file)?);
-    //     if let Ok(decrypted_creds) = result {
-    //         tx_init.send(Ok(decrypted_creds));
-    //         Ok(())
-    //     } else {
-    //         Err(Errors::Other(format!(
-    //             "TMDB: error decoding utf8: {}",
-    //             result.unwrap_err()
-    //         )))
-    //     }
-    // }
-
     pub fn set_creds(&mut self, data: String) -> Result<()> {
         self.tmdb_credentials = serde_json::from_str(&data)?;
 
         Ok(())
     }
-
-    // pub fn init_creds(&mut self, access_token: String) {
-    //     // let access_token = self.get_input(String::from("Enter your access token:"));
-
-    //     self.tmdb_credentials = TMDBCredentials::new(access_token);
-    // }
 
     pub fn save_creds(&self, config: &Config) -> Result<()> {
         let key = fs::read(&config.dirs.encryption_key_file)?;
@@ -143,24 +102,6 @@ impl TMDBConfig {
 
         Ok(())
     }
-
-    // fn get_input(&self, prompt: String) -> String {
-    //     print!("{prompt} ");
-    //     let _ = stdout().flush();
-
-    //     let mut input = String::new();
-    //     stdin()
-    //         .read_line(&mut input)
-    //         .expect("Did not enter a correct string");
-    //     if let Some('\n') = input.chars().next_back() {
-    //         input.pop();
-    //     }
-    //     if let Some('\r') = input.chars().next_back() {
-    //         input.pop();
-    //     }
-
-    //     input
-    // }
 
     pub fn access_token(&self) -> &str {
         &self.access_token

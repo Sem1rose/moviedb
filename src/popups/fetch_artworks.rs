@@ -5,7 +5,6 @@ use log::error;
 use ratatui::{layout::*, prelude::*, widgets::*, Frame};
 use ratatui_macros::{horizontal, vertical};
 use std::{
-    collections::HashSet,
     sync::mpsc::{channel, Receiver, Sender},
     thread,
 };
@@ -35,9 +34,8 @@ impl FetchArtworksPopup {
 
         let conf = app.config.clone();
         let tmdb_conf = app.tmdb_config.clone();
-        // let trakt_conf = app.trakt_config.clone();
+        let trakt_conf = app.trakt_config.clone();
 
-        // TODO: use a threadpool instead
         thread::spawn(move || {
             for fetch_request in rx_fetch_request.iter() {
                 if fetch_request.is_none() {
@@ -49,16 +47,8 @@ impl FetchArtworksPopup {
 
                 let conf_owned = conf.clone();
                 let tmdb_conf_owned = tmdb_conf.clone();
-                // let trakt_conf_owned = trakt_conf.clone();
+                let trakt_conf_owned = trakt_conf.clone();
                 thread::spawn(move || {
-                    // let result = trakt::get_movie_poster_banner(
-                    //     &conf_owned,
-                    //     &trakt_conf_owned,
-                    //     request.imdb_id.clone(),
-                    //     false,
-                    // );
-
-                    // if let Ok(false) = result {
                     let result = tmdb::get_movie_poster_banner(
                         &conf_owned,
                         &tmdb_conf_owned,
@@ -66,27 +56,22 @@ impl FetchArtworksPopup {
                         true,
                     );
 
-                    if let Err(error) = result {
-                        let _ = tx_response.send((request, Err(error)));
-                    } else {
+                    if let Ok(true) = result {
                         let _ = tx_response.send((request, Ok(())));
-                    }
-                    // } else if result.is_err() {
-                    //     let result = tmdb::get_movie_poster_banner(
-                    //         &conf_owned,
-                    //         &tmdb_conf_owned,
-                    //         request.tmdb,
-                    //         true,
-                    //     );
+                    } else {
+                        let result = trakt::get_movie_poster_banner(
+                            &conf_owned,
+                            &trakt_conf_owned,
+                            request.imdb.clone(),
+                            true,
+                        );
 
-                    //     if let Err(error) = result {
-                    //         let _ = tx_response.send((request, Err(error)));
-                    //     } else {
-                    //         let _ = tx_response.send((request, Ok(())));
-                    //     }
-                    // } else {
-                    //     let _ = tx_response.send((request, Ok(())));
-                    // }
+                        if let Err(error) = result {
+                            let _ = tx_response.send((request, Err(error)));
+                        } else {
+                            let _ = tx_response.send((request, Ok(())));
+                        }
+                    }
                 });
             }
         });
@@ -139,35 +124,21 @@ impl FetchArtworksPopup {
     }
 
     pub fn read_threads_responses(&mut self) -> Result<()> {
-        // let contents = std::fs::read_to_string(&app.config.dirs.cached_movies_file)?;
-
-        // let mut movies_cached: HashSet<u32> = contents
-        //     .split_ascii_whitespace()
-        //     .map(|x| x.parse().unwrap())
-        //     .collect();
-
         for (id, fetch_result) in self.rx_fetch_response.as_ref().unwrap().try_iter() {
             if let Err(error) = fetch_result {
                 error!("error while downloading {}: {error}", id.tmdb);
 
                 self.errored = Some(id.tmdb);
-
-                // let _ = self.fetch_artwork_popup_options.tx_fetch_request.send(id);
+                let _ = self.tx_fetch_request.as_ref().unwrap().send(Some(id));
             } else {
+                if let Some(i) = self.errored {
+                    if i == id.tmdb {
+                        self.errored = None;
+                    }
+                }
                 self.progress += 1;
-
-                // movies_cached.insert(id.tmdb);
             }
         }
-
-        // std::fs::write(
-        //     &app.config.dirs.cached_movies_file,
-        //     movies_cached
-        //         .into_iter()
-        //         .map(|x| x.to_string())
-        //         .collect::<Vec<_>>()
-        //         .join("\n"),
-        // )?;
 
         Ok(())
     }

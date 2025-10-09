@@ -22,8 +22,6 @@ use tui_input::{backend::crossterm::EventHandler, Input};
 pub enum Phase {
     #[default]
     Initializing,
-    // GetSecrets,
-    // GotSecrets,
     GetAuthorization(String),
     GotAuthorization,
     RefreshingTokens,
@@ -34,10 +32,6 @@ pub enum Phase {
 pub struct TraktInitPopup {
     pub phase: Phase,
 
-    // pub selected_secret_input: usize,
-
-    // pub cliend_id_input: Input,
-    // pub client_secret_input: Input,
     pub auth_code_input: Input,
 }
 
@@ -48,13 +42,6 @@ impl TraktInitPopup {
 
     pub fn advance_phase(&mut self) {
         self.phase = match self.phase {
-            // Phase::Initializing => {
-            //     self.selected_secret_input = 0;
-            //     self.cliend_id_input.reset();
-            //     self.client_secret_input.reset();
-            //     Phase::GetSecrets
-            // }
-            // Phase::GetSecrets => Phase::GotSecrets,
             Phase::GetAuthorization(_) => Phase::GotAuthorization,
             _ => Phase::Initializing,
         };
@@ -65,63 +52,38 @@ impl TraktInitPopup {
         self.phase = Phase::GetAuthorization(authorization_url);
     }
 
-    pub fn handle_key_events(&mut self, event: KeyEvent) -> Result<()> {
+    pub fn handle_key_events(&mut self, event: KeyEvent, app: &mut App) -> Result<bool> {
         let kind = event.kind;
         let code = event.code;
 
         if kind != KeyEventKind::Press {
-            return Ok(());
+            return Ok(false);
         }
 
         match code {
             KeyCode::Enter => {
-                // if let Phase::GetSecrets = self.phase {
-                //     if self.selected_secret_input == 0 && !self.cliend_id_input.value().is_empty() {
-                //         self.selected_secret_input = 1;
-                //     } else if self.selected_secret_input == 1
-                //         && !self.client_secret_input.value().is_empty()
-                //     {
-                //         self.advance_phase();
-                //     }
-                // } else
                 if let Phase::GetAuthorization(_) = self.phase {
                     if !self.auth_code_input.value().is_empty() {
                         self.advance_phase();
                     }
+                } else if let Phase::Error(_) = self.phase {
+                    app.trakt_config.init(&app.config);
+                    self.advance_phase();
                 }
             }
-            // KeyCode::Tab => {
-            //     if let Phase::GetSecrets = self.phase {
-            //         self.selected_secret_input += 1;
-            //         if self.selected_secret_input > 1 {
-            //             self.selected_secret_input = 0;
-            //         }
-            //     }
-            // }
-            // KeyCode::BackTab => {
-            //     if let Phase::GetSecrets = self.phase {
-            //         if self.selected_secret_input == 0 {
-            //             self.selected_secret_input = 1;
-            //         } else {
-            //             self.selected_secret_input = 0;
-            //         }
-            //     }
-            // }
+            KeyCode::Esc => {
+                if let Phase::GetAuthorization(_) = self.phase {
+                    return Ok(true);
+                }
+            }
             _ => {
-                // if let Phase::GetSecrets = self.phase {
-                //     if self.selected_secret_input == 0 {
-                //         self.cliend_id_input.handle_event(&Event::Key(event));
-                //     } else if self.selected_secret_input == 1 {
-                //         self.client_secret_input.handle_event(&Event::Key(event));
-                //     }
-                // } else
                 if let Phase::GetAuthorization(_) = self.phase {
                     self.auth_code_input.handle_event(&Event::Key(event));
                 }
             }
         }
 
-        Ok(())
+        Ok(false)
     }
 }
 
@@ -165,21 +127,6 @@ impl Drawer {
                     v_center(text_area),
                 );
             }
-            // Phase::GotSecrets => {
-            //     let [_, throbber_area, _, text_area, _] =
-            //         horizontal![==2, ==1, ==2, >=1, ==2].areas(horiz);
-
-            //     let throbber = throbber_widgets_tui::Throbber::default()
-            //         .throbber_set(throbber_widgets_tui::BRAILLE_SIX_DOUBLE)
-            //         .throbber_style(Style::new().bold().fg(tailwind::VIOLET.c400));
-
-            //     frame.render_stateful_widget(
-            //         throbber,
-            //         v_center(throbber_area),
-            //         &mut self.throbber_state,
-            //     );
-            //     frame.render_widget(Paragraph::new("Processing..."), v_center(text_area));
-            // }
             Phase::GetAuthorization(url) => {
                 let [_, center, _] = horizontal![==2, >=1, ==2].areas(horiz);
                 let [_, top, bottom, _] = vertical![>=1, ==1, ==3, >=1].areas(center);

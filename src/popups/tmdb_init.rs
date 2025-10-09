@@ -1,4 +1,5 @@
 use crate::{
+    app::App,
     custom::{
         helpers::{center_rect, v_center},
         hyperlink::Hyperlink,
@@ -7,7 +8,7 @@ use crate::{
     types::*,
 };
 use ratatui::{
-    crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind},
+    crossterm::event::{KeyCode, KeyEvent, KeyEventKind},
     layout::*,
     prelude::*,
     widgets::*,
@@ -15,14 +16,11 @@ use ratatui::{
 };
 use ratatui_macros::{horizontal, span, vertical};
 use style::palette::tailwind;
-use tui_input::{backend::crossterm::EventHandler, Input};
 
 #[derive(Default)]
 pub enum Phase {
     #[default]
     Initializing,
-    // GetInput,
-    // GotInput,
     GetAuthorization(String),
     Done,
     Error(Errors),
@@ -31,7 +29,6 @@ pub enum Phase {
 #[derive(Default)]
 pub struct TMDBInitPopup {
     pub phase: Phase,
-    // pub access_token_input: Input,
 }
 
 impl TMDBInitPopup {
@@ -41,11 +38,6 @@ impl TMDBInitPopup {
 
     pub fn advance_phase(&mut self) {
         self.phase = match self.phase {
-            // Phase::Initializing => {
-            //     self.access_token_input.reset();
-            //     Phase::GetInput
-            // }
-            // Phase::GetInput => Phase::GotInput,
             Phase::GetAuthorization(_) => Phase::Done,
             _ => Phase::Initializing,
         };
@@ -55,33 +47,30 @@ impl TMDBInitPopup {
         self.phase = Phase::GetAuthorization(authorization_url);
     }
 
-    pub fn handle_key_events(&mut self, event: KeyEvent) -> Result<()> {
+    pub fn handle_key_events(&mut self, event: KeyEvent, app: &mut App) -> Result<bool> {
         let kind = event.kind;
         let code = event.code;
 
         if kind != KeyEventKind::Press {
-            return Ok(());
+            return Ok(false);
         }
 
         match code {
             KeyCode::Enter => {
-                // if let Phase::GetInput = self.phase {
-                //     if !self.access_token_input.value().is_empty() {
-                //         self.advance_phase();
-                //     }
-                // }
                 if let Phase::Error(_) = self.phase {
-                    self.phase = Phase::default();
+                    app.tmdb_config.init(&app.config);
+                    self.advance_phase();
                 }
             }
-            _ => {
-                // if let Phase::GetInput = self.phase {
-                //     self.access_token_input.handle_event(&Event::Key(event));
-                // }
+            KeyCode::Esc => {
+                if let Phase::GetAuthorization(_) = self.phase {
+                    return Ok(true);
+                }
             }
+            _ => {}
         }
 
-        Ok(())
+        Ok(false)
     }
 }
 
@@ -131,37 +120,10 @@ impl Drawer {
                     v_center(text_area),
                 );
             }
-            // Phase::GotInput => {
-            //     let [_, throbber_area, text_area, _] = horizontal![==2, >=1, >=1, ==2].areas(horiz);
-
-            //     let throbber = throbber_widgets_tui::Throbber::default()
-            //         .throbber_set(throbber_widgets_tui::BRAILLE_SIX_DOUBLE)
-            //         .throbber_style(Style::new().bold().fg(tailwind::VIOLET.c400));
-
-            //     frame.render_stateful_widget(
-            //         throbber,
-            //         v_center(throbber_area),
-            //         &mut self.throbber_state,
-            //     );
-            //     frame.render_widget(
-            //         Paragraph::new("Getting Authorization URL..."),
-            //         v_center(text_area),
-            //     );
-            // }
             Phase::GetAuthorization(url) => {
-                //'\e]8;;https://google.com\e\\ass\e]8;;\e\ '
                 let [_, prompt_area, _] = vertical![>=1,==1,>=1].areas(horiz);
 
                 frame.render_widget(
-                    // line![
-                    //     span!("Please follow "),
-                    //     span!(r#"\x1B]8;;"#.to_owned() + url + r#"\x1B\\THIS\x1B]8;;\x1B\"#)
-                    //         .bold()
-                    //         .italic()
-                    //         .underlined()
-                    //         .blue(),
-                    //     span!(" link to authorize the application.")
-                    // ]
                     &Hyperlink::new(
                         span!("Click here to go to the authorization url.")
                             .bold()

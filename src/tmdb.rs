@@ -532,7 +532,7 @@ pub fn get_movie_poster_banner(
                 _ => (),
             }
         }
-        if !success {
+        if !success && add_placeholder {
             std::fs::copy("poster_placeholder.jpg", poster_path)?;
         }
     } else {
@@ -561,7 +561,7 @@ pub fn get_movie_poster_banner(
                 _ => (),
             }
         }
-        if !success {
+        if !success && add_placeholder {
             std::fs::copy("backdrop_placeholder.jpg", backdrop_path)?;
         }
     } else {

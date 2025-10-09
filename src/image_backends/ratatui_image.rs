@@ -90,10 +90,6 @@ impl RatatuiImage {
                     if let Err(error) = open_result {
                         let _ =
                             tx_main.send(ImageEvents::LoadImage(tmdb_id, Err(Errors::Io(error))));
-                        // std::fs::File::create(format!("/home/semirose/{}backdrop", movie_id.0))
-                        //     .unwrap()
-                        //     .write_all(path.as_bytes());
-                        // std::process::exit(1);
                     } else if let Ok(reader) = open_result {
                         let decode_result = reader.decode();
 
@@ -108,37 +104,6 @@ impl RatatuiImage {
                         }
                     }
                 });
-                // } else {
-                //     thread::spawn(move || {
-                //         let open_result = image::ImageReader::open(path);
-
-                //         if let Err(error) = open_result {
-                //             let _ = tx_main.send(ImageEvents::LoadImage(
-                //                 movie_id,
-                //                 // Err(Errors::Other(error.to_string() + &path)),
-                //                 Err(Errors::Io(error)),
-                //             ));
-                //             // std::fs::File::create(format!("/home/semirose/{}poster", movie_id.0))
-                //             //     .unwrap()
-                //             //     .write_all(path.as_bytes());
-                //             // std::process::exit(1);
-                //         } else if let Ok(reader) = open_result {
-                //             let decode_result = reader.decode();
-
-                //             if let Err(error) = decode_result {
-                //                 let _ = tx_main.send(ImageEvents::LoadImage(
-                //                     movie_id,
-                //                     Err(Errors::Image(error)),
-                //                 ));
-                //             } else if let Ok(decoded) = decode_result {
-                //                 let _ = tx_main.send(ImageEvents::LoadImage(
-                //                     movie_id,
-                //                     Ok(picker.new_resize_protocol(decoded)),
-                //                 ));
-                //             }
-                //         }
-                //     });
-                // }
             }
         });
 
@@ -165,80 +130,6 @@ impl RatatuiImage {
 
         let _ = self.tx_load_decode.send((artwork_id, path));
     }
-
-    // pub fn rehash_visible_images(&mut self, app: &App) {
-    //     let start_index = self.movies_list.scroll_pos;
-    //     let movie_ids = app.movies
-    //         [start_index..(start_index + self.movies_list.num_visible_movies)]
-    //         .iter()
-    //         .map(|x| x.id.tmdb)
-    //         .collect::<Vec<_>>();
-
-    //     for (i, id) in movie_ids.iter().enumerate() {
-    //         let index = start_index + i;
-
-    //         let key = ArtworkID {
-    //             id: index,
-    //             backdrop: false,
-    //         };
-    //         if !self.hashed_images.contains_key(&key) {
-    //             self.hash_image(key, app);
-    //         } else {
-    //             let poster_path = format!(
-    //                 "{}",
-    //                 &app.config
-    //                     .dirs
-    //                     .poster_cache
-    //                     .join(format!("{}.jpg", id))
-    //                     .display()
-    //             );
-
-    //             let _ = self.tx_load_decode.send((key, poster_path));
-    //         }
-
-    //         if index == self.movies_list.current_movie_index() {
-    //             let key = ArtworkID {
-    //                 id: index,
-    //                 backdrop: true,
-    //             };
-    //             if !self.hashed_images.contains_key(&key) {
-    //                 self.hash_image(key, app);
-    //             } else {
-    //                 let fanart_path = format!(
-    //                     "{}",
-    //                     &app.config
-    //                         .dirs
-    //                         .backdrop_cache
-    //                         .join(format!("{}.jpg", id))
-    //                         .display()
-    //                 );
-
-    //                 let _ = self.tx_load_decode.send((key, fanart_path));
-    //             }
-    //         }
-    //     }
-    // }
-
-    // pub fn rehash_image(&mut self, movie_index: usize, backdrop: bool, app: &App) {
-    //     let path = format!(
-    //         "{}",
-    //         if backdrop {
-    //             &app.config.dirs.backdrop_cache
-    //         } else {
-    //             &app.config.dirs.poster_cache
-    //         }
-    //         .join(format!("{}.jpg", app.movies[movie_index].id.tmdb))
-    //         .display()
-    //     );
-
-    //     let _ = self.tx_load_decode.send((
-    //         ArtworkID {
-    //             id: movie_index,
-    //             backdrop,
-    //         },
-    //         path.clone(),
-    //     ));
-    // }
 }
 
 impl ImageBackend for RatatuiImage {

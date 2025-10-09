@@ -329,7 +329,7 @@ impl Drawer {
                     self.open_add_movie_popup();
                 }
                 KeyCode::Char('e') => {
-                    self.open_edit_movie_popup(app);
+                    self.open_edit_movie_popup();
                 }
                 KeyCode::Char('d') => {
                     self.open_remove_movie_popup();
@@ -391,7 +391,7 @@ impl Drawer {
                     self.open_add_movie_popup();
                 }
                 KeyCode::Char('e') => {
-                    self.open_edit_movie_popup(app);
+                    self.open_edit_movie_popup();
                 }
                 KeyCode::Char('d') => {
                     self.open_remove_movie_popup();

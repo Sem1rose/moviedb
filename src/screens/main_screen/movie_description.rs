@@ -1,4 +1,9 @@
-use crate::{app::App, custom::hyperlink::Hyperlink, draw::Drawer, types::*};
+use crate::{
+    app::App,
+    custom::{helpers::ellipsize_string, hyperlink::Hyperlink},
+    draw::Drawer,
+    types::*,
+};
 use ratatui::style::Stylize;
 use ratatui::{layout::Rect, prelude::*, widgets::*, Frame};
 use ratatui_macros::vertical;
@@ -164,18 +169,16 @@ impl Drawer {
 
         let backdrop_height = ((vert.width - 4) as f32 * 9.0 / 32.0).ceil() as u16;
         let [backdrop_area, title_area, description_area] =
-            vertical![==backdrop_height, ==6, >=1].areas(horiz);
+            vertical![==backdrop_height, ==7, >=1].areas(horiz);
 
         frame.render_widget(Block::new().bg(tailwind::SLATE.c800), area);
 
         if let Some(movie) = movie {
-            let [title_area, ratings_area, tabs_area] = vertical![==2, ==2, ==2].areas(title_area);
+            let [title_area, _, ratings_area, tabs_area] =
+                vertical![==2, ==1, ==2, ==2].areas(title_area);
 
             let mut name = movie.name.clone();
-            if name.len() > (title_area.width as usize - 5) {
-                name.truncate(title_area.width as usize - 8);
-                name += "...";
-            }
+            name = ellipsize_string(&name, title_area.width as usize);
 
             frame.render_widget(
                 Text::from(vec![
@@ -186,7 +189,6 @@ impl Drawer {
             );
             self.draw_ratings(movie, frame, ratings_area);
 
-            // let mut tabs = vec![Span::from("Overview").bold(), Span::from("Review").bold()];
             let mut tabs = TABS
                 .iter()
                 .flat_map(|x| [" ".into(), Span::from(format!(" {} ", *x))])
@@ -218,8 +220,6 @@ impl Drawer {
             // TODO
         }
 
-        // if let Some(crate::popups::Popups::FetchArtwork) = self.active_popup {
-        // } else
         if movie.is_some() {
             self.image_backend.draw_image(
                 app,

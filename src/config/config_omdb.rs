@@ -7,14 +7,9 @@ pub struct OMDBConfig {
 }
 
 impl OMDBConfig {
-    pub fn init(&mut self) {
-        let file_contents =
-            read_to_string(".credentials").expect("Couldn't read credentials from .credentials!");
-        let creds: Credentials = serde_json::from_str(&file_contents)
-            .expect("Couldn't deserialize credentials at .credentials");
-
-        self.set_key(creds.omdb_key);
-    }
+    // pub fn init(&mut self, creds: &Credentials) {
+    //     self.set_key(creds.omdb_key.clone());
+    // }
 
     pub fn key(&self) -> &str {
         &self.key
