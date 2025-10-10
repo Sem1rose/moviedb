@@ -88,7 +88,7 @@ impl TraktInitPopup {
 }
 
 impl Drawer {
-    pub(crate) fn draw_trakt_init_popup(&mut self, frame: &mut Frame, app: &mut App) -> Result<()> {
+    pub(crate) fn draw_trakt_init_popup(&mut self, frame: &mut Frame) -> Result<()> {
         let frame_area = frame.area();
         let popup_area = center_rect(frame_area, Constraint::Percentage(40), Constraint::Max(10));
 
@@ -98,7 +98,7 @@ impl Drawer {
             .borders(Borders::ALL)
             .border_type(BorderType::Thick)
             .border_style(Style::new().fg(tailwind::EMERALD.c400))
-            .title_top("Enter Trakt Credentials")
+            .title_top("Trakt Authorization")
             .title_alignment(Alignment::Center)
             .title_style(Style::new().fg(tailwind::AMBER.c300));
 

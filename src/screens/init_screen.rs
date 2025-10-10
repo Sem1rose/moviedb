@@ -39,6 +39,17 @@ impl InitScreen {
     pub fn skip_authorization(&mut self) {
         self.phase = Phase::FetchArtwork;
     }
+
+    pub fn advance_phase(&mut self) {
+        self.started_step = false;
+
+        self.phase = match self.phase {
+            Phase::TMDBInit => Phase::TraktInit,
+            Phase::TraktInit => Phase::FetchArtwork,
+            Phase::FetchArtwork => Phase::Done,
+            _ => Phase::TMDBInit,
+        };
+    }
 }
 
 impl Drawer {
@@ -53,8 +64,6 @@ impl Drawer {
 
                     self.init_screen.started_step = true;
                 }
-
-                self.handle_init_screen_tmdb_init(app)?;
             }
             Phase::TraktInit => {
                 if !self.init_screen.started_step {
@@ -62,8 +71,6 @@ impl Drawer {
 
                     self.init_screen.started_step = true;
                 }
-
-                self.handle_init_screen_trakt_init(app)?;
             }
             Phase::FetchArtwork => {
                 if !self.init_screen.started_step {
@@ -71,35 +78,16 @@ impl Drawer {
 
                     self.init_screen.started_step = true;
                 }
-
-                self.handle_init_screen_fetch_artworks();
             }
-            Phase::Done => {
-                self.open_main_screen();
-            }
+            _ => (), // Phase::Done => {
+                     //     self.open_main_screen();
+                     // }
         }
 
         Ok(())
     }
 
-    pub fn init_screen_advance_phase(&mut self) {
-        self.init_screen.started_step = false;
-
-        self.init_screen.phase = match self.init_screen.phase {
-            Phase::TMDBInit => Phase::TraktInit,
-            Phase::TraktInit => Phase::FetchArtwork,
-            Phase::FetchArtwork => Phase::Done,
-            _ => Phase::TMDBInit,
-        };
-    }
-
-    fn handle_init_screen_fetch_artworks(&mut self) {
-        if self.fetch_artwork_popup.done {
-            self.init_screen_advance_phase();
-        }
-    }
-
-    fn handle_init_screen_tmdb_init(&mut self, app: &mut App) -> Result<()> {
+    pub fn handle_init_screen_tmdb_init(&mut self, app: &mut App) -> Result<()> {
         use crate::popups::tmdb_init::Phase as TMDBPhase;
 
         #[allow(clippy::single_match)]
@@ -109,7 +97,7 @@ impl Drawer {
                     if let Ok(decrypted_creds) = result {
                         app.tmdb_config.set_creds(decrypted_creds)?;
 
-                        self.init_screen_advance_phase();
+                        self.init_screen.advance_phase();
                     } else if result.is_err() {
                         let (tx_authorization_url, rx_authorization_url) = channel();
                         let (tx_session_id, rx_session_id) = channel();
@@ -128,78 +116,13 @@ impl Drawer {
             }
             _ => (),
         }
+
         self.read_init_screen_channels(app)?;
 
         Ok(())
     }
 
-    fn read_init_screen_channels(&mut self, app: &mut App) -> Result<()> {
-        match self.init_screen.phase {
-            Phase::TMDBInit => {
-                if let Some(channel) = self.init_screen.tmdb_rx_authorization_url.as_ref() {
-                    let result = channel.try_recv();
-
-                    if let Ok(data) = result {
-                        self.tmdb_init_popup.get_authorization(data);
-
-                        let _ = self.init_screen.tmdb_rx_authorization_url.take();
-                    }
-                }
-
-                if let Some(channel) = self.init_screen.tmdb_rx_session_id.as_ref() {
-                    if let Ok(result) = channel.try_recv() {
-                        if let Ok(session_id) = result {
-                            self.tmdb_init_popup.advance_phase();
-
-                            app.tmdb_config.set_session_id(session_id);
-                            app.tmdb_config.save_creds(&app.config)?;
-
-                            self.init_screen_advance_phase();
-                        } else if let Err(error) = result {
-                            self.tmdb_init_popup.phase =
-                                crate::popups::tmdb_init::Phase::Error(error);
-                        }
-
-                        let _ = self.init_screen.tmdb_rx_session_id.take();
-                    }
-                }
-            }
-            Phase::TraktInit => {
-                if let Some(channel) = self.init_screen.trakt_rx_authorization_url.as_ref() {
-                    let result = channel.try_recv();
-
-                    if let Ok(data) = result {
-                        self.trakt_init_popup.get_authorization(data);
-
-                        let _ = self.init_screen.trakt_rx_authorization_url.take();
-                    }
-                }
-
-                if let Some(channel) = self.init_screen.trakt_rx_tokens.as_ref() {
-                    if let Ok(result) = channel.try_recv() {
-                        if let Ok(trakt_tokens) = result {
-                            self.trakt_init_popup.advance_phase();
-
-                            app.trakt_config.set_tokens(trakt_tokens);
-                            app.trakt_config.save_creds(&app.config)?;
-
-                            self.init_screen_advance_phase();
-                        } else if let Err(error) = result {
-                            self.trakt_init_popup.phase =
-                                crate::popups::trakt_init::Phase::Error(error);
-                        }
-
-                        let _ = self.init_screen.trakt_rx_tokens.take();
-                    }
-                }
-            }
-            _ => (),
-        }
-
-        Ok(())
-    }
-
-    fn handle_init_screen_trakt_init(&mut self, app: &mut App) -> Result<()> {
+    pub fn handle_init_screen_trakt_init(&mut self, app: &mut App) -> Result<()> {
         use crate::popups::trakt_init::Phase as TraktPhase;
 
         match self.trakt_init_popup.phase {
@@ -209,7 +132,7 @@ impl Drawer {
                         app.trakt_config.set_creds(decrypted_creds)?;
 
                         if trakt::check_tokens(&app.trakt_config) {
-                            self.init_screen_advance_phase();
+                            self.init_screen.advance_phase();
                         } else {
                             self.trakt_init_popup.phase = TraktPhase::RefreshingTokens;
 
@@ -228,7 +151,7 @@ impl Drawer {
 
                             self.init_screen.trakt_rx_tokens = Some(rx_tokens);
                         }
-                    } else if result.is_err() {
+                    } else {
                         let (tx_authorization_url, rx_authorization_url) = channel();
                         let (tx_auth_code, rx_auth_code) = channel();
                         let (tx_tokens, rx_tokens) = channel();
@@ -255,7 +178,7 @@ impl Drawer {
                 if self.init_screen.trakt_tx_auth_code.is_some() {
                     let auth_code = self.trakt_init_popup.auth_code_input.value().to_string();
 
-                    let _ = self
+                    _ = self
                         .init_screen
                         .trakt_tx_auth_code
                         .take()
@@ -267,6 +190,72 @@ impl Drawer {
         }
 
         self.read_init_screen_channels(app)?;
+
+        Ok(())
+    }
+
+    fn read_init_screen_channels(&mut self, app: &mut App) -> Result<()> {
+        match self.init_screen.phase {
+            Phase::TMDBInit => {
+                if let Some(channel) = self.init_screen.tmdb_rx_authorization_url.as_ref() {
+                    let result = channel.try_recv();
+
+                    if let Ok(data) = result {
+                        self.tmdb_init_popup.get_authorization(data);
+
+                        _ = self.init_screen.tmdb_rx_authorization_url.take();
+                    }
+                }
+
+                if let Some(channel) = self.init_screen.tmdb_rx_session_id.as_ref() {
+                    if let Ok(result) = channel.try_recv() {
+                        if let Ok(session_id) = result {
+                            self.tmdb_init_popup.advance_phase();
+
+                            app.tmdb_config.set_session_id(session_id);
+                            app.tmdb_config.save_creds(&app.config)?;
+
+                            self.init_screen.advance_phase();
+                        } else if let Err(error) = result {
+                            self.tmdb_init_popup.phase =
+                                crate::popups::tmdb_init::Phase::Error(error);
+                        }
+
+                        _ = self.init_screen.tmdb_rx_session_id.take();
+                    }
+                }
+            }
+            Phase::TraktInit => {
+                if let Some(channel) = self.init_screen.trakt_rx_authorization_url.as_ref() {
+                    let result = channel.try_recv();
+
+                    if let Ok(data) = result {
+                        self.trakt_init_popup.get_authorization(data);
+
+                        _ = self.init_screen.trakt_rx_authorization_url.take();
+                    }
+                }
+
+                if let Some(channel) = self.init_screen.trakt_rx_tokens.as_ref() {
+                    if let Ok(result) = channel.try_recv() {
+                        if let Ok(trakt_tokens) = result {
+                            self.trakt_init_popup.advance_phase();
+
+                            app.trakt_config.set_tokens(trakt_tokens);
+                            app.trakt_config.save_creds(&app.config)?;
+
+                            self.init_screen.advance_phase();
+                        } else if let Err(error) = result {
+                            self.trakt_init_popup.phase =
+                                crate::popups::trakt_init::Phase::Error(error);
+                        }
+
+                        _ = self.init_screen.trakt_rx_tokens.take();
+                    }
+                }
+            }
+            _ => (),
+        }
 
         Ok(())
     }

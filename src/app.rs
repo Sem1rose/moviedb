@@ -8,7 +8,7 @@ use crate::{
     screens::Screens,
     types::*,
 };
-use log::{debug, error};
+// use log::{debug, error};
 use ratatui::crossterm::event::{Event, KeyCode};
 use std::{
     fs::{read_to_string, rename, write},
@@ -89,8 +89,9 @@ impl App {
         });
 
         let result = serde_json::from_str(&file_contents);
-        if let Err(error) = result {
-            error!("couldn't deserialize ratings file, backing it up and creating a blank one: {error}");
+        if result.is_err() {
+            // if let Err(error) = result {
+            // error!("couldn't deserialize ratings file, backing it up and creating a blank one: {error}");
 
             let mut renamed = self.config.dirs.home.join("corrupted_ratings.json");
             let mut i = 1;
@@ -157,12 +158,12 @@ impl App {
                         }
                         Popups::TMDBInit => {
                             if drawer.tmdb_init_popup.handle_key_events(event, self)? {
-                                drawer.init_screen_advance_phase();
+                                drawer.init_screen.advance_phase();
                             }
                         }
                         Popups::TraktInit => {
                             if drawer.trakt_init_popup.handle_key_events(event, self)? {
-                                drawer.init_screen_advance_phase();
+                                drawer.init_screen.advance_phase();
                             }
                         }
                         Popups::FetchArtwork => (),

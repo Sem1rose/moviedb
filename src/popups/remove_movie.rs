@@ -1,4 +1,4 @@
-use crate::{app::App, custom::helpers::center_rect, draw::Drawer, types::*};
+use crate::{custom::helpers::center_rect, draw::Drawer, types::*};
 use ratatui::{
     crossterm::event::{KeyCode, KeyEvent, KeyEventKind},
     layout::*,
@@ -10,7 +10,7 @@ use ratatui_macros::{horizontal, vertical};
 use style::palette::tailwind;
 
 #[derive(Default)]
-enum Phase {
+pub enum Phase {
     #[default]
     Confirm,
     Done,
@@ -20,25 +20,23 @@ enum Phase {
 pub struct RemoveMoviePopup {
     pub selected: usize,
 
-    phase: Phase,
+    pub phase: Phase,
 }
 
+const NUMBUTTONS: usize = 2;
 impl RemoveMoviePopup {
-    pub const NUMBUTTONS: usize = 2;
     pub fn begin(&mut self) {
         *self = Self::default();
     }
 
-    fn dec_selection_horiz(&mut self) {
-        self.selected = self
-            .selected
-            .checked_sub(1)
-            .unwrap_or(RemoveMoviePopup::NUMBUTTONS - 1);
+    // damn, past me was so smart lol
+    fn dec_selection(&mut self) {
+        self.selected = self.selected.checked_sub(1).unwrap_or(NUMBUTTONS - 1);
     }
 
-    fn inc_selection_horiz(&mut self) {
+    fn inc_selection(&mut self) {
         self.selected += 1;
-        if self.selected >= RemoveMoviePopup::NUMBUTTONS {
+        if self.selected >= NUMBUTTONS {
             self.selected = 0;
         }
     }
@@ -60,15 +58,15 @@ impl RemoveMoviePopup {
 
         match code {
             KeyCode::Right => {
-                self.inc_selection_horiz();
+                self.inc_selection();
             }
             KeyCode::Left => {
-                self.dec_selection_horiz();
+                self.dec_selection();
             }
             KeyCode::Enter => {
                 if self.selected == 0 {
                     return true;
-                } else if self.selected == 1 {
+                } else {
                     self.advance_phase();
                 }
             }
@@ -83,11 +81,7 @@ impl RemoveMoviePopup {
 }
 
 impl Drawer {
-    pub(crate) fn draw_remove_movie_popup(
-        &mut self,
-        frame: &mut Frame,
-        app: &mut App,
-    ) -> Result<()> {
+    pub(crate) fn draw_remove_movie_popup(&mut self, frame: &mut Frame) -> Result<()> {
         let frame_area = frame.area();
         let popup_area = center_rect(frame_area, Constraint::Percentage(40), Constraint::Max(7));
 
@@ -124,78 +118,43 @@ impl Drawer {
 
                 let button_areas = horizontal![>=1, >=1, >=1].split(areas[2]);
                 frame.render_widget(
-                    Paragraph::new(format!(
-                        "{}Cancel{}",
-                        if self.remove_movie_popup.selected == 0 {
-                            ">"
-                        } else {
-                            " "
-                        },
-                        if self.remove_movie_popup.selected == 0 {
-                            "<"
-                        } else {
-                            " "
-                        },
-                    ))
+                    Paragraph::new(if self.remove_movie_popup.selected == 0 {
+                        ">Cancel<"
+                    } else {
+                        " Cancel "
+                    })
                     .centered()
                     .black()
                     .on_green(),
                     button_areas[2],
                 );
                 frame.render_widget(
-                    Paragraph::new(format!(
-                        "{}Yes{}",
-                        if self.remove_movie_popup.selected == 1 {
-                            ">"
-                        } else {
-                            " "
-                        },
-                        if self.remove_movie_popup.selected == 1 {
-                            "<"
-                        } else {
-                            " "
-                        },
-                    ))
+                    Paragraph::new(if self.remove_movie_popup.selected == 1 {
+                        ">Yes<"
+                    } else {
+                        " Yes "
+                    })
                     .centered()
                     .on_red(),
                     button_areas[0],
                 );
             }
-            Phase::Done => {
-                self.image_backend
-                    .remove_cached_image(self.main_screen.current_movie().id.tmdb);
+            _ => {
+                let areas = Layout::vertical([Constraint::Length(1); 5]).split(horiz);
+                let [_, throbber_area, text_area, _] = Layout::horizontal([
+                    Constraint::Length(2),
+                    Constraint::Length(1),
+                    Constraint::Min(1),
+                    Constraint::Length(2),
+                ])
+                .areas(areas[2]);
 
-                let index = app
-                    .movies
-                    .iter()
-                    .position(|x| *x == self.main_screen.current_movie())
-                    .unwrap();
-                app.movies.remove(index);
-                self.main_screen.filter_sort_movies(app);
+                let throbber = throbber_widgets_tui::Throbber::default()
+                    .throbber_set(throbber_widgets_tui::BRAILLE_SIX_DOUBLE)
+                    .throbber_style(Style::new().bold().fg(tailwind::VIOLET.c400));
 
-                if app.save_movies().is_err() {
-                    self.open_error_popup("Couldn't remove movie!".into());
-
-                    return Ok(());
-                }
-
-                // if self.main_screen.movies_list.current_movie_index()
-                //     >= self.main_screen.filtered_movies.len()
-                // {
-                //     if self.main_screen.movies_list.scroll_pos > 0 {
-                //         self.main_screen.movies_list.scroll_pos -= 1;
-                //     } else if self.main_screen.movies_list.selected > 0 {
-                //         self.main_screen.movies_list.selected -= 1;
-                //     }
-                // }
-                // } else {
-                //     self.image_backend.reload_images(
-                //         app,
-                //         self.main_screen.movies_list.current_movie_index(),
-                //         Some(self.main_screen.movies_list.num_visible_movies),
-                //     );
-
-                self.close_popups();
+                frame.render_stateful_widget(throbber, throbber_area, &mut self.throbber_state);
+                frame.render_widget(Paragraph::new(" Processing..."), text_area);
             }
         }
         Ok(())

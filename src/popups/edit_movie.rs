@@ -1,4 +1,4 @@
-use crate::{app::App, custom::helpers::center_rect, draw::Drawer, types::*};
+use crate::{custom::helpers::center_rect, draw::Drawer, types::*};
 use ratatui::{
     crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind},
     layout::*,
@@ -11,7 +11,7 @@ use style::palette::tailwind;
 use tui_input::{backend::crossterm::EventHandler, Input};
 
 #[derive(Default)]
-enum Phase {
+pub enum Phase {
     #[default]
     GetNewRating,
     Done,
@@ -23,7 +23,7 @@ pub struct EditMoviePopup {
 
     pub user_rating: f64,
 
-    phase: Phase,
+    pub phase: Phase,
 }
 
 impl EditMoviePopup {
@@ -41,12 +41,14 @@ impl EditMoviePopup {
     }
 
     pub fn check_input_rating(&mut self) -> bool {
-        if self.user_rating_input.value() == "" {
+        if self.user_rating_input.value().is_empty() {
             return false;
         }
 
-        let input_parsed = self.user_rating_input.value().parse::<f64>();
-        input_parsed.is_ok() && input_parsed.unwrap() <= 10.0
+        if let Ok(x) = self.user_rating_input.value().parse::<f64>() {
+            return (0.0..=10.0).contains(&x);
+        }
+        false
     }
 
     pub fn handle_key_events(&mut self, event: KeyEvent) -> bool {
@@ -69,7 +71,9 @@ impl EditMoviePopup {
                 return true;
             }
             _ => {
-                self.user_rating_input.handle_event(&Event::Key(event));
+                if let Phase::GetNewRating = self.phase {
+                    self.user_rating_input.handle_event(&Event::Key(event));
+                }
             }
         }
 
@@ -78,7 +82,7 @@ impl EditMoviePopup {
 }
 
 impl Drawer {
-    pub(crate) fn draw_edit_movie_popup(&mut self, frame: &mut Frame, app: &mut App) -> Result<()> {
+    pub(crate) fn draw_edit_movie_popup(&mut self, frame: &mut Frame) -> Result<()> {
         let frame_area = frame.area();
         let popup_area = center_rect(frame_area, Constraint::Percentage(35), Constraint::Max(10));
 
@@ -155,31 +159,22 @@ impl Drawer {
                     );
                 }
             }
-            Phase::Done => {
-                self.edit_movie_popup.user_rating = format!(
-                    "{:.1}",
-                    self.edit_movie_popup
-                        .user_rating_input
-                        .value()
-                        .parse::<f32>()
-                        .unwrap()
-                )
-                .parse()
-                .unwrap();
+            _ => {
+                let areas = Layout::vertical([Constraint::Length(1); 5]).split(horiz);
+                let [_, throbber_area, text_area, _] = Layout::horizontal([
+                    Constraint::Length(2),
+                    Constraint::Length(1),
+                    Constraint::Min(1),
+                    Constraint::Length(2),
+                ])
+                .areas(areas[2]);
 
-                let index = app
-                    .movies
-                    .iter()
-                    .position(|x| *x == self.main_screen.current_movie())
-                    .unwrap();
-                app.movies[index].user_rating = self.edit_movie_popup.user_rating;
-                self.main_screen.filter_sort_movies(app);
+                let throbber = throbber_widgets_tui::Throbber::default()
+                    .throbber_set(throbber_widgets_tui::BRAILLE_SIX_DOUBLE)
+                    .throbber_style(Style::new().bold().fg(tailwind::VIOLET.c400));
 
-                if app.save_movies().is_err() {
-                    self.open_error_popup("Couldn't save new rating!".into());
-                } else {
-                    self.close_popups();
-                }
+                frame.render_stateful_widget(throbber, throbber_area, &mut self.throbber_state);
+                frame.render_widget(Paragraph::new(" Processing..."), text_area);
             }
         }
 

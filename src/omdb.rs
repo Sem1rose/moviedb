@@ -4,6 +4,7 @@ use reqwest::blocking::{ClientBuilder, RequestBuilder};
 use serde::Deserialize;
 use std::{error::Error, fmt::Display};
 
+#[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
 pub struct DetailsResponseError {
     // Result: String,
@@ -15,9 +16,8 @@ impl Display for DetailsResponseError {
         write!(f, "{}", self.Error)
     }
 }
-use std::fs::OpenOptions;
-use std::io::prelude::*;
 
+#[allow(non_snake_case)]
 #[derive(Deserialize, Debug, Default, Clone)]
 pub struct OMDBDetailsResponse {
     // pub Title: String,

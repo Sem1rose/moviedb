@@ -49,7 +49,7 @@ impl RatatuiImage {
                 let message = rx_worker.try_recv();
 
                 if let Ok(request) = message {
-                    let _ = tx_main_sender.send(ImageEvents::DrawImage(
+                    _ = tx_main_sender.send(ImageEvents::DrawImage(
                         *tmdb_id,
                         request
                             .resize_encode()
@@ -74,30 +74,24 @@ impl RatatuiImage {
         let (tx_load_decode, rx_load_decode) = mpsc::channel::<(ArtworkID, String)>();
 
         let tx_main_sender = tx_main.clone();
-        let picker =
-            Picker::from_query_stdio().expect("error querying graphics capabilities: {error}");
+        let picker = Picker::from_query_stdio().expect("error querying graphics capabilities");
         thread::spawn(move || {
-            // let poster_pool = ThreadPool::with_name("poster load decode".into(), 16);
-            // let fanart_pool = ThreadPool::with_name("fanart load decode".into(), 16);
-
             for (tmdb_id, path) in rx_load_decode.iter() {
                 let tx_main = tx_main_sender.clone();
 
-                // if movie_id.backdrop {
                 thread::spawn(move || {
                     let open_result = image::ImageReader::open(path);
 
                     if let Err(error) = open_result {
-                        let _ =
-                            tx_main.send(ImageEvents::LoadImage(tmdb_id, Err(Errors::Io(error))));
+                        _ = tx_main.send(ImageEvents::LoadImage(tmdb_id, Err(Errors::Io(error))));
                     } else if let Ok(reader) = open_result {
                         let decode_result = reader.decode();
 
                         if let Err(error) = decode_result {
-                            let _ = tx_main
+                            _ = tx_main
                                 .send(ImageEvents::LoadImage(tmdb_id, Err(Errors::Image(error))));
                         } else if let Ok(decoded) = decode_result {
-                            let _ = tx_main.send(ImageEvents::LoadImage(
+                            _ = tx_main.send(ImageEvents::LoadImage(
                                 tmdb_id,
                                 Ok(picker.new_resize_protocol(decoded)),
                             ));
@@ -115,7 +109,7 @@ impl RatatuiImage {
 
         let new_protocol = ThreadProtocol::new(tx_worker, None);
         self.hashed_images.insert(artwork_id, new_protocol);
-        let _ = self.tx_worker_collector.send((artwork_id, rx_worker));
+        _ = self.tx_worker_collector.send((artwork_id, rx_worker));
 
         let path = format!(
             "{}",
@@ -128,7 +122,7 @@ impl RatatuiImage {
             .display()
         );
 
-        let _ = self.tx_load_decode.send((artwork_id, path));
+        _ = self.tx_load_decode.send((artwork_id, path));
     }
 }
 
@@ -159,8 +153,8 @@ impl ImageBackend for RatatuiImage {
                                 .unwrap()
                                 .replace_protocol(protocol);
                         }
-                    } else if result.is_err() {
-                        // } else if let Err(_) = result {
+                    } else {
+                        // } else if let Err(error) = result {
                         // error!("Error while loading: {}", error);
                         errored_ids.push(key.tmdb_id);
                     }
@@ -173,14 +167,15 @@ impl ImageBackend for RatatuiImage {
                                 .unwrap()
                                 .update_resized_protocol(response);
                         }
-                    } else if result.is_err() {
-                        // } else if let Err(_) = result {
+                    } else {
+                        // } else if let Err(error) = result {
                         // error!("Error while loading: {}", error);
                         errored_ids.push(key.tmdb_id);
                     }
                 }
             }
         }
+
         for id in errored_ids {
             self.remove_cached_image(id);
         }
@@ -198,6 +193,7 @@ impl ImageBackend for RatatuiImage {
         if !self.hashed_images.contains_key(&key) {
             self.hash_image(key, &app.config);
         }
+
         frame.render_stateful_widget(
             ThreadImage::new().resize(ratatui_image::Resize::Scale(
                 Some(ratatui_image::FilterType::Triangle), // None,
@@ -215,42 +211,27 @@ impl ImageBackend for RatatuiImage {
             .collect::<Vec<_>>();
 
         for tmdb_id in movie_ids.iter() {
-            let key = ArtworkID {
-                tmdb_id: *tmdb_id,
-                backdrop: false,
-            };
-            if !self.hashed_images.contains_key(&key) {
-                self.hash_image(key, &app.config);
-            } else {
-                let poster_path = format!(
-                    "{}",
-                    &app.config
-                        .dirs
-                        .poster_cache
+            for backdrop in [true, false] {
+                let key = ArtworkID {
+                    tmdb_id: *tmdb_id,
+                    backdrop,
+                };
+                if self.hashed_images.contains_key(&key) {
+                    let path = format!(
+                        "{}",
+                        if backdrop {
+                            &app.config.dirs.backdrop_cache
+                        } else {
+                            &app.config.dirs.poster_cache
+                        }
                         .join(format!("{}.jpg", tmdb_id))
                         .display()
-                );
+                    );
 
-                let _ = self.tx_load_decode.send((key, poster_path));
-            }
-
-            let key = ArtworkID {
-                tmdb_id: *tmdb_id,
-                backdrop: true,
-            };
-            if !self.hashed_images.contains_key(&key) {
-                self.hash_image(key, &app.config);
-            } else {
-                let fanart_path = format!(
-                    "{}",
-                    &app.config
-                        .dirs
-                        .backdrop_cache
-                        .join(format!("{}.jpg", tmdb_id))
-                        .display()
-                );
-
-                let _ = self.tx_load_decode.send((key, fanart_path));
+                    _ = self.tx_load_decode.send((key, path));
+                } else {
+                    self.hash_image(key, &app.config);
+                }
             }
         }
     }

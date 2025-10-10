@@ -10,7 +10,7 @@ use crate::{
     types::*,
 };
 use crossterm::event::KeyModifiers;
-use log::error;
+// use log::error;
 use nucleo_matcher::{pattern::Atom, Config, Matcher};
 use ratatui::style::Stylize;
 use ratatui::{
@@ -36,6 +36,7 @@ pub enum MainScreenEventRecievers {
     Search,
 }
 
+#[allow(dead_code)]
 #[derive(Default, Clone, Copy)]
 pub enum Sort {
     #[default]
@@ -112,26 +113,6 @@ impl MainScreen {
     }
 
     fn filter_movies(&mut self, app: &App, sort: bool) {
-        // if self.search_input.value().is_empty() {
-        //     self.filtered_movies = app.movies.clone();
-        // } else {
-        //     self.filtered_movies = app
-        //         .movies
-        //         .iter()
-        //         .filter(|x| x.match_search(self.search_input.value()))
-        //         .cloned()
-        //         .collect();
-        //     self.movies_list.scroll_pos = 0;
-        //     self.movies_list.selected = 0;
-        // };
-
-        // self.filtered_movies = app
-        //     .movies
-        //     .iter()
-        //     .filter(|x| x.match_search("the"))
-        //     .cloned()
-        //     .collect();
-
         if self.search_input.value().is_empty() {
             self.filtered_movies = app.movies.clone();
             if let Some(sort) = self.prev_sort.take() {
@@ -264,8 +245,7 @@ impl MainScreen {
                 }
             }
             Sort::IMDBRating => {
-                self.filtered_movies
-                    .sort_by(|a, b| MainScreen::cmp_ratings(a, b));
+                self.filtered_movies.sort_by(MainScreen::cmp_ratings);
                 if !self.sort_ascending {
                     self.filtered_movies.reverse();
                 }
@@ -331,10 +311,7 @@ impl Drawer {
                 KeyCode::Char('e') => {
                     self.open_edit_movie_popup();
                 }
-                KeyCode::Char('d') => {
-                    self.open_remove_movie_popup();
-                }
-                KeyCode::Delete => {
+                KeyCode::Char('d') | KeyCode::Delete => {
                     self.open_remove_movie_popup();
                 }
                 KeyCode::Char('G') => {
@@ -393,10 +370,7 @@ impl Drawer {
                 KeyCode::Char('e') => {
                     self.open_edit_movie_popup();
                 }
-                KeyCode::Char('d') => {
-                    self.open_remove_movie_popup();
-                }
-                KeyCode::Delete => {
+                KeyCode::Char('d') | KeyCode::Delete => {
                     self.open_remove_movie_popup();
                 }
                 KeyCode::Char('/') => {
@@ -409,10 +383,10 @@ impl Drawer {
                     self.main_screen.filter_sort_movies(app);
                     self.main_screen.selected = MainScreenEventRecievers::Search;
                 }
-                KeyCode::Char('G') => {}
-                KeyCode::Char('g') => {}
-                KeyCode::Up => {}
-                KeyCode::Down => {}
+                // KeyCode::Char('G') => {}
+                // KeyCode::Char('g') => {}
+                // KeyCode::Up => {}
+                // KeyCode::Down => {}
                 KeyCode::Right => {
                     self.main_screen.movie_description.next_tab();
                 }

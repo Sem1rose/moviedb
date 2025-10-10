@@ -53,7 +53,7 @@ impl Drawer {
 
         self.check_popups(app)?;
         if self.active_popup.is_some() {
-            self.draw_popup(frame, app)?;
+            self.draw_popup(frame)?;
         }
 
         Ok(())
@@ -79,19 +79,19 @@ impl Drawer {
         Ok(())
     }
 
-    pub fn draw_popup(&mut self, frame: &mut Frame, app: &mut App) -> Result<()> {
+    pub fn draw_popup(&mut self, frame: &mut Frame) -> Result<()> {
         match self.active_popup.as_ref().unwrap() {
             Popups::FetchArtwork => {
-                self.draw_fetch_artworks_popup(frame, app)?;
+                self.draw_fetch_artworks_popup(frame)?;
             }
             Popups::AddMovie => {
-                self.draw_add_movie_popup(frame, app)?;
+                self.draw_add_movie_popup(frame)?;
             }
             Popups::EditMovie => {
-                self.draw_edit_movie_popup(frame, app)?;
+                self.draw_edit_movie_popup(frame)?;
             }
             Popups::RemoveMovie => {
-                self.draw_remove_movie_popup(frame, app)?;
+                self.draw_remove_movie_popup(frame)?;
             }
             Popups::Error => {
                 self.draw_error_popup(frame)?;
@@ -100,34 +100,145 @@ impl Drawer {
                 self.draw_tmdb_init_popup(frame)?;
             }
             Popups::TraktInit => {
-                self.draw_trakt_init_popup(frame, app)?;
+                self.draw_trakt_init_popup(frame)?;
             }
         }
 
         Ok(())
     }
 
-    pub fn check_popups(&mut self, app: &App) -> Result<()> {
+    pub fn check_popups(&mut self, app: &mut App) -> Result<()> {
         if let Some(popup) = self.active_popup.as_ref() {
             match popup {
                 Popups::FetchArtwork => {
                     if self.fetch_artwork_popup.check_done(app) {
-                        self.close_popups();
-                        self.image_backend.reload_images(
-                            app,
-                            self.main_screen.movies_list.scroll_pos,
-                            Some(self.main_screen.movies_list.num_visible_movies),
-                        );
+                        match self.current_screen {
+                            Screens::InitScreen => {
+                                self.init_screen.advance_phase();
+                            }
+                            Screens::MainScreen => {
+                                self.close_popups();
+                                self.image_backend.reload_images(
+                                    app,
+                                    self.main_screen.movies_list.scroll_pos,
+                                    Some(self.main_screen.movies_list.num_visible_movies),
+                                );
+                            }
+                            Screens::TermSizeWarn => (),
+                        }
                     }
 
                     self.fetch_artwork_popup.read_threads_responses()?;
                 }
-                Popups::AddMovie => (),
-                Popups::EditMovie => (),
-                Popups::RemoveMovie => (),
+                Popups::AddMovie => {
+                    if let Err(error) = self.add_movie_popup.read_channels(app) {
+                        self.open_error_popup(error.to_string());
+                    }
+
+                    if let crate::popups::add_movie::Phase::Done = self.add_movie_popup.phase {
+                        let tmdb_movie_details = self
+                            .add_movie_popup
+                            .tmdb_movie_details_result
+                            .take()
+                            .unwrap();
+                        let trakt_movie_details =
+                            self.add_movie_popup.trakt_movie_details_result.take();
+                        let omdb_movie_details =
+                            self.add_movie_popup.omdb_movie_details_result.take();
+
+                        let mut movie =
+                            Movie::from(tmdb_movie_details, self.add_movie_popup.user_rating);
+                        if let Some(trakt) = trakt_movie_details {
+                            movie.add_trakt_details(trakt);
+                        }
+                        if let Some(omdb) = omdb_movie_details {
+                            movie.add_omdb_details(omdb);
+                        }
+                        app.movies.push(movie);
+
+                        self.main_screen.filter_sort_movies(app);
+
+                        if app.save_movies().is_err() {
+                            self.open_error_popup("Couldn't save new rating!".into());
+                        } else {
+                            self.main_screen.movies_list.selected = self
+                                .main_screen
+                                .movies_list
+                                .num_visible_movies
+                                .min(self.main_screen.filtered_movies.len())
+                                - 1;
+
+                            self.main_screen.movies_list.scroll_pos =
+                                self.main_screen.filtered_movies.len()
+                                    - self.main_screen.movies_list.selected
+                                    - 1;
+
+                            self.open_fetch_artworks_popup(app)?;
+                        }
+                    }
+                }
+                Popups::EditMovie => {
+                    if let crate::popups::edit_movie::Phase::Done = self.edit_movie_popup.phase {
+                        self.edit_movie_popup.user_rating = format!(
+                            "{:.1}",
+                            self.edit_movie_popup
+                                .user_rating_input
+                                .value()
+                                .parse::<f32>()
+                                .unwrap()
+                        )
+                        .parse()
+                        .unwrap();
+
+                        let index = app
+                            .movies
+                            .iter()
+                            .position(|x| *x == self.main_screen.current_movie())
+                            .unwrap();
+                        app.movies[index].user_rating = self.edit_movie_popup.user_rating;
+                        self.main_screen.filter_sort_movies(app);
+
+                        if app.save_movies().is_err() {
+                            self.open_error_popup("Couldn't save new rating!".into());
+                        } else {
+                            self.close_popups();
+                        }
+                    }
+                }
+                Popups::RemoveMovie => {
+                    if let crate::popups::remove_movie::Phase::Done = self.remove_movie_popup.phase
+                    {
+                        self.image_backend
+                            .remove_cached_image(self.main_screen.current_movie().id.tmdb);
+
+                        let index = app
+                            .movies
+                            .iter()
+                            .position(|x| *x == self.main_screen.current_movie())
+                            .unwrap();
+                        app.movies.remove(index);
+                        self.main_screen.filter_sort_movies(app);
+
+                        if app.save_movies().is_err() {
+                            self.open_error_popup("Couldn't remove movie!".into());
+                        }
+
+                        self.close_popups();
+                    }
+                }
+                Popups::TMDBInit => {
+                    self.handle_init_screen_tmdb_init(app)?;
+                }
+                Popups::TraktInit => {
+                    self.handle_init_screen_trakt_init(app)?;
+                }
                 Popups::Error => (),
-                Popups::TraktInit => (),
-                Popups::TMDBInit => (),
+            }
+        }
+
+        if let Screens::InitScreen = self.current_screen {
+            if let crate::screens::init_screen::Phase::Done = self.init_screen.phase {
+                self.open_main_screen();
             }
         }
 

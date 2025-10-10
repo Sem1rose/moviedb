@@ -1,6 +1,3 @@
-use crate::config::{Config, Credentials};
-use std::fs::read_to_string;
-
 #[derive(Clone, Default)]
 pub struct OMDBConfig {
     key: String,

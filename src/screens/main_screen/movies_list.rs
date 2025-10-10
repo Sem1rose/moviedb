@@ -104,7 +104,7 @@ impl Drawer {
                 self.draw_movie_widget(i, app, frame, *area);
             } else {
                 frame.render_widget(
-                    Block::new().bg(if i % 2 == 0 {
+                    Block::new().bg(if i & 1 == 1 {
                         tailwind::NEUTRAL.c900
                     } else {
                         tailwind::STONE.c900
@@ -137,12 +137,12 @@ impl Drawer {
 
     fn draw_movie_widget(&mut self, id: usize, app: &mut App, frame: &mut Frame, area: Rect) {
         let selected = self.main_screen.movies_list.selected == id;
-        let alt = (self.main_screen.movies_list.scroll_pos + id) % 2 == 0;
+        let alt = (self.main_screen.movies_list.scroll_pos + id) & 1 == 1;
         let movie_id = id + self.main_screen.movies_list.scroll_pos;
         let movie = self.main_screen.filtered_movies[movie_id].clone();
 
         // TODO: create a themes framework, maybe in the config
-        let (background, text, border, selection_highlight) = if selected {
+        let (background, text, _border, selection_highlight) = if selected {
             (
                 Color::Rgb(16, 48, 16),
                 Color::Rgb(48, 144, 48),
@@ -192,8 +192,6 @@ impl Drawer {
             );
         }
 
-        // if let Some(crate::popups::Popups::FetchArtwork) = self.active_popup {
-        // } else {
         self.image_backend.draw_image(
             app,
             self.main_screen.filtered_movies[self.main_screen.movies_list.scroll_pos + id]
@@ -203,6 +201,5 @@ impl Drawer {
             poster_area,
             frame,
         );
-        // }
     }
 }

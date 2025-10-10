@@ -1,31 +1,27 @@
-use crate::{
-    config::{Config, Credentials},
-    trakt::TraktTokens,
-    types::*,
-};
+use crate::{config::Config, trakt::TraktTokens, types::*};
 use cocoon::Cocoon;
-use log::{debug, error};
+// use log::{debug, error};
 use rand::{distr::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
 use std::{
-    fs::{self, read_to_string, File},
+    fs::{self, File},
     sync::mpsc::Sender,
     thread,
 };
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 struct TraktCredentials {
     access_token: String,
     refresh_token: String,
-    expires_on: i32,
+    expires_on: i64,
 }
 
-impl Default for TraktCredentials {
-    fn default() -> Self {
-        Self {
-            access_token: "".into(),
-            refresh_token: "".into(),
-            expires_on: -1,
+impl From<TraktTokens> for TraktCredentials {
+    fn from(val: TraktTokens) -> Self {
+        TraktCredentials {
+            access_token: val.access_token,
+            refresh_token: val.refresh_token,
+            expires_on: val.expires_on,
         }
     }
 }
@@ -57,16 +53,12 @@ impl TraktConfig {
                 .map(char::from)
                 .collect();
 
-            let _ = fs::remove_file(&config.dirs.trakt_encrypted_creds_file);
+            _ = fs::remove_file(&config.dirs.trakt_encrypted_creds_file);
 
             fs::write(&config.dirs.encryption_key_file, key)?;
         }
 
-        if config.dirs.trakt_encrypted_creds_file.is_file() {
-            Ok(true)
-        } else {
-            Ok(false)
-        }
+        Ok(config.dirs.trakt_encrypted_creds_file.is_file())
     }
 
     pub fn init(&mut self, config: &Config) {
@@ -81,11 +73,11 @@ impl TraktConfig {
         } else if let Ok(false) = result {
             // debug!("Initializing a new Trakt config...");
 
-            let _ = self.tx_init.send(Err(None));
+            _ = self.tx_init.send(Err(None));
         } else if let Err(error) = result {
             // error!("Error reading Trakt config file, initializing a new config...");
 
-            let _ = self.tx_init.send(Err(Some(error)));
+            _ = self.tx_init.send(Err(Some(error)));
         }
     }
 
@@ -124,9 +116,7 @@ impl TraktConfig {
     }
 
     pub fn set_tokens(&mut self, tokens: TraktTokens) {
-        self.trakt_credentials.access_token = tokens.access_token;
-        self.trakt_credentials.refresh_token = tokens.refresh_token;
-        self.trakt_credentials.expires_on = tokens.expires_on;
+        self.trakt_credentials = tokens.into();
     }
 
     pub fn has_tokens(&self) -> bool {
@@ -166,7 +156,7 @@ impl TraktConfig {
         self.trakt_credentials.refresh_token.clone()
     }
 
-    pub fn tokens_expiration_date(&self) -> i32 {
+    pub fn tokens_expiration_date(&self) -> i64 {
         self.trakt_credentials.expires_on
     }
 }

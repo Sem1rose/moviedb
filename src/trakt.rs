@@ -2,7 +2,7 @@ use crate::{
     config::{config_trakt::TraktConfig, Config},
     types::*,
 };
-use log::{debug, error};
+// use log::{debug, error};
 use reqwest::{
     blocking::{Client, ClientBuilder, RequestBuilder, Response},
     header::{HeaderMap, CONTENT_TYPE, USER_AGENT},
@@ -12,8 +12,7 @@ use std::{
     collections::HashMap,
     error::Error,
     fmt::Display,
-    fs::{self, File},
-    io,
+    fs,
     sync::mpsc::{Receiver, Sender},
 };
 
@@ -21,10 +20,20 @@ use std::{
 struct TokenResponse {
     access_token: String,
     // token_type: String,
-    expires_in: i32,
+    expires_in: i64,
     refresh_token: String,
     // scope: String,
-    created_at: i32,
+    created_at: i64,
+}
+
+impl From<TokenResponse> for TraktTokens {
+    fn from(val: TokenResponse) -> Self {
+        TraktTokens {
+            access_token: val.access_token,
+            refresh_token: val.refresh_token,
+            expires_on: val.created_at + val.expires_in,
+        }
+    }
 }
 
 #[derive(Deserialize, Debug)]
@@ -85,31 +94,19 @@ pub struct IDs {
 pub struct TraktTokens {
     pub access_token: String,
     pub refresh_token: String,
-    pub expires_on: i32,
+    pub expires_on: i64,
 }
 
 pub fn check_tokens(trakt_config: &TraktConfig) -> bool {
-    // if !trakt_config.has_tokens() {
-    //     debug!("No Trakt tokens found, fetching new ones...");
-
-    //     // get_tokens(config, trakt_config)?
-    //     return Ok(1);
-    // } else
-    if unix_ts::Timestamp::now().seconds() - trakt_config.tokens_expiration_date() as i64 > 0 {
-        debug!(
-            "Trakt tokens outdated {} {} {}, refreshing...",
-            unix_ts::Timestamp::now().seconds(),
-            trakt_config.tokens_expiration_date() as i64,
-            unix_ts::Timestamp::now().seconds() - trakt_config.tokens_expiration_date() as i64
-        );
+    if unix_ts::Timestamp::now().seconds() - trakt_config.tokens_expiration_date() > 0 {
+        // debug!(
+        //     "Trakt tokens outdated {} {} {}, refreshing...",
+        //     unix_ts::Timestamp::now().seconds(),
+        //     trakt_config.tokens_expiration_date() as i64,
+        //     unix_ts::Timestamp::now().seconds() - trakt_config.tokens_expiration_date() as i64
+        // );
 
         return false;
-        // if let Err(error) = refresh_tokens(trakt_config) {
-        //     error!("Error while refreshing Trakt tokens: {error}, getting new tokens...");
-
-        //     // get_tokens(config, trakt_config)?
-        //     return Ok(1);
-        // }
     }
 
     true
@@ -132,35 +129,19 @@ pub fn get_tokens(
             ("redirect_uri", "urn:ietf:wg:oauth:2.0:oob"),
             ("response_type", "code"),
         ])
-        .header("Content-Type", "application/json")
+        .header(CONTENT_TYPE, "application/json")
         .build()?
         .url()
         .to_string();
 
-    // println!(
-    //     "\nPlease visit the following url to authorize the application.\n{}\n",
-    //     authorization_url
-    // );
-    let _ = tx_authorization_url.send(authorization_url);
+    _ = tx_authorization_url.send(authorization_url);
 
-    let auth_code = rx_auth_code.recv().unwrap_or_default();
+    let auth_code = rx_auth_code
+        .recv_timeout(std::time::Duration::from_secs(180))
+        .unwrap_or_default();
     if auth_code.is_empty() {
         return Err(Errors::Other("Trakt: no auth code received".into()));
     }
-
-    // let mut auth_code = String::new();
-    // print!("Please enter the auth code from the url: ");
-    // let _ = stdout().flush();
-    // stdin()
-    //     .read_line(&mut auth_code)
-    //     .expect("Did not enter a correct string");
-    // if let Some('\n') = auth_code.chars().next_back() {
-    //     auth_code.pop();
-    // }
-    // if let Some('\r') = auth_code.chars().next_back() {
-    //     auth_code.pop();
-    // }
-    // let auth_code = String::from("ef1b4a95");
 
     // Step 2: exchange authorization code for access token
     let mut headers = HeaderMap::new();
@@ -192,13 +173,8 @@ pub fn get_tokens(
             return Err(Errors::Reqwest(result.unwrap_err()));
         }
     }
-    let token_response = token_response.json::<TokenResponse>()?;
 
-    Ok(TraktTokens {
-        access_token: token_response.access_token,
-        refresh_token: token_response.refresh_token,
-        expires_on: token_response.created_at + token_response.expires_in,
-    })
+    Ok(token_response.json::<TokenResponse>()?.into())
 }
 
 pub fn refresh_tokens(
@@ -238,14 +214,8 @@ pub fn refresh_tokens(
             return Err(Errors::Reqwest(result.unwrap_err()));
         }
     }
-    let token_response = token_response.json::<TokenResponse>()?;
-    // debug!("{:#?}", token_response);
 
-    Ok(TraktTokens {
-        access_token: token_response.access_token,
-        refresh_token: token_response.refresh_token,
-        expires_on: token_response.created_at + token_response.expires_in,
-    })
+    Ok(token_response.json::<TokenResponse>()?.into())
 }
 
 pub fn get_movie_details(
@@ -278,8 +248,7 @@ pub fn get_movie_details(
 
     // let movies = details_response.text()?;
     // panic!("{:#}", json::parse(movies.as_str()).unwrap());
-    let json = details_response.json::<TraktDetailsResponse>()?;
-    Ok(json)
+    Ok(details_response.json()?)
 }
 
 pub fn get_movie_poster_banner(
@@ -303,18 +272,14 @@ pub fn get_movie_poster_banner(
         return Ok(false);
     }
 
-    // HAHA SCREW YOU CLOUDFLARE
-    // https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/User-Agent/Firefox
-    // long live the firefox docs
-    let client = Client::builder()
-        .user_agent("Mozilla/5.0 (X11; Linux x86_64; rv:143.0) Gecko/20100101 Firefox/143.0")
-        .build()?;
+    let client = Client::builder().default_headers(headers).build()?;
 
     if !movie_details.images.poster.is_empty() {
         let path = config
             .dirs
             .poster_cache
             .join(format!("{}.jpg", movie_details.ids.tmdb));
+
         let mut image_url = movie_details.images.poster[0].as_str();
         if let Some(stripped) = image_url.strip_suffix(".webp") {
             image_url = stripped;
@@ -327,10 +292,10 @@ pub fn get_movie_poster_banner(
             .iter()
             .copied()
             .collect();
-        let img = image::load_from_memory(&image_bytes);
-        if img.is_ok() {
-            img.unwrap().save(path)?;
-        } else if img.is_err() && add_placeholder {
+
+        if let Ok(img) = image::load_from_memory(&image_bytes) {
+            img.save(path)?;
+        } else if add_placeholder {
             fs::copy("poster_placeholder.jpg", path)?;
         }
     } else if add_placeholder {
@@ -348,6 +313,7 @@ pub fn get_movie_poster_banner(
             .dirs
             .backdrop_cache
             .join(format!("{}.jpg", movie_details.ids.tmdb));
+
         let mut image_url = movie_details.images.fanart[0].as_str();
         if let Some(stripped) = image_url.strip_suffix(".webp") {
             image_url = stripped;
@@ -360,17 +326,18 @@ pub fn get_movie_poster_banner(
             .iter()
             .copied()
             .collect();
-        let img = image::load_from_memory(&image_bytes);
-        if img.is_ok() {
-            img.unwrap().save(path)?;
-        } else if img.is_err() && add_placeholder {
-            fs::copy("poster_placeholder.jpg", path)?;
+
+        if let Ok(img) = image::load_from_memory(&image_bytes) {
+            img.save(path)?;
+        } else if add_placeholder {
+            fs::copy("backdrop_placeholder.jpg", path)?;
         }
     } else if !movie_details.images.banner.is_empty() {
         let path = config
             .dirs
             .backdrop_cache
             .join(format!("{}.jpg", movie_details.ids.tmdb));
+
         let mut image_url = movie_details.images.banner[0].as_str();
         if let Some(stripped) = image_url.strip_suffix(".webp") {
             image_url = stripped;
@@ -383,18 +350,18 @@ pub fn get_movie_poster_banner(
             .iter()
             .copied()
             .collect();
-        let img = image::load_from_memory(&image_bytes);
-        if img.is_ok() {
-            img.unwrap().save(path)?;
-        } else if img.is_err() && add_placeholder {
-            fs::copy("poster_placeholder.jpg", path)?;
+
+        if let Ok(img) = image::load_from_memory(&image_bytes) {
+            img.save(path)?;
+        } else if add_placeholder {
+            fs::copy("backdrop_placeholder.jpg", path)?;
         }
     } else if add_placeholder {
         fs::copy(
             "backdrop_placeholder.jpg",
             config
                 .dirs
-                .poster_cache
+                .backdrop_cache
                 .join(format!("{}.jpg", movie_details.ids.tmdb)),
         )?;
     }
@@ -422,6 +389,7 @@ fn send_trakt_request(
             .json(&body.clone().unwrap());
     }
 
+    // error while sending the request????
     let response = request.send()?;
     Ok(response)
 }

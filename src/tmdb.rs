@@ -177,7 +177,7 @@ pub fn get_session_id(access_token: &str, tx_authorization_url: Sender<String>) 
         .request_token;
 
     let authorization_url = format!("https://www.themoviedb.org/authenticate/{}", request_token);
-    let _ = tx_authorization_url.send(authorization_url.clone());
+    _ = tx_authorization_url.send(authorization_url.clone());
 
     // Step 2: ask the user for permission
     // println!(

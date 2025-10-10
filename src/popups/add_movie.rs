@@ -23,7 +23,7 @@ use style::palette::tailwind;
 use tui_input::{backend::crossterm::EventHandler, Input};
 
 #[derive(Default)]
-enum Phase {
+pub enum Phase {
     #[default]
     GetName,
     Searching,
@@ -41,12 +41,13 @@ pub struct DetailsResponse {
 
 #[derive(Default)]
 pub struct AddMoviePopup {
-    phase: Phase,
+    pub phase: Phase,
 
-    pub input: Input,
+    pub search_rating_input: Input,
 
     pub rx_search_result: Option<Receiver<Result<TMDBSearchResponse>>>,
-    pub search_result: Option<TMDBSearchResponse>,
+    pub search_results: Option<Vec<TMDBSearchResult>>,
+    pub num_results: usize,
 
     pub scroll_pos: usize,
     pub selected: usize,
@@ -59,8 +60,8 @@ pub struct AddMoviePopup {
     pub omdb_movie_details_result: Option<OMDBDetailsResponse>,
 }
 
+const NUMVISMOVIES: usize = 5;
 impl AddMoviePopup {
-    const NUMVISMOVIES: usize = 5;
     pub fn begin(&mut self) {
         *self = Self::default();
     }
@@ -70,13 +71,12 @@ impl AddMoviePopup {
     }
 
     pub fn inc_movie_selection(&mut self) {
-        let search_result = self.try_get_search_result();
-        if self.try_get_search_result().is_none() || search_result.unwrap().is_empty() {
+        if self.num_results == 0 {
             return;
         }
 
-        if self.current_movie_index() < search_result.unwrap().len() - 1 {
-            if self.selected < AddMoviePopup::NUMVISMOVIES - 1 {
+        if self.current_movie_index() < self.num_results - 1 {
+            if self.selected < NUMVISMOVIES - 1 {
                 self.selected += 1;
             } else {
                 self.scroll_pos += 1;
@@ -85,8 +85,7 @@ impl AddMoviePopup {
     }
 
     pub fn dec_movie_selection(&mut self) {
-        let search_result = self.try_get_search_result();
-        if self.try_get_search_result().is_none() || search_result.unwrap().is_empty() {
+        if self.num_results == 0 {
             return;
         }
 
@@ -100,26 +99,22 @@ impl AddMoviePopup {
     pub fn request_search(&mut self, app: &App) {
         let (tx_search_results, rx_search_results) = mpsc::channel();
         let tmdb_conf_cloned = app.tmdb_config.clone();
-        let search_string = self.input.value().to_string();
+        let search_string = self.search_rating_input.value().to_string();
 
         thread::spawn(move || {
-            let _ = tx_search_results.send(tmdb::find_movie(&tmdb_conf_cloned, &search_string));
+            _ = tx_search_results.send(tmdb::find_movie(&tmdb_conf_cloned, &search_string));
         });
 
         self.rx_search_result = Some(rx_search_results);
-    }
-
-    pub fn try_get_search_result(&self) -> Option<&Vec<TMDBSearchResult>> {
-        Some(&self.search_result.as_ref()?.results)
     }
 
     pub fn request_details(&mut self, app: &App) {
         let (tx_details_request, rx_details_request) = mpsc::channel();
 
         let tmdb_conf_cloned = app.tmdb_config.clone();
-        let trakt_conf_cloned = app.trakt_config.clone();
+        let trakt_conf_cloned: crate::config::config_trakt::TraktConfig = app.trakt_config.clone();
         let omdb_conf_cloned = app.omdb_config.clone();
-        let movie_id = self.try_get_search_result().unwrap()[self.current_movie_index()].id;
+        let movie_id = self.search_results.as_ref().unwrap()[self.current_movie_index()].id;
 
         thread::spawn(move || {
             let tmdb_result = tmdb::get_movie_details(&tmdb_conf_cloned, movie_id);
@@ -130,36 +125,39 @@ impl AddMoviePopup {
                 let omdb_result =
                     omdb::get_movie_details(&omdb_conf_cloned, &tmdb_response.imdb_id);
 
-                let _ = tx_details_request.send(Ok(DetailsResponse {
+                _ = tx_details_request.send(Ok(DetailsResponse {
                     trakt: trakt_result.map(Some).unwrap_or(None),
                     tmdb: tmdb_response,
                     omdb: omdb_result.map(Some).unwrap_or(None),
                 }));
             } else if let Err(error) = tmdb_result {
-                let _ = tx_details_request.send(Err(error));
+                _ = tx_details_request.send(Err(error));
             }
         });
 
         self.rx_details_response = Some(rx_details_request);
     }
 
-    pub fn advance_phase(&mut self, app: Option<&App>) {
+    pub fn advance_phase(&mut self, app: &App) {
         self.phase = match self.phase {
             Phase::GetName => {
-                self.request_search(app.unwrap());
+                self.request_search(app);
                 Phase::Searching
             }
             Phase::Searching => Phase::SelectMovie,
             Phase::SelectMovie => {
-                self.input.reset();
+                self.search_rating_input.reset();
                 Phase::GetRating
             }
             Phase::GetRating => {
-                self.user_rating = format!("{:.1}", self.input.value().parse::<f64>().unwrap())
-                    .parse()
-                    .unwrap();
+                self.user_rating = format!(
+                    "{:.1}",
+                    self.search_rating_input.value().parse::<f64>().unwrap()
+                )
+                .parse()
+                .unwrap();
 
-                self.request_details(app.unwrap());
+                self.request_details(app);
 
                 Phase::GettingDetails
             }
@@ -169,25 +167,27 @@ impl AddMoviePopup {
     }
 
     pub fn check_input_rating(&mut self) -> bool {
-        if self.input.value() == "" {
+        if self.search_rating_input.value().is_empty() {
             return false;
         }
 
-        let input_parsed = self.input.value().parse::<f64>();
-        input_parsed.is_ok() && input_parsed.unwrap() <= 10.0
+        if let Ok(x) = self.search_rating_input.value().parse::<f64>() {
+            return (0.0..=10.0).contains(&x);
+        }
+        false
     }
 
-    pub fn read_channels(&mut self) -> std::result::Result<(), String> {
+    pub fn read_channels(&mut self, app: &App) -> Result<()> {
         match self.phase {
             Phase::Searching => {
                 let result = self.rx_search_result.as_ref().unwrap().try_recv();
                 if let Ok(search_result) = result {
-                    if let Ok(search_response) = search_result {
-                        self.search_result = Some(search_response);
-                        self.advance_phase(None);
-                    } else if let Err(error) = search_result {
-                        return Err("Error while searching for movie!".into());
-                    }
+                    self.search_results = Some(search_result.unwrap().results);
+                    self.num_results = self.search_results.as_ref().unwrap().len();
+
+                    self.advance_phase(app);
+
+                    self.rx_search_result = None;
                 } else if let Err(mpsc::TryRecvError::Disconnected) = result {
                     self.rx_search_result = None;
                 }
@@ -195,17 +195,15 @@ impl AddMoviePopup {
             Phase::GettingDetails => {
                 let result = self.rx_details_response.as_ref().unwrap().try_recv();
                 if let Ok(details_response) = result {
-                    if let Ok(search_response) = details_response {
-                        let details_response = search_response;
+                    let details_response = details_response?;
 
-                        self.tmdb_movie_details_result = Some(details_response.tmdb);
-                        self.trakt_movie_details_result = details_response.trakt;
-                        self.omdb_movie_details_result = details_response.omdb;
+                    self.tmdb_movie_details_result = Some(details_response.tmdb);
+                    self.trakt_movie_details_result = details_response.trakt;
+                    self.omdb_movie_details_result = details_response.omdb;
 
-                        self.advance_phase(None);
-                    } else if let Err(error) = details_response {
-                        return Err("Error while getting movie details!".into());
-                    }
+                    self.advance_phase(app);
+
+                    self.rx_details_response = None;
                 } else if let Err(mpsc::TryRecvError::Disconnected) = result {
                     self.rx_details_response = None;
                 }
@@ -237,16 +235,16 @@ impl AddMoviePopup {
             }
             KeyCode::Enter => match self.phase {
                 Phase::GetName => {
-                    if self.input.value() != "" {
-                        self.advance_phase(Some(app));
+                    if !self.search_rating_input.value().is_empty() {
+                        self.advance_phase(app);
                     }
                 }
                 Phase::SelectMovie => {
-                    self.advance_phase(Some(app));
+                    self.advance_phase(app);
                 }
                 Phase::GetRating => {
                     if self.check_input_rating() {
-                        self.advance_phase(Some(app));
+                        self.advance_phase(app);
                     }
                 }
                 _ => (),
@@ -256,7 +254,7 @@ impl AddMoviePopup {
             }
             _ => match self.phase {
                 Phase::GetRating | Phase::GetName => {
-                    self.input.handle_event(&Event::Key(event));
+                    self.search_rating_input.handle_event(&Event::Key(event));
                 }
                 _ => (),
             },
@@ -267,13 +265,7 @@ impl AddMoviePopup {
 }
 
 impl Drawer {
-    pub(crate) fn draw_add_movie_popup(&mut self, frame: &mut Frame, app: &mut App) -> Result<()> {
-        if let Err(error) = self.add_movie_popup.read_channels() {
-            self.open_error_popup(error);
-
-            return Ok(());
-        }
-
+    pub(crate) fn draw_add_movie_popup(&mut self, frame: &mut Frame) -> Result<()> {
         let frame_area = frame.area();
         let popup_area = center_rect(frame_area, Constraint::Percentage(40), Constraint::Max(7));
 
@@ -317,9 +309,17 @@ impl Drawer {
                 frame.render_widget(Block::new().bg(tailwind::RED.c700), search_center);
 
                 let width = search_input_area.width as usize - 1;
-                let start = self.add_movie_popup.input.visual_scroll(width);
-                let cursor_pos = self.add_movie_popup.input.cursor() - start;
-                let mut chars = self.add_movie_popup.input.value().chars().skip(start);
+                let start = self
+                    .add_movie_popup
+                    .search_rating_input
+                    .visual_scroll(width);
+                let cursor_pos = self.add_movie_popup.search_rating_input.cursor() - start;
+                let mut chars = self
+                    .add_movie_popup
+                    .search_rating_input
+                    .value()
+                    .chars()
+                    .skip(start);
 
                 let mut search_string: Vec<Span> = vec![];
                 for i in 0..=(start + width) {
@@ -350,7 +350,7 @@ impl Drawer {
                 frame.render_widget(Paragraph::new(" Searching for movie..."), text_area);
             }
             Phase::SelectMovie => {
-                let results = self.add_movie_popup.try_get_search_result().unwrap();
+                let results = self.add_movie_popup.search_results.as_ref().unwrap();
 
                 if results.is_empty() {
                     self.open_error_popup("Couldn't find movie!".into());
@@ -358,8 +358,7 @@ impl Drawer {
                 }
 
                 let areas =
-                    Layout::vertical(vec![Constraint::Length(1); AddMoviePopup::NUMVISMOVIES])
-                        .split(horiz);
+                    Layout::vertical(vec![Constraint::Length(1); NUMVISMOVIES]).split(horiz);
 
                 for (i, area) in areas.iter().enumerate() {
                     if i >= results.len() {
@@ -408,9 +407,17 @@ impl Drawer {
                 frame.render_widget(Block::new().bg(tailwind::RED.c700), search_center);
 
                 let width = search_input_area.width as usize - 1;
-                let start = self.add_movie_popup.input.visual_scroll(width);
-                let cursor_pos = self.add_movie_popup.input.cursor() - start;
-                let mut chars = self.add_movie_popup.input.value().chars().skip(start);
+                let start = self
+                    .add_movie_popup
+                    .search_rating_input
+                    .visual_scroll(width);
+                let cursor_pos = self.add_movie_popup.search_rating_input.cursor() - start;
+                let mut chars = self
+                    .add_movie_popup
+                    .search_rating_input
+                    .value()
+                    .chars()
+                    .skip(start);
 
                 let mut search_string: Vec<Span> = vec![];
                 for i in 0..=(start + width) {
@@ -434,7 +441,7 @@ impl Drawer {
                     );
                 }
             }
-            Phase::GettingDetails => {
+            _ => {
                 let areas = Layout::vertical([Constraint::Length(1); 5]).split(horiz);
                 let [_, throbber_area, text_area, _] = Layout::horizontal([
                     Constraint::Length(2),
@@ -449,48 +456,7 @@ impl Drawer {
                     .throbber_style(Style::new().bold().fg(tailwind::VIOLET.c400));
 
                 frame.render_stateful_widget(throbber, throbber_area, &mut self.throbber_state);
-                frame.render_widget(Paragraph::new(" Getting movie details..."), text_area);
-            }
-            Phase::Done => {
-                let tmdb_movie_details = self
-                    .add_movie_popup
-                    .tmdb_movie_details_result
-                    .take()
-                    .unwrap();
-                let trakt_movie_details = self.add_movie_popup.trakt_movie_details_result.take();
-                let omdb_movie_details = self.add_movie_popup.omdb_movie_details_result.take();
-
-                let mut movie = Movie::from(tmdb_movie_details, self.add_movie_popup.user_rating);
-                if let Some(trakt) = trakt_movie_details {
-                    movie.add_trakt_details(trakt);
-                }
-                if let Some(omdb) = omdb_movie_details {
-                    movie.add_omdb_details(omdb);
-                }
-                app.movies.push(movie);
-
-                self.main_screen.filter_sort_movies(app);
-
-                if app.save_movies().is_err() {
-                    self.open_error_popup("Couldn't save new rating!".into());
-                } else {
-                    self.open_fetch_artworks_popup(app)?;
-
-                    self.main_screen.movies_list.selected = self
-                        .main_screen
-                        .movies_list
-                        .num_visible_movies
-                        .min(self.main_screen.filtered_movies.len())
-                        - 1;
-
-                    self.main_screen.movies_list.scroll_pos =
-                        self.main_screen.filtered_movies.len()
-                            - self.main_screen.movies_list.selected
-                            - 1;
-
-                    // self.image_backend
-                    //     .reload_images(app, self.main_screen.movies_list.selected);
-                }
+                frame.render_widget(Paragraph::new(" Processing..."), text_area);
             }
         }
 

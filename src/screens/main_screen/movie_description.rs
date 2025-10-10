@@ -1,36 +1,28 @@
-use crate::{
-    app::App,
-    custom::{helpers::ellipsize_string, hyperlink::Hyperlink},
-    draw::Drawer,
-    types::*,
-};
+use crate::{app::App, custom::helpers::ellipsize_string, draw::Drawer, types::*};
 use ratatui::style::Stylize;
 use ratatui::{layout::Rect, prelude::*, widgets::*, Frame};
-use ratatui_macros::vertical;
+use ratatui_macros::{horizontal, vertical};
 use style::palette::tailwind;
 
 #[derive(Default)]
 pub struct MovieDescription {
     pub selected_tab: usize,
-    pub scroll_pos: usize,
+    // pub scroll_pos: usize,
 }
 
 const TABS: [&str; 2] = ["Overview", "Review"];
 impl MovieDescription {
-    pub fn scroll_up(&mut self) {}
-    pub fn scroll_down(&mut self) {}
+    // pub fn scroll_up(&mut self) {}
+    // pub fn scroll_down(&mut self) {}
     pub fn next_tab(&mut self) {
         self.selected_tab += 1;
         if self.selected_tab >= TABS.len() {
             self.selected_tab = 0;
         }
     }
+
     pub fn prev_tab(&mut self) {
-        if self.selected_tab == 0 {
-            self.selected_tab = TABS.len() - 1;
-        } else {
-            self.selected_tab -= 1;
-        }
+        self.selected_tab = self.selected_tab.checked_sub(1).unwrap_or(TABS.len() - 1);
     }
 }
 
@@ -67,6 +59,7 @@ impl Drawer {
 
         if ratings.is_empty() {
             frame.render_widget(Line::from("NA").centered(), area);
+
             return;
         } else if ratings.len() == 1 {
             let mut bg = Color::default();
@@ -91,7 +84,9 @@ impl Drawer {
                 format!("{:.1}", rating).bg(bg).fg(fg).bold(),
                 "".fg(bg),
             ];
+
             frame.render_widget(Line::from(widget).centered(), area);
+
             return;
         }
 
@@ -153,19 +148,9 @@ impl Drawer {
             )
         };
 
-        let [_, vert, _] = Layout::vertical([
-            Constraint::Length(1),
-            Constraint::Min(1),
-            Constraint::Length(1),
-        ])
-        .areas(area);
+        let [_, vert, _] = vertical![==1, >=1, ==1].areas(area);
 
-        let [_, horiz, _] = Layout::horizontal(vec![
-            Constraint::Length(2),
-            Constraint::Min(1),
-            Constraint::Length(2),
-        ])
-        .areas(vert);
+        let [_, horiz, _] = horizontal![==2, >=1, ==2].areas(vert);
 
         let backdrop_height = ((vert.width - 4) as f32 * 9.0 / 32.0).ceil() as u16;
         let [backdrop_area, title_area, description_area] =

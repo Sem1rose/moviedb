@@ -1,13 +1,10 @@
-use crate::{
-    config::{Config, Credentials},
-    types::*,
-};
+use crate::{config::Config, types::*};
 use cocoon::Cocoon;
-use log::{debug, error};
+// use log::{debug, error};
 use rand::{distr::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
 use std::{
-    fs::{self, read_to_string, File},
+    fs::{self, File},
     sync::mpsc::Sender,
     thread,
 };
@@ -42,16 +39,12 @@ impl TMDBConfig {
                 .map(char::from)
                 .collect();
 
-            let _ = fs::remove_file(&config.dirs.tmdb_encrypted_creds_file);
+            _ = fs::remove_file(&config.dirs.tmdb_encrypted_creds_file);
 
             fs::write(&config.dirs.encryption_key_file, key)?;
         }
 
-        if config.dirs.tmdb_encrypted_creds_file.is_file() {
-            Ok(true)
-        } else {
-            Ok(false)
-        }
+        Ok(config.dirs.tmdb_encrypted_creds_file.is_file())
     }
 
     pub fn init(&mut self, config: &Config) {
@@ -66,11 +59,11 @@ impl TMDBConfig {
         } else if let Ok(false) = result {
             // debug!("Initializing a new TMDB config...");
 
-            let _ = self.tx_init.send(Err(None));
+            _ = self.tx_init.send(Err(None));
         } else if let Err(error) = result {
             // error!("Error reading TMDB config file, initializing a new config...");
 
-            let _ = self.tx_init.send(Err(Some(error)));
+            _ = self.tx_init.send(Err(Some(error)));
         }
     }
 
@@ -128,6 +121,6 @@ impl TMDBConfig {
     }
 
     pub fn has_session_id(&self) -> bool {
-        self.tmdb_credentials.session_id != *""
+        !self.tmdb_credentials.session_id.is_empty()
     }
 }

@@ -85,7 +85,7 @@ impl Drawer {
             .borders(Borders::ALL)
             .border_type(BorderType::Thick)
             .border_style(Style::new().fg(tailwind::EMERALD.c400))
-            .title_top("Enter TMDB Credentias")
+            .title_top("TMDB Authorization")
             .title_alignment(Alignment::Center)
             .title_style(Style::new().fg(tailwind::AMBER.c300));
 

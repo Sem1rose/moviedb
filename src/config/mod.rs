@@ -3,7 +3,7 @@ pub mod config_tmdb;
 pub mod config_trakt;
 
 use crate::types::Result;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::{
     fs::{create_dir, write},
     path::PathBuf,
