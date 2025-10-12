@@ -203,23 +203,36 @@ impl ImageBackend for RatatuiImage {
         );
     }
 
-    fn reload_images(&mut self, app: &App, start_index: usize, count: Option<usize>) {
+    fn reload_images(
+        &mut self,
+        app: &App,
+        start_index: usize,
+        count: Option<usize>,
+        backdrop: Option<bool>,
+    ) {
         let stop_index = count.map(|x| x + start_index).unwrap_or(app.movies.len());
         let movie_ids = app.movies[start_index..stop_index]
             .iter()
             .map(|x| x.id.tmdb)
             .collect::<Vec<_>>();
+        let bd = if let Some(true) = backdrop {
+            vec![true]
+        } else if let Some(false) = backdrop {
+            vec![false]
+        } else {
+            vec![true, false]
+        };
 
         for tmdb_id in movie_ids.iter() {
-            for backdrop in [true, false] {
+            for _backdrop in &bd {
                 let key = ArtworkID {
                     tmdb_id: *tmdb_id,
-                    backdrop,
+                    backdrop: *_backdrop,
                 };
                 if self.hashed_images.contains_key(&key) {
                     let path = format!(
                         "{}",
-                        if backdrop {
+                        if *_backdrop {
                             &app.config.dirs.backdrop_cache
                         } else {
                             &app.config.dirs.poster_cache

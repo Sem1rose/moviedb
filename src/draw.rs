@@ -1,7 +1,7 @@
 use crate::{
     app::App,
     custom::helpers::center_rect,
-    image_backends::{ratatui_image::RatatuiImage, ImageBackend},
+    image_backends::{chafa::Chafa, ratatui_image::RatatuiImage, ImageBackend},
     popups::{
         add_movie::AddMoviePopup, edit_movie::EditMoviePopup, fetch_artworks::FetchArtworksPopup,
         remove_movie::RemoveMoviePopup, tmdb_init::TMDBInitPopup, trakt_init::TraktInitPopup,
@@ -14,7 +14,7 @@ use ratatui::{layout::*, prelude::*, Frame};
 
 impl Default for Box<dyn ImageBackend> {
     fn default() -> Self {
-        Box::new(RatatuiImage::new())
+        Box::new(Chafa::new())
     }
 }
 
@@ -122,6 +122,7 @@ impl Drawer {
                                     app,
                                     self.main_screen.movies_list.scroll_pos,
                                     Some(self.main_screen.movies_list.num_visible_movies),
+                                    None,
                                 );
                             }
                             Screens::TermSizeWarn => (),

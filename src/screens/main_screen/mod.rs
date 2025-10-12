@@ -294,6 +294,7 @@ impl Drawer {
                         app,
                         self.main_screen.movies_list.scroll_pos,
                         Some(self.main_screen.movies_list.num_visible_movies),
+                        None,
                     );
                 }
             }
@@ -355,6 +356,7 @@ impl Drawer {
                             app,
                             self.main_screen.movies_list.scroll_pos,
                             Some(self.main_screen.movies_list.num_visible_movies),
+                            None,
                         );
                     }
                 }

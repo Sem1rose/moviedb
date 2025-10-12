@@ -1,6 +1,7 @@
 use crate::app::App;
 use ratatui::{layout::Rect, Frame};
 
+pub mod chafa;
 pub mod ratatui_image;
 
 pub trait ImageBackend {
@@ -8,7 +9,13 @@ pub trait ImageBackend {
     where
         Self: Sized;
     fn update(&mut self);
-    fn reload_images(&mut self, app: &App, start_index: usize, count: Option<usize>);
+    fn reload_images(
+        &mut self,
+        app: &App,
+        start_index: usize,
+        count: Option<usize>,
+        backdrop: Option<bool>,
+    );
     fn draw_image(
         &mut self,
         app: &App,
