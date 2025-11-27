@@ -216,18 +216,18 @@ impl MainScreen {
                     break;
                 }
             }
-            if let Rating::Metascore(r_a) = a.ratings[i] {
-                if let Rating::Metascore(r_b) = b.ratings[i] {
-                    if r_a == 0 || r_b == 0 {
-                        continue;
-                    }
+            // if let Rating::Metascore(r_a) = a.ratings[i] {
+            //     if let Rating::Metascore(r_b) = b.ratings[i] {
+            //         if r_a == 0 || r_b == 0 {
+            //             continue;
+            //         }
 
-                    rating_a = r_a as f64;
-                    rating_b = r_b as f64;
+            //         rating_a = r_a as f64;
+            //         rating_b = r_b as f64;
 
-                    break;
-                }
-            }
+            //         break;
+            //     }
+            // }
         }
 
         rating_a.partial_cmp(&rating_b).unwrap()
@@ -423,7 +423,7 @@ impl Drawer {
         self.current_screen = Screens::MainScreen;
     }
 
-    pub fn render_main_screen(&mut self, frame: &mut Frame, app: &mut App) -> Result<()> {
+    pub fn render_main_screen(&mut self, frame: &mut Frame, app: &mut App) -> anyhow::Result<()> {
         let frame_area = frame.area();
 
         let num_movies = ((frame_area.height - 4) as f32 / 8.0).floor() as usize;

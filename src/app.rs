@@ -6,9 +6,10 @@ use crate::{
     draw::Drawer,
     popups::Popups,
     screens::Screens,
-    types::*,
+    types::{Movie, OldMovie, OptionalResult},
 };
-// use log::{debug, error};
+use anyhow::Ok;
+use log::{error, warn};
 use ratatui::crossterm::event::{Event, KeyCode};
 use std::{
     fs::{read_to_string, rename, write},
@@ -30,7 +31,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new() -> Result<Self> {
+    pub fn new() -> anyhow::Result<Self> {
         let mut config = Config::default();
         config.init_dirs()?;
 
@@ -71,7 +72,7 @@ impl App {
         })
     }
 
-    pub fn init(&mut self) -> Result<()> {
+    pub fn init(&mut self) -> anyhow::Result<()> {
         self.fetch_movies()?;
 
         Ok(())
@@ -81,17 +82,12 @@ impl App {
         self.movies = _movies;
     }
 
-    pub fn fetch_movies(&mut self) -> Result<()> {
+    pub fn fetch_movies(&mut self) -> anyhow::Result<()> {
         let file_path = &self.config.dirs.ratings_file;
 
-        let file_contents = read_to_string(file_path).unwrap_or_else(|_| {
-            panic!("Couldn't read database contents at {}", file_path.display())
-        });
-
-        let result = serde_json::from_str(&file_contents);
-        if result.is_err() {
-            // if let Err(error) = result {
-            // error!("couldn't deserialize ratings file, backing it up and creating a blank one: {error}");
+        let read_result = read_to_string(file_path);
+        if let Err(error) = read_result {
+            error!("Error reading ratings file: {}.\nRenaming corrupted file and creating a new database.", error);
 
             let mut renamed = self.config.dirs.home.join("corrupted_ratings.json");
             let mut i = 1;
@@ -107,6 +103,39 @@ impl App {
             rename(file_path, renamed)?;
 
             write(&self.config.dirs.ratings_file, "[]")?;
+            return Ok(());
+        }
+        let contents = read_to_string(file_path)?;
+
+        let result = serde_json::from_str(&contents);
+        if let Err(error) = result {
+            warn!(
+                "Error deserializing ratings file: {}.\nRetrying with the old format...",
+                error
+            );
+
+            let result = serde_json::from_str::<Vec<OldMovie>>(&contents);
+            if let Err(error) = result {
+                error!("Error deserializing ratings file: {}.\nRenaming corrupted file and creating a new database.", error);
+
+                let mut renamed = self.config.dirs.home.join("corrupted_ratings.json");
+                let mut i = 1;
+                while renamed.exists() {
+                    renamed = self
+                        .config
+                        .dirs
+                        .home
+                        .join(format!("corrupted_ratings_{i}.json"));
+                    i += 1;
+                }
+
+                rename(file_path, renamed)?;
+
+                write(&self.config.dirs.ratings_file, "[]")?;
+            } else {
+                let movies: Vec<Movie> = result.unwrap().into_iter().map(|x| x.into()).collect();
+                self.set_movies(movies);
+            }
         } else {
             let movies: Vec<Movie> = result.unwrap();
             self.set_movies(movies);
@@ -115,7 +144,7 @@ impl App {
         Ok(())
     }
 
-    pub fn save_movies(&self) -> Result<()> {
+    pub fn save_movies(&self) -> anyhow::Result<()> {
         let string = serde_json::to_string_pretty(self.movies.as_slice()).unwrap();
 
         rename(
@@ -127,7 +156,7 @@ impl App {
         Ok(())
     }
 
-    pub fn handle_app_events(&mut self, event: Event, drawer: &mut Drawer) -> Result<()> {
+    pub fn handle_app_events(&mut self, event: Event, drawer: &mut Drawer) -> anyhow::Result<()> {
         match event {
             Event::Key(event) => {
                 if event.code == KeyCode::Char('*') {

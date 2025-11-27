@@ -1,4 +1,4 @@
-use crate::{app::App, custom::helpers::ellipsize_string, draw::Drawer, types::*};
+use crate::{app::App, custom::helpers::ellipsize_string, draw::Drawer};
 use ratatui::style::{Color, Style, Stylize};
 use ratatui::{layout::*, prelude::*, widgets::*, Frame};
 use ratatui_macros::{horizontal, line, text, vertical};
@@ -89,7 +89,7 @@ impl Drawer {
         app: &mut App,
         area: Rect,
         num_movies: usize,
-    ) -> Result<()> {
+    ) -> anyhow::Result<()> {
         let movies_lay = Layout::vertical(vec![Constraint::Min(8); num_movies]).split(area);
 
         self.main_screen

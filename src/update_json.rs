@@ -14,7 +14,7 @@ use std::{
     sync::mpsc::channel,
 };
 
-pub fn update_movies() -> Result<()> {
+pub fn update_movies() -> anyhow::Result<()> {
     let mut config = Config::default();
     config.init_dirs()?;
 

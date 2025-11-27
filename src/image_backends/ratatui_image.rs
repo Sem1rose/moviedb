@@ -1,4 +1,5 @@
-use crate::{app::App, config::Config, image_backends::ImageBackend, types::*};
+use crate::{app::App, config::Config, image_backends::ImageBackend};
+use anyhow::Context;
 use ratatui::{prelude::Rect, Frame};
 use ratatui_image::thread::ThreadImage;
 use ratatui_image::{
@@ -19,8 +20,8 @@ pub struct ArtworkID {
 }
 
 pub enum ImageEvents {
-    DrawImage(ArtworkID, Result<ResizeResponse>),
-    LoadImage(ArtworkID, Result<StatefulProtocol>),
+    DrawImage(ArtworkID, anyhow::Result<ResizeResponse>),
+    LoadImage(ArtworkID, anyhow::Result<StatefulProtocol>),
 }
 
 pub struct RatatuiImage {
@@ -53,7 +54,7 @@ impl RatatuiImage {
                         *tmdb_id,
                         request
                             .resize_encode()
-                            .map_or_else(|error| Err(error.into()), Result::Ok),
+                            .map_or_else(|error| Err(error.into()), anyhow::Result::Ok),
                     ));
                 } else if let Err(mpsc::TryRecvError::Disconnected) = message {
                     dropped.push(i);
@@ -80,23 +81,15 @@ impl RatatuiImage {
                 let tx_main = tx_main_sender.clone();
 
                 thread::spawn(move || {
-                    let open_result = image::ImageReader::open(path);
+                    let result = (|| {
+                        let reader =
+                            image::ImageReader::open(&path).context("Failed to open image file")?;
+                        let decoded = reader.decode().context("Failed to decode image data")?;
 
-                    if let Err(error) = open_result {
-                        _ = tx_main.send(ImageEvents::LoadImage(tmdb_id, Err(Errors::Io(error))));
-                    } else if let Ok(reader) = open_result {
-                        let decode_result = reader.decode();
+                        Ok(picker.new_resize_protocol(decoded))
+                    })();
 
-                        if let Err(error) = decode_result {
-                            _ = tx_main
-                                .send(ImageEvents::LoadImage(tmdb_id, Err(Errors::Image(error))));
-                        } else if let Ok(decoded) = decode_result {
-                            _ = tx_main.send(ImageEvents::LoadImage(
-                                tmdb_id,
-                                Ok(picker.new_resize_protocol(decoded)),
-                            ));
-                        }
-                    }
+                    let _ = tx_main.send(ImageEvents::LoadImage(tmdb_id, result));
                 });
             }
         });

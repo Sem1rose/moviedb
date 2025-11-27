@@ -1,4 +1,5 @@
 use crate::{config::Config, trakt::TraktTokens, types::*};
+use anyhow::Context;
 use cocoon::Cocoon;
 // use log::{debug, error};
 use rand::{distr::Alphanumeric, Rng};
@@ -45,7 +46,7 @@ impl TraktConfig {
         }
     }
 
-    fn check_files(&mut self, config: &Config) -> Result<bool> {
+    fn check_files(&mut self, config: &Config) -> anyhow::Result<bool> {
         if !config.dirs.encryption_key_file.is_file() {
             let key: String = rand::rng()
                 .sample_iter(&Alphanumeric)
@@ -81,7 +82,7 @@ impl TraktConfig {
         }
     }
 
-    fn read_creds(config: &Config) -> Result<String> {
+    fn read_creds(config: &Config) -> anyhow::Result<String> {
         let key = fs::read(&config.dirs.encryption_key_file)?;
         let cocoon = Cocoon::new(&key);
 
@@ -89,16 +90,16 @@ impl TraktConfig {
 
         let result = String::from_utf8(cocoon.parse(&mut encrypted_file)?);
 
-        result.map_err(|error| Errors::Other(format!("Trakt: error decoding utf8: {}", error)))
+        result.context("Trakt: error decoding utf8")
     }
 
-    pub fn set_creds(&mut self, data: String) -> Result<()> {
+    pub fn set_creds(&mut self, data: String) -> anyhow::Result<()> {
         self.trakt_credentials = serde_json::from_str(&data)?;
 
         Ok(())
     }
 
-    pub fn save_creds(&self, config: &Config) -> Result<()> {
+    pub fn save_creds(&self, config: &Config) -> anyhow::Result<()> {
         let key = fs::read(&config.dirs.encryption_key_file)?;
         let mut cocoon = Cocoon::new(&key);
 

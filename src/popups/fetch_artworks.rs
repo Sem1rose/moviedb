@@ -18,13 +18,13 @@ pub struct FetchArtworksPopup {
     pub progress: usize,
 
     tx_fetch_request: Option<Sender<Option<MovieID>>>,
-    rx_fetch_response: Option<Receiver<(MovieID, Result<()>)>>,
+    rx_fetch_response: Option<Receiver<(MovieID, anyhow::Result<()>)>>,
 
     errored: Option<u32>,
 }
 
 impl FetchArtworksPopup {
-    pub fn begin(&mut self, app: &mut App) -> Result<()> {
+    pub fn begin(&mut self, app: &mut App) -> anyhow::Result<()> {
         *self = Self::default();
         self.num_movies = app.movies.len();
 
@@ -33,7 +33,7 @@ impl FetchArtworksPopup {
 
     pub fn start_thread(&mut self, app: &App) {
         let (tx_fetch_request, rx_fetch_request) = channel::<Option<MovieID>>();
-        let (tx_fetch_response, rx_fetch_response) = channel::<(MovieID, Result<()>)>();
+        let (tx_fetch_response, rx_fetch_response) = channel::<(MovieID, anyhow::Result<()>)>();
 
         let conf = app.config.clone();
         let tmdb_conf = app.tmdb_config.clone();
@@ -103,7 +103,7 @@ impl FetchArtworksPopup {
                 .is_file()
     }
 
-    pub fn fetch_artworks(&mut self, app: &mut App) -> Result<()> {
+    pub fn fetch_artworks(&mut self, app: &mut App) -> anyhow::Result<()> {
         self.start_thread(app);
         for movie in &app.movies {
             if !self.check_artwork_fetched(&app.config, movie.id.tmdb) {
@@ -120,7 +120,7 @@ impl FetchArtworksPopup {
         Ok(())
     }
 
-    pub fn read_threads_responses(&mut self) -> Result<()> {
+    pub fn read_threads_responses(&mut self) -> anyhow::Result<()> {
         for (id, fetch_result) in self.rx_fetch_response.as_ref().unwrap().try_iter() {
             if fetch_result.is_err() {
                 // if let Err(error) = fetch_result {
@@ -147,7 +147,7 @@ impl Drawer {
         &mut self,
         frame: &mut Frame,
         // app: &mut App,
-    ) -> Result<()> {
+    ) -> anyhow::Result<()> {
         let frame_area = frame.area();
 
         let progress = self.fetch_artwork_popup.progress;

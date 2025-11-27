@@ -1,8 +1,6 @@
-use crate::{
-    config::{config_tmdb::TMDBConfig, Config},
-    types::*,
-};
+use crate::config::{config_tmdb::TMDBConfig, Config};
 // use log::{debug, error, trace};
+use anyhow::{bail, Context};
 use reqwest::{
     blocking::{Client, ClientBuilder, RequestBuilder, Response},
     header::HeaderMap,
@@ -143,7 +141,10 @@ struct RequestSessionIDResponse {
 // }
 
 // https://developer.themoviedb.org/docs/authentication-user
-pub fn get_session_id(access_token: &str, tx_authorization_url: Sender<String>) -> Result<String> {
+pub fn get_session_id(
+    access_token: &str,
+    tx_authorization_url: Sender<String>,
+) -> anyhow::Result<String> {
     let client = ClientBuilder::new().build()?;
 
     let mut headers = HeaderMap::new();
@@ -164,12 +165,13 @@ pub fn get_session_id(access_token: &str, tx_authorization_url: Sender<String>) 
     )?;
 
     if request_token_response.status().as_u16() != 200 {
-        let result = request_token_response.json::<RequestResponseError>();
-        if let Ok(error) = result {
-            return Err(Errors::TMDBRequest(error));
-        } else {
-            return Err(Errors::Reqwest(result.unwrap_err()));
-        }
+        return Err::<_, anyhow::Error>(
+            match request_token_response.json::<RequestResponseError>() {
+                Ok(err) => err.into(),
+                Err(err) => err.into(),
+            },
+        )
+        .context("TMDB: Error while getting a request token");
     }
 
     let request_token = request_token_response
@@ -207,9 +209,7 @@ pub fn get_session_id(access_token: &str, tx_authorization_url: Sender<String>) 
         // );
         retries += 1;
         if retries > 50 {
-            return Err(Errors::Other(
-                "TMDB: couldn't authenticate request token, max retries reached".to_string(),
-            ));
+            bail!("TMDB: couldn't authenticate request token, max retries reached");
         }
 
         std::thread::sleep(std::time::Duration::from_secs(1));
@@ -239,12 +239,13 @@ pub fn get_session_id(access_token: &str, tx_authorization_url: Sender<String>) 
     )?;
 
     if create_session_response.status().as_u16() != 200 {
-        let result = create_session_response.json::<RequestResponseError>();
-        if let Ok(error) = result {
-            return Err(Errors::TMDBRequest(error));
-        } else {
-            return Err(Errors::Reqwest(result.unwrap_err()));
-        }
+        return Err::<_, anyhow::Error>(
+            match create_session_response.json::<RequestResponseError>() {
+                Ok(err) => err.into(),
+                Err(err) => err.into(),
+            },
+        )
+        .context("TMDB: Error while creating a new session ID");
     }
 
     let session_id = create_session_response
@@ -257,7 +258,7 @@ pub fn get_session_id(access_token: &str, tx_authorization_url: Sender<String>) 
     Ok(session_id)
 }
 
-pub fn find_movie(tmdb_config: &TMDBConfig, name: &str) -> Result<TMDBSearchResponse> {
+pub fn find_movie(tmdb_config: &TMDBConfig, name: &str) -> anyhow::Result<TMDBSearchResponse> {
     let client = ClientBuilder::new().build()?;
     let mut headers = HeaderMap::new();
     headers.insert("accept", "application/json".parse().unwrap());
@@ -278,12 +279,11 @@ pub fn find_movie(tmdb_config: &TMDBConfig, name: &str) -> Result<TMDBSearchResp
         Some(&query),
     )?;
     if search_response.status().as_u16() != 200 {
-        let result = search_response.json::<RequestResponseError>();
-        if let Ok(error) = result {
-            return Err(Errors::TMDBRequest(error));
-        } else {
-            return Err(Errors::Reqwest(result.unwrap_err()));
-        }
+        return Err::<_, anyhow::Error>(match search_response.json::<RequestResponseError>() {
+            Ok(err) => err.into(),
+            Err(err) => err.into(),
+        })
+        .context(format!("TMDB: Error while searching for movie {}", name));
     }
     // println!(
     //     "{}",
@@ -295,7 +295,10 @@ pub fn find_movie(tmdb_config: &TMDBConfig, name: &str) -> Result<TMDBSearchResp
     Ok(json)
 }
 
-pub fn get_movie_details(tmdb_config: &TMDBConfig, tmdb_id: u32) -> Result<TMDBDetailsResponse> {
+pub fn get_movie_details(
+    tmdb_config: &TMDBConfig,
+    tmdb_id: u32,
+) -> anyhow::Result<TMDBDetailsResponse> {
     let client = ClientBuilder::new().build()?;
 
     let mut headers = HeaderMap::new();
@@ -316,18 +319,20 @@ pub fn get_movie_details(tmdb_config: &TMDBConfig, tmdb_id: u32) -> Result<TMDBD
         None,
     )?;
     if details_response.status().as_u16() != 200 {
-        let result = details_response.json::<RequestResponseError>();
-        if let Ok(error) = result {
-            return Err(Errors::TMDBRequest(error));
-        } else {
-            return Err(Errors::Reqwest(result.unwrap_err()));
-        }
+        return Err::<_, anyhow::Error>(match details_response.json::<RequestResponseError>() {
+            Ok(err) => err.into(),
+            Err(err) => err.into(),
+        })
+        .context("TMDB: Error while getting movie details");
     }
 
     Ok(details_response.json::<TMDBDetailsResponse>()?)
 }
 
-pub fn get_movie_images(tmdb_config: &TMDBConfig, tmdb_id: u32) -> Result<TMDBMovieImagesResponse> {
+pub fn get_movie_images(
+    tmdb_config: &TMDBConfig,
+    tmdb_id: u32,
+) -> anyhow::Result<TMDBMovieImagesResponse> {
     let client = ClientBuilder::new().build()?;
 
     let mut headers = HeaderMap::new();
@@ -350,12 +355,11 @@ pub fn get_movie_images(tmdb_config: &TMDBConfig, tmdb_id: u32) -> Result<TMDBMo
         Some(&query),
     )?;
     if images_response.status().as_u16() != 200 {
-        let result = images_response.json::<RequestResponseError>();
-        if let Ok(error) = result {
-            return Err(Errors::TMDBRequest(error));
-        } else {
-            return Err(Errors::Reqwest(result.unwrap_err()));
-        }
+        return Err::<_, anyhow::Error>(match images_response.json::<RequestResponseError>() {
+            Ok(err) => err.into(),
+            Err(err) => err.into(),
+        })
+        .context("TMDB: Error while while querying for movie images");
     }
 
     let mut movie_images = images_response.json::<TMDBMovieImagesResponse>()?;
@@ -396,7 +400,7 @@ pub fn get_movie_poster_banner(
     tmdb_config: &TMDBConfig,
     id: u32,
     add_placeholder: bool,
-) -> Result<bool> {
+) -> anyhow::Result<bool> {
     let client = ClientBuilder::new().build()?;
     let mut headers = HeaderMap::new();
 
@@ -424,12 +428,13 @@ pub fn get_movie_poster_banner(
         None,
     )?;
     if configuration_response.status().as_u16() != 200 {
-        let result = configuration_response.json::<RequestResponseError>();
-        if let Ok(error) = result {
-            return Err(Errors::TMDBRequest(error));
-        } else {
-            return Err(Errors::Reqwest(result.unwrap_err()));
-        }
+        return Err::<_, anyhow::Error>(
+            match configuration_response.json::<RequestResponseError>() {
+                Ok(err) => err.into(),
+                Err(err) => err.into(),
+            },
+        )
+        .context("TMDB: Error while while querying for configurations");
     }
 
     let images_configurations = configuration_response
@@ -447,7 +452,7 @@ pub fn get_movie_poster_banner(
                            path: &PathBuf,
                            backdrop: bool,
                            id: usize|
-     -> Result<u8> {
+     -> anyhow::Result<u8> {
         if (backdrop && id >= movie_images.posters.len()) || id >= movie_images.backdrops.len() {
             return Ok(2);
         }
@@ -580,7 +585,7 @@ fn send_tmdb_request(
     headers: &HeaderMap,
     body: Option<HashMap<&str, &str>>,
     query: Option<&[(&str, &str)]>,
-) -> Result<Response> {
+) -> anyhow::Result<Response> {
     let mut request: RequestBuilder;
     if body.is_none() {
         request = client.get(url).headers(headers.clone());

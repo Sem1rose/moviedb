@@ -1,7 +1,5 @@
-use crate::{
-    config::{config_trakt::TraktConfig, Config},
-    types::*,
-};
+use crate::config::{config_trakt::TraktConfig, Config};
+use anyhow::{bail, Context};
 // use log::{debug, error};
 use reqwest::{
     blocking::{Client, ClientBuilder, RequestBuilder, Response},
@@ -118,7 +116,7 @@ pub fn get_tokens(
     client_secret: &str,
     tx_authorization_url: Sender<String>,
     rx_auth_code: Receiver<String>,
-) -> Result<TraktTokens> {
+) -> anyhow::Result<TraktTokens> {
     let client = reqwest::blocking::Client::new();
 
     // Step 1: ask the user for an authorization token
@@ -140,7 +138,7 @@ pub fn get_tokens(
         .recv_timeout(std::time::Duration::from_secs(180))
         .unwrap_or_default();
     if auth_code.is_empty() {
-        return Err(Errors::Other("Trakt: no auth code received".into()));
+        bail!("Trakt: no auth code received");
     }
 
     // Step 2: exchange authorization code for access token
@@ -166,12 +164,11 @@ pub fn get_tokens(
     )?;
 
     if token_response.status().as_u16() >= 400 {
-        let result = token_response.json::<TokenResponseError>();
-        if let Ok(error) = result {
-            return Err(Errors::TraktRequest(error));
-        } else {
-            return Err(Errors::Reqwest(result.unwrap_err()));
-        }
+        return Err::<_, anyhow::Error>(match token_response.json::<TokenResponseError>() {
+            Ok(err) => err.into(),
+            Err(err) => err.into(),
+        })
+        .context("Trakt: Error while while exchanging auth code for access token");
     }
 
     Ok(token_response.json::<TokenResponse>()?.into())
@@ -181,7 +178,7 @@ pub fn refresh_tokens(
     client_id: &str,
     client_secret: &str,
     refresh_token: &str,
-) -> Result<TraktTokens> {
+) -> anyhow::Result<TraktTokens> {
     let client = ClientBuilder::new().build()?;
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
@@ -207,12 +204,11 @@ pub fn refresh_tokens(
     // debug!("{:#?}", token_response);
 
     if token_response.status().as_u16() >= 400 {
-        let result = token_response.json::<TokenResponseError>();
-        if let Ok(error) = result {
-            return Err(Errors::TraktRequest(error));
-        } else {
-            return Err(Errors::Reqwest(result.unwrap_err()));
-        }
+        return Err::<_, anyhow::Error>(match token_response.json::<TokenResponseError>() {
+            Ok(err) => err.into(),
+            Err(err) => err.into(),
+        })
+        .context("Trakt: Error while while refreshing access token");
     }
 
     Ok(token_response.json::<TokenResponse>()?.into())
@@ -221,7 +217,7 @@ pub fn refresh_tokens(
 pub fn get_movie_details(
     trakt_config: &TraktConfig,
     imdb_id: &str,
-) -> Result<TraktDetailsResponse> {
+) -> anyhow::Result<TraktDetailsResponse> {
     let client = ClientBuilder::new().build()?;
 
     let mut headers = HeaderMap::new();
@@ -241,9 +237,7 @@ pub fn get_movie_details(
     )?;
 
     if details_response.status().as_u16() != 200 {
-        return Err(Errors::Other(
-            "couldn't get movie details with trakt".into(),
-        ));
+        bail!("couldn't get movie details with trakt");
     }
 
     // let movies = details_response.text()?;
@@ -256,7 +250,7 @@ pub fn get_movie_poster_banner(
     trakt_config: &TraktConfig,
     id: String,
     add_placeholder: bool,
-) -> Result<bool> {
+) -> anyhow::Result<bool> {
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
     headers.insert(USER_AGENT, "reqwest/0.12.8".parse().unwrap());
@@ -375,7 +369,7 @@ fn send_trakt_request(
     headers: &HeaderMap,
     body: Option<HashMap<&str, &str>>,
     query: Option<&[(&str, &str)]>,
-) -> Result<Response> {
+) -> anyhow::Result<Response> {
     let mut request: RequestBuilder;
     if body.is_none() {
         request = client.get(url).headers(headers.clone());

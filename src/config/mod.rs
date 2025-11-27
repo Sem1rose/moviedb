@@ -2,7 +2,6 @@ pub mod config_omdb;
 pub mod config_tmdb;
 pub mod config_trakt;
 
-use crate::types::Result;
 use serde::Deserialize;
 use std::{
     fs::{create_dir, write},
@@ -75,7 +74,7 @@ impl Default for Config {
 }
 
 impl Config {
-    pub fn init_dirs(&mut self) -> Result<()> {
+    pub fn init_dirs(&mut self) -> anyhow::Result<()> {
         if !self.dirs.home.is_dir() {
             create_dir(&self.dirs.home)?;
         }

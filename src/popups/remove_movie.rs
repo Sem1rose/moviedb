@@ -1,4 +1,4 @@
-use crate::{custom::helpers::center_rect, draw::Drawer, types::*};
+use crate::{custom::helpers::center_rect, draw::Drawer};
 use ratatui::{
     crossterm::event::{KeyCode, KeyEvent, KeyEventKind},
     layout::*,
@@ -81,7 +81,7 @@ impl RemoveMoviePopup {
 }
 
 impl Drawer {
-    pub(crate) fn draw_remove_movie_popup(&mut self, frame: &mut Frame) -> Result<()> {
+    pub(crate) fn draw_remove_movie_popup(&mut self, frame: &mut Frame) -> anyhow::Result<()> {
         let frame_area = frame.area();
         let popup_area = center_rect(frame_area, Constraint::Percentage(40), Constraint::Max(7));
 

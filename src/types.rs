@@ -1,56 +1,16 @@
-use crate::{
-    omdb::{DetailsResponseError, OMDBDetailsResponse},
-    tmdb::{RequestResponseError, TMDBDetailsResponse},
-    trakt::{TokenResponseError, TraktDetailsResponse},
-};
+use crate::{omdb::OMDBDetailsResponse, tmdb::TMDBDetailsResponse, trakt::TraktDetailsResponse};
+pub use anyhow::Result;
+use ratatui::prelude::*;
 use serde::Deserialize;
 
-pub type Result<T> = color_eyre::Result<T, Errors>;
-pub type OptionalResult<T> = color_eyre::Result<T, Option<Errors>>;
+pub type OptionalResult<T> = anyhow::Result<T, Option<anyhow::Error>>;
+pub type Term = Terminal<CrosstermBackend<std::io::Stdout>>;
 
-#[allow(clippy::upper_case_acronyms)]
 #[derive(serde::Serialize, Clone, Copy, Deserialize, Debug)]
 pub enum Rating {
     Trakt(f64, u32),
     TMDB(f64, u32),
-    Metascore(u32),
     IMDB(f64, u32),
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum Errors {
-    #[error("OMDB request error: {0}")]
-    OMDBRequest(#[from] DetailsResponseError),
-
-    #[error("TMDB request error: {0}")]
-    TMDBRequest(#[from] RequestResponseError),
-
-    #[error("Trakt request error: {0}")]
-    TraktRequest(#[from] TokenResponseError),
-
-    #[error("reqwest error: {0}")]
-    Reqwest(#[from] reqwest::Error),
-
-    #[error("io error: {0}")]
-    Io(#[from] std::io::Error),
-
-    #[error("serde deserialization error: {0}")]
-    Deserialization(#[from] serde_json::Error),
-
-    #[error("cocoon encryption error: {0}")]
-    Encryption(#[from] cocoon::Error),
-
-    #[error("image error: {0}")]
-    Image(#[from] image::error::ImageError),
-
-    #[error("ratatui_image error: {0}")]
-    EncodeImage(#[from] ratatui_image::errors::Errors),
-
-    #[error("{0}")]
-    EyreReport(#[from] color_eyre::Report),
-
-    #[error("error: {0}")]
-    Other(String),
 }
 
 #[derive(serde::Serialize, Clone, Deserialize, Debug)]
@@ -66,7 +26,7 @@ pub struct Movie {
     pub year: String,
     pub user_rating: f64,
     pub language: String,
-    pub ratings: [Rating; 4],
+    pub ratings: [Rating; 3],
     pub genres: Vec<String>,
     pub collection: Option<String>,
     pub collection_id: Option<u32>,
@@ -75,7 +35,6 @@ pub struct Movie {
     pub released: bool,
     pub tagline: String,
     pub trailer: Option<String>,
-    // pub finished_at: String,
 }
 
 impl Movie {
@@ -93,7 +52,6 @@ impl Movie {
             ratings: [
                 Rating::TMDB(movie_details.vote_average, movie_details.vote_count),
                 Rating::Trakt(0.0, 0),
-                Rating::Metascore(0),
                 Rating::IMDB(0.0, 0),
             ],
             year: movie_details.release_date.split('-').collect::<Vec<_>>()[0].to_string(),
@@ -114,7 +72,6 @@ impl Movie {
             released: movie_details.status == "Released",
             tagline: movie_details.tagline,
             trailer: None,
-            // finished_at: "".into(),
         }
     }
 
@@ -123,8 +80,7 @@ impl Movie {
         self.trailer = trakt_details.trailer;
     }
     pub fn add_omdb_details(&mut self, omdb_details: OMDBDetailsResponse) {
-        self.ratings[2] = Rating::Metascore(omdb_details.Metascore.parse().unwrap_or(0));
-        self.ratings[3] = Rating::IMDB(
+        self.ratings[2] = Rating::IMDB(
             omdb_details.imdbRating.parse().unwrap_or(0.0),
             omdb_details
                 .imdbVotes
@@ -140,5 +96,66 @@ impl Movie {
 impl std::cmp::PartialEq<&Movie> for Movie {
     fn eq(&self, other: &&Movie) -> bool {
         self.id.imdb == other.id.imdb
+    }
+}
+
+#[derive(serde::Serialize, Deserialize)]
+pub enum OldRating {
+    Trakt(f64, u32),
+    TMDB(f64, u32),
+    Metascore(u32),
+    IMDB(f64, u32),
+}
+
+#[derive(serde::Serialize, Deserialize)]
+pub struct OldMovie {
+    pub id: MovieID,
+    pub name: String,
+    pub year: String,
+    pub user_rating: f64,
+    pub language: String,
+    pub ratings: [OldRating; 4],
+    pub genres: Vec<String>,
+    pub collection: Option<String>,
+    pub collection_id: Option<u32>,
+    pub overview: String,
+    pub runtime: u32,
+    pub released: bool,
+    pub tagline: String,
+    pub trailer: Option<String>,
+}
+
+impl From<OldMovie> for Movie {
+    fn from(value: OldMovie) -> Self {
+        let mut ratings = [
+            Rating::TMDB(0.0, 0),
+            Rating::Trakt(0.0, 0),
+            Rating::IMDB(0.0, 0),
+        ];
+        for i in value.ratings {
+            match i {
+                OldRating::TMDB(rating, count) => ratings[0] = Rating::TMDB(rating, count),
+                OldRating::Trakt(rating, count) => ratings[1] = Rating::Trakt(rating, count),
+                OldRating::Metascore(_) => (),
+                OldRating::IMDB(rating, count) => ratings[2] = Rating::IMDB(rating, count),
+            }
+        }
+
+        Self {
+            name: value.name,
+            user_rating: value.user_rating,
+            ratings,
+            year: value.year,
+            language: value.language,
+            id: value.id,
+            genres: value.genres,
+            overview: value.overview,
+            collection: value.collection,
+            collection_id: value.collection_id,
+            runtime: value.runtime,
+            released: value.released,
+            tagline: value.tagline,
+            trailer: value.trailer,
+        }
     }
 }

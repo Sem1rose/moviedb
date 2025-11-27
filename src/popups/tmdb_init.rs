@@ -5,7 +5,6 @@ use crate::{
         hyperlink::Hyperlink,
     },
     draw::Drawer,
-    types::*,
 };
 use ratatui::{
     crossterm::event::{KeyCode, KeyEvent, KeyEventKind},
@@ -23,7 +22,7 @@ pub enum Phase {
     Initializing,
     GetAuthorization(String),
     Done,
-    Error(Errors),
+    Error(anyhow::Error),
 }
 
 #[derive(Default)]
@@ -47,7 +46,7 @@ impl TMDBInitPopup {
         self.phase = Phase::GetAuthorization(authorization_url);
     }
 
-    pub fn handle_key_events(&mut self, event: KeyEvent, app: &mut App) -> Result<bool> {
+    pub fn handle_key_events(&mut self, event: KeyEvent, app: &mut App) -> anyhow::Result<bool> {
         let kind = event.kind;
         let code = event.code;
 
@@ -75,7 +74,7 @@ impl TMDBInitPopup {
 }
 
 impl Drawer {
-    pub(crate) fn draw_tmdb_init_popup(&mut self, frame: &mut Frame) -> Result<()> {
+    pub(crate) fn draw_tmdb_init_popup(&mut self, frame: &mut Frame) -> anyhow::Result<()> {
         let frame_area = frame.area();
         let popup_area = center_rect(frame_area, Constraint::Percentage(40), Constraint::Max(10));
 

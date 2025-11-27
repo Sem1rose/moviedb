@@ -1,4 +1,4 @@
-use crate::{custom::helpers::center_rect, draw::Drawer, types::*};
+use crate::{custom::helpers::center_rect, draw::Drawer};
 use ratatui::{
     crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind},
     layout::*,
@@ -82,7 +82,7 @@ impl EditMoviePopup {
 }
 
 impl Drawer {
-    pub(crate) fn draw_edit_movie_popup(&mut self, frame: &mut Frame) -> Result<()> {
+    pub(crate) fn draw_edit_movie_popup(&mut self, frame: &mut Frame) -> anyhow::Result<()> {
         let frame_area = frame.area();
         let popup_area = center_rect(frame_area, Constraint::Percentage(35), Constraint::Max(10));
 

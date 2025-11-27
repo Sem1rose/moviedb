@@ -1,4 +1,5 @@
 use crate::{app::App, config::Config, image_backends::ImageBackend, types::*};
+use anyhow::Context;
 use ratatui::{
     crossterm::ExecutableCommand,
     prelude::{Rect, Size},
@@ -64,24 +65,25 @@ impl ImageBackend for Chafa {
             for (id, path, area) in rx_cache_request.iter() {
                 let tx_cached = tx_cached.clone();
                 thread::spawn(move || {
-                    let cache_result = Command::new("chafa")
-                        .args([
-                            "--polite",
-                            "on",
-                            "--relative",
-                            "on",
-                            "-s",
-                            &format!("{}x{}", area.width, area.height),
-                            &path,
-                        ])
-                        .stdout(Stdio::piped())
-                        .output();
-                    if let Ok(output) = cache_result {
-                        let data = String::from_utf8_lossy(&output.stdout).to_string();
-                        _ = tx_cached.send((id, Ok(data)));
-                    } else if let Err(error) = cache_result {
-                        _ = tx_cached.send((id, Err(Errors::Io(error))));
-                    }
+                    let result = (|| {
+                        let output = Command::new("chafa")
+                            .args([
+                                "--polite",
+                                "on",
+                                "--relative",
+                                "on",
+                                "-s",
+                                &format!("{}x{}", area.width, area.height),
+                                &path,
+                            ])
+                            .stdout(Stdio::piped())
+                            .output()
+                            .context("Failed to execute chafa")?;
+
+                        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+                    })();
+
+                    _ = tx_cached.send((id, result));
                 });
             }
         });

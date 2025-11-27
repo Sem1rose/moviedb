@@ -14,7 +14,7 @@ use ratatui::{layout::*, prelude::*, Frame};
 
 impl Default for Box<dyn ImageBackend> {
     fn default() -> Self {
-        Box::new(Chafa::new())
+        Box::new(RatatuiImage::new())
     }
 }
 
@@ -45,7 +45,7 @@ pub struct Drawer {
 
 const MINTERMSIZE: [u32; 2] = [80, 22];
 impl Drawer {
-    pub fn render_app(&mut self, frame: &mut Frame, app: &mut App) -> Result<()> {
+    pub fn render_app(&mut self, frame: &mut Frame, app: &mut App) -> anyhow::Result<()> {
         self.check_term_size(frame);
         self.image_backend.update();
 
@@ -63,7 +63,7 @@ impl Drawer {
         self.throbber_state.calc_next();
     }
 
-    pub fn draw_current_screen(&mut self, frame: &mut Frame, app: &mut App) -> Result<()> {
+    pub fn draw_current_screen(&mut self, frame: &mut Frame, app: &mut App) -> anyhow::Result<()> {
         match self.current_screen {
             Screens::InitScreen => {
                 self.render_init_screen(frame, app)?;
@@ -79,7 +79,7 @@ impl Drawer {
         Ok(())
     }
 
-    pub fn draw_popup(&mut self, frame: &mut Frame) -> Result<()> {
+    pub fn draw_popup(&mut self, frame: &mut Frame) -> anyhow::Result<()> {
         match self.active_popup.as_ref().unwrap() {
             Popups::FetchArtwork => {
                 self.draw_fetch_artworks_popup(frame)?;
@@ -107,7 +107,7 @@ impl Drawer {
         Ok(())
     }
 
-    pub fn check_popups(&mut self, app: &mut App) -> Result<()> {
+    pub fn check_popups(&mut self, app: &mut App) -> anyhow::Result<()> {
         if let Some(popup) = self.active_popup.as_ref() {
             match popup {
                 Popups::FetchArtwork => {
@@ -262,7 +262,7 @@ impl Drawer {
         self.trakt_init_popup.begin();
     }
 
-    pub fn open_fetch_artworks_popup(&mut self, app: &mut App) -> Result<()> {
+    pub fn open_fetch_artworks_popup(&mut self, app: &mut App) -> anyhow::Result<()> {
         self.active_popup = Some(Popups::FetchArtwork);
 
         self.fetch_artwork_popup.begin(app)?;
@@ -317,7 +317,7 @@ impl Drawer {
         true
     }
 
-    fn render_term_size_warning(&self, frame: &mut Frame) -> Result<()> {
+    fn render_term_size_warning(&self, frame: &mut Frame) -> anyhow::Result<()> {
         let frame_area = frame.area();
         let lines = vec![
             Line::from_iter([

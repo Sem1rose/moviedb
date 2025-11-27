@@ -5,7 +5,6 @@ use crate::{
     omdb::{self, OMDBDetailsResponse},
     tmdb::{self, TMDBDetailsResponse, TMDBSearchResponse, TMDBSearchResult},
     trakt::{self, TraktDetailsResponse},
-    types::*,
 };
 use ratatui::{
     crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind},
@@ -45,7 +44,7 @@ pub struct AddMoviePopup {
 
     pub search_rating_input: Input,
 
-    pub rx_search_result: Option<Receiver<Result<TMDBSearchResponse>>>,
+    pub rx_search_result: Option<Receiver<anyhow::Result<TMDBSearchResponse>>>,
     pub search_results: Option<Vec<TMDBSearchResult>>,
     pub num_results: usize,
 
@@ -54,7 +53,7 @@ pub struct AddMoviePopup {
 
     pub user_rating: f64,
 
-    pub rx_details_response: Option<Receiver<Result<DetailsResponse>>>,
+    pub rx_details_response: Option<Receiver<anyhow::Result<DetailsResponse>>>,
     pub tmdb_movie_details_result: Option<TMDBDetailsResponse>,
     pub trakt_movie_details_result: Option<TraktDetailsResponse>,
     pub omdb_movie_details_result: Option<OMDBDetailsResponse>,
@@ -177,7 +176,7 @@ impl AddMoviePopup {
         false
     }
 
-    pub fn read_channels(&mut self, app: &App) -> Result<()> {
+    pub fn read_channels(&mut self, app: &App) -> anyhow::Result<()> {
         match self.phase {
             Phase::Searching => {
                 let result = self.rx_search_result.as_ref().unwrap().try_recv();
@@ -265,7 +264,7 @@ impl AddMoviePopup {
 }
 
 impl Drawer {
-    pub(crate) fn draw_add_movie_popup(&mut self, frame: &mut Frame) -> Result<()> {
+    pub(crate) fn draw_add_movie_popup(&mut self, frame: &mut Frame) -> anyhow::Result<()> {
         let frame_area = frame.area();
         let popup_area = center_rect(frame_area, Constraint::Percentage(40), Constraint::Max(7));
 

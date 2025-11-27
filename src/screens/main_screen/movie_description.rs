@@ -1,7 +1,7 @@
 use crate::{app::App, custom::helpers::ellipsize_string, draw::Drawer, types::*};
 use ratatui::style::Stylize;
 use ratatui::{layout::Rect, prelude::*, widgets::*, Frame};
-use ratatui_macros::{horizontal, text, vertical};
+use ratatui_macros::{horizontal, vertical};
 use style::palette::tailwind;
 
 #[derive(Default)]

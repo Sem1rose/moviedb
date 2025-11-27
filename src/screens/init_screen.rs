@@ -3,7 +3,6 @@ use crate::{
     draw::Drawer,
     tmdb,
     trakt::{self, TraktTokens},
-    types::*,
 };
 use ratatui::{prelude::*, widgets::*, Frame};
 use std::{
@@ -28,11 +27,11 @@ pub struct InitScreen {
     started_step: bool,
 
     tmdb_rx_authorization_url: Option<Receiver<String>>,
-    tmdb_rx_session_id: Option<Receiver<Result<String>>>,
+    tmdb_rx_session_id: Option<Receiver<anyhow::Result<String>>>,
 
     trakt_rx_authorization_url: Option<Receiver<String>>,
     trakt_tx_auth_code: Option<Sender<String>>,
-    trakt_rx_tokens: Option<Receiver<Result<TraktTokens>>>,
+    trakt_rx_tokens: Option<Receiver<anyhow::Result<TraktTokens>>>,
 }
 
 impl InitScreen {
@@ -53,7 +52,7 @@ impl InitScreen {
 }
 
 impl Drawer {
-    pub fn render_init_screen(&mut self, frame: &mut Frame, app: &mut App) -> Result<()> {
+    pub fn render_init_screen(&mut self, frame: &mut Frame, app: &mut App) -> anyhow::Result<()> {
         let frame_area: Rect = frame.area();
         frame.render_widget(Block::new().bg(tailwind::SLATE.c900), frame_area);
 
@@ -87,7 +86,7 @@ impl Drawer {
         Ok(())
     }
 
-    pub fn handle_init_screen_tmdb_init(&mut self, app: &mut App) -> Result<()> {
+    pub fn handle_init_screen_tmdb_init(&mut self, app: &mut App) -> anyhow::Result<()> {
         use crate::popups::tmdb_init::Phase as TMDBPhase;
 
         #[allow(clippy::single_match)]
@@ -122,7 +121,7 @@ impl Drawer {
         Ok(())
     }
 
-    pub fn handle_init_screen_trakt_init(&mut self, app: &mut App) -> Result<()> {
+    pub fn handle_init_screen_trakt_init(&mut self, app: &mut App) -> anyhow::Result<()> {
         use crate::popups::trakt_init::Phase as TraktPhase;
 
         match self.trakt_init_popup.phase {
@@ -194,7 +193,7 @@ impl Drawer {
         Ok(())
     }
 
-    fn read_init_screen_channels(&mut self, app: &mut App) -> Result<()> {
+    fn read_init_screen_channels(&mut self, app: &mut App) -> anyhow::Result<()> {
         match self.init_screen.phase {
             Phase::TMDBInit => {
                 if let Some(channel) = self.init_screen.tmdb_rx_authorization_url.as_ref() {
