@@ -190,7 +190,7 @@ impl Drawer {
             .flex(Flex::Center)
             .areas(layout[3]);
 
-        let progress_guage = Gauge::default()
+        let progress_gauge = Gauge::default()
             .ratio(progress as f64 / num_movies as f64)
             .gauge_style(
                 Style::new()
@@ -201,7 +201,7 @@ impl Drawer {
             .label(format!("{}/{}", progress, num_movies).fg(tailwind::PINK.c500))
             .use_unicode(true);
 
-        frame.render_widget(progress_guage, progress_lay);
+        frame.render_widget(progress_gauge, progress_lay);
 
         if let Some(id) = self.fetch_artwork_popup.errored {
             let errored_text = format!("movie {id} errored, retrying!!");

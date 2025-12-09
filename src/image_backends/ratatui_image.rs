@@ -36,12 +36,31 @@ impl RatatuiImage {
     fn start_workers_thread(
         tx_main: &Sender<ImageEvents>,
     ) -> Sender<(ArtworkID, Receiver<ResizeRequest>)> {
-        let (tx_worker_collector, rx_worker_collector) = mpsc::channel();
+        let (tx_worker_collector, rx_worker_collector) =
+            mpsc::channel::<(ArtworkID, Receiver<ResizeRequest>)>();
 
         let tx_main_sender = tx_main.clone();
-        let mut rx_workers: Vec<(ArtworkID, Receiver<ResizeRequest>)> = vec![]; // index 0 is always the fanart image
+        // let mut rx_workers: Vec<(ArtworkID, Receiver<ResizeRequest>)> = vec![]; // index 0 is always the fanart image
         thread::spawn(move || loop {
-            for rx_worker in rx_worker_collector.try_iter() {
+            // this usually idles the cpu at the cost of a very high thread count: 1 thread per worker/image
+            for rx_worker in rx_worker_collector.iter() {
+                let tx_main = tx_main_sender.clone();
+                thread::spawn(move || loop {
+                    if let Ok(request) = rx_worker.1.recv() {
+                        _ = tx_main.send(ImageEvents::DrawImage(
+                            rx_worker.0,
+                            request
+                                .resize_encode()
+                                .map_or_else(|error| Err(error.into()), anyhow::Result::Ok),
+                        ));
+                    } else {
+                        break;
+                    }
+                });
+            }
+
+            // this doesn't spawn any threads at the cost of a high cpu usage
+            /* for rx_worker in rx_worker_collector.try_iter() {
                 rx_workers.push(rx_worker);
             }
 
@@ -61,11 +80,12 @@ impl RatatuiImage {
                 }
             }
 
+            dropped.reverse();
             for x in dropped {
                 if rx_workers.len() > x {
                     rx_workers.remove(x);
                 }
-            }
+            } */
         });
 
         tx_worker_collector

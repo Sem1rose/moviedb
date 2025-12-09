@@ -1,25 +1,26 @@
 use crate::{omdb::OMDBDetailsResponse, tmdb::TMDBDetailsResponse, trakt::TraktDetailsResponse};
 pub use anyhow::Result;
+use chrono::{DateTime, Local};
 use ratatui::prelude::*;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 pub type OptionalResult<T> = anyhow::Result<T, Option<anyhow::Error>>;
 pub type Term = Terminal<CrosstermBackend<std::io::Stdout>>;
 
-#[derive(serde::Serialize, Clone, Copy, Deserialize, Debug)]
+#[derive(Serialize, Clone, Copy, Deserialize, Debug)]
 pub enum Rating {
     Trakt(f64, u32),
     TMDB(f64, u32),
     IMDB(f64, u32),
 }
 
-#[derive(serde::Serialize, Clone, Deserialize, Debug)]
+#[derive(Serialize, Clone, Deserialize, Debug)]
 pub struct MovieID {
     pub tmdb: u32,
     pub imdb: String,
 }
 
-#[derive(serde::Serialize, Clone, Deserialize, Debug)]
+#[derive(Serialize, Clone, Deserialize, Debug)]
 pub struct Movie {
     pub id: MovieID,
     pub name: String,
@@ -35,6 +36,7 @@ pub struct Movie {
     pub released: bool,
     pub tagline: String,
     pub trailer: Option<String>,
+    pub plays: Vec<(DateTime<Local>, f64)>,
 }
 
 impl Movie {
@@ -72,6 +74,7 @@ impl Movie {
             released: movie_details.status == "Released",
             tagline: movie_details.tagline,
             trailer: None,
+            plays: vec![(Local::now(), user_rating)],
         }
     }
 
@@ -91,6 +94,10 @@ impl Movie {
                 .unwrap_or(0),
         );
     }
+
+    pub fn add_play(&mut self, datetime: DateTime<Local>, rating: f64) {
+        self.plays.push((datetime, rating));
+    }
 }
 
 impl std::cmp::PartialEq<&Movie> for Movie {
@@ -99,22 +106,14 @@ impl std::cmp::PartialEq<&Movie> for Movie {
     }
 }
 
-#[derive(serde::Serialize, Deserialize)]
-pub enum OldRating {
-    Trakt(f64, u32),
-    TMDB(f64, u32),
-    Metascore(u32),
-    IMDB(f64, u32),
-}
-
-#[derive(serde::Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct OldMovie {
     pub id: MovieID,
     pub name: String,
     pub year: String,
     pub user_rating: f64,
     pub language: String,
-    pub ratings: [OldRating; 4],
+    pub ratings: [Rating; 3],
     pub genres: Vec<String>,
     pub collection: Option<String>,
     pub collection_id: Option<u32>,
@@ -127,24 +126,10 @@ pub struct OldMovie {
 
 impl From<OldMovie> for Movie {
     fn from(value: OldMovie) -> Self {
-        let mut ratings = [
-            Rating::TMDB(0.0, 0),
-            Rating::Trakt(0.0, 0),
-            Rating::IMDB(0.0, 0),
-        ];
-        for i in value.ratings {
-            match i {
-                OldRating::TMDB(rating, count) => ratings[0] = Rating::TMDB(rating, count),
-                OldRating::Trakt(rating, count) => ratings[1] = Rating::Trakt(rating, count),
-                OldRating::Metascore(_) => (),
-                OldRating::IMDB(rating, count) => ratings[2] = Rating::IMDB(rating, count),
-            }
-        }
-
         Self {
             name: value.name,
             user_rating: value.user_rating,
-            ratings,
+            ratings: value.ratings,
             year: value.year,
             language: value.language,
             id: value.id,
@@ -156,6 +141,12 @@ impl From<OldMovie> for Movie {
             released: value.released,
             tagline: value.tagline,
             trailer: value.trailer,
+            plays: vec![(
+                DateTime::from_timestamp(0, 0)
+                    .unwrap()
+                    .with_timezone(&Local),
+                value.user_rating,
+            )],
         }
     }
 }

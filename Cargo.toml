@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.100"
+chrono = { version = "0.4.42", features = ["serde"] }
 clap = { version = "4.5.17", features = ["derive"] }
 cocoon = { version = "0.4.3", features = ["thiserror"] }
 crossterm = "0.28.1"

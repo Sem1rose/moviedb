@@ -82,6 +82,31 @@ impl App {
         self.movies = _movies;
     }
 
+    fn remove_duplicates(mut movies: Vec<Movie>) -> Vec<Movie> {
+        let mut new_movies = vec![];
+
+        let mut i = movies.len() - 1;
+        while i < movies.len() {
+            let mut new_movie = movies[i].clone();
+            let mut id = movies.iter().position(|x| movies[i] == &x).unwrap();
+            while id != i {
+                new_movie.add_play(movies[id].plays[0].0.clone(), movies[id].user_rating);
+
+                movies.remove(id);
+                i -= 1;
+                id = movies.iter().position(|x| movies[i] == &x).unwrap();
+            }
+
+            movies.remove(i);
+            new_movies.insert(0, new_movie);
+            _ = i == 0 && break; // points for epic bash syntax
+
+            i -= 1;
+        }
+
+        new_movies
+    }
+
     pub fn fetch_movies(&mut self) -> anyhow::Result<()> {
         let file_path = &self.config.dirs.ratings_file;
 
@@ -134,11 +159,11 @@ impl App {
                 write(&self.config.dirs.ratings_file, "[]")?;
             } else {
                 let movies: Vec<Movie> = result.unwrap().into_iter().map(|x| x.into()).collect();
-                self.set_movies(movies);
+                self.set_movies(Self::remove_duplicates(movies));
             }
         } else {
             let movies: Vec<Movie> = result.unwrap();
-            self.set_movies(movies);
+            self.set_movies(Self::remove_duplicates(movies));
         }
 
         Ok(())

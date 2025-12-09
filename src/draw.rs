@@ -149,13 +149,20 @@ impl Drawer {
 
                         let mut movie =
                             Movie::from(tmdb_movie_details, self.add_movie_popup.user_rating);
-                        if let Some(trakt) = trakt_movie_details {
-                            movie.add_trakt_details(trakt);
+                        let x = app.movies.iter().position(|x| movie == x);
+                        if x.is_some() {
+                            let mut movie = app.movies.remove(x.unwrap());
+                            movie.add_play(chrono::Local::now(), self.add_movie_popup.user_rating);
+                            app.movies.push(movie);
+                        } else {
+                            if let Some(trakt) = trakt_movie_details {
+                                movie.add_trakt_details(trakt);
+                            }
+                            if let Some(omdb) = omdb_movie_details {
+                                movie.add_omdb_details(omdb);
+                            }
+                            app.movies.push(movie);
                         }
-                        if let Some(omdb) = omdb_movie_details {
-                            movie.add_omdb_details(omdb);
-                        }
-                        app.movies.push(movie);
 
                         self.main_screen.filter_sort_movies(app);
 
