@@ -1,12 +1,16 @@
+use crate::tokens::Credentials;
+
 #[derive(Clone, Default)]
-pub struct OMDBConfig {
+pub struct OMDBTokens {
     key: String,
 }
 
-impl OMDBConfig {
-    // pub fn init(&mut self, creds: &Credentials) {
-    //     self.set_key(creds.omdb_key.clone());
-    // }
+impl OMDBTokens {
+    pub fn new(creds: &Credentials) -> Self {
+        Self {
+            key: creds.omdb_key.clone(),
+        }
+    }
 
     pub fn key(&self) -> &str {
         &self.key

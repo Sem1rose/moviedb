@@ -1,9 +1,10 @@
 use crate::{
     app::App,
-    custom::helpers::{center_rect, ellipsize_string},
-    draw::Drawer,
+    drawer::Drawer,
+    helpers::{center_rect, ellipsize_string},
     omdb::{self, OMDBDetailsResponse},
     tmdb::{self, TMDBDetailsResponse, TMDBSearchResponse, TMDBSearchResult},
+    tokens::Credentials,
     trakt::{self, TraktDetailsResponse},
 };
 use ratatui::{
@@ -95,74 +96,74 @@ impl AddMoviePopup {
         }
     }
 
-    pub fn request_search(&mut self, app: &App) {
+    pub fn request_search(&mut self, tmdb_access_token: &str, app: &App) {
         let (tx_search_results, rx_search_results) = mpsc::channel();
-        let tmdb_conf_cloned = app.tmdb_config.clone();
         let search_string = self.search_rating_input.value().to_string();
 
+        let access_token = tmdb_access_token.to_string();
         thread::spawn(move || {
-            _ = tx_search_results.send(tmdb::find_movie(&tmdb_conf_cloned, &search_string));
+            _ = tx_search_results.send(tmdb::find_movie(&access_token, &search_string));
         });
 
         self.rx_search_result = Some(rx_search_results);
     }
 
-    pub fn request_details(&mut self, app: &App) {
-        let (tx_details_request, rx_details_request) = mpsc::channel();
+    pub fn request_details(&mut self, credentials: &Credentials, app: &App) {
+        // let (tx_details_request, rx_details_request) = mpsc::channel();
 
-        let tmdb_conf_cloned = app.tmdb_config.clone();
-        let trakt_conf_cloned: crate::config::config_trakt::TraktConfig = app.trakt_config.clone();
-        let omdb_conf_cloned = app.omdb_config.clone();
-        let movie_id = self.search_results.as_ref().unwrap()[self.current_movie_index()].id;
+        // let credentials = credentials.clone();
+        // let movie_id = self.search_results.as_ref().unwrap()[self.current_movie_index()].id;
 
-        thread::spawn(move || {
-            let tmdb_result = tmdb::get_movie_details(&tmdb_conf_cloned, movie_id);
+        // thread::spawn(move || {
+        //     let tmdb_result = tmdb::get_movie_details(&credentials.tmdb_access_token, movie_id);
 
-            if let Ok(tmdb_response) = tmdb_result {
-                let trakt_result =
-                    trakt::get_movie_details(&trakt_conf_cloned, &tmdb_response.imdb_id);
-                let omdb_result =
-                    omdb::get_movie_details(&omdb_conf_cloned, &tmdb_response.imdb_id);
+        //     if let Ok(tmdb_response) = tmdb_result {
+        //         let trakt_result = trakt::get_movie_details(
+        //             &credentials.trakt_access_token,
+        //             &tmdb_response.imdb_id,
+        //         );
+        //         let omdb_result =
+        //             omdb::get_movie_details(&credentials.omdb_api_key, &tmdb_response.imdb_id);
 
-                _ = tx_details_request.send(Ok(DetailsResponse {
-                    trakt: trakt_result.map(Some).unwrap_or(None),
-                    tmdb: tmdb_response,
-                    omdb: omdb_result.map(Some).unwrap_or(None),
-                }));
-            } else if let Err(error) = tmdb_result {
-                _ = tx_details_request.send(Err(error));
-            }
-        });
+        //         _ = tx_details_request.send(Ok(DetailsResponse {
+        //             trakt: trakt_result.map(Some).unwrap_or(None),
+        //             tmdb: tmdb_response,
+        //             omdb: omdb_result.map(Some).unwrap_or(None),
+        //         }));
+        //     } else if let Err(error) = tmdb_result {
+        //         _ = tx_details_request.send(Err(error));
+        //     }
+        // });
 
-        self.rx_details_response = Some(rx_details_request);
+        // self.rx_details_response = Some(rx_details_request);
     }
 
     pub fn advance_phase(&mut self, app: &App) {
-        self.phase = match self.phase {
-            Phase::GetName => {
-                self.request_search(app);
-                Phase::Searching
-            }
-            Phase::Searching => Phase::SelectMovie,
-            Phase::SelectMovie => {
-                self.search_rating_input.reset();
-                Phase::GetRating
-            }
-            Phase::GetRating => {
-                self.user_rating = format!(
-                    "{:.1}",
-                    self.search_rating_input.value().parse::<f64>().unwrap()
-                )
-                .parse()
-                .unwrap();
+        // self.phase = match self.phase {
+        //     Phase::GetName => {
+        //         self.request_search(app);
+        //         Phase::Searching
+        //     }
+        //     Phase::Searching => Phase::SelectMovie,
+        //     Phase::SelectMovie => {
+        //         self.search_rating_input.reset();
+        //         Phase::GetRating
+        //     }
+        //     Phase::GetRating => {
+        //         self.user_rating = format!(
+        //             "{:.1}",
+        //             self.search_rating_input.value().parse::<f64>().unwrap()
+        //         )
+        //         .parse()
+        //         .unwrap();
 
-                self.request_details(app);
+        //         self.request_details(app);
 
-                Phase::GettingDetails
-            }
-            Phase::GettingDetails => Phase::Done,
-            _ => Phase::GetName,
-        };
+        //         Phase::GettingDetails
+        //     }
+        //     Phase::GettingDetails => Phase::Done,
+        //     _ => Phase::GetName,
+        // };
     }
 
     pub fn check_input_rating(&mut self) -> bool {
@@ -265,199 +266,199 @@ impl AddMoviePopup {
 
 impl Drawer {
     pub(crate) fn draw_add_movie_popup(&mut self, frame: &mut Frame) -> anyhow::Result<()> {
-        let frame_area = frame.area();
-        let popup_area = center_rect(frame_area, Constraint::Percentage(40), Constraint::Max(7));
+        // let frame_area = frame.area();
+        // let popup_area = center_rect(frame_area, Constraint::Percentage(40), Constraint::Max(7));
 
-        let popup = Block::new()
-            .bg(tailwind::INDIGO.c950)
-            .fg(tailwind::INDIGO.c300)
-            .borders(Borders::ALL)
-            .border_type(BorderType::Thick)
-            .border_style(Style::new().fg(tailwind::EMERALD.c400))
-            .title_top("Add Movie")
-            .title_alignment(Alignment::Center)
-            .title_style(Style::new().fg(tailwind::AMBER.c300));
+        // let popup = Block::new()
+        //     .bg(tailwind::INDIGO.c950)
+        //     .fg(tailwind::INDIGO.c300)
+        //     .borders(Borders::ALL)
+        //     .border_type(BorderType::Thick)
+        //     .border_style(Style::new().fg(tailwind::EMERALD.c400))
+        //     .title_top("Add Movie")
+        //     .title_alignment(Alignment::Center)
+        //     .title_style(Style::new().fg(tailwind::AMBER.c300));
 
-        frame.render_widget(Clear, popup_area);
-        frame.render_widget(&popup, popup_area);
+        // frame.render_widget(Clear, popup_area);
+        // frame.render_widget(&popup, popup_area);
 
-        let [_, vert, _] = vertical![==1, >=1 ,==1].areas(popup_area);
-        let [_, horiz, _] = horizontal![==2, >=1, ==2].areas(vert);
+        // let [_, vert, _] = vertical![==1, >=1 ,==1].areas(popup_area);
+        // let [_, horiz, _] = horizontal![==2, >=1, ==2].areas(vert);
 
-        match self.add_movie_popup.phase {
-            Phase::GetName => {
-                let [_, left, right, _] = horizontal![==2, ==6, >=1, ==2].areas(horiz);
+        // match self.add_movie_popup.phase {
+        //     Phase::GetName => {
+        //         let [_, left, right, _] = horizontal![==2, ==6, >=1, ==2].areas(horiz);
 
-                let prompt_area = Layout::vertical([Constraint::Length(1); 5]).split(left)[2];
+        //         let prompt_area = Layout::vertical([Constraint::Length(1); 5]).split(left)[2];
 
-                let [_, search_top, search_center, search_bottom, _] =
-                    Layout::vertical([Constraint::Length(1); 5]).areas(right);
+        //         let [_, search_top, search_center, search_bottom, _] =
+        //             Layout::vertical([Constraint::Length(1); 5]).areas(right);
 
-                let [_, search_input_area, _] = horizontal![==1, >=1, ==1].areas(search_center);
+        //         let [_, search_input_area, _] = horizontal![==1, >=1, ==1].areas(search_center);
 
-                // ▄▀█ ▂🮂▗▖▘▝
-                frame.render_widget(
-                    Paragraph::new("🮃".repeat(search_bottom.width as usize)).fg(tailwind::RED.c700),
-                    search_bottom,
-                );
-                frame.render_widget(
-                    Paragraph::new("▂".repeat(search_top.width as usize)).fg(tailwind::RED.c700),
-                    search_top,
-                );
-                frame.render_widget(Paragraph::new("Name: "), prompt_area);
-                frame.render_widget(Block::new().bg(tailwind::RED.c700), search_center);
+        //         // ▄▀█ ▂🮂▗▖▘▝
+        //         frame.render_widget(
+        //             Paragraph::new("🮃".repeat(search_bottom.width as usize)).fg(tailwind::RED.c700),
+        //             search_bottom,
+        //         );
+        //         frame.render_widget(
+        //             Paragraph::new("▂".repeat(search_top.width as usize)).fg(tailwind::RED.c700),
+        //             search_top,
+        //         );
+        //         frame.render_widget(Paragraph::new("Name: "), prompt_area);
+        //         frame.render_widget(Block::new().bg(tailwind::RED.c700), search_center);
 
-                let width = search_input_area.width as usize - 1;
-                let start = self
-                    .add_movie_popup
-                    .search_rating_input
-                    .visual_scroll(width);
-                let cursor_pos = self.add_movie_popup.search_rating_input.cursor() - start;
-                let mut chars = self
-                    .add_movie_popup
-                    .search_rating_input
-                    .value()
-                    .chars()
-                    .skip(start);
+        //         let width = search_input_area.width as usize - 1;
+        //         let start = self
+        //             .add_movie_popup
+        //             .search_rating_input
+        //             .visual_scroll(width);
+        //         let cursor_pos = self.add_movie_popup.search_rating_input.cursor() - start;
+        //         let mut chars = self
+        //             .add_movie_popup
+        //             .search_rating_input
+        //             .value()
+        //             .chars()
+        //             .skip(start);
 
-                let mut search_string: Vec<Span> = vec![];
-                for i in 0..=(start + width) {
-                    let c = chars.next().unwrap_or(' ');
-                    if i == cursor_pos {
-                        search_string.push(c.to_string().reversed());
-                    } else {
-                        search_string.push(c.to_string().into());
-                    }
-                }
-                frame.render_widget(Line::from_iter(search_string), search_input_area);
-            }
-            Phase::Searching => {
-                let areas = Layout::vertical([Constraint::Length(1); 5]).split(horiz);
-                let [_, throbber_area, text_area, _] = Layout::horizontal([
-                    Constraint::Length(2),
-                    Constraint::Length(1),
-                    Constraint::Min(1),
-                    Constraint::Length(2),
-                ])
-                .areas(areas[2]);
+        //         let mut search_string: Vec<Span> = vec![];
+        //         for i in 0..=(start + width) {
+        //             let c = chars.next().unwrap_or(' ');
+        //             if i == cursor_pos {
+        //                 search_string.push(c.to_string().reversed());
+        //             } else {
+        //                 search_string.push(c.to_string().into());
+        //             }
+        //         }
+        //         frame.render_widget(Line::from_iter(search_string), search_input_area);
+        //     }
+        //     Phase::Searching => {
+        //         let areas = Layout::vertical([Constraint::Length(1); 5]).split(horiz);
+        //         let [_, throbber_area, text_area, _] = Layout::horizontal([
+        //             Constraint::Length(2),
+        //             Constraint::Length(1),
+        //             Constraint::Min(1),
+        //             Constraint::Length(2),
+        //         ])
+        //         .areas(areas[2]);
 
-                let throbber = throbber_widgets_tui::Throbber::default()
-                    .throbber_set(throbber_widgets_tui::BRAILLE_SIX_DOUBLE)
-                    .throbber_style(Style::new().bold().fg(tailwind::VIOLET.c400));
+        //         let throbber = throbber_widgets_tui::Throbber::default()
+        //             .throbber_set(throbber_widgets_tui::BRAILLE_SIX_DOUBLE)
+        //             .throbber_style(Style::new().bold().fg(tailwind::VIOLET.c400));
 
-                frame.render_stateful_widget(throbber, throbber_area, &mut self.throbber_state);
-                frame.render_widget(Paragraph::new(" Searching for movie..."), text_area);
-            }
-            Phase::SelectMovie => {
-                let results = self.add_movie_popup.search_results.as_ref().unwrap();
+        //         frame.render_stateful_widget(throbber, throbber_area, &mut self.throbber_state);
+        //         frame.render_widget(Paragraph::new(" Searching for movie..."), text_area);
+        //     }
+        //     Phase::SelectMovie => {
+        //         let results = self.add_movie_popup.search_results.as_ref().unwrap();
 
-                if results.is_empty() {
-                    self.open_error_popup("Couldn't find movie!".into());
-                    return Ok(());
-                }
+        //         if results.is_empty() {
+        //             self.open_error_popup("Couldn't find movie!".into());
+        //             return Ok(());
+        //         }
 
-                let areas =
-                    Layout::vertical(vec![Constraint::Length(1); NUMVISMOVIES]).split(horiz);
+        //         let areas =
+        //             Layout::vertical(vec![Constraint::Length(1); NUMVISMOVIES]).split(horiz);
 
-                for (i, area) in areas.iter().enumerate() {
-                    if i >= results.len() {
-                        break;
-                    }
-                    let movie = &results[self.add_movie_popup.scroll_pos + i];
+        //         for (i, area) in areas.iter().enumerate() {
+        //             if i >= results.len() {
+        //                 break;
+        //             }
+        //             let movie = &results[self.add_movie_popup.scroll_pos + i];
 
-                    let title_width = (area.width - 20) as usize;
+        //             let title_width = (area.width - 20) as usize;
 
-                    let name = ellipsize_string(&movie.title, title_width);
+        //             let name = ellipsize_string(&movie.title, title_width);
 
-                    let text = format!(
-                        "{}{name} - {} - {:.1}",
-                        if i == self.add_movie_popup.selected {
-                            ">"
-                        } else {
-                            " "
-                        },
-                        movie.release_date,
-                        movie.vote_average
-                    );
+        //             let text = format!(
+        //                 "{}{name} - {} - {:.1}",
+        //                 if i == self.add_movie_popup.selected {
+        //                     ">"
+        //                 } else {
+        //                     " "
+        //                 },
+        //                 movie.release_date,
+        //                 movie.vote_average
+        //             );
 
-                    frame.render_widget(Paragraph::new(text), *area);
-                }
-            }
-            Phase::GetRating => {
-                let [_, left, right, _] = horizontal![==2, ==8, >=1, ==2].areas(horiz);
+        //             frame.render_widget(Paragraph::new(text), *area);
+        //         }
+        //     }
+        //     Phase::GetRating => {
+        //         let [_, left, right, _] = horizontal![==2, ==8, >=1, ==2].areas(horiz);
 
-                let prompt_area = Layout::vertical([Constraint::Length(1); 5]).split(left)[2];
+        //         let prompt_area = Layout::vertical([Constraint::Length(1); 5]).split(left)[2];
 
-                let [_, search_top, search_center, search_bottom, _] =
-                    Layout::vertical([Constraint::Length(1); 5]).areas(right);
+        //         let [_, search_top, search_center, search_bottom, _] =
+        //             Layout::vertical([Constraint::Length(1); 5]).areas(right);
 
-                let [_, search_input_area, _] = horizontal![==1, >=1, ==1].areas(search_center);
+        //         let [_, search_input_area, _] = horizontal![==1, >=1, ==1].areas(search_center);
 
-                // ▄▀█ ▂🮂▗▖▘▝
-                frame.render_widget(
-                    Paragraph::new("🮂".repeat(search_bottom.width as usize)).fg(tailwind::RED.c700),
-                    search_bottom,
-                );
-                frame.render_widget(
-                    Paragraph::new("▂".repeat(search_top.width as usize)).fg(tailwind::RED.c700),
-                    search_top,
-                );
-                frame.render_widget(Paragraph::new("Rating: "), prompt_area);
-                frame.render_widget(Block::new().bg(tailwind::RED.c700), search_center);
+        //         // ▄▀█ ▂🮂▗▖▘▝
+        //         frame.render_widget(
+        //             Paragraph::new("🮂".repeat(search_bottom.width as usize)).fg(tailwind::RED.c700),
+        //             search_bottom,
+        //         );
+        //         frame.render_widget(
+        //             Paragraph::new("▂".repeat(search_top.width as usize)).fg(tailwind::RED.c700),
+        //             search_top,
+        //         );
+        //         frame.render_widget(Paragraph::new("Rating: "), prompt_area);
+        //         frame.render_widget(Block::new().bg(tailwind::RED.c700), search_center);
 
-                let width = search_input_area.width as usize - 1;
-                let start = self
-                    .add_movie_popup
-                    .search_rating_input
-                    .visual_scroll(width);
-                let cursor_pos = self.add_movie_popup.search_rating_input.cursor() - start;
-                let mut chars = self
-                    .add_movie_popup
-                    .search_rating_input
-                    .value()
-                    .chars()
-                    .skip(start);
+        //         let width = search_input_area.width as usize - 1;
+        //         let start = self
+        //             .add_movie_popup
+        //             .search_rating_input
+        //             .visual_scroll(width);
+        //         let cursor_pos = self.add_movie_popup.search_rating_input.cursor() - start;
+        //         let mut chars = self
+        //             .add_movie_popup
+        //             .search_rating_input
+        //             .value()
+        //             .chars()
+        //             .skip(start);
 
-                let mut search_string: Vec<Span> = vec![];
-                for i in 0..=(start + width) {
-                    let c = chars.next().unwrap_or(' ');
-                    if i == cursor_pos {
-                        search_string.push(c.to_string().reversed());
-                    } else {
-                        search_string.push(c.to_string().into());
-                    }
-                }
-                frame.render_widget(Line::from_iter(search_string), search_input_area);
+        //         let mut search_string: Vec<Span> = vec![];
+        //         for i in 0..=(start + width) {
+        //             let c = chars.next().unwrap_or(' ');
+        //             if i == cursor_pos {
+        //                 search_string.push(c.to_string().reversed());
+        //             } else {
+        //                 search_string.push(c.to_string().into());
+        //             }
+        //         }
+        //         frame.render_widget(Line::from_iter(search_string), search_input_area);
 
-                if !self.add_movie_popup.check_input_rating() {
-                    let error_area = Layout::vertical([Constraint::Length(1); 5]).split(horiz);
+        //         if !self.add_movie_popup.check_input_rating() {
+        //             let error_area = Layout::vertical([Constraint::Length(1); 5]).split(horiz);
 
-                    frame.render_widget(
-                        Paragraph::new("Please enter a valid rating!")
-                            .red()
-                            .centered(),
-                        error_area[4],
-                    );
-                }
-            }
-            _ => {
-                let areas = Layout::vertical([Constraint::Length(1); 5]).split(horiz);
-                let [_, throbber_area, text_area, _] = Layout::horizontal([
-                    Constraint::Length(2),
-                    Constraint::Length(1),
-                    Constraint::Min(1),
-                    Constraint::Length(2),
-                ])
-                .areas(areas[2]);
+        //             frame.render_widget(
+        //                 Paragraph::new("Please enter a valid rating!")
+        //                     .red()
+        //                     .centered(),
+        //                 error_area[4],
+        //             );
+        //         }
+        //     }
+        //     _ => {
+        //         let areas = Layout::vertical([Constraint::Length(1); 5]).split(horiz);
+        //         let [_, throbber_area, text_area, _] = Layout::horizontal([
+        //             Constraint::Length(2),
+        //             Constraint::Length(1),
+        //             Constraint::Min(1),
+        //             Constraint::Length(2),
+        //         ])
+        //         .areas(areas[2]);
 
-                let throbber = throbber_widgets_tui::Throbber::default()
-                    .throbber_set(throbber_widgets_tui::BRAILLE_SIX_DOUBLE)
-                    .throbber_style(Style::new().bold().fg(tailwind::VIOLET.c400));
+        //         let throbber = throbber_widgets_tui::Throbber::default()
+        //             .throbber_set(throbber_widgets_tui::BRAILLE_SIX_DOUBLE)
+        //             .throbber_style(Style::new().bold().fg(tailwind::VIOLET.c400));
 
-                frame.render_stateful_widget(throbber, throbber_area, &mut self.throbber_state);
-                frame.render_widget(Paragraph::new(" Processing..."), text_area);
-            }
-        }
+        //         frame.render_stateful_widget(throbber, throbber_area, &mut self.throbber_state);
+        //         frame.render_widget(Paragraph::new(" Processing..."), text_area);
+        //     }
+        // }
 
         Ok(())
     }

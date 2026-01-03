@@ -1,10 +1,6 @@
-pub mod init_screen;
-pub mod main_screen;
+mod main_screen;
 
-#[derive(Clone, Copy, PartialEq, Default)]
+pub use main_screen::MainScreen;
 pub enum Screens {
-    #[default]
-    InitScreen,
-    MainScreen,
-    TermSizeWarn,
+    MainScreen(MainScreen),
 }

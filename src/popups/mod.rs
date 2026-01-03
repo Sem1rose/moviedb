@@ -1,18 +1,17 @@
-pub mod add_movie;
-pub mod edit_movie;
-pub mod error;
-pub mod fetch_artworks;
-pub mod remove_movie;
-pub mod tmdb_init;
-pub mod trakt_init;
+mod add_movie;
+mod edit_movie;
+mod remove_movie;
 
-#[derive(Clone, PartialEq)]
+// pub use add_movie::AddMoviePopup;
+pub use edit_movie::EditMoviePopup;
+pub use remove_movie::RemoveMoviePopup;
+
 pub enum Popups {
-    FetchArtwork,
-    AddMovie,
-    EditMovie,
-    RemoveMovie,
-    Error,
-    TraktInit,
-    TMDBInit,
+    // FetchArtwork,
+    // AddMovie(AddMoviePopup),
+    EditMovie(EditMoviePopup),
+    RemoveMovie(RemoveMoviePopup),
+    // Error,
+    // TraktInit,
+    // TMDBInit,
 }

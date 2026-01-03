@@ -1,6 +1,5 @@
-use crate::config::{config_trakt::TraktConfig, Config};
+use crate::tokens::TraktTokens;
 use anyhow::{bail, Context};
-// use log::{debug, error};
 use reqwest::{
     blocking::{Client, ClientBuilder, RequestBuilder, Response},
     header::{HeaderMap, CONTENT_TYPE, USER_AGENT},
@@ -11,27 +10,43 @@ use std::{
     error::Error,
     fmt::Display,
     fs,
+    path::PathBuf,
     sync::mpsc::{Receiver, Sender},
 };
 
-#[derive(Deserialize, Debug)]
-struct TokenResponse {
-    access_token: String,
-    // token_type: String,
-    expires_in: i64,
-    refresh_token: String,
-    // scope: String,
-    created_at: i64,
-}
+// pub struct TraktTokens {
+//     pub client_id: String,
+//     pub client_secret: String,
+//     pub access_token: String,
+//     pub refresh_token: String,
+//     pub expires_on: i64,
+// }
+// impl TraktTokens {
+//     pub fn new(client_id: &str, client_secret: &str) -> Self {
+//         Self {
+//             client_id: client_id.to_string(),
+//             client_secret: client_secret.to_string(),
+//             access_token: String::new(),
+//             refresh_token: String::new(),
+//             expires_on: 0,
+//         }
+//     }
 
-impl From<TokenResponse> for TraktTokens {
-    fn from(val: TokenResponse) -> Self {
-        TraktTokens {
-            access_token: val.access_token,
-            refresh_token: val.refresh_token,
-            expires_on: val.created_at + val.expires_in,
-        }
-    }
+//     pub fn set_tokens(&mut self, token_response: TokenResponse) {
+//         self.access_token = token_response.access_token;
+//         self.refresh_token = token_response.refresh_token;
+//         self.expires_on = token_response.created_at + token_response.expires_in;
+//     }
+// }
+
+#[derive(Deserialize, Debug)]
+pub struct TokenResponse {
+    pub access_token: String,
+    // token_type: String,
+    pub expires_in: i64,
+    pub refresh_token: String,
+    // scope: String,
+    pub created_at: i64,
 }
 
 #[derive(Deserialize, Debug)]
@@ -72,31 +87,25 @@ pub struct TraktDetailsResponse {
 }
 
 #[derive(Deserialize, Debug, Default, Clone)]
-pub struct TraktMovieImages {
-    pub fanart: Vec<String>,
-    pub poster: Vec<String>,
-    pub logo: Vec<String>,
-    pub clearart: Vec<String>,
-    pub banner: Vec<String>,
-    pub thumb: Vec<String>,
+struct TraktMovieImages {
+    fanart: Vec<String>,
+    poster: Vec<String>,
+    logo: Vec<String>,
+    clearart: Vec<String>,
+    banner: Vec<String>,
+    thumb: Vec<String>,
 }
 
 #[derive(Deserialize, Debug, Default, Clone)]
-pub struct IDs {
-    pub trakt: u32,
-    pub slug: String,
-    pub imdb: String,
-    pub tmdb: u32,
+struct IDs {
+    trakt: u32,
+    slug: String,
+    imdb: String,
+    tmdb: u32,
 }
 
-pub struct TraktTokens {
-    pub access_token: String,
-    pub refresh_token: String,
-    pub expires_on: i64,
-}
-
-pub fn check_tokens(trakt_config: &TraktConfig) -> bool {
-    if unix_ts::Timestamp::now().seconds() - trakt_config.tokens_expiration_date() > 0 {
+pub fn check_tokens(trakt_tokens: &TraktTokens) -> bool {
+    if unix_ts::Timestamp::now().seconds() - trakt_tokens.expires_on() > 0 {
         // debug!(
         //     "Trakt tokens outdated {} {} {}, refreshing...",
         //     unix_ts::Timestamp::now().seconds(),
@@ -116,7 +125,7 @@ pub fn get_tokens(
     client_secret: &str,
     tx_authorization_url: Sender<String>,
     rx_auth_code: Receiver<String>,
-) -> anyhow::Result<TraktTokens> {
+) -> anyhow::Result<TokenResponse> {
     let client = reqwest::blocking::Client::new();
 
     // Step 1: ask the user for an authorization token
@@ -171,14 +180,14 @@ pub fn get_tokens(
         .context("Trakt: Error while while exchanging auth code for access token");
     }
 
-    Ok(token_response.json::<TokenResponse>()?.into())
+    Ok(token_response.json::<TokenResponse>()?)
 }
 
 pub fn refresh_tokens(
     client_id: &str,
     client_secret: &str,
     refresh_token: &str,
-) -> anyhow::Result<TraktTokens> {
+) -> anyhow::Result<TokenResponse> {
     let client = ClientBuilder::new().build()?;
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
@@ -211,11 +220,11 @@ pub fn refresh_tokens(
         .context("Trakt: Error while while refreshing access token");
     }
 
-    Ok(token_response.json::<TokenResponse>()?.into())
+    Ok(token_response.json::<TokenResponse>()?)
 }
 
 pub fn get_movie_details(
-    trakt_config: &TraktConfig,
+    trakt_tokens: &TraktTokens,
     imdb_id: &str,
 ) -> anyhow::Result<TraktDetailsResponse> {
     let client = ClientBuilder::new().build()?;
@@ -224,7 +233,7 @@ pub fn get_movie_details(
     headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
     headers.insert(USER_AGENT, "reqwest/0.12.8".parse().unwrap());
     headers.insert("trakt-api-version", "2".parse().unwrap());
-    headers.insert("trakt-api-key", trakt_config.client_id().parse().unwrap());
+    headers.insert("trakt-api-key", trakt_tokens.client_id().parse().unwrap());
 
     let query = [("type", "movie"), ("extended", "full,images")];
 
@@ -246,8 +255,8 @@ pub fn get_movie_details(
 }
 
 pub fn get_movie_poster_banner(
-    config: &Config,
-    trakt_config: &TraktConfig,
+    cache_dir: &PathBuf,
+    trakt_tokens: &TraktTokens,
     id: String,
     add_placeholder: bool,
 ) -> anyhow::Result<bool> {
@@ -255,9 +264,9 @@ pub fn get_movie_poster_banner(
     headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
     headers.insert(USER_AGENT, "reqwest/0.12.8".parse().unwrap());
     headers.insert("trakt-api-version", "2".parse().unwrap());
-    headers.insert("trakt-api-key", trakt_config.client_id().parse().unwrap());
+    headers.insert("trakt-api-key", trakt_tokens.client_id().parse().unwrap());
 
-    let movie_details = get_movie_details(trakt_config, &id)?;
+    let movie_details = get_movie_details(trakt_tokens, &id)?;
 
     if !add_placeholder
         && ((movie_details.images.banner.is_empty() && movie_details.images.fanart.is_empty())
@@ -269,9 +278,8 @@ pub fn get_movie_poster_banner(
     let client = Client::builder().default_headers(headers).build()?;
 
     if !movie_details.images.poster.is_empty() {
-        let path = config
-            .dirs
-            .poster_cache
+        let path = cache_dir
+            .join("posters")
             .join(format!("{}.jpg", movie_details.ids.tmdb));
 
         let mut image_url = movie_details.images.poster[0].as_str();
@@ -295,17 +303,15 @@ pub fn get_movie_poster_banner(
     } else if add_placeholder {
         fs::copy(
             "poster_placeholder.jpg",
-            config
-                .dirs
-                .poster_cache
+            cache_dir
+                .join("posters")
                 .join(format!("{}.jpg", movie_details.ids.tmdb)),
         )?;
     }
 
     if !movie_details.images.fanart.is_empty() {
-        let path = config
-            .dirs
-            .backdrop_cache
+        let path = cache_dir
+            .join("backdrops")
             .join(format!("{}.jpg", movie_details.ids.tmdb));
 
         let mut image_url = movie_details.images.fanart[0].as_str();
@@ -327,9 +333,8 @@ pub fn get_movie_poster_banner(
             fs::copy("backdrop_placeholder.jpg", path)?;
         }
     } else if !movie_details.images.banner.is_empty() {
-        let path = config
-            .dirs
-            .backdrop_cache
+        let path = cache_dir
+            .join("backdrops")
             .join(format!("{}.jpg", movie_details.ids.tmdb));
 
         let mut image_url = movie_details.images.banner[0].as_str();
@@ -353,9 +358,8 @@ pub fn get_movie_poster_banner(
     } else if add_placeholder {
         fs::copy(
             "backdrop_placeholder.jpg",
-            config
-                .dirs
-                .backdrop_cache
+            cache_dir
+                .join("backdrops")
                 .join(format!("{}.jpg", movie_details.ids.tmdb)),
         )?;
     }
