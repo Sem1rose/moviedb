@@ -25,9 +25,9 @@ pub struct App {
     pub key_event_handler: KeyEventHandler,
     pub drawer: Drawer,
 
+    pub trakt_tokens: TraktTokens,
     pub tmdb_tokens: TMDBTokens,
     pub omdb_tokens: OMDBTokens,
-    pub trakt_tokens: TraktTokens,
 }
 
 impl App {
@@ -118,7 +118,7 @@ impl App {
 
     pub fn run(&mut self) -> anyhow::Result<()> {
         if let Some(Screens::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
-            main_screen.filter_sort_movies(&self.movies);
+            main_screen.set_movies(&self.movies);
         }
 
         loop {
@@ -133,9 +133,13 @@ impl App {
                 })
                 .map(|_| ())?;
 
+            for callback in self.key_event_handler.execute_immediates() {
+                callback(self, crate::key_event_handler::Data::None);
+            }
+
             if !self.drawer.check_refresh_immediate() {
                 if self.drawer.check_refresh_delayed() {
-                    if event::poll(Duration::from_millis(5))? {
+                    if event::poll(Duration::from_millis(10))? {
                         if let Ok(event) = event::read() {
                             self.handle_event(event)?;
                         }
@@ -159,6 +163,35 @@ impl App {
         self.movies = _movies;
     }
 
+    pub fn add_movie(&mut self) {
+        if let Some(Screens::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
+            if let Some(Popups::AddMovie(add_movie_popup)) = self.drawer.active_popup.as_mut() {
+                let tmdb_movie_details = add_movie_popup.tmdb_movie_details_result.take().unwrap();
+                let trakt_movie_details = add_movie_popup.trakt_movie_details_result.take();
+                let omdb_movie_details = add_movie_popup.omdb_movie_details_result.take();
+
+                let mut movie = Movie::from(tmdb_movie_details, add_movie_popup.user_rating);
+                let x = self.movies.iter().position(|x| movie == x);
+                if x.is_some() {
+                    let mut movie = self.movies.remove(x.unwrap());
+                    movie.add_play(chrono::Local::now(), add_movie_popup.user_rating);
+                    self.movies.push(movie);
+                } else {
+                    if let Some(trakt) = trakt_movie_details {
+                        movie.add_trakt_details(trakt);
+                    }
+                    if let Some(omdb) = omdb_movie_details {
+                        movie.add_omdb_details(omdb);
+                    }
+                    self.movies.push(movie);
+                }
+            }
+            main_screen.set_movies(&self.movies);
+            main_screen.goto_index(-1);
+            self.drawer.close_popups();
+        }
+        self.save_movies().unwrap();
+    }
     pub fn edit_movie(&mut self) {
         if let Some(Screens::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
             if let Some(Popups::EditMovie(edit_movie_popup)) = self.drawer.active_popup.as_ref() {
@@ -173,7 +206,7 @@ impl App {
                         .unwrap(),
                 );
             }
-            main_screen.filter_sort_movies(&self.movies);
+            main_screen.set_movies(&self.movies);
         }
         self.save_movies().unwrap();
     }
@@ -185,7 +218,7 @@ impl App {
                 .position(|x| x == main_screen.current_movie())
                 .unwrap();
             self.movies.remove(index);
-            main_screen.filter_sort_movies(&self.movies);
+            main_screen.set_movies(&self.movies);
         }
         self.save_movies().unwrap();
     }

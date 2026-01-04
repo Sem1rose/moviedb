@@ -37,6 +37,7 @@ pub struct MainScreen {
 
     pub image_renderer: RatatuiImage,
     movies: Vec<Movie>,
+    filtered_movies: Vec<Movie>,
 
     movies_list_selected_item: usize,
     movies_list_visible_items: usize,
@@ -61,6 +62,7 @@ impl MainScreen {
             drawing_images: false,
             image_renderer: RatatuiImage::new(cache_dir),
             movies: vec![],
+            filtered_movies: vec![],
             movies_list_selected_item: 0,
             movies_list_visible_items: 0,
             movies_list_scroll_pos: 0,
@@ -81,12 +83,26 @@ impl MainScreen {
                 if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     main_screen.tab = 2;
                     main_screen.item = 0;
+
+                    if !main_screen.search_input.is_empty() {
+                        main_screen.search_input = TextArea::from([""]);
+                        main_screen.filter_sort_movies();
+                    } else {
+                        main_screen.search_input = TextArea::from([""]);
+                    }
                 }
             });
             key_event_handler.bind_key((Some(tab), None), 'f', |app, _| {
                 if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     main_screen.tab = 2;
                     main_screen.item = 0;
+
+                    if !main_screen.search_input.is_empty() {
+                        main_screen.search_input = TextArea::from([""]);
+                        main_screen.filter_sort_movies();
+                    } else {
+                        main_screen.search_input = TextArea::from([""]);
+                    }
                 }
             });
             key_event_handler.bind_key((Some(tab), None), 'e', |app, _| {
@@ -94,6 +110,13 @@ impl MainScreen {
             });
             key_event_handler.bind_key((Some(tab), None), 'd', |app, _| {
                 app.drawer.open_remove_movie_popup();
+            });
+            key_event_handler.bind_key((Some(tab), None), 'a', |app, _| {
+                app.drawer.open_add_movie_popup(
+                    app.trakt_tokens.clone(),
+                    app.tmdb_tokens.clone(),
+                    app.omdb_tokens.clone(),
+                );
             });
         }
         key_event_handler.bind_esc((Some(2), None), |app, _| {
@@ -130,6 +153,8 @@ impl MainScreen {
                     match data {
                         crate::key_event_handler::Data::Key(key_event) => {
                             main_screen.search_input.input(key_event);
+
+                            main_screen.filter_sort_movies();
                         }
                         _ => {}
                     }
@@ -202,7 +227,7 @@ impl MainScreen {
                             main_screen.movies_list_selected_item = main_screen
                                 .movies_list_selected_item
                                 .add(1)
-                                .min(main_screen.movies.len() - 1);
+                                .min(main_screen.filtered_movies.len() - 1);
                             if main_screen.movies_list_selected_item
                                 - main_screen.movies_list_scroll_pos
                                 >= main_screen.movies_list_visible_items
@@ -231,7 +256,7 @@ impl MainScreen {
         });
         key_event_handler.bind_key((Some(0), None), 'G', |app, _| {
             if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                main_screen.goto_index(main_screen.movies.len() - 1);
+                main_screen.goto_index(-1);
             }
         });
         key_event_handler.bind_tab((Some(0), None), |app, data| {
@@ -251,8 +276,8 @@ impl MainScreen {
             }
         });
 
-        if self.movies_list_selected_item >= self.movies.len() {
-            self.movies_list_selected_item = self.movies.len() - 1;
+        if self.movies_list_selected_item >= self.filtered_movies.len() {
+            self.movies_list_selected_item = self.filtered_movies.len() - 1;
             self.movies_list_scroll_pos =
                 self.movies_list_selected_item - self.movies_list_visible_items + 1;
         }
@@ -270,7 +295,9 @@ impl MainScreen {
         }
 
         for (i, area) in movies_lay.iter().enumerate() {
-            if !self.movies.is_empty() && (i + self.movies_list_scroll_pos) < self.movies.len() {
+            if !self.filtered_movies.is_empty()
+                && (i + self.movies_list_scroll_pos) < self.filtered_movies.len()
+            {
                 self.draw_movie_widget(i, frame, *area);
             } else {
                 frame.render_widget(
@@ -284,7 +311,7 @@ impl MainScreen {
             }
         }
 
-        if self.movies.len() > num_movies {
+        if self.filtered_movies.len() > num_movies {
             let scrollbar = Scrollbar::new(ratatui::widgets::ScrollbarOrientation::VerticalRight)
                 .symbols(Set {
                     track: block::FULL,
@@ -309,7 +336,7 @@ impl MainScreen {
                         .bg(tailwind::SLATE.c900),
                 );
 
-            let mut scrollbar_state = ScrollbarState::new(self.movies.len() - num_movies)
+            let mut scrollbar_state = ScrollbarState::new(self.filtered_movies.len() - num_movies)
                 .position(self.movies_list_scroll_pos);
 
             frame.render_stateful_widget(scrollbar, scrollbar_area, &mut scrollbar_state);
@@ -323,7 +350,7 @@ impl MainScreen {
         let selected = self.movies_list_selected_item == movie_id;
         let tab_selected = self.tab == 0;
         let alt = movie_id & 1 == 1;
-        let movie = &self.movies[movie_id];
+        let movie = &self.filtered_movies[movie_id];
 
         let (background, text) = if selected {
             if tab_selected {
@@ -400,7 +427,7 @@ impl MainScreen {
 
         if self.redraw_images < 1 {
             self.drawing_images |= !self.image_renderer.draw_image(
-                self.movies[movie_id].id.tmdb,
+                self.filtered_movies[movie_id].id.tmdb,
                 false,
                 poster_area,
                 frame,
@@ -455,10 +482,10 @@ impl MainScreen {
         });
 
         let description_selected = self.tab == 1;
-        let movie = if self.movies.is_empty() {
+        let movie = if self.filtered_movies.is_empty() {
             None
         } else {
-            Some(&self.movies[self.movies_list_selected_item])
+            Some(&self.filtered_movies[self.movies_list_selected_item])
         };
 
         let inner = Block::new()
@@ -674,8 +701,12 @@ impl MainScreen {
         frame.render_widget(Text::from(vec![widgets, labels]), area);
     }
 
-    pub fn goto_index(&mut self, index: usize) {
-        let index = index.min(self.movies.len());
+    pub fn goto_index(&mut self, index: isize) {
+        let index = if index.is_negative() {
+            self.filtered_movies.len() - 1
+        } else {
+            (index as usize).min(self.filtered_movies.len() - 1)
+        };
 
         self.movies_list_selected_item = index;
         self.movies_list_scroll_pos = self
@@ -690,13 +721,13 @@ impl MainScreen {
     }
 
     pub fn current_movie(&self) -> &Movie {
-        &self.movies[self.movies_list_selected_item]
+        &self.filtered_movies[self.movies_list_selected_item]
     }
 
-    fn filter_movies(&mut self, movies: &[Movie]) {
+    fn filter_movies(&mut self) {
         let search_text = &self.search_input.lines()[0];
         if search_text.is_empty() {
-            self.movies = movies.iter().map(|x| x.clone()).collect();
+            self.filtered_movies = self.movies.iter().map(|x| x.clone()).collect();
             return;
         }
 
@@ -709,7 +740,7 @@ impl MainScreen {
             nucleo_matcher::pattern::Normalization::Never,
         );
         let mut scores = vec![];
-        for movie in movies {
+        for movie in &self.movies {
             if let Some(score) = pattern.score(
                 nucleo_matcher::Utf32Str::Ascii(
                     (movie.name.clone() + " " + &movie.year)
@@ -722,7 +753,7 @@ impl MainScreen {
             }
         }
 
-        self.movies = if let Sort::Relevance = self.sort {
+        self.filtered_movies = if let Sort::Relevance = self.sort {
             scores.sort_by_key(|x| x.0);
             scores.reverse();
             scores.iter().map(|&(_, movie)| movie.clone()).collect()
@@ -734,50 +765,56 @@ impl MainScreen {
     fn sort_movies(&mut self) {
         match self.sort {
             Sort::UserRating => {
-                self.movies.sort_by(|x, y| {
+                self.filtered_movies.sort_by(|x, y| {
                     x.get_user_rating()
                         .partial_cmp(&y.get_user_rating())
                         .unwrap()
                 });
                 if !self.sort_ascending {
-                    self.movies.reverse();
+                    self.filtered_movies.reverse();
                 }
             }
             Sort::Rating => {
-                self.movies.sort_by(MainScreen::cmp_ratings);
+                self.filtered_movies.sort_by(MainScreen::cmp_ratings);
                 if !self.sort_ascending {
-                    self.movies.reverse();
+                    self.filtered_movies.reverse();
                 }
             }
             Sort::Name => {
-                self.movies.sort_by_key(|x| x.name.clone());
+                self.filtered_movies.sort_by_key(|x| x.name.clone());
                 if self.sort_ascending {
-                    self.movies.reverse();
+                    self.filtered_movies.reverse();
                 }
             }
             Sort::ReleaseDate => {
-                self.movies.sort_by_key(|x| x.year.clone());
+                self.filtered_movies.sort_by_key(|x| x.year.clone());
                 if self.sort_ascending {
-                    self.movies.reverse();
+                    self.filtered_movies.reverse();
                 }
             }
             _ => (),
         }
     }
 
-    pub fn filter_sort_movies(&mut self, movies: &[Movie]) {
-        self.filter_movies(movies);
-
+    pub fn set_movies(&mut self, movies: &[Movie]) {
+        self.movies = movies.to_vec();
         self.image_renderer
-            .preload_images(&movies.iter().map(|x| x.id.tmdb).collect::<Vec<_>>());
+            .preload_images(&self.movies.iter().map(|x| x.id.tmdb).collect::<Vec<_>>());
+        self.filter_sort_movies();
+    }
+
+    pub fn filter_sort_movies(&mut self) {
+        self.filter_movies();
+
+        self.movies_list_selected_item = 0;
+        self.movies_list_scroll_pos = 0;
+
         if let Sort::AddedDate = self.sort {
             return;
         } else if let Sort::Relevance = self.sort {
             return;
         }
 
-        self.movies_list_selected_item = 0;
-        self.movies_list_scroll_pos = 0;
         self.sort_movies();
     }
 

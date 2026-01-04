@@ -1,5 +1,5 @@
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
-use std::collections::HashMap;
+use std::{collections::HashMap, slice::Iter};
 
 use crate::{App, Drawer};
 
@@ -26,6 +26,7 @@ enum Bind {
 #[derive(Default)]
 pub struct KeyEventHandler {
     binds: HashMap<(Bind, State), Callback>,
+    execute_immediate: Vec<Callback>,
 }
 
 impl KeyEventHandler {
@@ -33,6 +34,10 @@ impl KeyEventHandler {
         self.binds.clear();
 
         self.bind_key((None, None), 'q', |app, _| app.quit = true);
+    }
+
+    pub fn bind_immediate(&mut self, callback: impl FnOnce(&mut App, Data) + 'static) {
+        self.execute_immediate.push(Box::new(callback));
     }
 
     pub fn bind_horizontal(
@@ -88,6 +93,10 @@ impl KeyEventHandler {
         }
     }
 
+    pub fn execute_immediates(&mut self) -> Vec<Callback> {
+        self.execute_immediate.drain(..).collect()
+    }
+
     pub fn handle_key_event(
         &mut self,
         event: KeyEvent,
@@ -101,6 +110,9 @@ impl KeyEventHandler {
                 }
                 crate::popups::Popups::RemoveMovie(remove_movie_popup) => {
                     state = remove_movie_popup.get_state();
+                }
+                crate::popups::Popups::AddMovie(add_movie_popup) => {
+                    state = add_movie_popup.get_state();
                 }
             }
         } else if let Some(screen) = drawer.current_screen.as_ref() {

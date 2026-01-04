@@ -28,7 +28,7 @@ impl From<TokenResponse> for Tokens {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct TraktTokens {
     client_id: String,
     client_secret: String,

@@ -223,17 +223,14 @@ pub fn refresh_tokens(
     Ok(token_response.json::<TokenResponse>()?)
 }
 
-pub fn get_movie_details(
-    trakt_tokens: &TraktTokens,
-    imdb_id: &str,
-) -> anyhow::Result<TraktDetailsResponse> {
+pub fn get_movie_details(client_id: &str, imdb_id: &str) -> anyhow::Result<TraktDetailsResponse> {
     let client = ClientBuilder::new().build()?;
 
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
     headers.insert(USER_AGENT, "reqwest/0.12.8".parse().unwrap());
     headers.insert("trakt-api-version", "2".parse().unwrap());
-    headers.insert("trakt-api-key", trakt_tokens.client_id().parse().unwrap());
+    headers.insert("trakt-api-key", client_id.parse().unwrap());
 
     let query = [("type", "movie"), ("extended", "full,images")];
 
@@ -256,7 +253,7 @@ pub fn get_movie_details(
 
 pub fn get_movie_poster_banner(
     cache_dir: &PathBuf,
-    trakt_tokens: &TraktTokens,
+    client_id: &str,
     id: String,
     add_placeholder: bool,
 ) -> anyhow::Result<bool> {
@@ -264,9 +261,9 @@ pub fn get_movie_poster_banner(
     headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
     headers.insert(USER_AGENT, "reqwest/0.12.8".parse().unwrap());
     headers.insert("trakt-api-version", "2".parse().unwrap());
-    headers.insert("trakt-api-key", trakt_tokens.client_id().parse().unwrap());
+    headers.insert("trakt-api-key", client_id.parse().unwrap());
 
-    let movie_details = get_movie_details(trakt_tokens, &id)?;
+    let movie_details = get_movie_details(client_id, &id)?;
 
     if !add_placeholder
         && ((movie_details.images.banner.is_empty() && movie_details.images.fanart.is_empty())

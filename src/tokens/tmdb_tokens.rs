@@ -16,7 +16,7 @@ struct Tokens {
     session_id: String,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct TMDBTokens {
     // tx_init: Sender<OptionalResult<String>>,
     tmdb_credentials: Tokens,

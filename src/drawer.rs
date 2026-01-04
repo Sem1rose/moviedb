@@ -1,6 +1,12 @@
 use std::path::PathBuf;
 
-use crate::{popups::*, screens::*, KeyEventHandler};
+use crate::{
+    popups::*,
+    screens::*,
+    tokens::{OMDBTokens, TMDBTokens, TraktTokens},
+    types::Movie,
+    KeyEventHandler,
+};
 use ratatui::{
     layout::Constraint,
     style::{palette::tailwind::*, Stylize},
@@ -16,6 +22,7 @@ pub struct Drawer {
     show_term_size_warning: bool,
 
     refresh_immediate: u8,
+    cache_dir: PathBuf,
 }
 
 const MINTERMSIZE: [u32; 2] = [100, 30];
@@ -26,6 +33,7 @@ impl Drawer {
             active_popup: None,
             show_term_size_warning: false,
             refresh_immediate: 0,
+            cache_dir: cache_dir.clone(),
         }
     }
 
@@ -41,7 +49,7 @@ impl Drawer {
 
         self.draw_current_screen(frame, key_event_handler)?;
 
-        self.check_popups()?;
+        self.check_popups(key_event_handler)?;
         if !self.show_term_size_warning && self.active_popup.is_some() {
             self.draw_popup(frame, key_event_handler)?;
         }
@@ -75,11 +83,19 @@ impl Drawer {
         Ok(())
     }
 
-    fn check_popups(&mut self) -> anyhow::Result<()> {
+    fn check_popups(&mut self, key_event_handler: &mut KeyEventHandler) -> anyhow::Result<()> {
         if let Some(popup) = self.active_popup.as_mut() {
             match popup {
                 Popups::EditMovie(_) => {}
                 Popups::RemoveMovie(_) => {}
+                Popups::AddMovie(add_movie_popup) => {
+                    add_movie_popup.update()?;
+                    if let AddMoviePopupPhase::Done = add_movie_popup.phase {
+                        key_event_handler.bind_immediate(|app, _| {
+                            app.add_movie();
+                        });
+                    }
+                }
             }
         }
 
@@ -98,6 +114,9 @@ impl Drawer {
                 }
                 Popups::RemoveMovie(remove_movie_popup) => {
                     remove_movie_popup.render(frame, key_event_handler)?;
+                }
+                Popups::AddMovie(add_movie_popup) => {
+                    add_movie_popup.render(frame, key_event_handler)?;
                 }
             }
         }
@@ -119,6 +138,19 @@ impl Drawer {
             )));
         }
     }
+    pub fn open_add_movie_popup(
+        &mut self,
+        trakt_tokens: TraktTokens,
+        tmdb_tokens: TMDBTokens,
+        omdb_tokens: OMDBTokens,
+    ) {
+        self.active_popup = Some(Popups::AddMovie(AddMoviePopup::new(
+            trakt_tokens,
+            tmdb_tokens,
+            omdb_tokens,
+            &self.cache_dir,
+        )));
+    }
 
     pub fn close_popups(&mut self) {
         self.active_popup = None;
@@ -133,6 +165,9 @@ impl Drawer {
         self.refresh_immediate > 0
     }
     pub fn check_refresh_delayed(&mut self) -> bool {
+        if let Some(Popups::AddMovie(add_movie_popup)) = self.active_popup.as_ref() {
+            return add_movie_popup.throbber_visible;
+        }
         if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_ref() {
             return main_screen.drawing_images;
         }

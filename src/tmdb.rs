@@ -176,10 +176,10 @@ pub fn get_session_id(
         .json::<RequestTokenResponse>()?
         .request_token;
 
+    // Step 2: ask the user for permission
     let authorization_url = format!("https://www.themoviedb.org/authenticate/{}", request_token);
     _ = tx_authorization_url.send(authorization_url.clone());
 
-    // Step 2: ask the user for permission
     // println!(
     //     "\nPlease visit the following url to authorize the application.\n{}\n",
     //     url
