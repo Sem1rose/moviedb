@@ -1,11 +1,12 @@
+use crossterm::event::KeyModifiers;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
-use std::{collections::HashMap, slice::Iter};
+use std::collections::HashMap;
 
 use crate::{App, Drawer};
 
 pub enum Data {
     None,
-    Direction(bool),
+    Direction(bool, KeyModifiers),
     Key(KeyEvent),
 }
 
@@ -130,7 +131,7 @@ impl KeyEventHandler {
                 if let Some(callback) = self.try_get_bind(state, Bind::Vertical) {
                     Ok(Some((
                         callback,
-                        Data::Direction(event.code == KeyCode::Down),
+                        Data::Direction(event.code == KeyCode::Down, event.modifiers),
                     )))
                 } else {
                     Ok(None)
@@ -140,7 +141,7 @@ impl KeyEventHandler {
                 if let Some(callback) = self.try_get_bind(state, Bind::Tab) {
                     Ok(Some((
                         callback,
-                        Data::Direction(event.code == KeyCode::Tab),
+                        Data::Direction(event.code == KeyCode::Tab, KeyModifiers::NONE),
                     )))
                 } else {
                     Ok(None)
@@ -173,7 +174,7 @@ impl KeyEventHandler {
                 } else if let Some(callback) = self.try_get_bind(state, Bind::Horizontal) {
                     Ok(Some((
                         callback,
-                        Data::Direction(event.code == KeyCode::Right),
+                        Data::Direction(event.code == KeyCode::Right, event.modifiers),
                     )))
                 } else {
                     Ok(None)

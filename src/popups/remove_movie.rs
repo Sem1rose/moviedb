@@ -34,13 +34,13 @@ impl RemoveMoviePopup {
             if let Some(Popups::RemoveMovie(remove_movie_popup)) = app.drawer.active_popup.as_mut()
             {
                 match data {
-                    key_event_handler::Data::Direction(true) => {
+                    key_event_handler::Data::Direction(true, _) => {
                         remove_movie_popup.item += 1;
                         if remove_movie_popup.item >= 2 {
                             remove_movie_popup.item = 0;
                         }
                     }
-                    key_event_handler::Data::Direction(false) => {
+                    key_event_handler::Data::Direction(false, _) => {
                         remove_movie_popup.item =
                             remove_movie_popup.item.checked_sub(1).unwrap_or(1);
                     }

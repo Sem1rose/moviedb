@@ -8,11 +8,10 @@ pub use edit_movie::EditMoviePopup;
 pub use remove_movie::RemoveMoviePopup;
 
 pub enum Popups {
-    // FetchArtwork,
     AddMovie(AddMoviePopup),
     EditMovie(EditMoviePopup),
     RemoveMovie(RemoveMoviePopup),
-    // Error,
+    // FetchArtwork,
     // TraktInit,
     // TMDBInit,
 }

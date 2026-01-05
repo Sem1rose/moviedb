@@ -1,16 +1,13 @@
 use crate::{
-    app::App,
-    drawer::Drawer,
-    helpers::{add_padding, center_rect, dynamic_popup, ellipsize_string},
+    helpers::{add_padding, center_rect, dynamic_popup},
     key_event_handler::{self, KeyEventHandler},
     omdb::{self, OMDBDetailsResponse},
     popups::Popups,
     tmdb::{self, TMDBDetailsResponse, TMDBSearchResponse, TMDBSearchResult},
-    tokens::{Credentials, OMDBTokens, TMDBTokens, TraktTokens},
+    tokens::{OMDBTokens, TMDBTokens, TraktTokens},
     trakt::{self, TraktDetailsResponse},
 };
 use ratatui::{
-    crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind},
     layout::*,
     prelude::*,
     style::palette::material,
@@ -277,13 +274,13 @@ impl AddMoviePopup {
                         app.drawer.active_popup.as_mut()
                     {
                         match data {
-                            crate::key_event_handler::Data::Direction(true) => {
+                            crate::key_event_handler::Data::Direction(true, _) => {
                                 add_movie_popup.item += 1;
                                 if add_movie_popup.item > 1 {
                                     add_movie_popup.item = 0;
                                 }
                             }
-                            crate::key_event_handler::Data::Direction(false) => {
+                            crate::key_event_handler::Data::Direction(false, _) => {
                                 add_movie_popup.item =
                                     add_movie_popup.item.checked_sub(1).unwrap_or(1);
                             }
@@ -296,7 +293,7 @@ impl AddMoviePopup {
                         app.drawer.active_popup.as_mut()
                     {
                         match data {
-                            crate::key_event_handler::Data::Direction(true) => {
+                            crate::key_event_handler::Data::Direction(true, _) => {
                                 add_movie_popup.item = 2;
                             }
                             _ => {}
@@ -308,7 +305,7 @@ impl AddMoviePopup {
                         app.drawer.active_popup.as_mut()
                     {
                         match data {
-                            crate::key_event_handler::Data::Direction(false) => {
+                            crate::key_event_handler::Data::Direction(false, _) => {
                                 add_movie_popup.item = 1;
                             }
                             _ => {}
@@ -453,7 +450,8 @@ impl AddMoviePopup {
                             } else {
                                 material::RED.c600
                             }
-                        })),
+                        }))
+                        .padding(Padding::symmetric(1, 0)),
                 );
                 self.input.set_placeholder_text("Search");
                 self.input
@@ -479,7 +477,7 @@ impl AddMoviePopup {
                         app.drawer.active_popup.as_mut()
                     {
                         match data {
-                            key_event_handler::Data::Direction(true) => {
+                            key_event_handler::Data::Direction(true, _) => {
                                 add_movie_popup.selected_item = add_movie_popup
                                     .selected_item
                                     .add(1)
@@ -490,7 +488,7 @@ impl AddMoviePopup {
                                     add_movie_popup.scroll_pos += 1;
                                 }
                             }
-                            key_event_handler::Data::Direction(false) => {
+                            key_event_handler::Data::Direction(false, _) => {
                                 add_movie_popup.selected_item =
                                     add_movie_popup.selected_item.saturating_sub(1);
                                 if add_movie_popup.selected_item < add_movie_popup.scroll_pos {
@@ -745,13 +743,13 @@ impl AddMoviePopup {
                         app.drawer.active_popup.as_mut()
                     {
                         match data {
-                            crate::key_event_handler::Data::Direction(true) => {
+                            crate::key_event_handler::Data::Direction(true, _) => {
                                 add_movie_popup.item += 1;
                                 if add_movie_popup.item > 2 {
                                     add_movie_popup.item = 0;
                                 }
                             }
-                            crate::key_event_handler::Data::Direction(false) => {
+                            crate::key_event_handler::Data::Direction(false, _) => {
                                 add_movie_popup.item =
                                     add_movie_popup.item.checked_sub(1).unwrap_or(2);
                             }
@@ -764,7 +762,7 @@ impl AddMoviePopup {
                         app.drawer.active_popup.as_mut()
                     {
                         match data {
-                            crate::key_event_handler::Data::Direction(true) => {
+                            crate::key_event_handler::Data::Direction(true, _) => {
                                 add_movie_popup.item = 3;
                             }
                             _ => {}
@@ -776,7 +774,7 @@ impl AddMoviePopup {
                         app.drawer.active_popup.as_mut()
                     {
                         match data {
-                            crate::key_event_handler::Data::Direction(false) => {
+                            crate::key_event_handler::Data::Direction(false, _) => {
                                 add_movie_popup.item = 2;
                             }
                             _ => {}
@@ -950,7 +948,8 @@ impl AddMoviePopup {
                             } else {
                                 material::RED.c600
                             }
-                        })),
+                        }))
+                        .padding(Padding::symmetric(1, 0)),
                 );
                 self.input.set_placeholder_text("Enter a rating");
                 self.input
@@ -1059,7 +1058,6 @@ impl AddMoviePopup {
                     actions_area,
                 );
             }
-            _ => (),
         }
 
         Ok(())

@@ -198,7 +198,7 @@ impl App {
                 let index = self
                     .movies
                     .iter()
-                    .position(|x| x == main_screen.current_movie())
+                    .position(|x| x == main_screen.current_movie().unwrap())
                     .unwrap();
                 self.movies[index].edit_user_rating(
                     edit_movie_popup.user_rating_input.lines()[0]
@@ -215,7 +215,7 @@ impl App {
             let index = self
                 .movies
                 .iter()
-                .position(|x| x == main_screen.current_movie())
+                .position(|x| x == main_screen.current_movie().unwrap())
                 .unwrap();
             self.movies.remove(index);
             main_screen.set_movies(&self.movies);

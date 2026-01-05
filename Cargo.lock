@@ -1946,6 +1946,8 @@ dependencies = [
  "json",
  "log",
  "nucleo-matcher",
+ "num-derive",
+ "num-traits",
  "rand 0.9.2",
  "ratatui",
  "ratatui-image",

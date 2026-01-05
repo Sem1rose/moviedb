@@ -4,7 +4,6 @@ use crate::{
     popups::*,
     screens::*,
     tokens::{OMDBTokens, TMDBTokens, TraktTokens},
-    types::Movie,
     KeyEventHandler,
 };
 use ratatui::{
@@ -127,14 +126,14 @@ impl Drawer {
     pub fn open_edit_movie_popup(&mut self) {
         if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_mut() {
             self.active_popup = Some(Popups::EditMovie(EditMoviePopup::new(
-                main_screen.current_movie().get_user_rating(),
+                main_screen.current_movie().unwrap().get_user_rating(),
             )));
         }
     }
     pub fn open_remove_movie_popup(&mut self) {
         if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_mut() {
             self.active_popup = Some(Popups::RemoveMovie(RemoveMoviePopup::new(
-                &main_screen.current_movie().name,
+                &main_screen.current_movie().unwrap().name,
             )));
         }
     }

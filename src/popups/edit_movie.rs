@@ -70,13 +70,13 @@ impl EditMoviePopup {
         key_event_handler.bind_tab((None, None), |app, data| {
             if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
                 match data {
-                    crate::key_event_handler::Data::Direction(true) => {
+                    crate::key_event_handler::Data::Direction(true, _) => {
                         edit_movie_popup.item += 1;
                         if edit_movie_popup.item > 2 {
                             edit_movie_popup.item = 0;
                         }
                     }
-                    crate::key_event_handler::Data::Direction(false) => {
+                    crate::key_event_handler::Data::Direction(false, _) => {
                         edit_movie_popup.item = edit_movie_popup.item.checked_sub(1).unwrap_or(2);
                     }
                     _ => {}
@@ -97,7 +97,7 @@ impl EditMoviePopup {
         key_event_handler.bind_horizontal((None, Some(1)), |app, data| {
             if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
                 match data {
-                    crate::key_event_handler::Data::Direction(true) => {
+                    crate::key_event_handler::Data::Direction(true, _) => {
                         edit_movie_popup.item = 2;
                     }
                     _ => {}
@@ -107,7 +107,7 @@ impl EditMoviePopup {
         key_event_handler.bind_horizontal((None, Some(2)), |app, data| {
             if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
                 match data {
-                    crate::key_event_handler::Data::Direction(false) => {
+                    crate::key_event_handler::Data::Direction(false, _) => {
                         edit_movie_popup.item = 1;
                     }
                     _ => {}
