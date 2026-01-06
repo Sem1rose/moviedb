@@ -1,5 +1,3 @@
-use crate::config::config_omdb::OMDBConfig;
-// use log::{debug, error, trace};
 use anyhow::Context;
 use reqwest::blocking::{ClientBuilder, RequestBuilder};
 use serde::Deserialize;
@@ -42,17 +40,10 @@ pub struct OMDBDetailsResponse {
     // pub Result: String,
 }
 
-pub fn get_movie_details(
-    omdb_config: &OMDBConfig,
-    imdb_id: &str,
-) -> anyhow::Result<OMDBDetailsResponse> {
+pub fn get_movie_details(omdb_key: &str, imdb_id: &str) -> anyhow::Result<OMDBDetailsResponse> {
     let client = ClientBuilder::new().build()?;
 
-    let query = [
-        ("apikey", omdb_config.key()),
-        ("i", imdb_id),
-        ("type", "movie"),
-    ];
+    let query = [("apikey", omdb_key), ("i", imdb_id), ("type", "movie")];
     let mut request: RequestBuilder;
     request = client.get("http://www.omdbapi.com");
     request = request.query(&query);

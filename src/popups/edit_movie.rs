@@ -1,183 +1,257 @@
-use crate::{custom::helpers::center_rect, draw::Drawer};
-use ratatui::{
-    crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind},
-    layout::*,
-    prelude::*,
-    widgets::*,
-    Frame,
+use crate::{
+    helpers::{add_padding, dynamic_popup},
+    key_event_handler::KeyEventHandler,
+    popups::Popups,
 };
-use ratatui_macros::{horizontal, text, vertical};
+use ratatui::{layout::*, prelude::*, style::palette::material, widgets::*, Frame};
+use ratatui_macros::vertical;
 use style::palette::tailwind;
-use tui_input::{backend::crossterm::EventHandler, Input};
-
-#[derive(Default)]
-pub enum Phase {
-    #[default]
-    GetNewRating,
-    Done,
-}
+use tui_textarea::TextArea;
 
 #[derive(Default)]
 pub struct EditMoviePopup {
-    pub user_rating_input: Input,
+    item: usize,
+    new_play: bool,
 
-    pub user_rating: f64,
-
-    pub phase: Phase,
+    pub user_rating_input: TextArea<'static>,
 }
 
 impl EditMoviePopup {
-    pub fn begin(&mut self, user_rating: f64) {
-        *self = Self::default();
-
-        self.user_rating_input = user_rating.to_string().into();
+    pub fn get_state(&self) -> (Option<usize>, Option<usize>) {
+        (None, Some(self.item))
     }
 
-    pub fn advance_phase(&mut self) {
-        self.phase = match self.phase {
-            Phase::GetNewRating => Phase::Done,
-            _ => Phase::GetNewRating,
-        };
+    pub fn new(new_play: bool, user_rating: f64) -> Self {
+        let mut popup = Self::default();
+
+        popup.user_rating_input = TextArea::from([if new_play {
+            "".into()
+        } else {
+            format!("{:.1}", user_rating)
+        }]);
+        popup
+            .user_rating_input
+            .move_cursor(tui_textarea::CursorMove::End);
+
+        popup.new_play = new_play;
+        popup
     }
 
-    pub fn check_input_rating(&mut self) -> bool {
-        if self.user_rating_input.value().is_empty() {
+    pub fn validate_rating(&mut self) -> bool {
+        if self.user_rating_input.is_empty() {
             return false;
         }
 
-        if let Ok(x) = self.user_rating_input.value().parse::<f64>() {
+        if let Ok(x) = self.user_rating_input.lines()[0].parse::<f64>() {
             return (0.0..=10.0).contains(&x);
         }
         false
     }
 
-    pub fn handle_key_events(&mut self, event: KeyEvent) -> bool {
-        let kind = event.kind;
-        let code = event.code;
+    pub fn render(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
+        key_event_handler.clear();
+        let valid = self.validate_rating();
+        let add_play = self.new_play;
+        key_event_handler.bind_enter((None, None), "Confirm".into(), move |app, _| {
+            if valid {
+                if add_play {
+                    app.add_play();
+                } else {
+                    app.edit_movie();
+                }
+                app.drawer.close_popups();
+            }
+        });
+        key_event_handler.bind_enter((None, Some(2)), "Close".into(), |app, _| {
+            app.drawer.close_popups();
+        });
+        key_event_handler.bind_esc((None, None), "Close".into(), |app, _| {
+            app.drawer.close_popups();
+        });
+        key_event_handler.bind_tab((None, None), "".into(), |app, data| {
+            if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
+                match data {
+                    crate::key_event_handler::Data::Direction(true, _) => {
+                        edit_movie_popup.item += 1;
+                        if edit_movie_popup.item > 2 {
+                            edit_movie_popup.item = 0;
+                        }
+                    }
+                    crate::key_event_handler::Data::Direction(false, _) => {
+                        edit_movie_popup.item = edit_movie_popup.item.checked_sub(1).unwrap_or(2);
+                    }
+                    _ => {}
+                }
+            }
+        });
+        key_event_handler.bind_input_field((None, Some(0)), "".into(), |app, data| {
+            if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
+                match data {
+                    crate::key_event_handler::Data::Key(key_event) => {
+                        edit_movie_popup.user_rating_input.input(key_event);
+                    }
+                    _ => {}
+                }
+            }
+        });
 
-        if kind != KeyEventKind::Press {
-            return false;
-        }
+        key_event_handler.bind_horizontal((None, Some(1)), "".into(), |app, data| {
+            if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
+                match data {
+                    crate::key_event_handler::Data::Direction(true, _) => {
+                        edit_movie_popup.item = 2;
+                    }
+                    _ => {}
+                }
+            }
+        });
+        key_event_handler.bind_horizontal((None, Some(2)), "".into(), |app, data| {
+            if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
+                match data {
+                    crate::key_event_handler::Data::Direction(false, _) => {
+                        edit_movie_popup.item = 1;
+                    }
+                    _ => {}
+                }
+            }
+        });
 
-        match code {
-            KeyCode::Enter => {
-                if let Phase::GetNewRating = self.phase {
-                    if self.check_input_rating() {
-                        self.advance_phase();
+        let popup_area = dynamic_popup(
+            frame,
+            Some(7),
+            5.0,
+            tailwind::BLUE.c950,
+            if self.new_play {
+                "  Add new play  "
+            } else {
+                "  Edit rating  "
+            },
+            Style::new().fg(material::YELLOW.c800),
+            Alignment::Center,
+            Style::new().fg(tailwind::VIOLET.c950),
+        );
+
+        let [_, input_area, _, actions_area, _] =
+            vertical![==1, ==3, ==1, ==1, ==1].areas(popup_area);
+
+        frame.render_widget(
+            Line::from(vec![
+                Span::from(" Confirm ").style(
+                    Style::new()
+                        .fg(if valid {
+                            if self.item == 1 {
+                                tailwind::SLATE.c200
+                            } else {
+                                tailwind::SLATE.c300
+                            }
+                        } else {
+                            tailwind::SLATE.c500
+                        })
+                        .bg(if valid {
+                            if self.item == 1 {
+                                material::BLUE.c600
+                            } else {
+                                material::BLUE.c900
+                            }
+                        } else {
+                            if self.item == 1 {
+                                tailwind::SLATE.c700
+                            } else {
+                                tailwind::SLATE.c800
+                            }
+                        }),
+                ),
+                Span::from(" "),
+                Span::from(" Cancel ").style(
+                    Style::new()
+                        .fg(if self.item == 2 {
+                            tailwind::SLATE.c300
+                        } else {
+                            tailwind::RED.c500
+                        })
+                        .bg(if self.item == 2 {
+                            material::RED.c800
+                        } else {
+                            tailwind::SLATE.c950
+                        }),
+                ),
+                Span::from("  "),
+            ])
+            .right_aligned(),
+            actions_area,
+        );
+
+        let search_selected = self.item == 0;
+        if search_selected {
+            key_event_handler.bind_input_field((Some(2), Some(0)), "".into(), |app, data| {
+                if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut()
+                {
+                    match data {
+                        crate::key_event_handler::Data::Key(key_event) => {
+                            edit_movie_popup.user_rating_input.input(key_event);
+                        }
+                        _ => {}
                     }
                 }
-            }
-            KeyCode::Esc => {
-                return true;
-            }
-            _ => {
-                if let Phase::GetNewRating = self.phase {
-                    self.user_rating_input.handle_event(&Event::Key(event));
-                }
-            }
+            });
         }
-
-        false
-    }
-}
-
-impl Drawer {
-    pub(crate) fn draw_edit_movie_popup(&mut self, frame: &mut Frame) -> anyhow::Result<()> {
-        let frame_area = frame.area();
-        let popup_area = center_rect(frame_area, Constraint::Percentage(35), Constraint::Max(10));
-
-        let popup = Block::new()
-            .bg(tailwind::INDIGO.c950)
-            .fg(tailwind::INDIGO.c300)
-            .borders(Borders::ALL)
-            .border_type(BorderType::Thick)
-            .border_style(Style::new().fg(tailwind::EMERALD.c400))
-            .title_top("Edit Movie")
-            .title_alignment(Alignment::Center)
-            .title_style(Style::new().fg(tailwind::AMBER.c300));
-
-        frame.render_widget(Clear, popup_area);
-        frame.render_widget(&popup, popup_area);
-
-        let [_, vert, _] = vertical![==1, >=1, ==1].areas(popup_area);
-        let [_, horiz, _] = horizontal![==2, >=1, ==2].areas(vert);
-
-        match self.edit_movie_popup.phase {
-            Phase::GetNewRating => {
-                let [_, right, left, _] = horizontal![==2, ==12, >=1, ==2].areas(horiz);
-                let prompt_area = Layout::vertical([Constraint::Length(1); 6]).split(right)[2];
-                let [_, input_top, input_center, input_bottom, _, _] =
-                    Layout::vertical([Constraint::Length(1); 6]).areas(left);
-                let [_, input_area, _] = horizontal![==1, >=1, ==1].areas(input_center);
-
-                // ▄▀█ ▂🮂▗▖▘▝
-                frame.render_widget(
-                    text!["🮂".repeat(input_bottom.width as usize)].fg(tailwind::RED.c700),
-                    input_bottom,
-                );
-                frame.render_widget(
-                    text!["▂".repeat(input_top.width as usize)].fg(tailwind::RED.c700),
-                    input_top,
-                );
-
-                frame.render_widget(text!["New rating: "], prompt_area);
-
-                frame.render_widget(Block::new().bg(tailwind::RED.c700), input_center);
-
-                let areas = Layout::vertical([Constraint::Length(1); 6]).split(horiz);
-                let [_, button_area] = horizontal![>=1, ==4].areas(areas[5]);
-
-                frame.render_widget(text![" Ok "].on_red().right_aligned(), button_area);
-
-                let width = input_area.width as usize - 1;
-                let start = self.edit_movie_popup.user_rating_input.visual_scroll(width);
-                let cursor_pos = self.edit_movie_popup.user_rating_input.cursor() - start;
-                let mut chars = self
-                    .edit_movie_popup
-                    .user_rating_input
-                    .value()
-                    .chars()
-                    .skip(start);
-
-                let mut input_string: Vec<Span> = vec![];
-                for i in 0..=(start + width) {
-                    let c = chars.next().unwrap_or(' ');
-                    if i == cursor_pos {
-                        input_string.push(c.to_string().reversed());
+        self.user_rating_input
+            .set_style(Style::new().fg(if search_selected {
+                tailwind::SLATE.c200
+            } else {
+                tailwind::STONE.c400
+            }));
+        self.user_rating_input.set_cursor_style(
+            Style::new()
+                .fg(if search_selected {
+                    tailwind::SLATE.c300
+                } else {
+                    tailwind::STONE.c400
+                })
+                .add_modifier(if search_selected {
+                    Modifier::REVERSED
+                } else {
+                    Modifier::default()
+                }),
+        );
+        self.user_rating_input.set_block(
+            Block::bordered()
+                .border_type(ratatui::widgets::BorderType::Thick)
+                .style(Style::new().fg(if search_selected {
+                    if valid {
+                        material::BLUE.c500
                     } else {
-                        input_string.push(c.to_string().into());
+                        material::RED.c600
                     }
-                }
-                frame.render_widget(Line::from_iter(input_string), input_area);
-
-                if !self.edit_movie_popup.check_input_rating() {
-                    frame.render_widget(
-                        Paragraph::new("Please enter a valid rating!")
-                            .red()
-                            .centered(),
-                        areas[4],
-                    );
-                }
-            }
-            _ => {
-                let areas = Layout::vertical([Constraint::Length(1); 5]).split(horiz);
-                let [_, throbber_area, text_area, _] = Layout::horizontal([
-                    Constraint::Length(2),
-                    Constraint::Length(1),
-                    Constraint::Min(1),
-                    Constraint::Length(2),
-                ])
-                .areas(areas[2]);
-
-                let throbber = throbber_widgets_tui::Throbber::default()
-                    .throbber_set(throbber_widgets_tui::BRAILLE_SIX_DOUBLE)
-                    .throbber_style(Style::new().bold().fg(tailwind::VIOLET.c400));
-
-                frame.render_stateful_widget(throbber, throbber_area, &mut self.throbber_state);
-                frame.render_widget(Paragraph::new(" Processing..."), text_area);
-            }
-        }
-
-        Ok(())
+                } else {
+                    tailwind::STONE.c600
+                }))
+                .title(" Rating ")
+                .title_style(Style::new().fg(if search_selected {
+                    if valid {
+                        material::BLUE.c600
+                    } else {
+                        material::RED.c600
+                    }
+                } else {
+                    tailwind::SLATE.c600
+                }))
+                .padding(Padding::symmetric(1, 0)),
+        );
+        self.user_rating_input.set_placeholder_text("Enter rating");
+        self.user_rating_input
+            .set_placeholder_style(Style::new().fg(material::GRAY.c700));
+        frame.render_widget(
+            &self.user_rating_input,
+            add_padding(
+                input_area,
+                Padding {
+                    left: 2,
+                    right: 2,
+                    top: 0,
+                    bottom: 0,
+                },
+            ),
+        );
     }
 }

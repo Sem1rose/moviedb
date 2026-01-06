@@ -1,11 +1,37 @@
 use crate::{omdb::OMDBDetailsResponse, tmdb::TMDBDetailsResponse, trakt::TraktDetailsResponse};
-pub use anyhow::Result;
 use chrono::{DateTime, Local};
-use ratatui::prelude::*;
+use ratatui::{
+    crossterm::{self, terminal::EnterAlternateScreen, ExecutableCommand},
+    prelude::*,
+};
 use serde::{Deserialize, Serialize};
+use std::io::stdout;
 
-pub type OptionalResult<T> = anyhow::Result<T, Option<anyhow::Error>>;
-pub type Term = Terminal<CrosstermBackend<std::io::Stdout>>;
+// pub type OptionalResult<T> = anyhow::Result<T, Option<anyhow::Error>>;
+type TermBackend = CrosstermBackend<std::io::Stdout>;
+pub type Term = Terminal<TermBackend>;
+
+pub fn initialize_terminal() -> anyhow::Result<Term> {
+    set_panic_hook();
+
+    crossterm::terminal::enable_raw_mode()?;
+
+    let mut backend = TermBackend::new(stdout());
+    backend.execute(EnterAlternateScreen)?;
+
+    let mut term = Terminal::new(backend)?;
+    term.hide_cursor()?;
+
+    Ok(term)
+}
+
+fn set_panic_hook() {
+    let hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        ratatui::restore();
+        hook(info);
+    }));
+}
 
 #[derive(Serialize, Clone, Copy, Deserialize, Debug)]
 pub enum Rating {
@@ -25,7 +51,6 @@ pub struct Movie {
     pub id: MovieID,
     pub name: String,
     pub year: String,
-    pub user_rating: f64,
     pub language: String,
     pub ratings: [Rating; 3],
     pub genres: Vec<String>,
@@ -50,7 +75,6 @@ impl Movie {
 
         Self {
             name: movie_details.title,
-            user_rating,
             ratings: [
                 Rating::TMDB(movie_details.vote_average, movie_details.vote_count),
                 Rating::Trakt(0.0, 0),
@@ -95,12 +119,24 @@ impl Movie {
         );
     }
 
+    pub fn get_user_rating(&self) -> f64 {
+        self.plays.last().map(|x| x.1).unwrap_or(0.0)
+    }
+
     pub fn add_play(&mut self, datetime: DateTime<Local>, rating: f64) {
         self.plays.push((datetime, rating));
+    }
+    pub fn edit_user_rating(&mut self, new_rating: f64) {
+        self.plays.last_mut().map(|x| x.1 = new_rating);
     }
 }
 
 impl std::cmp::PartialEq<&Movie> for Movie {
+    fn eq(&self, other: &&Movie) -> bool {
+        self.id.imdb == other.id.imdb
+    }
+}
+impl std::cmp::PartialEq<&Movie> for &Movie {
     fn eq(&self, other: &&Movie) -> bool {
         self.id.imdb == other.id.imdb
     }
@@ -122,13 +158,13 @@ pub struct OldMovie {
     pub released: bool,
     pub tagline: String,
     pub trailer: Option<String>,
+    pub plays: Vec<(DateTime<Local>, f64)>,
 }
 
 impl From<OldMovie> for Movie {
     fn from(value: OldMovie) -> Self {
         Self {
             name: value.name,
-            user_rating: value.user_rating,
             ratings: value.ratings,
             year: value.year,
             language: value.language,

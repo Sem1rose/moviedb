@@ -1,5 +1,3 @@
-use crate::config::{config_tmdb::TMDBConfig, Config};
-// use log::{debug, error, trace};
 use anyhow::{bail, Context};
 use reqwest::{
     blocking::{Client, ClientBuilder, RequestBuilder, Response},
@@ -178,10 +176,10 @@ pub fn get_session_id(
         .json::<RequestTokenResponse>()?
         .request_token;
 
+    // Step 2: ask the user for permission
     let authorization_url = format!("https://www.themoviedb.org/authenticate/{}", request_token);
     _ = tx_authorization_url.send(authorization_url.clone());
 
-    // Step 2: ask the user for permission
     // println!(
     //     "\nPlease visit the following url to authorize the application.\n{}\n",
     //     url
@@ -258,16 +256,14 @@ pub fn get_session_id(
     Ok(session_id)
 }
 
-pub fn find_movie(tmdb_config: &TMDBConfig, name: &str) -> anyhow::Result<TMDBSearchResponse> {
+pub fn find_movie(access_token: &str, name: &str) -> anyhow::Result<TMDBSearchResponse> {
     let client = ClientBuilder::new().build()?;
     let mut headers = HeaderMap::new();
     headers.insert("accept", "application/json".parse().unwrap());
     headers.insert("content-type", "application/json".parse().unwrap());
     headers.insert(
         "Authorization",
-        format!("Bearer {}", tmdb_config.access_token())
-            .parse()
-            .unwrap(),
+        format!("Bearer {}", access_token).parse().unwrap(),
     );
 
     let query = [("query", name)];
@@ -295,10 +291,7 @@ pub fn find_movie(tmdb_config: &TMDBConfig, name: &str) -> anyhow::Result<TMDBSe
     Ok(json)
 }
 
-pub fn get_movie_details(
-    tmdb_config: &TMDBConfig,
-    tmdb_id: u32,
-) -> anyhow::Result<TMDBDetailsResponse> {
+pub fn get_movie_details(access_token: &str, tmdb_id: u32) -> anyhow::Result<TMDBDetailsResponse> {
     let client = ClientBuilder::new().build()?;
 
     let mut headers = HeaderMap::new();
@@ -306,9 +299,7 @@ pub fn get_movie_details(
     headers.insert("content-type", "application/json".parse().unwrap());
     headers.insert(
         "Authorization",
-        format!("Bearer {}", tmdb_config.access_token())
-            .parse()
-            .unwrap(),
+        format!("Bearer {}", access_token).parse().unwrap(),
     );
 
     let details_response = send_tmdb_request(
@@ -330,7 +321,7 @@ pub fn get_movie_details(
 }
 
 pub fn get_movie_images(
-    tmdb_config: &TMDBConfig,
+    access_token: &str,
     tmdb_id: u32,
 ) -> anyhow::Result<TMDBMovieImagesResponse> {
     let client = ClientBuilder::new().build()?;
@@ -340,9 +331,7 @@ pub fn get_movie_images(
     headers.insert("content-type", "application/json".parse().unwrap());
     headers.insert(
         "Authorization",
-        format!("Bearer {}", tmdb_config.access_token())
-            .parse()
-            .unwrap(),
+        format!("Bearer {}", access_token).parse().unwrap(),
     );
 
     let query = [("include_image_language", "en")];
@@ -396,8 +385,8 @@ pub fn get_movie_images(
 }
 
 pub fn get_movie_poster_banner(
-    config: &Config,
-    tmdb_config: &TMDBConfig,
+    cache_dir: &PathBuf,
+    access_token: &str,
     id: u32,
     add_placeholder: bool,
 ) -> anyhow::Result<bool> {
@@ -408,12 +397,10 @@ pub fn get_movie_poster_banner(
     headers.insert("content-type", "application/json".parse().unwrap());
     headers.insert(
         "Authorization",
-        format!("Bearer {}", tmdb_config.access_token())
-            .parse()
-            .unwrap(),
+        format!("Bearer {}", access_token).parse().unwrap(),
     );
 
-    let movie_images = get_movie_images(tmdb_config, id)?;
+    let movie_images = get_movie_images(access_token, id)?;
 
     // print!(
     //     "{:#?}\n{:#?}",
@@ -515,7 +502,7 @@ pub fn get_movie_poster_banner(
         Ok(0)
     };
 
-    let poster_path = config.dirs.poster_cache.join(format!("{}.jpg", id));
+    let poster_path = cache_dir.join("posters").join(format!("{}.jpg", id));
     if !movie_images.posters.is_empty() {
         let mut success = false;
         for i in 0..5 {
@@ -544,7 +531,7 @@ pub fn get_movie_poster_banner(
         std::fs::copy("poster_placeholder.jpg", poster_path)?;
     }
 
-    let backdrop_path = config.dirs.backdrop_cache.join(format!("{}.jpg", id));
+    let backdrop_path = cache_dir.join("backdrops").join(format!("{}.jpg", id));
     if !movie_images.backdrops.is_empty() {
         let mut success = false;
         for i in 0..5 {
@@ -570,10 +557,7 @@ pub fn get_movie_poster_banner(
             std::fs::copy("backdrop_placeholder.jpg", backdrop_path)?;
         }
     } else {
-        std::fs::copy(
-            "backdrop_placeholder.jpg",
-            config.dirs.poster_cache.join(format!("{}.jpg", id)),
-        )?;
+        std::fs::copy("backdrop_placeholder.jpg", backdrop_path)?;
     }
 
     Ok(true)
