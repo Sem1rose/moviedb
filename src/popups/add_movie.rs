@@ -199,7 +199,7 @@ impl AddMoviePopup {
         false
     }
 
-    pub fn update(&mut self) -> anyhow::Result<()> {
+    pub fn update(&mut self) {
         self.tick += 1;
         if self.tick & 7 == 0 {
             self.tick = 0;
@@ -246,20 +246,14 @@ impl AddMoviePopup {
             }
             _ => (),
         }
-
-        Ok(())
     }
 
-    pub fn render(
-        &mut self,
-        frame: &mut Frame,
-        key_event_handler: &mut KeyEventHandler,
-    ) -> anyhow::Result<()> {
+    pub fn render(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
         key_event_handler.clear();
-        key_event_handler.bind_esc((None, None), |app, _| {
+        key_event_handler.bind_esc((None, None), "Close".into(), |app, _| {
             app.drawer.close_popups();
         });
-        key_event_handler.bind_key((None, None), 'q', |app, _| {
+        key_event_handler.bind_key((None, None), 'q', "Close".into(), |app, _| {
             app.drawer.close_popups();
         });
 
@@ -269,7 +263,7 @@ impl AddMoviePopup {
                 self.tab = 0;
 
                 let valid = !self.input.is_empty();
-                key_event_handler.bind_tab((Some(0), None), |app, data| {
+                key_event_handler.bind_tab((Some(0), None), "Navigate".into(), |app, data| {
                     if let Some(Popups::AddMovie(add_movie_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -288,7 +282,7 @@ impl AddMoviePopup {
                         }
                     }
                 });
-                key_event_handler.bind_horizontal((Some(0), Some(1)), |app, data| {
+                key_event_handler.bind_horizontal((Some(0), Some(1)), "".into(), |app, data| {
                     if let Some(Popups::AddMovie(add_movie_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -300,7 +294,7 @@ impl AddMoviePopup {
                         }
                     }
                 });
-                key_event_handler.bind_horizontal((Some(0), Some(2)), |app, data| {
+                key_event_handler.bind_horizontal((Some(0), Some(2)), "".into(), |app, data| {
                     if let Some(Popups::AddMovie(add_movie_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -312,11 +306,11 @@ impl AddMoviePopup {
                         }
                     }
                 });
-                key_event_handler.bind_enter((Some(0), Some(2)), |app, _| {
+                key_event_handler.bind_enter((Some(0), Some(2)), "Close".into(), |app, _| {
                     app.drawer.close_popups();
                 });
                 if valid {
-                    key_event_handler.bind_enter((Some(0), None), |app, _| {
+                    key_event_handler.bind_enter((Some(0), None), "Continue".into(), |app, _| {
                         if let Some(Popups::AddMovie(add_movie_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
@@ -326,7 +320,7 @@ impl AddMoviePopup {
                     });
                 }
 
-                key_event_handler.bind_input_field((Some(0), Some(0)), |app, data| {
+                key_event_handler.bind_input_field((Some(0), Some(0)), "".into(), |app, data| {
                     if let Some(Popups::AddMovie(add_movie_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -338,14 +332,7 @@ impl AddMoviePopup {
                         }
                     }
                 });
-                key_event_handler.bind_esc((Some(0), Some(0)), |app, _| {
-                    if let Some(Popups::AddMovie(add_movie_popup)) =
-                        app.drawer.active_popup.as_mut()
-                    {
-                        add_movie_popup.item = 2;
-                    }
-                });
-                key_event_handler.bind_esc((Some(0), None), |app, _| {
+                key_event_handler.bind_esc((Some(0), None), "Close".into(), |app, _| {
                     app.drawer.close_popups();
                 });
 
@@ -472,7 +459,7 @@ impl AddMoviePopup {
             Phase::SelectMovie => {
                 self.tab = 1;
 
-                key_event_handler.bind_vertical((Some(1), None), |app, data| {
+                key_event_handler.bind_vertical((Some(1), None), "Scroll".into(), |app, data| {
                     if let Some(Popups::AddMovie(add_movie_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -499,7 +486,7 @@ impl AddMoviePopup {
                         }
                     }
                 });
-                key_event_handler.bind_enter((Some(1), None), |app, _| {
+                key_event_handler.bind_enter((Some(1), None), "Continue".into(), |app, _| {
                     if let Some(Popups::AddMovie(add_movie_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -738,7 +725,7 @@ impl AddMoviePopup {
                 self.tab = 2;
 
                 let valid = self.validate_input_rating();
-                key_event_handler.bind_tab((Some(2), None), |app, data| {
+                key_event_handler.bind_tab((Some(2), None), "".into(), |app, data| {
                     if let Some(Popups::AddMovie(add_movie_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -757,7 +744,7 @@ impl AddMoviePopup {
                         }
                     }
                 });
-                key_event_handler.bind_horizontal((Some(2), Some(2)), |app, data| {
+                key_event_handler.bind_horizontal((Some(2), Some(2)), "".into(), |app, data| {
                     if let Some(Popups::AddMovie(add_movie_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -769,7 +756,7 @@ impl AddMoviePopup {
                         }
                     }
                 });
-                key_event_handler.bind_horizontal((Some(2), Some(3)), |app, data| {
+                key_event_handler.bind_horizontal((Some(2), Some(3)), "".into(), |app, data| {
                     if let Some(Popups::AddMovie(add_movie_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -781,10 +768,10 @@ impl AddMoviePopup {
                         }
                     }
                 });
-                key_event_handler.bind_enter((Some(2), Some(3)), |app, _| {
+                key_event_handler.bind_enter((Some(2), Some(3)), "Cancel".into(), |app, _| {
                     app.drawer.close_popups();
                 });
-                key_event_handler.bind_enter((Some(2), Some(0)), |app, _| {
+                key_event_handler.bind_enter((Some(2), Some(0)), "Back".into(), |app, _| {
                     if let Some(Popups::AddMovie(add_movie_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -792,7 +779,7 @@ impl AddMoviePopup {
                     }
                 });
                 if valid {
-                    key_event_handler.bind_enter((Some(2), None), |app, _| {
+                    key_event_handler.bind_enter((Some(2), None), "Confirm".into(), |app, _| {
                         if let Some(Popups::AddMovie(add_movie_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
@@ -802,7 +789,7 @@ impl AddMoviePopup {
                     });
                 }
 
-                key_event_handler.bind_input_field((Some(2), Some(1)), |app, data| {
+                key_event_handler.bind_input_field((Some(2), Some(1)), "".into(), |app, data| {
                     if let Some(Popups::AddMovie(add_movie_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -814,14 +801,14 @@ impl AddMoviePopup {
                         }
                     }
                 });
-                key_event_handler.bind_esc((Some(2), Some(1)), |app, _| {
+                key_event_handler.bind_esc((Some(2), Some(1)), "".into(), |app, _| {
                     if let Some(Popups::AddMovie(add_movie_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
                         add_movie_popup.item = 1;
                     }
                 });
-                key_event_handler.bind_esc((Some(2), Some(0)), |app, _| {
+                key_event_handler.bind_esc((Some(2), Some(0)), "Back".into(), |app, _| {
                     // app.drawer.close_popups();
                     if let Some(Popups::AddMovie(add_movie_popup)) =
                         app.drawer.active_popup.as_mut()
@@ -1026,7 +1013,7 @@ impl AddMoviePopup {
             }
             Phase::Error(error) => {
                 self.tab = 3;
-                key_event_handler.bind_enter((Some(3), None), |app, _| {
+                key_event_handler.bind_enter((Some(3), None), "Close".into(), |app, _| {
                     app.drawer.close_popups();
                 });
 
@@ -1059,7 +1046,5 @@ impl AddMoviePopup {
                 );
             }
         }
-
-        Ok(())
     }
 }

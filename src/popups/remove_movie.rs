@@ -25,12 +25,8 @@ impl RemoveMoviePopup {
         }
     }
 
-    pub fn render(
-        &mut self,
-        frame: &mut Frame,
-        key_event_handler: &mut KeyEventHandler,
-    ) -> anyhow::Result<()> {
-        key_event_handler.bind_horizontal((None, None), |app, data| {
+    pub fn render(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
+        key_event_handler.bind_horizontal((None, None), "Navigate".into(), |app, data| {
             if let Some(Popups::RemoveMovie(remove_movie_popup)) = app.drawer.active_popup.as_mut()
             {
                 match data {
@@ -48,13 +44,13 @@ impl RemoveMoviePopup {
                 }
             }
         });
-        key_event_handler.bind_esc((None, None), |app, _| {
+        key_event_handler.bind_esc((None, None), "Cancel".into(), |app, _| {
             app.drawer.close_popups();
         });
-        key_event_handler.bind_enter((None, Some(0)), |app, _| {
+        key_event_handler.bind_enter((None, Some(0)), "Cancel".into(), |app, _| {
             app.drawer.close_popups();
         });
-        key_event_handler.bind_enter((None, Some(1)), |app, _| {
+        key_event_handler.bind_enter((None, Some(1)), "Confirm".into(), |app, _| {
             app.remove_movie();
             app.drawer.close_popups();
         });
@@ -111,6 +107,5 @@ impl RemoveMoviePopup {
             .right_aligned(),
             actions_area,
         );
-        Ok(())
     }
 }

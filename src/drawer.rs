@@ -36,24 +36,18 @@ impl Drawer {
         }
     }
 
-    pub fn render_app(
-        &mut self,
-        frame: &mut Frame,
-        key_event_handler: &mut KeyEventHandler,
-    ) -> anyhow::Result<()> {
+    pub fn render_app(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
         self.refresh_immediate = self.refresh_immediate.saturating_sub(1);
 
         self.check_term_size(frame);
         self.update_image_renderers();
 
-        self.draw_current_screen(frame, key_event_handler)?;
+        self.draw_current_screen(frame, key_event_handler);
 
-        self.check_popups(key_event_handler)?;
+        self.check_popups(key_event_handler);
         if !self.show_term_size_warning && self.active_popup.is_some() {
-            self.draw_popup(frame, key_event_handler)?;
+            self.draw_popup(frame, key_event_handler);
         }
-
-        Ok(())
     }
 
     fn update_image_renderers(&mut self) {
@@ -62,11 +56,7 @@ impl Drawer {
         }
     }
 
-    fn draw_current_screen(
-        &mut self,
-        frame: &mut Frame,
-        key_event_handler: &mut KeyEventHandler,
-    ) -> anyhow::Result<()> {
+    fn draw_current_screen(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
         frame.render_widget(Block::new().bg(SLATE.c900), frame.area());
 
         if self.show_term_size_warning {
@@ -74,21 +64,19 @@ impl Drawer {
         } else if let Some(current_screen) = self.current_screen.as_mut() {
             match current_screen {
                 Screens::MainScreen(main_screen) => {
-                    main_screen.render(frame, key_event_handler)?;
+                    main_screen.render(frame, key_event_handler);
                 }
             }
         }
-
-        Ok(())
     }
 
-    fn check_popups(&mut self, key_event_handler: &mut KeyEventHandler) -> anyhow::Result<()> {
+    fn check_popups(&mut self, key_event_handler: &mut KeyEventHandler) {
         if let Some(popup) = self.active_popup.as_mut() {
             match popup {
                 Popups::EditMovie(_) => {}
                 Popups::RemoveMovie(_) => {}
                 Popups::AddMovie(add_movie_popup) => {
-                    add_movie_popup.update()?;
+                    add_movie_popup.update();
                     if let AddMoviePopupPhase::Done = add_movie_popup.phase {
                         key_event_handler.bind_immediate(|app, _| {
                             app.add_movie();
@@ -97,46 +85,24 @@ impl Drawer {
                 }
             }
         }
-
-        Ok(())
     }
 
-    fn draw_popup(
-        &mut self,
-        frame: &mut Frame,
-        key_event_handler: &mut KeyEventHandler,
-    ) -> anyhow::Result<()> {
+    fn draw_popup(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
         if let Some(active_popup) = self.active_popup.as_mut() {
             match active_popup {
                 Popups::EditMovie(edit_movie_popup) => {
-                    edit_movie_popup.render(frame, key_event_handler)?;
+                    edit_movie_popup.render(frame, key_event_handler);
                 }
                 Popups::RemoveMovie(remove_movie_popup) => {
-                    remove_movie_popup.render(frame, key_event_handler)?;
+                    remove_movie_popup.render(frame, key_event_handler);
                 }
                 Popups::AddMovie(add_movie_popup) => {
-                    add_movie_popup.render(frame, key_event_handler)?;
+                    add_movie_popup.render(frame, key_event_handler);
                 }
             }
         }
-
-        Ok(())
     }
 
-    pub fn open_edit_movie_popup(&mut self) {
-        if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_mut() {
-            self.active_popup = Some(Popups::EditMovie(EditMoviePopup::new(
-                main_screen.current_movie().unwrap().get_user_rating(),
-            )));
-        }
-    }
-    pub fn open_remove_movie_popup(&mut self) {
-        if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_mut() {
-            self.active_popup = Some(Popups::RemoveMovie(RemoveMoviePopup::new(
-                &main_screen.current_movie().unwrap().name,
-            )));
-        }
-    }
     pub fn open_add_movie_popup(
         &mut self,
         trakt_tokens: TraktTokens,
@@ -150,7 +116,24 @@ impl Drawer {
             &self.cache_dir,
         )));
     }
-
+    pub fn open_add_play_popup(&mut self) {
+        self.active_popup = Some(Popups::EditMovie(EditMoviePopup::new(true, 0.0)));
+    }
+    pub fn open_edit_movie_popup(&mut self) {
+        if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_mut() {
+            self.active_popup = Some(Popups::EditMovie(EditMoviePopup::new(
+                false,
+                main_screen.current_movie().unwrap().get_user_rating(),
+            )));
+        }
+    }
+    pub fn open_remove_movie_popup(&mut self) {
+        if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_mut() {
+            self.active_popup = Some(Popups::RemoveMovie(RemoveMoviePopup::new(
+                &main_screen.current_movie().unwrap().name,
+            )));
+        }
+    }
     pub fn close_popups(&mut self) {
         self.active_popup = None;
 

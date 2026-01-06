@@ -11,6 +11,7 @@ use tui_textarea::TextArea;
 #[derive(Default)]
 pub struct EditMoviePopup {
     item: usize,
+    new_play: bool,
 
     pub user_rating_input: TextArea<'static>,
 }
@@ -20,14 +21,19 @@ impl EditMoviePopup {
         (None, Some(self.item))
     }
 
-    pub fn new(user_rating: f64) -> Self {
+    pub fn new(new_play: bool, user_rating: f64) -> Self {
         let mut popup = Self::default();
 
-        popup.user_rating_input = TextArea::from([format!("{:.1}", user_rating)]);
+        popup.user_rating_input = TextArea::from([if new_play {
+            "".into()
+        } else {
+            format!("{:.1}", user_rating)
+        }]);
         popup
             .user_rating_input
             .move_cursor(tui_textarea::CursorMove::End);
 
+        popup.new_play = new_play;
         popup
     }
 
@@ -42,32 +48,27 @@ impl EditMoviePopup {
         false
     }
 
-    pub fn render(
-        &mut self,
-        frame: &mut Frame,
-        key_event_handler: &mut KeyEventHandler,
-    ) -> anyhow::Result<()> {
+    pub fn render(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
         key_event_handler.clear();
         let valid = self.validate_rating();
-        key_event_handler.bind_enter((None, Some(0)), move |app, _| {
+        let add_play = self.new_play;
+        key_event_handler.bind_enter((None, None), "Confirm".into(), move |app, _| {
             if valid {
-                app.edit_movie();
+                if add_play {
+                    app.add_play();
+                } else {
+                    app.edit_movie();
+                }
                 app.drawer.close_popups();
             }
         });
-        key_event_handler.bind_enter((None, Some(1)), move |app, _| {
-            if valid {
-                app.edit_movie();
-                app.drawer.close_popups();
-            }
-        });
-        key_event_handler.bind_enter((None, Some(2)), |app, _| {
+        key_event_handler.bind_enter((None, Some(2)), "Close".into(), |app, _| {
             app.drawer.close_popups();
         });
-        key_event_handler.bind_esc((None, None), |app, _| {
+        key_event_handler.bind_esc((None, None), "Close".into(), |app, _| {
             app.drawer.close_popups();
         });
-        key_event_handler.bind_tab((None, None), |app, data| {
+        key_event_handler.bind_tab((None, None), "".into(), |app, data| {
             if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
                 match data {
                     crate::key_event_handler::Data::Direction(true, _) => {
@@ -83,7 +84,7 @@ impl EditMoviePopup {
                 }
             }
         });
-        key_event_handler.bind_input_field((None, Some(0)), |app, data| {
+        key_event_handler.bind_input_field((None, Some(0)), "".into(), |app, data| {
             if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
                 match data {
                     crate::key_event_handler::Data::Key(key_event) => {
@@ -94,7 +95,7 @@ impl EditMoviePopup {
             }
         });
 
-        key_event_handler.bind_horizontal((None, Some(1)), |app, data| {
+        key_event_handler.bind_horizontal((None, Some(1)), "".into(), |app, data| {
             if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
                 match data {
                     crate::key_event_handler::Data::Direction(true, _) => {
@@ -104,7 +105,7 @@ impl EditMoviePopup {
                 }
             }
         });
-        key_event_handler.bind_horizontal((None, Some(2)), |app, data| {
+        key_event_handler.bind_horizontal((None, Some(2)), "".into(), |app, data| {
             if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
                 match data {
                     crate::key_event_handler::Data::Direction(false, _) => {
@@ -120,7 +121,11 @@ impl EditMoviePopup {
             Some(7),
             5.0,
             tailwind::BLUE.c950,
-            "  Edit rating  ",
+            if self.new_play {
+                "  Add new play  "
+            } else {
+                "  Edit rating  "
+            },
             Style::new().fg(material::YELLOW.c800),
             Alignment::Center,
             Style::new().fg(tailwind::VIOLET.c950),
@@ -157,7 +162,7 @@ impl EditMoviePopup {
                         }),
                 ),
                 Span::from(" "),
-                Span::from(" No ").style(
+                Span::from(" Cancel ").style(
                     Style::new()
                         .fg(if self.item == 2 {
                             tailwind::SLATE.c300
@@ -178,7 +183,7 @@ impl EditMoviePopup {
 
         let search_selected = self.item == 0;
         if search_selected {
-            key_event_handler.bind_input_field((Some(2), Some(0)), |app, data| {
+            key_event_handler.bind_input_field((Some(2), Some(0)), "".into(), |app, data| {
                 if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut()
                 {
                     match data {
@@ -221,7 +226,7 @@ impl EditMoviePopup {
                 } else {
                     tailwind::STONE.c600
                 }))
-                .title(" New rating ")
+                .title(" Rating ")
                 .title_style(Style::new().fg(if search_selected {
                     if valid {
                         material::BLUE.c600
@@ -230,7 +235,8 @@ impl EditMoviePopup {
                     }
                 } else {
                     tailwind::SLATE.c600
-                })),
+                }))
+                .padding(Padding::symmetric(1, 0)),
         );
         self.user_rating_input.set_placeholder_text("Enter rating");
         self.user_rating_input
@@ -247,7 +253,5 @@ impl EditMoviePopup {
                 },
             ),
         );
-
-        Ok(())
     }
 }

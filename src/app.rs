@@ -126,10 +126,7 @@ impl App {
 
             self.terminal
                 .draw(|frame| {
-                    let result = self.drawer.render_app(frame, &mut self.key_event_handler);
-                    if let Err(err) = result {
-                        error!("Error while drawing: {}", err);
-                    }
+                    self.drawer.render_app(frame, &mut self.key_event_handler);
                 })
                 .map(|_| ())?;
 
@@ -141,12 +138,12 @@ impl App {
                 if self.drawer.check_refresh_delayed() {
                     if event::poll(Duration::from_millis(10))? {
                         if let Ok(event) = event::read() {
-                            self.handle_event(event)?;
+                            self.handle_event(event);
                         }
                     }
                 } else {
                     if let Ok(event) = event::read() {
-                        self.handle_event(event)?;
+                        self.handle_event(event);
                     }
                 }
             }
@@ -163,6 +160,28 @@ impl App {
         self.movies = _movies;
     }
 
+    pub fn add_play(&mut self) {
+        if let Some(Screens::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
+            if let Some(Popups::EditMovie(edit_movie_popup)) = self.drawer.active_popup.as_mut() {
+                let mut movie = self.movies.remove(
+                    self.movies
+                        .iter()
+                        .position(|x| x == main_screen.current_movie().unwrap())
+                        .unwrap(),
+                );
+                movie.add_play(
+                    chrono::Local::now(),
+                    edit_movie_popup.user_rating_input.lines()[0]
+                        .parse()
+                        .unwrap(),
+                );
+                self.movies.push(movie);
+            }
+            main_screen.set_movies(&self.movies);
+            main_screen.goto_index(-1);
+        }
+        self.save_movies().unwrap();
+    }
     pub fn add_movie(&mut self) {
         if let Some(Screens::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
             if let Some(Popups::AddMovie(add_movie_popup)) = self.drawer.active_popup.as_mut() {
@@ -260,12 +279,11 @@ impl App {
         Ok(())
     }
 
-    fn handle_event(&mut self, event: Event) -> anyhow::Result<()> {
+    fn handle_event(&mut self, event: Event) {
         match event {
             Event::Key(event) => {
-                if let Some((callback, data)) = self
-                    .key_event_handler
-                    .handle_key_event(event, &self.drawer)?
+                if let Some((callback, data)) =
+                    self.key_event_handler.handle_key_event(event, &self.drawer)
                 {
                     callback(self, data);
                 }
@@ -276,7 +294,5 @@ impl App {
             Event::Paste(_) => (),
             Event::Resize(_, _) => (),
         }
-
-        Ok(())
     }
 }
