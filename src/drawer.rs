@@ -148,7 +148,7 @@ impl Drawer {
     }
     pub fn check_refresh_delayed(&mut self) -> bool {
         if let Some(Popups::AddMovie(add_movie_popup)) = self.active_popup.as_ref() {
-            return add_movie_popup.throbber_visible;
+            return add_movie_popup.throbber_visible || add_movie_popup.search_results.is_none();
         }
         if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_ref() {
             return main_screen.drawing_images;

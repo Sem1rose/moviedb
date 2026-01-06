@@ -3,8 +3,9 @@ use crate::{
     key_event_handler::KeyEventHandler,
     popups::Popups,
 };
-use ratatui::{layout::*, prelude::*, style::palette::material, widgets::*, Frame};
-use ratatui_macros::vertical;
+use ratatui::{
+    layout::*, macros::vertical, prelude::*, style::palette::material, widgets::*, Frame,
+};
 use style::palette::tailwind;
 use tui_textarea::TextArea;
 

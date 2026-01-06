@@ -7,8 +7,6 @@ use crate::image_backend::RatatuiImage;
 use crate::screens::Screens;
 use crate::types::{Movie, Rating};
 use crate::KeyEventHandler;
-use anyhow::Ok;
-use crossterm::event::KeyModifiers;
 use nucleo_matcher::{pattern::Atom, Config, Matcher};
 use num_derive::{FromPrimitive, ToPrimitive};
 use num_traits::{FromPrimitive, ToPrimitive};
@@ -17,9 +15,13 @@ use ratatui::style::palette::material;
 use ratatui::style::Styled;
 use ratatui::symbols::scrollbar::Set;
 use ratatui::symbols::{block, border};
-use ratatui::widgets::{Block, Clear, Padding, Paragraph, Scrollbar, ScrollbarState, Wrap};
-use ratatui::{prelude::*, style::palette::tailwind};
-use ratatui_macros::{constraint, constraints, horizontal, line, span, text, vertical};
+use ratatui::widgets::{Block, Padding, Paragraph, Scrollbar, ScrollbarState, Wrap};
+use ratatui::{
+    crossterm::event::KeyModifiers,
+    macros::{constraint, horizontal, line, span, text, vertical},
+    prelude::*,
+    style::palette::tailwind,
+};
 use tui_textarea::TextArea;
 
 #[derive(FromPrimitive, ToPrimitive, Default, Clone, Copy)]

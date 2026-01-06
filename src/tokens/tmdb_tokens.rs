@@ -42,12 +42,12 @@ impl TMDBTokens {
                 .map(char::from)
                 .collect();
 
-            _ = fs::remove_file(&home_dir.join(".credentials_tmdb"));
+            _ = fs::remove_file(&home_dir.join(".tmdb_tokens"));
 
             fs::write(&home_dir.join(".key"), key)?;
         }
 
-        Ok(home_dir.join(".credentials_tmdb").is_file())
+        Ok(home_dir.join(".tmdb_tokens").is_file())
     }
 
     pub fn init(&mut self, home_dir: &PathBuf) {
@@ -72,7 +72,7 @@ impl TMDBTokens {
         let key = fs::read(&home_dir.join(".key"))?;
         let cocoon = Cocoon::new(&key);
 
-        let mut encrypted_file = File::open(&home_dir.join(".credentials_tmdb"))?;
+        let mut encrypted_file = File::open(&home_dir.join(".tmdb_tokens"))?;
 
         let result = String::from_utf8(cocoon.parse(&mut encrypted_file)?);
 
@@ -89,7 +89,7 @@ impl TMDBTokens {
         let key = fs::read(&home_dir.join(".key"))?;
         let mut cocoon = Cocoon::new(&key);
 
-        let mut encrypted_file = File::create(&home_dir.join(".credentials_tmdb"))?;
+        let mut encrypted_file = File::create(&home_dir.join(".tmdb_tokens"))?;
         let dump_json = serde_json::to_string(&self.tmdb_credentials)?;
 
         cocoon.dump(dump_json.into_bytes(), &mut encrypted_file)?;

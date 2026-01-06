@@ -40,9 +40,8 @@ impl App {
             .join("moviedb");
 
         let file_contents =
-            read_to_string(".credentials").expect("Couldn't read credentials from .credentials!");
-        let creds = serde_json::from_str(&file_contents)
-            .expect("Couldn't deserialize credentials at .credentials");
+            read_to_string(home.join(".credentials")).expect("Couldn't read credentials");
+        let creds = serde_json::from_str(&file_contents).expect("Couldn't deserialize credentials");
 
         Self {
             quit: false,

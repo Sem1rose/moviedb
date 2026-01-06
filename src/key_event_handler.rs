@@ -1,6 +1,5 @@
-use crossterm::event::KeyModifiers;
 use itertools::Itertools;
-use ratatui::crossterm::event::{KeyCode, KeyEvent};
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::collections::HashMap;
 
 use crate::{App, Drawer};

@@ -9,18 +9,19 @@ use crate::{
 };
 use ratatui::{
     layout::*,
+    macros::{constraint, horizontal, vertical},
     prelude::*,
     style::palette::material,
     symbols::{block, scrollbar::Set},
     widgets::*,
     Frame,
 };
-use ratatui_macros::{constraint, horizontal, vertical};
 use std::{
     ops::Add,
     path::PathBuf,
     sync::mpsc::{self, Receiver},
     thread,
+    time::Duration,
 };
 use style::palette::tailwind;
 use throbber_widgets_tui::{Throbber, ThrobberState};
@@ -28,9 +29,9 @@ use tui_textarea::TextArea;
 
 #[derive(Default)]
 pub enum Phase {
+    // GetName,
+    // Searching,
     #[default]
-    GetName,
-    Searching,
     SelectMovie,
     GetRating,
     GettingDetails,
@@ -48,7 +49,7 @@ pub struct DetailsResponse {
 pub struct AddMoviePopup {
     pub phase: Phase,
     pub throbber_visible: bool,
-    pub tick: u8,
+    pub tick: u64,
 
     item: usize,
     tab: usize,
@@ -56,9 +57,10 @@ pub struct AddMoviePopup {
     input: TextArea<'static>,
     throbber_state: ThrobberState,
 
-    rx_search_result: Option<Receiver<anyhow::Result<TMDBSearchResponse>>>,
-    search_results: Option<Vec<TMDBSearchResult>>,
-    num_results: usize,
+    rx_search_result: Option<Receiver<(u64, anyhow::Result<TMDBSearchResponse>)>>,
+    search_ticket: u64,
+    pub search_results: Option<Vec<TMDBSearchResult>>,
+    last_input_tick: Option<u64>,
 
     scroll_pos: usize,
     selected_item: usize,
@@ -99,13 +101,16 @@ impl AddMoviePopup {
         }
     }
 
-    pub fn request_search(&mut self, tmdb_access_token: &str) {
+    pub fn request_search(&mut self) {
         let (tx_search_results, rx_search_results) = mpsc::channel();
-        let search_string = self.input.lines()[0].clone();
 
-        let access_token = tmdb_access_token.to_string();
+        let search_string = self.input.lines()[0].clone();
+        let access_token = self.tmdb_tokens.access_token_owned();
+        let ticket = rand::random();
+        self.search_ticket = ticket;
+
         thread::spawn(move || {
-            _ = tx_search_results.send(tmdb::find_movie(&access_token, &search_string));
+            _ = tx_search_results.send((ticket, tmdb::find_movie(&access_token, &search_string)));
         });
 
         self.rx_search_result = Some(rx_search_results);
@@ -161,14 +166,6 @@ impl AddMoviePopup {
 
     pub fn advance_phase(&mut self) {
         self.phase = match self.phase {
-            Phase::GetName => {
-                self.request_search(&self.tmdb_tokens.access_token_owned());
-                Phase::Searching
-            }
-            Phase::Searching => {
-                self.item = 0;
-                Phase::SelectMovie
-            }
             Phase::SelectMovie => {
                 self.item = 1;
                 self.input = TextArea::from([""]);
@@ -184,7 +181,7 @@ impl AddMoviePopup {
                 Phase::GettingDetails
             }
             Phase::GettingDetails => Phase::Done,
-            _ => Phase::GetName,
+            _ => Phase::SelectMovie,
         };
     }
 
@@ -202,26 +199,28 @@ impl AddMoviePopup {
     pub fn update(&mut self) {
         self.tick += 1;
         if self.tick & 7 == 0 {
-            self.tick = 0;
             self.throbber_state.calc_next();
         }
+        if let Some(last_tick) = self.last_input_tick {
+            if self.tick - last_tick > 20 {
+                self.last_input_tick = None;
+
+                self.selected_item = 0;
+                self.scroll_pos = 0;
+                self.search_results = None;
+                self.request_search();
+            }
+        }
         match self.phase {
-            Phase::Searching => {
-                let result = self.rx_search_result.as_ref().unwrap().try_recv();
-                if let Ok(search_result) = result {
-                    self.search_results = Some(search_result.unwrap().results);
-                    self.num_results = self.search_results.as_ref().unwrap().len();
+            Phase::SelectMovie => {
+                if let Some(rx_search_results) = self.rx_search_result.as_ref() {
+                    if let Ok((ticket, search_result)) = rx_search_results.try_recv() {
+                        if ticket != self.search_ticket {
+                            return;
+                        }
 
-                    if self.num_results == 0 {
-                        self.phase = Phase::Error("No results found".into());
-                    } else {
-                        self.advance_phase();
+                        self.search_results = Some(search_result.unwrap().results);
                     }
-
-                    self.rx_search_result = None;
-                } else if let Err(mpsc::TryRecvError::Disconnected) = result {
-                    self.rx_search_result = None;
-                    self.phase = Phase::Error("Error while searching for movie".into());
                 }
             }
             Phase::GettingDetails => {
@@ -257,145 +256,113 @@ impl AddMoviePopup {
             app.drawer.close_popups();
         });
 
+        let num_results = if let Some(search_results) = self.search_results.as_ref() {
+            search_results.len()
+        } else {
+            0
+        };
         self.throbber_visible = false;
         match &self.phase {
-            Phase::GetName => {
+            Phase::SelectMovie => {
                 self.tab = 0;
 
-                let valid = !self.input.is_empty();
-                key_event_handler.bind_tab((Some(0), None), "Navigate".into(), |app, data| {
-                    if let Some(Popups::AddMovie(add_movie_popup)) =
-                        app.drawer.active_popup.as_mut()
-                    {
-                        match data {
-                            crate::key_event_handler::Data::Direction(true, _) => {
-                                add_movie_popup.item += 1;
-                                if add_movie_popup.item > 1 {
-                                    add_movie_popup.item = 0;
-                                }
-                            }
-                            crate::key_event_handler::Data::Direction(false, _) => {
-                                add_movie_popup.item =
-                                    add_movie_popup.item.checked_sub(1).unwrap_or(1);
-                            }
-                            _ => {}
-                        }
-                    }
-                });
-                key_event_handler.bind_horizontal((Some(0), Some(1)), "".into(), |app, data| {
-                    if let Some(Popups::AddMovie(add_movie_popup)) =
-                        app.drawer.active_popup.as_mut()
-                    {
-                        match data {
-                            crate::key_event_handler::Data::Direction(true, _) => {
-                                add_movie_popup.item = 2;
-                            }
-                            _ => {}
-                        }
-                    }
-                });
-                key_event_handler.bind_horizontal((Some(0), Some(2)), "".into(), |app, data| {
-                    if let Some(Popups::AddMovie(add_movie_popup)) =
-                        app.drawer.active_popup.as_mut()
-                    {
-                        match data {
-                            crate::key_event_handler::Data::Direction(false, _) => {
-                                add_movie_popup.item = 1;
-                            }
-                            _ => {}
-                        }
-                    }
-                });
-                key_event_handler.bind_enter((Some(0), Some(2)), "Close".into(), |app, _| {
-                    app.drawer.close_popups();
-                });
-                if valid {
-                    key_event_handler.bind_enter((Some(0), None), "Continue".into(), |app, _| {
+                key_event_handler.bind_vertical(
+                    (Some(0), Some(1)),
+                    "Scroll".into(),
+                    move |app, data| {
                         if let Some(Popups::AddMovie(add_movie_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
-                            add_movie_popup.advance_phase();
-                            add_movie_popup.throbber_visible = true;
+                            match data {
+                                key_event_handler::Data::Direction(true, _) => {
+                                    add_movie_popup.selected_item = add_movie_popup
+                                        .selected_item
+                                        .add(1)
+                                        .min(num_results.saturating_sub(1));
+                                    if add_movie_popup.selected_item - add_movie_popup.scroll_pos
+                                        >= add_movie_popup.num_visible_items
+                                    {
+                                        add_movie_popup.scroll_pos += 1;
+                                    }
+                                }
+                                key_event_handler::Data::Direction(false, _) => {
+                                    add_movie_popup.selected_item =
+                                        add_movie_popup.selected_item.saturating_sub(1);
+                                    if add_movie_popup.selected_item < add_movie_popup.scroll_pos {
+                                        add_movie_popup.scroll_pos -= 1;
+                                    }
+                                }
+                                _ => (),
+                            }
                         }
-                    });
-                }
-
+                    },
+                );
+                key_event_handler.bind_enter((Some(0), Some(0)), "Search".into(), |app, _| {
+                    if let Some(Popups::AddMovie(add_movie_popup)) =
+                        app.drawer.active_popup.as_mut()
+                    {
+                        add_movie_popup.item = 1;
+                    }
+                });
+                key_event_handler.bind_enter((Some(0), Some(1)), "Select".into(), |app, _| {
+                    if let Some(Popups::AddMovie(add_movie_popup)) =
+                        app.drawer.active_popup.as_mut()
+                    {
+                        add_movie_popup.advance_phase();
+                    }
+                });
+                key_event_handler.bind_tab((Some(0), None), "Navigate".into(), |app, _| {
+                    if let Some(Popups::AddMovie(add_movie_popup)) =
+                        app.drawer.active_popup.as_mut()
+                    {
+                        add_movie_popup.item = add_movie_popup.item.checked_sub(1).unwrap_or(1);
+                    }
+                });
+                key_event_handler.bind_esc((Some(0), Some(1)), "Return".into(), |app, _| {
+                    if let Some(Popups::AddMovie(add_movie_popup)) =
+                        app.drawer.active_popup.as_mut()
+                    {
+                        add_movie_popup.item = 0;
+                    }
+                });
                 key_event_handler.bind_input_field((Some(0), Some(0)), "".into(), |app, data| {
                     if let Some(Popups::AddMovie(add_movie_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
                         match data {
                             key_event_handler::Data::Key(key_event) => {
+                                let x = add_movie_popup.input.lines()[0].clone();
                                 add_movie_popup.input.input(key_event);
+                                if add_movie_popup.input.lines()[0].trim() != x.trim()
+                                    && !add_movie_popup.input.is_empty()
+                                {
+                                    add_movie_popup.search_results = None;
+                                    add_movie_popup.last_input_tick = Some(add_movie_popup.tick);
+                                } else if add_movie_popup.input.is_empty() {
+                                    add_movie_popup.search_results = None;
+                                }
                             }
                             _ => (),
                         }
                     }
                 });
-                key_event_handler.bind_esc((Some(0), None), "Close".into(), |app, _| {
-                    app.drawer.close_popups();
-                });
+
+                if num_results == 0 {
+                    self.item = 0;
+                }
 
                 let popup_area = dynamic_popup(
                     frame,
-                    Some(9),
-                    4.0,
+                    Some(24),
+                    2.4,
                     tailwind::BLUE.c950,
                     "  Add movie  ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
                     Style::new().fg(tailwind::VIOLET.c950),
                 );
-
-                let [_, input_area, _, actions_area, _] =
-                    vertical![==1, ==3, >=1, ==1, ==1].areas(popup_area);
-
-                frame.render_widget(
-                    Line::from(vec![
-                        Span::from(" Confirm ").style(
-                            Style::new()
-                                .fg(if valid {
-                                    if self.item == 1 {
-                                        tailwind::SLATE.c200
-                                    } else {
-                                        tailwind::SLATE.c300
-                                    }
-                                } else {
-                                    tailwind::SLATE.c500
-                                })
-                                .bg(if valid {
-                                    if self.item == 1 {
-                                        material::BLUE.c600
-                                    } else {
-                                        material::BLUE.c900
-                                    }
-                                } else {
-                                    if self.item == 1 {
-                                        tailwind::SLATE.c700
-                                    } else {
-                                        tailwind::SLATE.c800
-                                    }
-                                }),
-                        ),
-                        Span::from(" "),
-                        Span::from(" Cancel ").style(
-                            Style::new()
-                                .fg(if self.item == 2 {
-                                    tailwind::SLATE.c300
-                                } else {
-                                    tailwind::RED.c500
-                                })
-                                .bg(if self.item == 2 {
-                                    material::RED.c800
-                                } else {
-                                    tailwind::SLATE.c950
-                                }),
-                        ),
-                        Span::from("  "),
-                    ])
-                    .right_aligned(),
-                    actions_area,
-                );
+                let [search_input_area, horiz] = vertical![==4, >=1].areas(popup_area);
+                let [projects_list_area, scrollbar_area] = horizontal![>=1, ==1].areas(horiz);
 
                 let input_selected = self.item == 0;
                 self.input.set_style(Style::new().fg(if input_selected {
@@ -420,11 +387,7 @@ impl AddMoviePopup {
                     Block::bordered()
                         .border_type(ratatui::widgets::BorderType::Thick)
                         .style(Style::new().fg(if input_selected {
-                            if valid {
-                                material::BLUE.c500
-                            } else {
-                                material::RED.c600
-                            }
+                            material::BLUE.c500
                         } else {
                             tailwind::STONE.c600
                         }))
@@ -432,11 +395,11 @@ impl AddMoviePopup {
                         .title_style(Style::new().fg(if input_selected {
                             material::BLUE.c400
                         } else {
-                            if valid {
-                                material::BLUE.c600
-                            } else {
-                                material::RED.c600
-                            }
+                            // if valid {
+                            material::BLUE.c600
+                            // } else {
+                            //     material::RED.c600
+                            // }
                         }))
                         .padding(Padding::symmetric(1, 0)),
                 );
@@ -446,65 +409,15 @@ impl AddMoviePopup {
                 frame.render_widget(
                     &self.input,
                     add_padding(
-                        input_area,
+                        search_input_area,
                         Padding {
-                            left: 2,
-                            right: 2,
-                            top: 0,
+                            left: 1,
+                            right: 1,
+                            top: 1,
                             bottom: 0,
                         },
                     ),
                 );
-            }
-            Phase::SelectMovie => {
-                self.tab = 1;
-
-                key_event_handler.bind_vertical((Some(1), None), "Scroll".into(), |app, data| {
-                    if let Some(Popups::AddMovie(add_movie_popup)) =
-                        app.drawer.active_popup.as_mut()
-                    {
-                        match data {
-                            key_event_handler::Data::Direction(true, _) => {
-                                add_movie_popup.selected_item = add_movie_popup
-                                    .selected_item
-                                    .add(1)
-                                    .min(add_movie_popup.num_results - 1);
-                                if add_movie_popup.selected_item - add_movie_popup.scroll_pos
-                                    >= add_movie_popup.num_visible_items
-                                {
-                                    add_movie_popup.scroll_pos += 1;
-                                }
-                            }
-                            key_event_handler::Data::Direction(false, _) => {
-                                add_movie_popup.selected_item =
-                                    add_movie_popup.selected_item.saturating_sub(1);
-                                if add_movie_popup.selected_item < add_movie_popup.scroll_pos {
-                                    add_movie_popup.scroll_pos -= 1;
-                                }
-                            }
-                            _ => (),
-                        }
-                    }
-                });
-                key_event_handler.bind_enter((Some(1), None), "Continue".into(), |app, _| {
-                    if let Some(Popups::AddMovie(add_movie_popup)) =
-                        app.drawer.active_popup.as_mut()
-                    {
-                        add_movie_popup.advance_phase();
-                    }
-                });
-
-                let popup_area = dynamic_popup(
-                    frame,
-                    Some(24),
-                    2.4,
-                    tailwind::BLUE.c950,
-                    "  Add movie  ",
-                    Style::new().fg(material::YELLOW.c800),
-                    Alignment::Center,
-                    Style::new().fg(tailwind::VIOLET.c950),
-                );
-                let [projects_list_area, scrollbar_area] = horizontal![>=1, ==1].areas(popup_area);
 
                 let num_visible_projects = projects_list_area.height as usize / 5;
                 let partially_visible_project_height =
@@ -518,9 +431,10 @@ impl AddMoviePopup {
                     };
 
                 if self.selected_item < self.scroll_pos {
-                    self.selected_item = self.selected_item.add(1).min(self.num_results - 1);
-                } else if self.selected_item >= self.num_results {
-                    self.selected_item = self.num_results.saturating_sub(1);
+                    self.selected_item =
+                        self.selected_item.add(1).min(num_results.saturating_sub(1));
+                } else if self.selected_item >= num_results {
+                    self.selected_item = num_results.saturating_sub(1);
                     self.scroll_pos = self
                         .selected_item
                         .saturating_sub(self.num_visible_items + 1);
@@ -530,7 +444,7 @@ impl AddMoviePopup {
                         .saturating_sub(self.num_visible_items + 1);
                 }
 
-                if self.num_results <= num_visible_projects {
+                if num_results <= num_visible_projects {
                     self.alignment_bottom = false;
                 } else if self.selected_item - self.scroll_pos == 0 {
                     self.alignment_bottom = false;
@@ -538,7 +452,15 @@ impl AddMoviePopup {
                     self.alignment_bottom = true;
                 }
 
-                let mut remaining_area = projects_list_area;
+                let mut remaining_area = add_padding(
+                    projects_list_area,
+                    Padding {
+                        left: 1,
+                        right: 0,
+                        top: 0,
+                        bottom: 0,
+                    },
+                );
                 for i in 0..self.num_visible_items {
                     let [area, remaining] =
                         if render_partially_visible_project && i == 0 && self.alignment_bottom {
@@ -559,7 +481,7 @@ impl AddMoviePopup {
                         }
                         .areas(remaining_area);
 
-                    if self.scroll_pos + i < self.num_results {
+                    if self.scroll_pos + i < num_results {
                         let result = &self.search_results.as_ref().unwrap()[self.scroll_pos + i];
                         let partially_visible = area.height < 5;
 
@@ -568,7 +490,11 @@ impl AddMoviePopup {
 
                         frame.render_widget(
                             Block::new().bg(if selected {
-                                tailwind::TEAL.c600
+                                if !input_selected {
+                                    tailwind::TEAL.c600
+                                } else {
+                                    tailwind::TEAL.c900
+                                }
                             } else if !alternate {
                                 tailwind::GRAY.c600
                             } else {
@@ -595,7 +521,11 @@ impl AddMoviePopup {
                                 frame.render_widget(
                                     Line::from("▔".repeat(area.width as usize)).style(
                                         Style::new().fg(if selected {
-                                            tailwind::EMERALD.c700
+                                            if !input_selected {
+                                                tailwind::EMERALD.c700
+                                            } else {
+                                                tailwind::EMERALD.c800
+                                            }
                                         } else if !alternate {
                                             tailwind::GRAY.c600
                                         } else {
@@ -714,18 +644,17 @@ impl AddMoviePopup {
                                 .fg(material::BLUE.c800)
                                 .bg(tailwind::SLATE.c900),
                         );
-                let mut scrollbar_state = ScrollbarState::new(
-                    self.num_results.saturating_sub(self.num_visible_items - 1),
-                )
-                .position(self.scroll_pos);
+                let mut scrollbar_state =
+                    ScrollbarState::new(num_results.saturating_sub(self.num_visible_items - 1))
+                        .position(self.scroll_pos);
 
                 frame.render_stateful_widget(scrollbar, scrollbar_area, &mut scrollbar_state);
             }
             Phase::GetRating => {
-                self.tab = 2;
+                self.tab = 1;
 
                 let valid = self.validate_input_rating();
-                key_event_handler.bind_tab((Some(2), None), "".into(), |app, data| {
+                key_event_handler.bind_tab((Some(1), None), "".into(), |app, data| {
                     if let Some(Popups::AddMovie(add_movie_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -744,7 +673,7 @@ impl AddMoviePopup {
                         }
                     }
                 });
-                key_event_handler.bind_horizontal((Some(2), Some(2)), "".into(), |app, data| {
+                key_event_handler.bind_horizontal((Some(1), Some(2)), "".into(), |app, data| {
                     if let Some(Popups::AddMovie(add_movie_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -756,7 +685,7 @@ impl AddMoviePopup {
                         }
                     }
                 });
-                key_event_handler.bind_horizontal((Some(2), Some(3)), "".into(), |app, data| {
+                key_event_handler.bind_horizontal((Some(1), Some(3)), "".into(), |app, data| {
                     if let Some(Popups::AddMovie(add_movie_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -768,18 +697,20 @@ impl AddMoviePopup {
                         }
                     }
                 });
-                key_event_handler.bind_enter((Some(2), Some(3)), "Cancel".into(), |app, _| {
+                key_event_handler.bind_enter((Some(1), Some(3)), "Cancel".into(), |app, _| {
                     app.drawer.close_popups();
                 });
-                key_event_handler.bind_enter((Some(2), Some(0)), "Back".into(), |app, _| {
+                key_event_handler.bind_enter((Some(1), Some(0)), "Back".into(), |app, _| {
                     if let Some(Popups::AddMovie(add_movie_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
                         add_movie_popup.phase = Phase::SelectMovie;
+                        add_movie_popup.item = 0;
+                        add_movie_popup.input = TextArea::from([""]);
                     }
                 });
                 if valid {
-                    key_event_handler.bind_enter((Some(2), None), "Confirm".into(), |app, _| {
+                    key_event_handler.bind_enter((Some(1), None), "Confirm".into(), |app, _| {
                         if let Some(Popups::AddMovie(add_movie_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
@@ -788,8 +719,7 @@ impl AddMoviePopup {
                         }
                     });
                 }
-
-                key_event_handler.bind_input_field((Some(2), Some(1)), "".into(), |app, data| {
+                key_event_handler.bind_input_field((Some(1), Some(1)), "".into(), |app, data| {
                     if let Some(Popups::AddMovie(add_movie_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -801,19 +731,14 @@ impl AddMoviePopup {
                         }
                     }
                 });
-                key_event_handler.bind_esc((Some(2), Some(1)), "".into(), |app, _| {
-                    if let Some(Popups::AddMovie(add_movie_popup)) =
-                        app.drawer.active_popup.as_mut()
-                    {
-                        add_movie_popup.item = 1;
-                    }
+                key_event_handler.bind_esc((Some(1), Some(0)), "Close".into(), |app, _| {
+                    app.drawer.close_popups();
                 });
-                key_event_handler.bind_esc((Some(2), Some(0)), "Back".into(), |app, _| {
-                    // app.drawer.close_popups();
+                key_event_handler.bind_esc((Some(1), None), "Back".into(), |app, _| {
                     if let Some(Popups::AddMovie(add_movie_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
-                        add_movie_popup.phase = Phase::SelectMovie;
+                        add_movie_popup.item = 0;
                     }
                 });
 
@@ -954,38 +879,7 @@ impl AddMoviePopup {
                     ),
                 );
             }
-            Phase::Searching => {
-                self.tab = 3;
-                self.throbber_visible = true;
-
-                let popup_area = dynamic_popup(
-                    frame,
-                    Some(9),
-                    4.0,
-                    tailwind::BLUE.c950,
-                    "  Add movie  ",
-                    Style::new().fg(material::YELLOW.c800),
-                    Alignment::Center,
-                    Style::new().fg(tailwind::VIOLET.c950),
-                );
-
-                let [_, message_area, throbber_area, _] =
-                    vertical![==3, ==2, ==1, >=1].areas(popup_area);
-                frame.render_widget(
-                    Paragraph::new(format!("Searching for {}", self.input.lines()[0])).centered(),
-                    message_area,
-                );
-
-                frame.render_stateful_widget(
-                    Throbber::default()
-                        .throbber_set(throbber_widgets_tui::BRAILLE_SIX_DOUBLE)
-                        .throbber_style(Style::new().bold().fg(tailwind::VIOLET.c400)),
-                    center_rect(throbber_area, constraint!(==1), constraint!(==1)),
-                    &mut self.throbber_state,
-                );
-            }
             Phase::GettingDetails | Phase::Done => {
-                self.tab = 3;
                 self.throbber_visible = true;
 
                 let popup_area = dynamic_popup(
@@ -1012,8 +906,8 @@ impl AddMoviePopup {
                 );
             }
             Phase::Error(error) => {
-                self.tab = 3;
-                key_event_handler.bind_enter((Some(3), None), "Close".into(), |app, _| {
+                self.tab = 2;
+                key_event_handler.bind_enter((Some(2), None), "Close".into(), |app, _| {
                     app.drawer.close_popups();
                 });
 
