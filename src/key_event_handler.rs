@@ -1,5 +1,8 @@
 use itertools::Itertools;
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::{
+    crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind},
+    layout::{Position, Rect},
+};
 use std::collections::HashMap;
 
 use crate::{App, Drawer};
@@ -8,6 +11,7 @@ pub enum Data {
     None,
     Direction(bool, KeyModifiers),
     Key(KeyEvent),
+    Mouse(MouseEvent),
 }
 
 type State = (Option<usize>, Option<usize>);
@@ -22,19 +26,23 @@ pub enum Bind {
     Tab,
     Input,
     Key(String),
+    MouseButtonDown(MouseButton),
+    MouseButtonUp(MouseButton),
 }
 
 #[derive(Default)]
 pub struct KeyEventHandler {
-    binds: HashMap<(Bind, State), (String, Callback)>,
+    key_binds: HashMap<(Bind, State), (String, Callback)>,
     execute_immediate: Vec<Callback>,
+    mouse_binds: HashMap<(usize, Bind, Rect), Callback>,
 
     semi_bind: Option<char>,
 }
 
 impl KeyEventHandler {
     pub fn clear(&mut self) {
-        self.binds.clear();
+        self.key_binds.clear();
+        self.mouse_binds.clear();
 
         self.bind_key((None, None), 'q', "Quit".into(), |app, _| app.quit = true);
     }
@@ -50,7 +58,7 @@ impl KeyEventHandler {
         callback: impl FnOnce(&mut App, Data) + 'static,
     ) {
         _ = self
-            .binds
+            .key_binds
             .insert((Bind::Horizontal, state), (description, Box::new(callback)));
     }
     pub fn bind_vertical(
@@ -60,7 +68,7 @@ impl KeyEventHandler {
         callback: impl FnOnce(&mut App, Data) + 'static,
     ) {
         _ = self
-            .binds
+            .key_binds
             .insert((Bind::Vertical, state), (description, Box::new(callback)));
     }
     pub fn bind_tab(
@@ -70,7 +78,7 @@ impl KeyEventHandler {
         callback: impl FnOnce(&mut App, Data) + 'static,
     ) {
         _ = self
-            .binds
+            .key_binds
             .insert((Bind::Tab, state), (description, Box::new(callback)));
     }
     pub fn bind_input_field(
@@ -80,7 +88,7 @@ impl KeyEventHandler {
         callback: impl FnOnce(&mut App, Data) + 'static,
     ) {
         _ = self
-            .binds
+            .key_binds
             .insert((Bind::Input, state), (description, Box::new(callback)));
     }
     pub fn bind_esc(
@@ -90,7 +98,7 @@ impl KeyEventHandler {
         callback: impl FnOnce(&mut App, Data) + 'static,
     ) {
         _ = self
-            .binds
+            .key_binds
             .insert((Bind::Esc, state), (description, Box::new(callback)));
     }
     pub fn bind_enter(
@@ -100,7 +108,7 @@ impl KeyEventHandler {
         callback: impl FnOnce(&mut App, Data) + 'static,
     ) {
         _ = self
-            .binds
+            .key_binds
             .insert((Bind::Enter, state), (description, Box::new(callback)));
     }
     pub fn bind_key(
@@ -110,15 +118,53 @@ impl KeyEventHandler {
         description: String,
         callback: impl FnOnce(&mut App, Data) + 'static,
     ) {
-        _ = self.binds.insert(
+        _ = self.key_binds.insert(
             (Bind::Key(keys.to_string()), state),
             (description, Box::new(callback)),
         );
     }
+    pub fn bind_mouse_button_down(
+        &mut self,
+        button: MouseButton,
+        area: Rect,
+        callback: impl FnOnce(&mut App, Data) + 'static,
+    ) {
+        _ = self.mouse_binds.insert(
+            (self.mouse_binds.len(), Bind::MouseButtonDown(button), area),
+            Box::new(callback),
+        );
+    }
+    pub fn bind_mouse_button_up(
+        &mut self,
+        button: MouseButton,
+        area: Rect,
+        callback: impl FnOnce(&mut App, Data) + 'static,
+    ) {
+        _ = self.mouse_binds.insert(
+            (self.mouse_binds.len(), Bind::MouseButtonUp(button), area),
+            Box::new(callback),
+        );
+    }
 
-    fn try_get_bind(&mut self, state: State, bind: Bind) -> Option<(String, Callback)> {
+    fn try_get_mouse_bind(&mut self, position: Position, bind: Bind) -> Option<Callback> {
+        let mut matches = self
+            .mouse_binds
+            .keys()
+            .cloned()
+            .filter(|(_, b, rect)| b == &bind && rect.contains(position))
+            .collect_vec();
+        matches.sort_by(|a, b| a.0.cmp(&b.0));
+        matches.reverse();
+        if !matches.is_empty() {
+            return Some(self.mouse_binds.remove(&matches[0]).unwrap());
+        }
+
+        None
+    }
+
+    fn try_get_key_bind(&mut self, state: State, bind: Bind) -> Option<Callback> {
         for s in [state, (state.0, None), (None, state.1), (None, None)] {
-            if let Some(bind) = self.binds.remove(&(bind.clone(), s)) {
+            if let Some((_, bind)) = self.key_binds.remove(&(bind.clone(), s)) {
                 return Some(bind);
             }
         }
@@ -133,7 +179,7 @@ impl KeyEventHandler {
             key.to_string()
         };
 
-        if let Some((_, callback)) = self.try_get_bind(state, Bind::Key(key.clone())) {
+        if let Some(callback) = self.try_get_key_bind(state, Bind::Key(key.clone())) {
             self.semi_bind = None;
 
             return Some(callback);
@@ -144,7 +190,7 @@ impl KeyEventHandler {
 
         for s in [state, (state.0, None), (None, state.1), (None, None)] {
             if self
-                .binds
+                .key_binds
                 .iter()
                 .filter(|((bind, state), _)| {
                     state == &s
@@ -166,7 +212,7 @@ impl KeyEventHandler {
         None
     }
 
-    pub fn get_state_binds(&self, state: State, max: usize) -> Vec<(Bind, String)> {
+    pub fn get_key_binds_descriptions(&self, state: State, max: usize) -> Vec<(Bind, String)> {
         let mut binds = vec![];
 
         if let Some(semi_bind) = self.semi_bind {
@@ -175,7 +221,7 @@ impl KeyEventHandler {
                     &(Bind, (Option<usize>, Option<usize>)),
                     &(String, Box<dyn FnOnce(&mut App, Data)>),
                 )> = self
-                    .binds
+                    .key_binds
                     .iter()
                     .filter(|((bind, state), _)| {
                         state == &s
@@ -201,8 +247,11 @@ impl KeyEventHandler {
                 Bind::Tab,
             ] {
                 for state in [state, (state.0, None), (None, state.1), (None, None)] {
-                    if self.binds.contains_key(&(bind.clone(), state)) {
-                        binds.push((bind.clone(), self.binds[&(bind.clone(), state)].0.clone()));
+                    if self.key_binds.contains_key(&(bind.clone(), state)) {
+                        binds.push((
+                            bind.clone(),
+                            self.key_binds[&(bind.clone(), state)].0.clone(),
+                        ));
                         break;
                     }
                 }
@@ -210,7 +259,7 @@ impl KeyEventHandler {
 
             let mut input = false;
             for s in [state, (state.0, None), (None, state.1), (None, None)] {
-                if self.binds.contains_key(&(Bind::Input, s)) {
+                if self.key_binds.contains_key(&(Bind::Input, s)) {
                     input = true;
                     break;
                 }
@@ -221,7 +270,7 @@ impl KeyEventHandler {
                         &(Bind, (Option<usize>, Option<usize>)),
                         &(String, Box<dyn FnOnce(&mut App, Data)>),
                     )> = self
-                        .binds
+                        .key_binds
                         .iter()
                         .filter(|((bind, state), _)| {
                             state == &s && if let Bind::Key(_) = bind { true } else { false }
@@ -258,8 +307,8 @@ impl KeyEventHandler {
                 crate::popups::Popups::EditMovie(edit_movie_popup) => {
                     state = edit_movie_popup.get_state();
                 }
-                crate::popups::Popups::RemoveMovie(remove_movie_popup) => {
-                    state = remove_movie_popup.get_state();
+                crate::popups::Popups::DeleteMovie(delete_movie_popup) => {
+                    state = delete_movie_popup.get_state();
                 }
                 crate::popups::Popups::AddMovie(add_movie_popup) => {
                     state = add_movie_popup.get_state();
@@ -277,7 +326,7 @@ impl KeyEventHandler {
 
         match event.code {
             KeyCode::Up | KeyCode::Down => {
-                if let Some((_, callback)) = self.try_get_bind(state, Bind::Vertical) {
+                if let Some(callback) = self.try_get_key_bind(state, Bind::Vertical) {
                     Some((
                         callback,
                         Data::Direction(event.code == KeyCode::Down, event.modifiers),
@@ -287,7 +336,7 @@ impl KeyEventHandler {
                 }
             }
             KeyCode::Tab | KeyCode::BackTab => {
-                if let Some((_, callback)) = self.try_get_bind(state, Bind::Tab) {
+                if let Some(callback) = self.try_get_key_bind(state, Bind::Tab) {
                     Some((
                         callback,
                         Data::Direction(event.code == KeyCode::Tab, KeyModifiers::NONE),
@@ -297,30 +346,30 @@ impl KeyEventHandler {
                 }
             }
             KeyCode::Enter => {
-                if let Some((_, callback)) = self.try_get_bind(state, Bind::Enter) {
+                if let Some(callback) = self.try_get_key_bind(state, Bind::Enter) {
                     Some((callback, Data::None))
                 } else {
                     None
                 }
             }
             KeyCode::Esc => {
-                if let Some((_, callback)) = self.try_get_bind(state, Bind::Esc) {
+                if let Some(callback) = self.try_get_key_bind(state, Bind::Esc) {
                     Some((callback, Data::None))
                 } else {
                     None
                 }
             }
             KeyCode::Backspace | KeyCode::Delete => {
-                if let Some((_, callback)) = self.try_get_bind(state, Bind::Input) {
+                if let Some(callback) = self.try_get_key_bind(state, Bind::Input) {
                     Some((callback, Data::Key(event)))
                 } else {
                     None
                 }
             }
             KeyCode::Left | KeyCode::Right => {
-                if let Some((_, callback)) = self.try_get_bind(state, Bind::Input) {
+                if let Some(callback) = self.try_get_key_bind(state, Bind::Input) {
                     Some((callback, Data::Key(event)))
-                } else if let Some((_, callback)) = self.try_get_bind(state, Bind::Horizontal) {
+                } else if let Some(callback) = self.try_get_key_bind(state, Bind::Horizontal) {
                     Some((
                         callback,
                         Data::Direction(event.code == KeyCode::Right, event.modifiers),
@@ -330,10 +379,102 @@ impl KeyEventHandler {
                 }
             }
             KeyCode::Char(key) => {
-                if let Some((_, callback)) = self.try_get_bind(state, Bind::Input) {
+                if let Some(callback) = self.try_get_key_bind(state, Bind::Input) {
                     Some((callback, Data::Key(event)))
                 } else if let Some(callback) = self.try_get_keys_bind(state, key) {
                     Some((callback, Data::Key(event)))
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    pub fn handle_mouse_event(
+        &mut self,
+        event: MouseEvent,
+        drawer: &Drawer,
+    ) -> Option<(Callback, Data)> {
+        let state;
+        if let Some(popup) = drawer.active_popup.as_ref() {
+            match popup {
+                crate::popups::Popups::EditMovie(edit_movie_popup) => {
+                    state = edit_movie_popup.get_state();
+                }
+                crate::popups::Popups::DeleteMovie(delete_movie_popup) => {
+                    state = delete_movie_popup.get_state();
+                }
+                crate::popups::Popups::AddMovie(add_movie_popup) => {
+                    state = add_movie_popup.get_state();
+                }
+            }
+        } else if let Some(screen) = drawer.current_screen.as_ref() {
+            match screen {
+                crate::screens::Screens::MainScreen(main_screen) => {
+                    state = main_screen.get_state();
+                }
+            }
+        } else {
+            return None;
+        }
+
+        let position = Position {
+            x: event.column,
+            y: event.row,
+        };
+        match event.kind {
+            MouseEventKind::ScrollDown => {
+                if let Some(callback) = self.try_get_key_bind(state, Bind::Vertical) {
+                    Some((callback, Data::Direction(true, event.modifiers)))
+                } else {
+                    None
+                }
+            }
+            MouseEventKind::ScrollUp => {
+                if let Some(callback) = self.try_get_key_bind(state, Bind::Vertical) {
+                    Some((callback, Data::Direction(false, event.modifiers)))
+                } else {
+                    None
+                }
+            }
+            MouseEventKind::ScrollRight => {
+                if let Some(callback) = self.try_get_key_bind(state, Bind::Horizontal) {
+                    Some((callback, Data::Direction(true, event.modifiers)))
+                } else {
+                    None
+                }
+            }
+            MouseEventKind::ScrollLeft => {
+                if let Some(callback) = self.try_get_key_bind(state, Bind::Horizontal) {
+                    Some((callback, Data::Direction(false, event.modifiers)))
+                } else {
+                    None
+                }
+            }
+            MouseEventKind::Down(button) => {
+                if let Some(callback) =
+                    self.try_get_mouse_bind(position, Bind::MouseButtonDown(button))
+                {
+                    Some((callback, Data::Mouse(event)))
+                } else {
+                    None
+                }
+            }
+            MouseEventKind::Drag(button) => {
+                if let Some(callback) =
+                    self.try_get_mouse_bind(position, Bind::MouseButtonDown(button))
+                {
+                    Some((callback, Data::Mouse(event)))
+                } else {
+                    None
+                }
+            }
+            MouseEventKind::Up(button) => {
+                if let Some(callback) =
+                    self.try_get_mouse_bind(position, Bind::MouseButtonUp(button))
+                {
+                    Some((callback, Data::Mouse(event)))
                 } else {
                     None
                 }

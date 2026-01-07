@@ -3,7 +3,7 @@ use crate::{
     popups::Popups,
     screens::Screens,
     tokens::*,
-    types::{initialize_terminal, Movie, OldMovie, Term},
+    types::{initialize_terminal, reset_terminal, Movie, OldMovie, Term},
     KeyEventHandler,
 };
 use log::{error, warn};
@@ -16,7 +16,6 @@ use std::{
 
 pub struct App {
     home: PathBuf,
-    cache: PathBuf,
 
     pub movies: Vec<Movie>,
     pub quit: bool,
@@ -56,7 +55,6 @@ impl App {
             trakt_tokens: TraktTokens::new(&creds),
 
             home,
-            cache,
         }
         .fetch_movies()
     }
@@ -138,11 +136,23 @@ impl App {
                     if event::poll(Duration::from_millis(10))? {
                         if let Ok(event) = event::read() {
                             self.handle_event(event);
+
+                            while event::poll(Duration::from_millis(0))? {
+                                if let Ok(event) = event::read() {
+                                    self.handle_event(event);
+                                }
+                            }
                         }
                     }
                 } else {
                     if let Ok(event) = event::read() {
                         self.handle_event(event);
+
+                        while event::poll(Duration::from_millis(0))? {
+                            if let Ok(event) = event::read() {
+                                self.handle_event(event);
+                            }
+                        }
                     }
                 }
             }
@@ -151,6 +161,8 @@ impl App {
                 break;
             }
         }
+
+        reset_terminal(&mut self.terminal)?;
 
         Ok(())
     }
@@ -287,9 +299,16 @@ impl App {
                     callback(self, data);
                 }
             }
+            Event::Mouse(event) => {
+                if let Some((callback, data)) = self
+                    .key_event_handler
+                    .handle_mouse_event(event, &self.drawer)
+                {
+                    callback(self, data);
+                }
+            }
             Event::FocusGained => (),
             Event::FocusLost => (),
-            Event::Mouse(_) => (),
             Event::Paste(_) => (),
             Event::Resize(_, _) => (),
         }

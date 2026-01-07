@@ -56,12 +56,12 @@ impl TraktTokens {
                 .map(char::from)
                 .collect();
 
-            _ = fs::remove_file(&home_dir.join(".tokens_trakt"));
+            _ = fs::remove_file(&home_dir.join(".trakt_tokens"));
 
             fs::write(&home_dir.join(".key"), key)?;
         }
 
-        Ok(home_dir.join(".tokens_trakt").is_file())
+        Ok(home_dir.join(".trakt_tokens").is_file())
     }
 
     pub fn init(&mut self, home_dir: &PathBuf) {
@@ -86,7 +86,7 @@ impl TraktTokens {
         let key = fs::read(&home_dir.join(".key"))?;
         let cocoon = Cocoon::new(&key);
 
-        let mut encrypted_file = File::open(&home_dir.join(".tokens_trakt"))?;
+        let mut encrypted_file = File::open(&home_dir.join(".trakt_tokens"))?;
 
         let result = String::from_utf8(cocoon.parse(&mut encrypted_file)?);
 
@@ -103,7 +103,7 @@ impl TraktTokens {
         let key = fs::read(&home_dir.join(".key"))?;
         let mut cocoon = Cocoon::new(&key);
 
-        let mut encrypted_file = File::create(&home_dir.join(".tokens_trakt"))?;
+        let mut encrypted_file = File::create(&home_dir.join(".trakt_tokens"))?;
         let dump_json = serde_json::to_string(&self.tokens)?;
 
         cocoon.dump(dump_json.into_bytes(), &mut encrypted_file)?;

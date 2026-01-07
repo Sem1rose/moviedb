@@ -23,7 +23,5 @@ fn main() -> anyhow::Result<()> {
 
     App::new()?.run()?;
 
-    ratatui::restore();
-
     Ok(())
 }

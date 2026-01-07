@@ -1,7 +1,12 @@
 use crate::{omdb::OMDBDetailsResponse, tmdb::TMDBDetailsResponse, trakt::TraktDetailsResponse};
 use chrono::{DateTime, Local};
 use ratatui::{
-    crossterm::{self, terminal::EnterAlternateScreen, ExecutableCommand},
+    crossterm::{
+        self,
+        event::{DisableMouseCapture, EnableMouseCapture},
+        terminal::{EnterAlternateScreen, LeaveAlternateScreen},
+        ExecutableCommand,
+    },
     prelude::*,
 };
 use serde::{Deserialize, Serialize};
@@ -18,11 +23,21 @@ pub fn initialize_terminal() -> anyhow::Result<Term> {
 
     let mut backend = TermBackend::new(stdout());
     backend.execute(EnterAlternateScreen)?;
+    backend.execute(EnableMouseCapture)?;
 
     let mut term = Terminal::new(backend)?;
     term.hide_cursor()?;
 
     Ok(term)
+}
+
+pub fn reset_terminal(term: &mut Term) -> anyhow::Result<()> {
+    term.backend_mut().execute(DisableMouseCapture)?;
+    term.show_cursor()?;
+    term.backend_mut().execute(LeaveAlternateScreen)?;
+    crossterm::terminal::disable_raw_mode()?;
+
+    Ok(())
 }
 
 fn set_panic_hook() {

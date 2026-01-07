@@ -20,7 +20,7 @@ pub struct Drawer {
 
     show_term_size_warning: bool,
 
-    refresh_immediate: u8,
+    pub refresh_immediate: u8,
     cache_dir: PathBuf,
 }
 
@@ -74,7 +74,7 @@ impl Drawer {
         if let Some(popup) = self.active_popup.as_mut() {
             match popup {
                 Popups::EditMovie(_) => {}
-                Popups::RemoveMovie(_) => {}
+                Popups::DeleteMovie(_) => {}
                 Popups::AddMovie(add_movie_popup) => {
                     add_movie_popup.update();
                     if let AddMoviePopupPhase::Done = add_movie_popup.phase {
@@ -93,8 +93,8 @@ impl Drawer {
                 Popups::EditMovie(edit_movie_popup) => {
                     edit_movie_popup.render(frame, key_event_handler);
                 }
-                Popups::RemoveMovie(remove_movie_popup) => {
-                    remove_movie_popup.render(frame, key_event_handler);
+                Popups::DeleteMovie(delete_movie_popup) => {
+                    delete_movie_popup.render(frame, key_event_handler);
                 }
                 Popups::AddMovie(add_movie_popup) => {
                     add_movie_popup.render(frame, key_event_handler);
@@ -127,9 +127,9 @@ impl Drawer {
             )));
         }
     }
-    pub fn open_remove_movie_popup(&mut self) {
+    pub fn open_delete_movie_popup(&mut self) {
         if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_mut() {
-            self.active_popup = Some(Popups::RemoveMovie(RemoveMoviePopup::new(
+            self.active_popup = Some(Popups::DeleteMovie(DeleteMoviePopup::new(
                 &main_screen.current_movie().unwrap().name,
             )));
         }

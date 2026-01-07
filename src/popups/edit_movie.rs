@@ -51,6 +51,13 @@ impl EditMoviePopup {
 
     pub fn render(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
         key_event_handler.clear();
+        key_event_handler.bind_mouse_button_down(
+            ratatui::crossterm::event::MouseButton::Left,
+            frame.area(),
+            |app, _| {
+                app.drawer.close_popups();
+            },
+        );
         let valid = self.validate_rating();
         let add_play = self.new_play;
         key_event_handler.bind_enter((None, None), "Confirm".into(), move |app, _| {
@@ -131,56 +138,91 @@ impl EditMoviePopup {
             Alignment::Center,
             Style::new().fg(tailwind::VIOLET.c950),
         );
-
+        key_event_handler.bind_mouse_button_down(
+            ratatui::crossterm::event::MouseButton::Left,
+            popup_area.outer(Margin::new(1, 1)),
+            |_, _| {},
+        );
         let [_, input_area, _, actions_area, _] =
             vertical![==1, ==3, ==1, ==1, ==1].areas(popup_area);
 
-        frame.render_widget(
-            Line::from(vec![
-                Span::from(" Confirm ").style(
-                    Style::new()
-                        .fg(if valid {
-                            if self.item == 1 {
-                                tailwind::SLATE.c200
-                            } else {
-                                tailwind::SLATE.c300
-                            }
+        let actions = vec![
+            Span::from(" Confirm ").style(
+                Style::new()
+                    .fg(if valid {
+                        if self.item == 1 {
+                            tailwind::SLATE.c200
                         } else {
-                            tailwind::SLATE.c500
-                        })
-                        .bg(if valid {
-                            if self.item == 1 {
-                                material::BLUE.c600
-                            } else {
-                                material::BLUE.c900
-                            }
-                        } else {
-                            if self.item == 1 {
-                                tailwind::SLATE.c700
-                            } else {
-                                tailwind::SLATE.c800
-                            }
-                        }),
-                ),
-                Span::from(" "),
-                Span::from(" Cancel ").style(
-                    Style::new()
-                        .fg(if self.item == 2 {
                             tailwind::SLATE.c300
+                        }
+                    } else {
+                        tailwind::SLATE.c500
+                    })
+                    .bg(if valid {
+                        if self.item == 1 {
+                            material::BLUE.c600
                         } else {
-                            tailwind::RED.c500
-                        })
-                        .bg(if self.item == 2 {
-                            material::RED.c800
+                            material::BLUE.c900
+                        }
+                    } else {
+                        if self.item == 1 {
+                            tailwind::SLATE.c700
                         } else {
-                            tailwind::SLATE.c950
-                        }),
-                ),
-                Span::from("  "),
-            ])
-            .right_aligned(),
-            actions_area,
-        );
+                            tailwind::SLATE.c800
+                        }
+                    }),
+            ),
+            Span::from(" "),
+            Span::from(" Cancel ").style(
+                Style::new()
+                    .fg(if self.item == 2 {
+                        tailwind::SLATE.c300
+                    } else {
+                        tailwind::RED.c500
+                    })
+                    .bg(if self.item == 2 {
+                        material::RED.c800
+                    } else {
+                        tailwind::SLATE.c950
+                    }),
+            ),
+            Span::from("  "),
+        ];
+        let mut mouse_area = actions_area
+            .offset(Offset::new(actions_area.width as i32, 0))
+            .resize(Size::new(1, 1));
+        for (i, action) in actions.iter().rev().enumerate() {
+            mouse_area = mouse_area.offset(Offset::new(-(action.width() as i32), 0));
+            if i & 1 == 0 {
+                continue;
+            }
+
+            mouse_area = mouse_area.resize(Size {
+                width: action.width() as u16,
+                height: 1,
+            });
+
+            key_event_handler.bind_mouse_button_down(
+                ratatui::crossterm::event::MouseButton::Left,
+                mouse_area,
+                move |app, _| {
+                    if i / 2 == 0 {
+                        app.drawer.close_popups();
+                    } else if i / 2 == 1 {
+                        if valid {
+                            if add_play {
+                                app.add_play();
+                            } else {
+                                app.edit_movie();
+                            }
+
+                            app.drawer.close_popups();
+                        }
+                    }
+                },
+            );
+        }
+        frame.render_widget(Line::from(actions).right_aligned(), actions_area);
 
         let search_selected = self.item == 0;
         if search_selected {
@@ -253,6 +295,25 @@ impl EditMoviePopup {
                     bottom: 0,
                 },
             ),
+        );
+
+        key_event_handler.bind_mouse_button_down(
+            ratatui::crossterm::event::MouseButton::Left,
+            add_padding(
+                input_area,
+                Padding {
+                    left: 2,
+                    right: 2,
+                    top: 0,
+                    bottom: 0,
+                },
+            ),
+            |app, _| {
+                if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut()
+                {
+                    edit_movie_popup.item = 0;
+                }
+            },
         );
     }
 }
