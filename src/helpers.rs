@@ -66,10 +66,14 @@ pub fn dynamic_popup(
         .title_alignment(title_alignment)
         .title_style(title_style);
 
-    let top_background = frame.buffer_mut().cell((area.x, area.y)).unwrap().bg;
+    let top_background = frame
+        .buffer_mut()
+        .cell((area.x + area.width / 2, area.y))
+        .unwrap()
+        .bg;
     let bottom_background = frame
         .buffer_mut()
-        .cell((area.x, area.y + area.height - 1))
+        .cell((area.x + area.width / 2, area.y + area.height - 1))
         .unwrap()
         .bg;
 

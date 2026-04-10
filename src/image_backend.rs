@@ -2,6 +2,9 @@ use anyhow::bail;
 use log::error;
 use ratatui::{
     layout::{Constraint, Rect, Size},
+    style::palette::tailwind,
+    style::Stylize,
+    widgets::Block,
     Frame,
 };
 use ratatui_image::{picker::Picker, protocol::Protocol, Image, Resize};
@@ -163,8 +166,6 @@ impl RatatuiImage {
                     self.loading -= 1;
                 }
             } else if let Err(e) = result {
-                error!("{e}");
-
                 _ = self.tx_load.send(Actions::Load(
                     artwork_id,
                     format!(
@@ -190,7 +191,6 @@ impl RatatuiImage {
         frame: &mut Frame,
     ) -> bool {
         let artwork_id = ArtworkID { tmdb_id, backdrop };
-        let mut drawn = false;
         if backdrop {
             if self.backdrop_size.is_none() {
                 _ = self.tx_load.send(Actions::ResizeBackdrop(area.as_size()));
@@ -225,6 +225,7 @@ impl RatatuiImage {
             }
         }
 
+        let mut drawn = false;
         if let Some(value) = self.hashed_images.get(&artwork_id) {
             if let Some(protocol) = value {
                 let Size { width, height } = protocol.area().as_size();
@@ -234,6 +235,8 @@ impl RatatuiImage {
                     center_rect(area, Constraint::Length(width), Constraint::Length(height)),
                 );
                 drawn = true;
+            } else {
+                frame.render_widget(Block::new().bg(tailwind::GRAY.c950), area);
             }
         } else {
             self.hash_image(artwork_id);

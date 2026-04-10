@@ -13,36 +13,36 @@ use std::{
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 struct Tokens {
-    access_token: String,
-    refresh_token: String,
-    expires_on: i64,
-}
-
-impl From<TokenResponse> for Tokens {
-    fn from(val: TokenResponse) -> Self {
-        Tokens {
-            access_token: val.access_token,
-            refresh_token: val.refresh_token,
-            expires_on: val.created_at + val.expires_in,
-        }
-    }
-}
-
-#[derive(Clone, Default)]
-pub struct TraktTokens {
     client_id: String,
     client_secret: String,
 
+    access_token: String,
+    refresh_token: String,
+
+    expires_on: i64,
+}
+
+// impl From<TokenResponse> for Tokens {
+//     fn from(val: TokenResponse) -> Self {
+//         Tokens {
+//             access_token: val.access_token,
+//             refresh_token: val.refresh_token,
+//             expires_on: val.created_at + val.expires_in,
+//         }
+//     }
+// }
+
+#[derive(Clone, Default)]
+pub struct TraktTokens {
     tokens: Tokens,
-    // tx_init: Sender<OptionalResult<String>>,
+
+    home_dir: PathBuf,
 }
 
 impl TraktTokens {
-    pub fn new(/*tx_init: Sender<OptionalResult<String>>,*/ creds: &Credentials) -> Self {
+    pub fn new(home_dir: &PathBuf) -> Self {
         Self {
-            // tx_init,
-            client_id: creds.trakt_client_id.clone(),
-            client_secret: creds.trakt_client_secret.clone(),
+            home_dir: home_dir.clone(),
 
             tokens: Tokens::default(),
         }
@@ -112,8 +112,8 @@ impl TraktTokens {
     }
 
     pub fn set_secrets(&mut self, client_id: String, client_secret: String) {
-        self.client_id = client_id;
-        self.client_secret = client_secret;
+        self.tokens.client_id = client_id;
+        self.tokens.client_secret = client_secret;
     }
 
     pub fn has_tokens(&self) -> bool {
@@ -121,11 +121,11 @@ impl TraktTokens {
     }
 
     pub fn client_id(&self) -> &str {
-        &self.client_id
+        &self.tokens.client_id
     }
 
     pub fn client_secret(&self) -> &str {
-        &self.client_secret
+        &self.tokens.client_secret
     }
 
     pub fn access_token(&self) -> &str {
@@ -137,11 +137,11 @@ impl TraktTokens {
     }
 
     pub fn client_id_owned(&self) -> String {
-        self.client_id.clone()
+        self.tokens.client_id.clone()
     }
 
     pub fn client_secret_owned(&self) -> String {
-        self.client_secret.clone()
+        self.tokens.client_secret.clone()
     }
 
     pub fn access_token_owned(&self) -> String {

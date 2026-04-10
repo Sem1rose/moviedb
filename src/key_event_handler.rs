@@ -313,6 +313,9 @@ impl KeyEventHandler {
                 crate::popups::Popups::AddMovie(add_movie_popup) => {
                     state = add_movie_popup.get_state();
                 }
+                crate::popups::Popups::TMDBInit(tmdb_init) => {
+                    state = tmdb_init.get_state();
+                }
             }
         } else if let Some(screen) = drawer.current_screen.as_ref() {
             match screen {
@@ -408,6 +411,9 @@ impl KeyEventHandler {
                 crate::popups::Popups::AddMovie(add_movie_popup) => {
                     state = add_movie_popup.get_state();
                 }
+                crate::popups::Popups::TMDBInit(tmdb_init) => {
+                    state = tmdb_init.get_state();
+                }
             }
         } else if let Some(screen) = drawer.current_screen.as_ref() {
             match screen {
@@ -461,15 +467,15 @@ impl KeyEventHandler {
                     None
                 }
             }
-            MouseEventKind::Drag(button) => {
-                if let Some(callback) =
-                    self.try_get_mouse_bind(position, Bind::MouseButtonDown(button))
-                {
-                    Some((callback, Data::Mouse(event)))
-                } else {
-                    None
-                }
-            }
+            // MouseEventKind::Drag(MouseButton::Left) => {
+            //     if let Some(callback) =
+            //         self.try_get_mouse_bind(position, Bind::MouseButtonDown(MouseButton::Left))
+            //     {
+            //         Some((callback, Data::Mouse(event)))
+            //     } else {
+            //         None
+            //     }
+            // }
             MouseEventKind::Up(button) => {
                 if let Some(callback) =
                     self.try_get_mouse_bind(position, Bind::MouseButtonUp(button))

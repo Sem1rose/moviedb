@@ -12,24 +12,22 @@ use ratatui::{
     macros::{constraint, horizontal, vertical},
     prelude::*,
     style::palette::material,
+    style::palette::tailwind,
     symbols::{block, scrollbar::Set},
     widgets::*,
     Frame,
 };
+use ratatui_textarea::TextArea;
 use std::{
     ops::Add,
     path::PathBuf,
     sync::mpsc::{self, Receiver},
     thread,
 };
-use style::palette::tailwind;
 use throbber_widgets_tui::{Throbber, ThrobberState};
-use tui_textarea::TextArea;
 
 #[derive(Default)]
 pub enum Phase {
-    // GetName,
-    // Searching,
     #[default]
     SelectMovie,
     GetRating,
@@ -46,45 +44,38 @@ pub struct DetailsResponse {
 
 #[derive(Default)]
 pub struct AddMoviePopup {
-    pub phase: Phase,
-    pub throbber_visible: bool,
     pub tick: u64,
-
+    pub phase: Phase,
+    throbber_visible: bool,
     item: usize,
     tab: usize,
+    scroll_pos: usize,
+    selected_item: usize,
+    alignment_bottom: bool,
+    num_visible_items: usize,
 
     input: TextArea<'static>,
     throbber_state: ThrobberState,
 
-    rx_search_result: Option<Receiver<(u64, anyhow::Result<TMDBSearchResponse>)>>,
     search_ticket: u64,
-    pub search_results: Option<Vec<TMDBSearchResult>>,
     last_input_tick: Option<u64>,
-
-    scroll_pos: usize,
-    selected_item: usize,
-    num_visible_items: usize,
-    alignment_bottom: bool,
+    pub search_results: Option<Vec<TMDBSearchResult>>,
+    rx_search_result: Option<Receiver<(u64, anyhow::Result<TMDBSearchResponse>)>>,
 
     pub user_rating: f64,
-
-    rx_details_response: Option<Receiver<anyhow::Result<DetailsResponse>>>,
     pub tmdb_movie_details_result: Option<TMDBDetailsResponse>,
-    pub trakt_movie_details_result: Option<TraktDetailsResponse>,
     pub omdb_movie_details_result: Option<OMDBDetailsResponse>,
+    pub trakt_movie_details_result: Option<TraktDetailsResponse>,
+    rx_details_response: Option<Receiver<anyhow::Result<DetailsResponse>>>,
 
-    trakt_tokens: TraktTokens,
     tmdb_tokens: TMDBTokens,
     omdb_tokens: OMDBTokens,
+    trakt_tokens: TraktTokens,
 
     cache_dir: PathBuf,
 }
 
 impl AddMoviePopup {
-    pub fn get_state(&self) -> (Option<usize>, Option<usize>) {
-        (Some(self.tab), Some(self.item))
-    }
-
     pub fn new(
         trakt_tokens: TraktTokens,
         tmdb_tokens: TMDBTokens,
@@ -98,6 +89,14 @@ impl AddMoviePopup {
             cache_dir: cache_dir.clone(),
             ..Default::default()
         }
+    }
+
+    pub fn get_state(&self) -> (Option<usize>, Option<usize>) {
+        (Some(self.tab), Some(self.item))
+    }
+
+    pub fn update_next_frame(&self) -> bool {
+        self.throbber_visible || self.search_results.is_none()
     }
 
     pub fn request_search(&mut self) {
@@ -273,7 +272,7 @@ impl AddMoviePopup {
                 self.tab = 0;
 
                 key_event_handler.bind_vertical(
-                    (Some(0), Some(1)),
+                    (Some(0), None),
                     "Scroll".into(),
                     move |app, data| {
                         if let Some(Popups::AddMovie(add_movie_popup)) =
@@ -303,45 +302,47 @@ impl AddMoviePopup {
                         }
                     },
                 );
-                key_event_handler.bind_enter((Some(0), Some(0)), "Search".into(), |app, _| {
-                    if let Some(Popups::AddMovie(add_movie_popup)) =
-                        app.drawer.active_popup.as_mut()
-                    {
-                        add_movie_popup.item = 1;
-                    }
-                });
-                key_event_handler.bind_enter((Some(0), Some(1)), "Select".into(), |app, _| {
+                // key_event_handler.bind_enter((Some(0), None), "Search".into(), |app, _| {
+                //     if let Some(Popups::AddMovie(add_movie_popup)) =
+                //         app.drawer.active_popup.as_mut()
+                //     {
+                //         add_movie_popup.item = 1;
+                //     }
+                // });
+                key_event_handler.bind_enter((Some(0), None), "Select".into(), |app, _| {
                     if let Some(Popups::AddMovie(add_movie_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
                         add_movie_popup.advance_phase();
                     }
                 });
-                key_event_handler.bind_tab((Some(0), None), "Navigate".into(), |app, _| {
-                    if let Some(Popups::AddMovie(add_movie_popup)) =
-                        app.drawer.active_popup.as_mut()
-                    {
-                        add_movie_popup.item = add_movie_popup.item.checked_sub(1).unwrap_or(1);
-                    }
-                });
-                key_event_handler.bind_esc((Some(0), Some(1)), "Return".into(), |app, _| {
-                    if let Some(Popups::AddMovie(add_movie_popup)) =
-                        app.drawer.active_popup.as_mut()
-                    {
-                        add_movie_popup.item = 0;
-                    }
-                });
-                key_event_handler.bind_input_field((Some(0), Some(0)), "".into(), |app, data| {
+                // key_event_handler.bind_tab((Some(0), None), "Navigate".into(), |app, _| {
+                //     if let Some(Popups::AddMovie(add_movie_popup)) =
+                //         app.drawer.active_popup.as_mut()
+                //     {
+                //         add_movie_popup.item = add_movie_popup.item.checked_sub(1).unwrap_or(1);
+                //     }
+                // });
+                // key_event_handler.bind_esc((Some(0), Some(1)), "Return".into(), |app, _| {
+                //     if let Some(Popups::AddMovie(add_movie_popup)) =
+                //         app.drawer.active_popup.as_mut()
+                //     {
+                //         add_movie_popup.item = 0;
+                //     }
+                // });
+                key_event_handler.bind_input_field((Some(0), None), "".into(), |app, data| {
                     if let Some(Popups::AddMovie(add_movie_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
                         match data {
                             key_event_handler::Data::Key(key_event) => {
-                                let x = add_movie_popup.input.lines()[0].clone();
+                                let old_query = add_movie_popup.input.lines()[0].clone();
                                 add_movie_popup.input.input(key_event);
-                                if add_movie_popup.input.lines()[0].trim() != x.trim()
+
+                                if add_movie_popup.input.lines()[0].trim() != old_query.trim()
                                     && !add_movie_popup.input.is_empty()
                                 {
+                                    add_movie_popup.search_ticket = 0;
                                     add_movie_popup.search_results = None;
                                     add_movie_popup.last_input_tick = Some(add_movie_popup.tick);
                                 } else if add_movie_popup.input.is_empty() {
@@ -353,9 +354,9 @@ impl AddMoviePopup {
                     }
                 });
 
-                if num_results == 0 {
-                    self.item = 0;
-                }
+                // if num_results == 0 {
+                //     self.item = 0;
+                // }
 
                 let popup_area = dynamic_popup(
                     frame,
@@ -375,43 +376,48 @@ impl AddMoviePopup {
                 let [search_input_area, horiz] = vertical![==3, >=1].areas(popup_area);
                 let [projects_list_area, scrollbar_area] = horizontal![>=1, ==1].areas(horiz);
 
-                let input_selected = self.item == 0;
-                self.input.set_style(Style::new().fg(if input_selected {
-                    tailwind::SLATE.c200
-                } else {
-                    tailwind::STONE.c400
-                }));
+                // let input_selected = self.item == 0;
+                self.input.set_style(Style::new().fg(
+                    // if input_selected {
+                    tailwind::SLATE.c200, // } else {
+                                          //     tailwind::STONE.c400
+                                          // }
+                ));
                 self.input.set_cursor_style(
                     Style::new()
-                        .fg(if input_selected {
-                            tailwind::SLATE.c300
-                        } else {
-                            tailwind::STONE.c400
-                        })
-                        .add_modifier(if input_selected {
-                            Modifier::REVERSED
-                        } else {
-                            Modifier::default()
-                        }),
+                        .fg(
+                            // if input_selected {
+                            tailwind::SLATE.c300, // } else {
+                                                  //     tailwind::STONE.c400
+                                                  // }
+                        )
+                        .add_modifier(
+                            // if input_selected {
+                            Modifier::REVERSED, // } else {
+                                                //     Modifier::default()
+                                                // }
+                        ),
                 );
                 self.input.set_block(
                     Block::bordered()
                         .border_type(ratatui::widgets::BorderType::Thick)
-                        .style(Style::new().fg(if input_selected {
-                            material::BLUE.c500
-                        } else {
-                            tailwind::STONE.c600
-                        }))
+                        .style(Style::new().fg(
+                            // if input_selected {
+                            material::BLUE.c500, // } else {
+                                                 // tailwind::STONE.c600
+                                                 // }
+                        ))
                         .title(" Name ")
-                        .title_style(Style::new().fg(if input_selected {
-                            material::BLUE.c400
-                        } else {
-                            // if valid {
-                            material::BLUE.c600
-                            // } else {
-                            //     material::RED.c600
-                            // }
-                        }))
+                        .title_style(Style::new().fg(
+                            // if input_selected {
+                            material::BLUE.c400, // } else {
+                                                 // if valid {
+                                                 // material::BLUE.c600
+                                                 // } else {
+                                                 //     material::RED.c600
+                                                 // }
+                                                 // }
+                        ))
                         .padding(Padding::symmetric(1, 0)),
                 );
                 self.input.set_placeholder_text("Search");
@@ -421,17 +427,17 @@ impl AddMoviePopup {
                     &self.input,
                     add_padding(search_input_area, Padding::right(1)),
                 );
-                key_event_handler.bind_mouse_button_down(
-                    ratatui::crossterm::event::MouseButton::Left,
-                    add_padding(search_input_area, Padding::right(1)),
-                    |app, _| {
-                        if let Some(Popups::AddMovie(add_movie_popup)) =
-                            app.drawer.active_popup.as_mut()
-                        {
-                            add_movie_popup.item = 0;
-                        }
-                    },
-                );
+                // key_event_handler.bind_mouse_button_down(
+                //     ratatui::crossterm::event::MouseButton::Left,
+                //     add_padding(search_input_area, Padding::right(1)),
+                //     |app, _| {
+                //         if let Some(Popups::AddMovie(add_movie_popup)) =
+                //             app.drawer.active_popup.as_mut()
+                //         {
+                //             add_movie_popup.item = 0;
+                //         }
+                //     },
+                // );
 
                 let num_visible_projects = projects_list_area.height as usize / 5;
                 let partially_visible_project_height =
@@ -496,11 +502,11 @@ impl AddMoviePopup {
 
                         frame.render_widget(
                             Block::new().bg(if selected {
-                                if !input_selected {
-                                    tailwind::TEAL.c600
-                                } else {
-                                    tailwind::TEAL.c900
-                                }
+                                // if !input_selected {
+                                tailwind::TEAL.c600
+                                // } else {
+                                //     tailwind::TEAL.c900
+                                // }
                             } else if !alternate {
                                 tailwind::GRAY.c600
                             } else {
@@ -515,10 +521,11 @@ impl AddMoviePopup {
                                 if let Some(Popups::AddMovie(add_movie_popup)) =
                                     app.drawer.active_popup.as_mut()
                                 {
-                                    if selected && add_movie_popup.item == 1 {
+                                    if selected {
+                                        //&& add_movie_popup.item == 1 {
                                         add_movie_popup.advance_phase();
                                     } else {
-                                        add_movie_popup.item = 1;
+                                        // add_movie_popup.item = 1;
                                         add_movie_popup.selected_item =
                                             add_movie_popup.scroll_pos + i;
                                     }
@@ -544,11 +551,11 @@ impl AddMoviePopup {
                                 frame.render_widget(
                                     Line::from("▔".repeat(area.width as usize)).style(
                                         Style::new().fg(if selected {
-                                            if !input_selected {
-                                                tailwind::EMERALD.c700
-                                            } else {
-                                                tailwind::EMERALD.c800
-                                            }
+                                            // if !input_selected {
+                                            tailwind::EMERALD.c700
+                                            // } else {
+                                            //     tailwind::EMERALD.c800
+                                            // }
                                         } else if !alternate {
                                             tailwind::GRAY.c600
                                         } else {
@@ -574,7 +581,13 @@ impl AddMoviePopup {
                                                 }),
                                         ),
                                         Span::from("  "),
-                                        Span::from(&result.release_date).style(
+                                        Span::from(
+                                            result
+                                                .release_date
+                                                .as_ref()
+                                                .unwrap_or(&"1970".to_string()),
+                                        )
+                                        .style(
                                             Style::new()
                                                 .fg(if selected {
                                                     material::CYAN.c100
@@ -596,7 +609,7 @@ impl AddMoviePopup {
                                 frame.render_widget(
                                     Line::from(vec![Span::from(format!(
                                         "{:.1}",
-                                        result.vote_average
+                                        result.vote_average.unwrap_or(0.0)
                                     ))
                                     .style(
                                         Style::new()

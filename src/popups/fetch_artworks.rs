@@ -52,20 +52,20 @@ impl FetchArtworksPopup {
                 let tmdb_conf_owned = tmdb_conf.clone();
                 let trakt_conf_owned = trakt_conf.clone();
                 thread::spawn(move || {
-                    let result = tmdb::get_movie_poster_banner(
+                    let result = trakt::get_movie_poster_banner(
                         &conf_owned,
-                        &tmdb_conf_owned,
-                        request.tmdb,
+                        &trakt_conf_owned,
+                        request.imdb.clone(),
                         true,
                     );
 
                     _ = if let Ok(true) = result {
                         tx_response.send((request, Ok(())))
                     } else {
-                        let result = trakt::get_movie_poster_banner(
+                        let result = tmdb::get_movie_poster_banner(
                             &conf_owned,
-                            &trakt_conf_owned,
-                            request.imdb.clone(),
+                            &tmdb_conf_owned,
+                            request.tmdb,
                             true,
                         );
 

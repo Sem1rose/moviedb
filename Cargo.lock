@@ -1902,11 +1902,11 @@ dependencies = [
  "rand 0.9.2",
  "ratatui",
  "ratatui-image",
+ "ratatui-textarea",
  "reqwest",
  "serde",
  "serde_json",
  "throbber-widgets-tui",
- "tui-textarea",
  "unix-ts",
 ]
 
@@ -2656,6 +2656,19 @@ checksum = "0f76fe0bd0ed4295f0321b1676732e2454024c15a35d01904ddb315afd3d545c"
 dependencies = [
  "ratatui-core",
  "termwiz",
+]
+
+[[package]]
+name = "ratatui-textarea"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d2f109a42d924f1fe4f4d521a1f473161f6c08eb53a2d9b862ca6efd14f6e51c"
+dependencies = [
+ "ratatui-core",
+ "ratatui-crossterm",
+ "ratatui-widgets",
+ "unicode-segmentation",
+ "unicode-width",
 ]
 
 [[package]]
@@ -3620,16 +3633,6 @@ name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
-
-[[package]]
-name = "tui-textarea"
-version = "0.7.0"
-dependencies = [
- "crossterm",
- "ratatui-core",
- "ratatui-widgets",
- "unicode-width",
-]
 
 [[package]]
 name = "typenum"

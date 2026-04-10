@@ -87,20 +87,6 @@ impl DeleteMoviePopup {
         );
 
         let actions = vec![
-            Span::from(" Cancel ").style(
-                Style::new()
-                    .fg(if self.item == 0 {
-                        tailwind::SLATE.c200
-                    } else {
-                        tailwind::SLATE.c300
-                    })
-                    .bg(if self.item == 0 {
-                        material::BLUE.c600
-                    } else {
-                        material::BLUE.c900
-                    }),
-            ),
-            Span::from(" "),
             Span::from(" Confirm ").style(
                 Style::new()
                     .fg(if self.item == 1 {
@@ -112,6 +98,20 @@ impl DeleteMoviePopup {
                         material::RED.c800
                     } else {
                         tailwind::SLATE.c950
+                    }),
+            ),
+            Span::from(" "),
+            Span::from(" Cancel ").style(
+                Style::new()
+                    .fg(if self.item == 0 {
+                        tailwind::SLATE.c200
+                    } else {
+                        tailwind::SLATE.c300
+                    })
+                    .bg(if self.item == 0 {
+                        material::BLUE.c600
+                    } else {
+                        material::BLUE.c900
                     }),
             ),
             Span::from("  "),

@@ -23,7 +23,7 @@ use ratatui::{
     prelude::*,
     style::palette::tailwind,
 };
-use tui_textarea::TextArea;
+use ratatui_textarea::TextArea;
 
 #[derive(FromPrimitive, ToPrimitive, Default, Clone, Copy)]
 pub enum Sort {
@@ -239,26 +239,41 @@ impl MainScreen {
                         app.drawer.current_screen.as_mut()
                     {
                         main_screen.options_menu_pos = None;
-                    }
-                },
-            );
-            key_event_handler.bind_mouse_button_down(
-                ratatui::crossterm::event::MouseButton::Right,
-                frame.area(),
-                |app, data| {
-                    if let Some(Screens::MainScreen(main_screen)) =
-                        app.drawer.current_screen.as_mut()
-                    {
-                        if let crate::key_event_handler::Data::Mouse(mouse_event) = data {
-                            main_screen.options_menu_pos =
-                                Some(Position::new(mouse_event.column, mouse_event.row));
-                            main_screen.options_menu_selected = 0;
-                        }
                         main_screen.redraw_images = 1;
                     }
                     app.drawer.refresh_immediate += 2;
                 },
             );
+            key_event_handler.bind_mouse_button_down(
+                ratatui::crossterm::event::MouseButton::Right,
+                frame.area(),
+                |app, _| {
+                    if let Some(Screens::MainScreen(main_screen)) =
+                        app.drawer.current_screen.as_mut()
+                    {
+                        main_screen.options_menu_pos = None;
+                        main_screen.redraw_images = 1;
+                    }
+                    app.drawer.refresh_immediate += 2;
+                },
+            );
+            // key_event_handler.bind_mouse_button_down(
+            //     ratatui::crossterm::event::MouseButton::Right,
+            //     frame.area(),
+            //     |app, data| {
+            //         if let Some(Screens::MainScreen(main_screen)) =
+            //             app.drawer.current_screen.as_mut()
+            //         {
+            //             if let crate::key_event_handler::Data::Mouse(mouse_event) = data {
+            //                 main_screen.options_menu_pos =
+            //                     Some(Position::new(mouse_event.column, mouse_event.row));
+            //                 main_screen.options_menu_selected = 0;
+            //             }
+            //             main_screen.redraw_images = 1;
+            //         }
+            //         app.drawer.refresh_immediate += 2;
+            //     },
+            // );
             key_event_handler.bind_vertical((None, None), "Navigate".into(), |app, data| {
                 if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     match data {
@@ -277,6 +292,7 @@ impl MainScreen {
             key_event_handler.bind_enter((None, None), "Choose".into(), |app, _| {
                 if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     main_screen.options_menu_pos = None;
+                    main_screen.redraw_images = 1;
 
                     if main_screen.options_menu_selected == 0 {
                         app.drawer.open_add_play_popup();
@@ -286,34 +302,45 @@ impl MainScreen {
                         app.drawer.open_delete_movie_popup();
                     }
                 }
+                app.drawer.refresh_immediate += 2;
             });
             key_event_handler.bind_esc((None, None), "Cancel".into(), |app, _| {
                 if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     main_screen.options_menu_pos = None;
+                    main_screen.redraw_images = 1;
                 }
+                app.drawer.refresh_immediate += 2;
             });
             key_event_handler.bind_key((None, None), 'q', "Cancel".into(), |app, _| {
                 if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     main_screen.options_menu_pos = None;
+                    main_screen.redraw_images = 1;
                 }
+                app.drawer.refresh_immediate += 2;
             });
             key_event_handler.bind_key((None, None), 'A', "Add play".into(), |app, _| {
                 app.drawer.open_add_play_popup();
                 if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     main_screen.options_menu_pos = None;
+                    main_screen.redraw_images = 1;
                 }
+                app.drawer.refresh_immediate += 2;
             });
             key_event_handler.bind_key((None, None), 'e', "Edit movie".into(), |app, _| {
                 app.drawer.open_edit_movie_popup();
                 if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     main_screen.options_menu_pos = None;
+                    main_screen.redraw_images = 1;
                 }
+                app.drawer.refresh_immediate += 2;
             });
             key_event_handler.bind_key((None, None), 'd', "Delete movie".into(), |app, _| {
                 app.drawer.open_delete_movie_popup();
                 if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     main_screen.options_menu_pos = None;
+                    main_screen.redraw_images = 1;
                 }
+                app.drawer.refresh_immediate += 2;
             });
             self.render_footer(frame, footer, key_event_handler);
 
@@ -355,13 +382,16 @@ impl MainScreen {
 
             let bg_top = frame
                 .buffer_mut()
-                .cell(Position::new(actions_popup_area.x, actions_popup_area.y))
+                .cell(Position::new(
+                    actions_popup_area.x + actions_popup_area.width / 2,
+                    actions_popup_area.y,
+                ))
                 .unwrap()
                 .bg;
             let bg_bottom = frame
                 .buffer_mut()
                 .cell(Position::new(
-                    actions_popup_area.x,
+                    actions_popup_area.x + actions_popup_area.width / 2,
                     actions_popup_area.y + actions_popup_area.height - 1,
                 ))
                 .unwrap()
@@ -401,7 +431,9 @@ impl MainScreen {
                             app.drawer.current_screen.as_mut()
                         {
                             main_screen.options_menu_pos = None;
+                            main_screen.redraw_images = 1;
                         }
+                        app.drawer.refresh_immediate += 2;
                     },
                 );
                 mouse_area = mouse_area.offset(Offset { x: 0, y: 1 });
@@ -924,11 +956,11 @@ impl MainScreen {
         } else if rating >= 7.5 {
             tailwind::LIME.c400
         } else if rating >= 7.0 {
-            material::LIME.c400
+            material::AMBER.c400
         } else if rating >= 6.0 {
-            tailwind::AMBER.c300
-        } else {
             material::DEEP_ORANGE.c300
+        } else {
+            material::RED.c400
         };
         let text = text![
             name.bold() + " ".into() + movie.year.clone().italic(),
@@ -960,11 +992,11 @@ impl MainScreen {
         } else if rating >= 7.5 {
             tailwind::LIME.c700
         } else if rating >= 7.0 {
-            material::LIME.c700
+            material::YELLOW.c700
         } else if rating >= 6.0 {
-            tailwind::YELLOW.c600
+            tailwind::AMBER.c600
         } else {
-            tailwind::ORANGE.c800
+            material::DEEP_ORANGE.c800
         };
         if selected {
             frame.render_widget(

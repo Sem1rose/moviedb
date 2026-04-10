@@ -6,8 +6,8 @@ use crate::{
 use ratatui::{
     layout::*, macros::vertical, prelude::*, style::palette::material, widgets::*, Frame,
 };
+use ratatui_textarea::TextArea;
 use style::palette::tailwind;
-use tui_textarea::TextArea;
 
 #[derive(Default)]
 pub struct EditMoviePopup {
@@ -32,7 +32,7 @@ impl EditMoviePopup {
         }]);
         popup
             .user_rating_input
-            .move_cursor(tui_textarea::CursorMove::End);
+            .move_cursor(ratatui_textarea::CursorMove::End);
 
         popup.new_play = new_play;
         popup

@@ -4,7 +4,9 @@ use reqwest::{
     header::HeaderMap,
 };
 use serde::Deserialize;
-use std::{collections::HashMap, error::Error, fmt::Display, path::PathBuf, sync::mpsc::Sender};
+use std::{
+    collections::HashMap, error::Error, fmt::Display, path::PathBuf, sync::mpsc::Sender, thread,
+};
 
 #[derive(Deserialize, Debug)]
 struct RequestTokenResponse {
@@ -26,12 +28,12 @@ impl Display for RequestResponseError {
     }
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 struct ConfigurationResponse {
     // pub change_keys: Vec<String>,
     images: ImagesConfiguration,
 }
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 struct ImagesConfiguration {
     base_url: String,
     backdrop_sizes: Vec<String>, // w92 w154 w185 w342 w500 w780 original
@@ -57,10 +59,10 @@ pub struct TMDBSearchResult {
     // pub overview: String,
     // pub popularity: f64,
     // pub poster_path: Option<String>,
-    pub release_date: String,
+    pub release_date: Option<String>,
     pub title: String,
     // pub video: bool,
-    pub vote_average: f64,
+    pub vote_average: Option<f64>,
     // pub vote_count: u64,
 }
 
@@ -127,17 +129,6 @@ struct RequestSessionIDResponse {
     session_id: String,
 }
 
-// pub fn populate_tokens(config: &Config, tmdb_config: &mut TMDBConfig) -> Result<()> {
-//     if !tmdb_config.has_session_id() {
-//         debug!("No TMDB session ID found, fetching a new one...");
-
-//         tmdb_config.set_session_id(get_session_id(tmdb_config.access_token())?);
-//         tmdb_config.save_creds(config);
-//     }
-
-//     Ok(())
-// }
-
 // https://developer.themoviedb.org/docs/authentication-user
 pub fn get_session_id(
     access_token: &str,
@@ -180,12 +171,7 @@ pub fn get_session_id(
     let authorization_url = format!("https://www.themoviedb.org/authenticate/{}", request_token);
     _ = tx_authorization_url.send(authorization_url.clone());
 
-    // println!(
-    //     "\nPlease visit the following url to authorize the application.\n{}\n",
-    //     url
-    // );
-
-    // Step 3: finally get the request token
+    // Step 3: wait for user permission
     let mut request_token_response = send_tmdb_request(
         &client,
         &format!(
@@ -196,15 +182,8 @@ pub fn get_session_id(
         None,
         None,
     )?;
-
-    // once the user gives permission of course...
     let mut retries = 0;
     while request_token_response.status().as_u16() >= 400 {
-        // trace!(
-        //     "{:#?} {}",
-        //     request_token_response.status(),
-        //     request_token_response.url()
-        // );
         retries += 1;
         if retries > 50 {
             bail!("TMDB: couldn't authenticate request token, max retries reached");
@@ -222,12 +201,12 @@ pub fn get_session_id(
             None,
         )?;
     }
-
-    let mut body = HashMap::new();
-    body.insert("request_token", request_token.as_str());
+    drop(tx_authorization_url);
 
     // The request token has been approved by the user
-    // Step 4: create a new session ID
+    // Step 4: finally create a new session ID
+    let mut body = HashMap::new();
+    body.insert("request_token", request_token.as_str());
     let create_session_response = send_tmdb_request(
         &client,
         "https://api.themoviedb.org/3/authentication/session/new",
@@ -249,10 +228,6 @@ pub fn get_session_id(
     let session_id = create_session_response
         .json::<RequestSessionIDResponse>()?
         .session_id;
-
-    // tmdb_config.set_session_id(session_id);
-    // tmdb_config.save_creds(config)?;
-
     Ok(session_id)
 }
 
@@ -281,13 +256,8 @@ pub fn find_movie(access_token: &str, name: &str) -> anyhow::Result<TMDBSearchRe
         })
         .context(format!("TMDB: Error while searching for movie {}", name));
     }
-    // println!(
-    //     "{}",
-    //     json::parse(&search_response.text()?).unwrap().pretty(2)
-    // );
 
     let json = search_response.json::<TMDBSearchResponse>()?;
-    // println!("{:#?}", json);
     Ok(json)
 }
 
@@ -428,8 +398,6 @@ pub fn get_movie_poster_banner(
         .json::<ConfigurationResponse>()?
         .images;
 
-    // print!("{:#?}", images_configurations);
-
     if !add_placeholder && (movie_images.posters.is_empty() || movie_images.backdrops.is_empty()) {
         return Ok(false);
     }
@@ -464,7 +432,6 @@ pub fn get_movie_poster_banner(
         .collect();
 
         let img = image::load_from_memory(&image_bytes);
-
         if img.is_ok() {
             img.unwrap().save(path)?;
         } else if img.is_err() {
@@ -487,14 +454,16 @@ pub fn get_movie_poster_banner(
             .copied()
             .collect();
 
-            let new_img = image::load_from_memory(&image_bytes);
-
-            if new_img.is_ok() {
-                new_img
-                    .unwrap()
-                    .resize(342, 10000, ratatui_image::FilterType::CatmullRom)
+            let img = image::load_from_memory(&image_bytes);
+            if img.is_ok() {
+                img.unwrap()
+                    .resize(
+                        if backdrop { 780 } else { 342 },
+                        10000,
+                        ratatui_image::FilterType::CatmullRom,
+                    )
                     .save(path)?;
-            } else if new_img.is_err() {
+            } else if img.is_err() {
                 return Ok(1);
             }
         }
@@ -503,62 +472,68 @@ pub fn get_movie_poster_banner(
     };
 
     let poster_path = cache_dir.join("posters").join(format!("{}.jpg", id));
-    if !movie_images.posters.is_empty() {
-        let mut success = false;
-        for i in 0..5 {
-            let result = try_get_artwork(
-                &images_configurations,
-                &movie_images,
-                &poster_path,
-                false,
-                i,
-            )?;
-            match result {
-                0 => {
-                    success = true;
-                    break;
+    let _configurations = images_configurations.clone();
+    let _images = movie_images.clone();
+    let poster_handle = thread::spawn(move || -> anyhow::Result<()> {
+        if !_images.posters.is_empty() {
+            let mut success = false;
+            for i in 0..5 {
+                let result = try_get_artwork(&_configurations, &_images, &poster_path, false, i)?;
+                match result {
+                    0 => {
+                        success = true;
+                        break;
+                    }
+                    2 => {
+                        break;
+                    }
+                    _ => (),
                 }
-                2 => {
-                    break;
-                }
-                _ => (),
             }
-        }
-        if !success && add_placeholder {
+            if !success && add_placeholder {
+                std::fs::copy("poster_placeholder.jpg", poster_path)?;
+            }
+        } else {
             std::fs::copy("poster_placeholder.jpg", poster_path)?;
         }
-    } else {
-        std::fs::copy("poster_placeholder.jpg", poster_path)?;
-    }
+
+        Ok(())
+    });
 
     let backdrop_path = cache_dir.join("backdrops").join(format!("{}.jpg", id));
-    if !movie_images.backdrops.is_empty() {
-        let mut success = false;
-        for i in 0..5 {
-            let result = try_get_artwork(
-                &images_configurations,
-                &movie_images,
-                &backdrop_path,
-                true,
-                i,
-            )?;
-            match result {
-                0 => {
-                    success = true;
-                    break;
+    let backdrop_handle = thread::spawn(move || -> anyhow::Result<()> {
+        if !movie_images.backdrops.is_empty() {
+            let mut success = false;
+            for i in 0..5 {
+                let result = try_get_artwork(
+                    &images_configurations,
+                    &movie_images,
+                    &backdrop_path,
+                    true,
+                    i,
+                )?;
+                match result {
+                    0 => {
+                        success = true;
+                        break;
+                    }
+                    2 => {
+                        break;
+                    }
+                    _ => (),
                 }
-                2 => {
-                    break;
-                }
-                _ => (),
             }
-        }
-        if !success && add_placeholder {
+            if !success && add_placeholder {
+                std::fs::copy("backdrop_placeholder.jpg", backdrop_path)?;
+            }
+        } else {
             std::fs::copy("backdrop_placeholder.jpg", backdrop_path)?;
         }
-    } else {
-        std::fs::copy("backdrop_placeholder.jpg", backdrop_path)?;
-    }
+        Ok(())
+    });
+
+    poster_handle.join().unwrap()?;
+    backdrop_handle.join().unwrap()?;
 
     Ok(true)
 }

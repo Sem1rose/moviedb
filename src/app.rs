@@ -7,7 +7,7 @@ use crate::{
     KeyEventHandler,
 };
 use log::{error, warn};
-use ratatui::crossterm::event::{self, Event};
+use ratatui::crossterm::event::{self, Event, KeyEvent, KeyEventState, KeyModifiers};
 use std::{
     fs::{read_to_string, rename, write},
     path::PathBuf,
@@ -16,6 +16,7 @@ use std::{
 
 pub struct App {
     home: PathBuf,
+    cache: PathBuf,
 
     pub movies: Vec<Movie>,
     pub quit: bool,
@@ -31,16 +32,16 @@ pub struct App {
 
 impl App {
     pub fn new() -> anyhow::Result<Self> {
-        let home = dirs::config_dir()
+        let home_dir = dirs::config_dir()
             .expect("Couldn't get user's config dir")
             .join("moviedb");
-        let cache = dirs::cache_dir()
+        let cache_dir = dirs::cache_dir()
             .expect("Couldn't get user's cache dir")
             .join("moviedb");
 
-        let file_contents =
-            read_to_string(home.join(".credentials")).expect("Couldn't read credentials");
-        let creds = serde_json::from_str(&file_contents).expect("Couldn't deserialize credentials");
+        // let credentials_contents =
+        //     read_to_string(home.join(".credentials")).expect("Couldn't read credentials");
+        // let creds = serde_json::from_str(&credentials_contents).expect("Couldn't deserialize credentials");
 
         Self {
             quit: false,
@@ -48,13 +49,14 @@ impl App {
             movies: vec![],
             terminal: initialize_terminal()?,
             key_event_handler: KeyEventHandler::default(),
-            drawer: Drawer::new(&cache),
+            drawer: Drawer::new(&home_dir, &cache_dir),
 
-            tmdb_tokens: TMDBTokens::new(&creds),
-            omdb_tokens: OMDBTokens::new(&creds),
-            trakt_tokens: TraktTokens::new(&creds),
+            tmdb_tokens: TMDBTokens::new(&home_dir),
+            omdb_tokens: OMDBTokens::new(&home_dir),
+            trakt_tokens: TraktTokens::new(&home_dir),
 
-            home,
+            home: home_dir,
+            cache: cache_dir,
         }
         .fetch_movies()
     }
@@ -137,22 +139,22 @@ impl App {
                         if let Ok(event) = event::read() {
                             self.handle_event(event);
 
-                            while event::poll(Duration::from_millis(0))? {
-                                if let Ok(event) = event::read() {
-                                    self.handle_event(event);
-                                }
-                            }
+                            // while event::poll(Duration::from_millis(0))? {
+                            //     if let Ok(event) = event::read() {
+                            //         self.handle_event(event);
+                            //     }
+                            // }
                         }
                     }
                 } else {
                     if let Ok(event) = event::read() {
                         self.handle_event(event);
 
-                        while event::poll(Duration::from_millis(0))? {
-                            if let Ok(event) = event::read() {
-                                self.handle_event(event);
-                            }
-                        }
+                        // while event::poll(Duration::from_millis(0))? {
+                        //     if let Ok(event) = event::read() {
+                        //         self.handle_event(event);
+                        //     }
+                        // }
                     }
                 }
             }
@@ -309,7 +311,21 @@ impl App {
             }
             Event::FocusGained => (),
             Event::FocusLost => (),
-            Event::Paste(_) => (),
+            Event::Paste(string) => {
+                for c in string.chars() {
+                    if let Some((callback, data)) = self.key_event_handler.handle_key_event(
+                        KeyEvent {
+                            code: event::KeyCode::Char(c),
+                            modifiers: KeyModifiers::NONE,
+                            kind: event::KeyEventKind::Press,
+                            state: KeyEventState::NONE,
+                        },
+                        &self.drawer,
+                    ) {
+                        callback(self, data);
+                    }
+                }
+            }
             Event::Resize(_, _) => (),
         }
     }

@@ -17,22 +17,25 @@ use ratatui::{
 pub struct Drawer {
     pub current_screen: Option<Screens>,
     pub active_popup: Option<Popups>,
-
     show_term_size_warning: bool,
-
     pub refresh_immediate: u8,
+
+    home_dir: PathBuf,
     cache_dir: PathBuf,
 }
 
 const MINTERMSIZE: [u32; 2] = [100, 30];
 impl Drawer {
-    pub fn new(cache_dir: &PathBuf) -> Self {
+    pub fn new(home_dir: &PathBuf, cache_dir: &PathBuf) -> Self {
         Drawer {
-            current_screen: Some(Screens::MainScreen(MainScreen::new(cache_dir))),
-            active_popup: None,
+            // current_screen: Some(Screens::MainScreen(MainScreen::new(cache_dir))),
+            // active_popup: None,
+            current_screen: None,
+            active_popup: Some(Popups::TMDBInit(TMDBInitPopup::new(home_dir))),
             show_term_size_warning: false,
             refresh_immediate: 0,
             cache_dir: cache_dir.clone(),
+            home_dir: home_dir.clone(),
         }
     }
 
@@ -83,6 +86,14 @@ impl Drawer {
                         });
                     }
                 }
+                Popups::TMDBInit(tmdb_init) => {
+                    tmdb_init.update();
+                    if let TMDBInitPopupPhase::Done = tmdb_init.phase {
+                        key_event_handler.bind_immediate(|app, _| {
+                            // app.add_movie();
+                        });
+                    }
+                }
             }
         }
     }
@@ -98,6 +109,9 @@ impl Drawer {
                 }
                 Popups::AddMovie(add_movie_popup) => {
                     add_movie_popup.render(frame, key_event_handler);
+                }
+                Popups::TMDBInit(tmdb_init_popup) => {
+                    tmdb_init_popup.render(frame, key_event_handler);
                 }
             }
         }
@@ -147,8 +161,14 @@ impl Drawer {
         self.refresh_immediate > 0
     }
     pub fn check_refresh_delayed(&mut self) -> bool {
-        if let Some(Popups::AddMovie(add_movie_popup)) = self.active_popup.as_ref() {
-            return add_movie_popup.throbber_visible || add_movie_popup.search_results.is_none();
+        match self.active_popup.as_ref() {
+            Some(Popups::AddMovie(add_movie_popup)) => {
+                return add_movie_popup.update_next_frame();
+            }
+            Some(Popups::TMDBInit(tmdb_init_popup)) => {
+                return tmdb_init_popup.update_next_frame();
+            }
+            _ => {}
         }
         if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_ref() {
             return main_screen.drawing_images;
