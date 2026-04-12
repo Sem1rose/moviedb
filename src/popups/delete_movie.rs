@@ -4,7 +4,7 @@ use crate::{
     popups::Popups,
 };
 use ratatui::{
-    layout::*, macros::vertical, prelude::*, style::palette::material, widgets::*, Frame,
+    layout::*, macros::{vertical, span}, prelude::*, style::palette::material, widgets::*, Frame,
 };
 use style::palette::tailwind;
 
@@ -79,62 +79,52 @@ impl DeleteMoviePopup {
             popup_area.outer(Margin::new(1, 1)),
             |_, _| {},
         );
-        let [_, message_area, actions_area, _] = vertical![ ==1, >=1, ==1, ==1].areas(popup_area);
+        let [message_area, actions_area] = vertical![ >=1, ==1].areas(add_padding(popup_area, Padding::proportional(1)));
         frame.render_widget(
             Paragraph::new(format!("Do you really want to remove {}?", self.name))
                 .wrap(Wrap { trim: false }),
-            add_padding(message_area, Padding::horizontal(2)),
+            message_area,
         );
 
         let actions = vec![
-            Span::from(" Confirm ").style(
-                Style::new()
-                    .fg(if self.item == 1 {
-                        tailwind::SLATE.c300
-                    } else {
-                        tailwind::RED.c500
-                    })
-                    .bg(if self.item == 1 {
-                        material::RED.c800
-                    } else {
-                        tailwind::SLATE.c950
-                    }),
-            ),
-            Span::from(" "),
-            Span::from(" Cancel ").style(
-                Style::new()
-                    .fg(if self.item == 0 {
-                        tailwind::SLATE.c200
-                    } else {
-                        material::BLUE.c500
-                    })
-                    .bg(if self.item == 0 {
-                        material::BLUE.c600
-                    } else {
-                        tailwind::SLATE.c950
-                    }),
-            ),
-            Span::from("  "),
+            span!(" Confirm ")
+                .fg(if self.item == 1 {
+                    tailwind::SLATE.c300
+                } else {
+                    tailwind::RED.c500
+                })
+                .bg(if self.item == 1 {
+                    material::RED.c800
+                } else {
+                    tailwind::SLATE.c950
+                }),
+            span!(" "),
+            span!(" Cancel ")
+                .fg(if self.item == 0 {
+                    tailwind::SLATE.c200
+                } else {
+                    material::BLUE.c500
+                })
+                .bg(if self.item == 0 {
+                    material::BLUE.c800
+                } else {
+                    tailwind::SLATE.c950
+                }),
         ];
         let mut mouse_area = actions_area
-            .offset(Offset::new(actions_area.width as i32, 0))
-            .resize(Size::new(1, 1));
+            .offset(Offset::new(actions_area.width as i32, 0));
         for (i, action) in actions.iter().rev().enumerate() {
             mouse_area = mouse_area.offset(Offset::new(-(action.width() as i32), 0));
-            if i & 1 == 0 {
+            if i & 1 == 1 {
                 continue;
             }
 
-            mouse_area = mouse_area.resize(Size {
-                width: action.width() as u16,
-                height: 1,
-            });
-
+            mouse_area = mouse_area.resize(Size::new(action.width() as u16, 1));
             key_event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,
                 mouse_area,
                 move |app, _| {
-                    if i / 2 == 0 {
+                    if i == 2 {
                         app.remove_movie();
                     }
                     app.drawer.close_popups();

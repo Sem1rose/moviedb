@@ -106,6 +106,24 @@ pub fn get_tokens(
         .url()
         .to_string();
 
+    // Step 1.5: Validate the client id
+    let mut headers = HeaderMap::new();
+    headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
+    headers.insert(USER_AGENT, "reqwest/0.12.8".parse().unwrap());
+    headers.insert("trakt-api-version", "2".parse().unwrap());
+    headers.insert("trakt-api-key", client_id.parse().unwrap());
+
+    let validate_response = send_trakt_request(
+        &client,
+        "https://api.trakt.tv/genres/movies",
+        &headers,
+        None,
+        None,
+    )?;
+    if validate_response.status().as_u16() >= 400 {
+        bail!("Trakt: Unable to validate user credentials");
+    }
+
     _ = tx_auth_url.send(authorization_url);
 
     let auth_code = rx_auth_code
@@ -116,12 +134,6 @@ pub fn get_tokens(
     }
 
     // Step 2: exchange authorization code for access token
-    let mut headers = HeaderMap::new();
-    headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
-    headers.insert(USER_AGENT, "reqwest/0.12.8".parse().unwrap());
-    headers.insert("trakt-api-version", "2".parse().unwrap());
-    headers.insert("trakt-api-key", client_id.parse().unwrap());
-
     let mut body = HashMap::new();
     body.insert("code", auth_code.as_str());
     body.insert("client_id", client_id);
@@ -142,7 +154,7 @@ pub fn get_tokens(
             Ok(err) => err.into(),
             Err(err) => err.into(),
         })
-        .context("Trakt: Error while while exchanging auth code for access token");
+        .context("Trakt: Error while exchanging auth code for an access token");
     }
 
     Ok(token_response.json::<TokenResponse>()?)

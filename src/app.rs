@@ -251,27 +251,24 @@ impl App {
         if let Some(Popups::TMDBInit(tmdb_init_popup)) = self.drawer.active_popup.as_mut() {
             if let Some(tokens) = tmdb_init_popup.tokens.take() {
                 self.tmdb_tokens.set_creds(tokens).unwrap();
-
-                self.drawer.close_popups();
             }
+            self.drawer.close_popups();
         }
     }
     pub fn set_omdb_user_tokens(&mut self) {
         if let Some(Popups::OMDBInit(omdb_init_popup)) = self.drawer.active_popup.as_mut() {
             if let Some(tokens) = omdb_init_popup.tokens.take() {
                 self.omdb_tokens.set_creds(tokens).unwrap();
-
-                self.drawer.close_popups();
             }
+            self.drawer.close_popups();
         }
     }
     pub fn set_trakt_user_tokens(&mut self) {
         if let Some(Popups::TraktInit(trakt_init_popup)) = self.drawer.active_popup.as_mut() {
             if let Some(tokens) = trakt_init_popup.tokens.take() {
                 self.trakt_tokens.set_creds(tokens).unwrap();
-
-                self.drawer.close_popups();
             }
+            self.drawer.close_popups();
         }
     }
 

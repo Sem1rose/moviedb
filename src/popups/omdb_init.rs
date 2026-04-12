@@ -6,7 +6,7 @@ use crate::{
 };
 use ratatui::{
     layout::*,
-    macros::{constraint, vertical},
+    macros::{span, constraint, vertical},
     prelude::*,
     style::palette::{material, tailwind},
     widgets::*,
@@ -92,6 +92,8 @@ impl OMDBInitPopup {
         });
 
         if self.started {
+            let input_valid = !self.input.is_empty();
+
             key_event_handler.bind_tab((None, None), "".into(), |app, data| {
                 if let Some(Popups::OMDBInit(omdb_init_popup)) =
                     app.drawer.active_popup.as_mut()
@@ -99,13 +101,13 @@ impl OMDBInitPopup {
                     match data {
                         crate::key_event_handler::Data::Direction(true, _) => {
                             omdb_init_popup.item += 1;
-                            if omdb_init_popup.item > 1 {
+                            if omdb_init_popup.item > 2 {
                                 omdb_init_popup.item = 0;
                             }
                         }
                         crate::key_event_handler::Data::Direction(false, _) => {
                             omdb_init_popup.item =
-                                omdb_init_popup.item.checked_sub(1).unwrap_or(1);
+                                omdb_init_popup.item.checked_sub(1).unwrap_or(2);
                         }
                         _ => {}
                     }
@@ -118,26 +120,40 @@ impl OMDBInitPopup {
                     omdb_init_popup.item = 1;
                 }
             });
-            key_event_handler.bind_esc((None, Some(0)), "".into(), |app, _| {
-                if let Some(Popups::OMDBInit(omdb_init_popup)) =
-                    app.drawer.active_popup.as_mut()
-                {
-                    omdb_init_popup.item = 1;
-                }
-            });
             key_event_handler.bind_enter(
                 (None, Some(1)),
                 "Confirm".into(),
-                |app, _| {
+                move |app, _| {
                     if let Some(Popups::OMDBInit(omdb_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
-                        omdb_init_popup.tokens = Some(omdb_init_popup.input.lines()[0].clone());
+                        if input_valid {
+                            omdb_init_popup.tokens = Some(omdb_init_popup.input.lines()[0].clone());
+                            omdb_init_popup.done = true;
+                            omdb_init_popup.started = false;
+                        }
+                    }
+                },
+            );
+            key_event_handler.bind_enter(
+                (None, Some(2)),
+                "Confirm".into(),
+                move |app, _| {
+                    if let Some(Popups::OMDBInit(omdb_init_popup)) =
+                        app.drawer.active_popup.as_mut()
+                    {
                         omdb_init_popup.done = true;
                         omdb_init_popup.started = false;
                     }
                 },
             );
+            key_event_handler.bind_esc((None, Some(0)), "".into(), |app, _| {
+                if let Some(Popups::OMDBInit(omdb_init_popup)) =
+                    app.drawer.active_popup.as_mut()
+                {
+                    omdb_init_popup.item = 2;
+                }
+            });
             key_event_handler.bind_input_field(
                 (None, Some(0)),
                 "".into(),
@@ -157,7 +173,7 @@ impl OMDBInitPopup {
 
             let popup_area = dynamic_popup(
                 frame,
-                Some(7),
+                Some(8),
                 4.0,
                 tailwind::BLUE.c950,
                 "  OMDB Authentication  ",
@@ -171,53 +187,37 @@ impl OMDBInitPopup {
                 |_, _| {},
             );
 
-            let [_, input_area, _, actions_area, _] =
-                vertical![==1, ==3, >=1, ==1, ==1].areas(popup_area);
-            let actions = vec![
-                Span::from(" Confirm ").style(
-                    Style::new()
-                        .fg(if self.item == 1 {
-                            tailwind::SLATE.c200
-                        } else {
-                            tailwind::SLATE.c300
-                        })
-                        .bg(if self.item == 1 {
-                            material::BLUE.c600
-                        } else {
-                            material::BLUE.c900
-                        }),
-                ),
-                Span::from("  "),
-            ];
-            let mut mouse_area = actions_area
-                .offset(Offset::new(actions_area.width as i32, 0))
-                .resize(Size::new(1, 1));
-            for (i, action) in actions.iter().rev().enumerate() {
-                mouse_area = mouse_area.offset(Offset::new(-(action.width() as i32), 0));
-                if i & 1 == 0 {
-                    continue;
-                }
-
-                mouse_area = mouse_area.resize(Size {
-                    width: action.width() as u16,
-                    height: 1,
+            let skip = span!(" Skip ")
+                .fg(if self.item == 2 {
+                    tailwind::SLATE.c200
+                } else {
+                    tailwind::SLATE.c300
+                })
+                .bg(if self.item == 2 {
+                    material::BLUE.c700
+                } else {
+                    material::BLUE.c900
                 });
+            let mouse_area = popup_area
+                .offset(Offset::new(popup_area.width as i32 - (skip.width() as i32), 0))
+                .resize(Size::new(skip.width() as u16, 1));
+            key_event_handler.bind_mouse_button_down(
+                ratatui::crossterm::event::MouseButton::Left,
+                mouse_area,
+                |app, _| {
+                    if let Some(Popups::OMDBInit(omdb_init_popup)) =
+                        app.drawer.active_popup.as_mut()
+                    {
+                        omdb_init_popup.done = true;
+                        omdb_init_popup.started = false;
+                    }
+                },
+            );
+            frame.render_widget(Line::from(skip).right_aligned(), popup_area);
 
-                key_event_handler.bind_mouse_button_down(
-                    ratatui::crossterm::event::MouseButton::Left,
-                    mouse_area,
-                    |app, _| {
-                        if let Some(Popups::OMDBInit(omdb_init_popup)) =
-                            app.drawer.active_popup.as_mut()
-                        {
-                            omdb_init_popup.tokens = Some(omdb_init_popup.input.lines()[0].clone());
-                            omdb_init_popup.done = true;
-                            omdb_init_popup.started = false;
-                        }
-                    },
-                );
-            }
-            frame.render_widget(Line::from(actions).right_aligned(), actions_area);
+            let [_, input_area, _, actions_area] =
+                vertical![==1, ==3, >=1, ==1].areas(add_padding(popup_area, Padding::proportional(1)));
+
 
             let input_selected = self.item == 0;
             self.input.set_style(Style::new().fg(if input_selected {
@@ -272,15 +272,7 @@ impl OMDBInitPopup {
 
             key_event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,
-                add_padding(
-                    input_area,
-                    Padding {
-                        left: 2,
-                        right: 2,
-                        top: 0,
-                        bottom: 0,
-                    },
-                ),
+                add_padding(input_area, Padding::horizontal(2)),
                 |app, _| {
                     if let Some(Popups::OMDBInit(omdb_init_popup)) =
                         app.drawer.active_popup.as_mut()
@@ -289,6 +281,49 @@ impl OMDBInitPopup {
                     }
                 },
             );
+
+            let confirm = span!(" Confirm ")
+                .fg(if input_valid {
+                    if self.item == 1 {
+                        tailwind::SLATE.c200
+                    } else {
+                        tailwind::SLATE.c300
+                    }
+                } else {
+                    tailwind::SLATE.c500
+                })
+                .bg(if input_valid {
+                    if self.item == 1 {
+                        material::BLUE.c600
+                    } else {
+                        material::BLUE.c900
+                    }
+                } else {
+                    if self.item == 1 {
+                        tailwind::SLATE.c700
+                    } else {
+                        tailwind::SLATE.c800
+                    }
+                });
+            let mouse_area = actions_area
+                .offset(Offset::new(actions_area.width as i32 - (confirm.width() as i32), 0))
+                .resize(Size::new(confirm.width() as u16, 1));
+            key_event_handler.bind_mouse_button_down(
+                ratatui::crossterm::event::MouseButton::Left,
+                mouse_area,
+                move |app, _| {
+                    if let Some(Popups::OMDBInit(omdb_init_popup)) =
+                        app.drawer.active_popup.as_mut()
+                    {
+                        if input_valid {
+                            omdb_init_popup.tokens = Some(omdb_init_popup.input.lines()[0].clone());
+                            omdb_init_popup.done = true;
+                            omdb_init_popup.started = false;
+                        }
+                    }
+                },
+            );
+            frame.render_widget(Line::from(confirm).right_aligned(), actions_area);
         } else {
             let popup_area = dynamic_popup(
                 frame,

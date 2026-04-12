@@ -42,7 +42,7 @@ impl Drawer {
                 Popups::FetchArtworks(FetchArtworksPopup::new(cache_dir)),
                 Popups::OMDBInit(OMDBInitPopup::new(home_dir)),
                 Popups::TMDBInit(TMDBInitPopup::new(home_dir)),
-                Popups::TraktInit(TraktInitPopup::new(home_dir)),
+                Popups::TraktInit(TraktInitPopup::new(home_dir, false)),
             ],
         }
     }
