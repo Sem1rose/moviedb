@@ -1,42 +1,32 @@
-use crate::{tokens::Credentials, trakt::TokenResponse, types::*};
-use anyhow::Context;
-use cocoon::Cocoon;
-// use log::{debug, error};
-use rand::{distr::Alphanumeric, Rng};
+use anyhow::{bail, Context};
+use std::{fs, path::PathBuf};
 use serde::{Deserialize, Serialize};
-use std::{
-    fs::{self, File},
-    path::PathBuf,
-    sync::mpsc::Sender,
-    thread,
-};
+use simple_encrypt::{encrypt_bytes, decrypt_bytes};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
-struct Tokens {
-    client_id: String,
-    client_secret: String,
+pub struct UserTokens {
+    pub client_id: String,
+    pub client_secret: String,
 
-    access_token: String,
-    refresh_token: String,
-
-    expires_on: i64,
+    pub access_token: String,
+    pub refresh_token: String,
+    pub expires_on: i64,
 }
 
-// impl From<TokenResponse> for Tokens {
-//     fn from(val: TokenResponse) -> Self {
-//         Tokens {
-//             access_token: val.access_token,
-//             refresh_token: val.refresh_token,
-//             expires_on: val.created_at + val.expires_in,
-//         }
-//     }
-// }
+impl UserTokens {
+    pub fn has_secrets(&self) -> bool {
+        !(self.client_id.is_empty() || self.client_secret.is_empty())
+    }
+    pub fn has_tokens(&self) -> bool {
+        !(self.access_token.is_empty() || self.refresh_token.is_empty())
+    }
+}
 
 #[derive(Clone, Default)]
 pub struct TraktTokens {
-    tokens: Tokens,
+    user_tokens: UserTokens,
 
-    home_dir: PathBuf,
+    home_dir: PathBuf
 }
 
 impl TraktTokens {
@@ -44,115 +34,74 @@ impl TraktTokens {
         Self {
             home_dir: home_dir.clone(),
 
-            tokens: Tokens::default(),
+            user_tokens: UserTokens::default(),
         }
     }
 
-    fn check_files(&mut self, home_dir: &PathBuf) -> anyhow::Result<bool> {
-        if !home_dir.join(".key").is_file() {
-            let key: String = rand::rng()
-                .sample_iter(&Alphanumeric)
-                .take(16)
-                .map(char::from)
-                .collect();
+    pub fn init(home_dir: &PathBuf) -> anyhow::Result<UserTokens> {
+        let tokens_file_exists = home_dir.join(".trakt_tokens").is_file();
 
-            _ = fs::remove_file(&home_dir.join(".trakt_tokens"));
-
-            fs::write(&home_dir.join(".key"), key)?;
-        }
-
-        Ok(home_dir.join(".trakt_tokens").is_file())
-    }
-
-    pub fn init(&mut self, home_dir: &PathBuf) {
-        let result = self.check_files(home_dir);
-        if let Ok(true) = result {
-            // let tx_result = self.tx_init.clone();
-
-            let home_dir = home_dir.clone();
-            // thread::spawn(move || tx_result.send(TraktTokens::read_creds(&home_dir).map_err(Some)));
-        } else if let Ok(false) = result {
-            // debug!("Initializing a new Trakt config...");
-
-            // _ = self.tx_init.send(Err(None));
-        } else if let Err(error) = result {
-            // error!("Error reading Trakt config file, initializing a new config...");
-
-            // _ = self.tx_init.send(Err(Some(error)));
+        if tokens_file_exists {
+            Self::read_creds(home_dir)
+        } else {
+            bail!("Trakt: User tokens file does not exist.")
         }
     }
+    fn read_creds(home_dir: &PathBuf) -> anyhow::Result<UserTokens> {
+        let encrypted_data = fs::read(&home_dir.join(".trakt_tokens"))
+            .context("Trakt: unable to read tokens")?;
 
-    fn read_creds(home_dir: &PathBuf) -> anyhow::Result<String> {
-        let key = fs::read(&home_dir.join(".key"))?;
-        let cocoon = Cocoon::new(&key);
-
-        let mut encrypted_file = File::open(&home_dir.join(".trakt_tokens"))?;
-
-        let result = String::from_utf8(cocoon.parse(&mut encrypted_file)?);
-
-        result.context("Trakt: error decoding utf8")
+        serde_json::from_str(
+            &String::from_utf8(
+                decrypt_bytes(&encrypted_data, b"0123456789abcdef0123456789abcdef")
+                    .context("Trakt: error decrypting user tokens")?,
+            )
+            .context("Trakt: error decoding utf8")?,
+        )
+        .context("Trakt: error parsing user tokens")
     }
 
-    pub fn set_creds(&mut self, data: String) -> anyhow::Result<()> {
-        self.tokens = serde_json::from_str(&data)?;
+    pub fn set_creds(&mut self, user_tokens: UserTokens) -> anyhow::Result<()> {
+        self.user_tokens = user_tokens;
 
-        Ok(())
+        self.save_creds()
     }
+    pub fn save_creds(&self) -> anyhow::Result<()> {
+        let data = serde_json::to_string(&self.user_tokens)?;
 
-    pub fn save_creds(&self, home_dir: &PathBuf) -> anyhow::Result<()> {
-        let key = fs::read(&home_dir.join(".key"))?;
-        let mut cocoon = Cocoon::new(&key);
-
-        let mut encrypted_file = File::create(&home_dir.join(".trakt_tokens"))?;
-        let dump_json = serde_json::to_string(&self.tokens)?;
-
-        cocoon.dump(dump_json.into_bytes(), &mut encrypted_file)?;
-
-        Ok(())
-    }
-
-    pub fn set_secrets(&mut self, client_id: String, client_secret: String) {
-        self.tokens.client_id = client_id;
-        self.tokens.client_secret = client_secret;
-    }
-
-    pub fn has_tokens(&self) -> bool {
-        !(self.tokens.access_token.is_empty() || self.tokens.refresh_token.is_empty())
+        fs::write(
+            &self.home_dir.join(".trakt_tokens"),
+            &encrypt_bytes(data.as_bytes(),b"0123456789abcdef0123456789abcdef")
+            .context("Trakt: failed to encrypt user tokens")?
+        ).context("Trakt: failed to write encrypted file")
     }
 
     pub fn client_id(&self) -> &str {
-        &self.tokens.client_id
+        &self.user_tokens.client_id
     }
-
     pub fn client_secret(&self) -> &str {
-        &self.tokens.client_secret
+        &self.user_tokens.client_secret
+    }
+    pub fn client_id_owned(&self) -> String {
+        self.user_tokens.client_id.clone()
+    }
+    pub fn client_secret_owned(&self) -> String {
+        self.user_tokens.client_secret.clone()
     }
 
     pub fn access_token(&self) -> &str {
-        &self.tokens.access_token
+        &self.user_tokens.access_token
     }
-
     pub fn refresh_token(&self) -> &str {
-        &self.tokens.refresh_token
+        &self.user_tokens.refresh_token
     }
-
-    pub fn client_id_owned(&self) -> String {
-        self.tokens.client_id.clone()
-    }
-
-    pub fn client_secret_owned(&self) -> String {
-        self.tokens.client_secret.clone()
-    }
-
-    pub fn access_token_owned(&self) -> String {
-        self.tokens.access_token.clone()
-    }
-
-    pub fn refresh_token_owned(&self) -> String {
-        self.tokens.refresh_token.clone()
-    }
-
     pub fn expires_on(&self) -> i64 {
-        self.tokens.expires_on
+        self.user_tokens.expires_on
+    }
+    pub fn access_token_owned(&self) -> String {
+        self.user_tokens.access_token.clone()
+    }
+    pub fn refresh_token_owned(&self) -> String {
+        self.user_tokens.refresh_token.clone()
     }
 }

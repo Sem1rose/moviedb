@@ -15,10 +15,12 @@ use ratatui::{
 };
 
 pub struct Drawer {
-    pub current_screen: Option<Screens>,
-    pub active_popup: Option<Popups>,
-    show_term_size_warning: bool,
     pub refresh_immediate: u8,
+    show_term_size_warning: bool,
+    pub active_popup: Option<Popups>,
+    pub current_screen: Option<Screens>,
+    pub popup_queue: Vec<Popups>,
+    pub screen_queue: Vec<Screens>,
 
     home_dir: PathBuf,
     cache_dir: PathBuf,
@@ -28,14 +30,20 @@ const MINTERMSIZE: [u32; 2] = [100, 30];
 impl Drawer {
     pub fn new(home_dir: &PathBuf, cache_dir: &PathBuf) -> Self {
         Drawer {
-            // current_screen: Some(Screens::MainScreen(MainScreen::new(cache_dir))),
-            // active_popup: None,
-            current_screen: None,
-            active_popup: Some(Popups::TMDBInit(TMDBInitPopup::new(home_dir))),
-            show_term_size_warning: false,
             refresh_immediate: 0,
-            cache_dir: cache_dir.clone(),
             home_dir: home_dir.clone(),
+            cache_dir: cache_dir.clone(),
+            show_term_size_warning: false,
+
+            active_popup: None,
+            current_screen: None,
+            screen_queue: vec![Screens::MainScreen(MainScreen::new(cache_dir))],
+            popup_queue: vec![
+                Popups::FetchArtworks(FetchArtworksPopup::new(cache_dir)),
+                Popups::OMDBInit(OMDBInitPopup::new(home_dir)),
+                Popups::TMDBInit(TMDBInitPopup::new(home_dir)),
+                Popups::TraktInit(TraktInitPopup::new(home_dir)),
+            ],
         }
     }
 
@@ -47,6 +55,7 @@ impl Drawer {
 
         self.draw_current_screen(frame, key_event_handler);
 
+        self.try_pop_queues(key_event_handler);
         self.check_popups(key_event_handler);
         if !self.show_term_size_warning && self.active_popup.is_some() {
             self.draw_popup(frame, key_event_handler);
@@ -80,18 +89,45 @@ impl Drawer {
                 Popups::DeleteMovie(_) => {}
                 Popups::AddMovie(add_movie_popup) => {
                     add_movie_popup.update();
+
                     if let AddMoviePopupPhase::Done = add_movie_popup.phase {
                         key_event_handler.bind_immediate(|app, _| {
                             app.add_movie();
                         });
                     }
                 }
-                Popups::TMDBInit(tmdb_init) => {
-                    tmdb_init.update();
-                    if let TMDBInitPopupPhase::Done = tmdb_init.phase {
+                Popups::TMDBInit(tmdb_init_popup) => {
+                    tmdb_init_popup.update();
+
+                    if let TMDBInitPopupPhase::Done = tmdb_init_popup.phase {
                         key_event_handler.bind_immediate(|app, _| {
-                            // app.add_movie();
+                            app.set_tmdb_user_tokens();
                         });
+                    }
+                }
+                Popups::OMDBInit(omdb_init_popup) => {
+                    omdb_init_popup.update();
+
+                    if omdb_init_popup.done {
+                        key_event_handler.bind_immediate(|app, _| {
+                            app.set_omdb_user_tokens();
+                        });
+                    }
+                }
+                Popups::TraktInit(trakt_init_popup) => {
+                    trakt_init_popup.update();
+
+                    if let TraktInitPopupPhase::Done = trakt_init_popup.phase {
+                        key_event_handler.bind_immediate(|app, _| {
+                            app.set_trakt_user_tokens();
+                        });
+                    }
+                }
+                Popups::FetchArtworks(fetch_artworks_popup) => {
+                    fetch_artworks_popup.update();
+
+                    if fetch_artworks_popup.done {
+                        self.close_popups();
                     }
                 }
             }
@@ -113,17 +149,51 @@ impl Drawer {
                 Popups::TMDBInit(tmdb_init_popup) => {
                     tmdb_init_popup.render(frame, key_event_handler);
                 }
+                Popups::OMDBInit(omdb_init_popup) => {
+                    omdb_init_popup.render(frame, key_event_handler);
+                }
+                Popups::TraktInit(trakt_init_popup) => {
+                    trakt_init_popup.render(frame, key_event_handler);
+                }
+                Popups::FetchArtworks(fetch_artworks_popup) => {
+                    fetch_artworks_popup.render(frame, key_event_handler);
+                }
             }
         }
     }
 
+    fn try_pop_queues(&mut self, key_event_handler: &mut KeyEventHandler) {
+        if self.active_popup.is_none() {
+            if !self.popup_queue.is_empty() {
+                self.active_popup = self.popup_queue.pop();
+
+                if matches!(self.active_popup, Some(Popups::FetchArtworks(_))) {
+                    key_event_handler.bind_immediate(|app, _| {
+                        if let Some(Popups::FetchArtworks(fetch_artworks_popup)) = app.drawer.active_popup.as_mut() {
+                            fetch_artworks_popup.set_movies(&app.movies, app.trakt_tokens.client_id(), app.tmdb_tokens.access_token());
+                        }
+                    });
+                }
+            } else if !self.screen_queue.is_empty() {
+                self.current_screen = self.screen_queue.pop();
+
+                if matches!(self.current_screen, Some(Screens::MainScreen(_))) {
+                    key_event_handler.bind_immediate(|app, _| {
+                        if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                            main_screen.set_movies(&app.movies);
+                        }
+                    });
+                }
+            }
+        }
+    }
     pub fn open_add_movie_popup(
         &mut self,
         trakt_tokens: TraktTokens,
         tmdb_tokens: TMDBTokens,
         omdb_tokens: OMDBTokens,
     ) {
-        self.active_popup = Some(Popups::AddMovie(AddMoviePopup::new(
+        self.popup_queue.push(Popups::AddMovie(AddMoviePopup::new(
             trakt_tokens,
             tmdb_tokens,
             omdb_tokens,
@@ -131,11 +201,11 @@ impl Drawer {
         )));
     }
     pub fn open_add_play_popup(&mut self) {
-        self.active_popup = Some(Popups::EditMovie(EditMoviePopup::new(true, 0.0)));
+        self.popup_queue.push(Popups::EditMovie(EditMoviePopup::new(true, 0.0)));
     }
     pub fn open_edit_movie_popup(&mut self) {
         if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_mut() {
-            self.active_popup = Some(Popups::EditMovie(EditMoviePopup::new(
+            self.popup_queue.push(Popups::EditMovie(EditMoviePopup::new(
                 false,
                 main_screen.current_movie().unwrap().get_user_rating(),
             )));
@@ -143,7 +213,7 @@ impl Drawer {
     }
     pub fn open_delete_movie_popup(&mut self) {
         if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_mut() {
-            self.active_popup = Some(Popups::DeleteMovie(DeleteMoviePopup::new(
+            self.popup_queue.push(Popups::DeleteMovie(DeleteMoviePopup::new(
                 &main_screen.current_movie().unwrap().name,
             )));
         }
@@ -167,6 +237,15 @@ impl Drawer {
             }
             Some(Popups::TMDBInit(tmdb_init_popup)) => {
                 return tmdb_init_popup.update_next_frame();
+            }
+            Some(Popups::OMDBInit(omdb_init_popup)) => {
+                return omdb_init_popup.update_next_frame();
+            }
+            Some(Popups::TraktInit(trakt_init_popup)) => {
+                return trakt_init_popup.update_next_frame();
+            }
+            Some(Popups::FetchArtworks(fetch_artworks_popup)) => {
+                return fetch_artworks_popup.update_next_frame();
             }
             _ => {}
         }

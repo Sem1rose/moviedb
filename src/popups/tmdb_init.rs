@@ -1,5 +1,4 @@
 use crate::{
-    app::App,
     helpers::{add_padding, center_rect, dynamic_popup},
     key_event_handler::{self, KeyEventHandler},
     popups::Popups,
@@ -9,24 +8,22 @@ use crate::{
 use itertools::Itertools;
 use ratatui::{
     layout::*,
-    macros::{constraint, horizontal, span, vertical},
+    macros::{constraint, vertical},
     prelude::*,
     style::palette::{material, tailwind},
-    symbols::{block, scrollbar::Set},
     text::ToSpan,
     widgets::*,
     Frame,
 };
 use std::{
-    fmt::format,
-    ops::Add,
     path::PathBuf,
     sync::mpsc::{channel, Receiver},
     thread,
 };
 use throbber_widgets_tui::{Throbber, ThrobberState};
+use ratatui_textarea::{TextArea, WrapMode};
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub enum Phase {
     #[default]
     Initializing,
@@ -37,7 +34,6 @@ pub enum Phase {
     Error(String),
     Done,
 }
-use ratatui_textarea::{TextArea, WrapMode};
 
 #[derive(Default)]
 pub struct TMDBInitPopup {
@@ -107,7 +103,7 @@ impl TMDBInitPopup {
                 Phase::GettingAuthorizationUrl
             }
             Phase::Authorize(_) => Phase::Finalize,
-            Phase::Finalize => Phase::Error(format!("{:#?}", self.tokens)),
+            Phase::Finalize => Phase::Done,
             _ => Phase::Initializing,
         };
     }
@@ -128,7 +124,11 @@ impl TMDBInitPopup {
                             } else if !tokens.has_session_id() {
                                 // self.phase = Phase::GetAccessToken;
                                 self.advance_phase();
+                                self.input = TextArea::new(vec![tokens.access_token.clone()]);
                                 self.advance_phase();
+                            } else {
+                                self.tokens = Some(tokens);
+                                self.phase = Phase::Done;
                             }
                         } else {
                             self.advance_phase();
@@ -210,7 +210,7 @@ impl TMDBInitPopup {
                     Some(5),
                     4.0,
                     tailwind::BLUE.c950,
-                    "  TMDB Authorization  ",
+                    "  TMDB Authentication  ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
                     Style::new().fg(tailwind::VIOLET.c950),
@@ -222,7 +222,7 @@ impl TMDBInitPopup {
                 );
                 let [_, message_area, throbber_area, _] =
                     vertical![>=1, ==2, ==1, >=1].areas(popup_area);
-                frame.render_widget(Paragraph::new("Processing").centered(), message_area);
+                frame.render_widget(Paragraph::new(format!("{:?}", self.phase)).centered(), message_area);
 
                 frame.render_stateful_widget(
                     Throbber::default()
@@ -301,7 +301,7 @@ impl TMDBInitPopup {
                     Some(9),
                     4.0,
                     tailwind::BLUE.c950,
-                    "  TMDB Authorization  ",
+                    "  TMDB Authentication  ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
                     Style::new().fg(tailwind::VIOLET.c950),
@@ -425,18 +425,20 @@ impl TMDBInitPopup {
                         if let Some(Popups::TMDBInit(tmdb_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
-                            tmdb_init_popup.item = 1;
+                            tmdb_init_popup.item = 0;
                         }
                     },
                 );
             }
             Phase::Authorize(authorization_url) => {
+                self.tab = 1;
+
                 let popup_area = dynamic_popup(
                     frame,
                     Some(9),
                     4.0,
                     tailwind::BLUE.c950,
-                    "  Error  ",
+                    "  TMDB Authentication  ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
                     Style::new().fg(tailwind::VIOLET.c950),

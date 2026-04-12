@@ -1,43 +1,52 @@
 use crate::{
-    app::App, config::Config, custom::helpers::center_rect, draw::Drawer, tmdb, trakt, types::*,
+    helpers::{add_padding, dynamic_popup}, key_event_handler::KeyEventHandler, trakt, tmdb, types::{Movie, MovieID}
 };
-// use log::error;
-use ratatui::{layout::*, prelude::*, widgets::*, Frame};
-use ratatui_macros::{horizontal, vertical};
+use ratatui::{
+    Frame, layout::*, macros::{horizontal, vertical}, prelude::*, style::palette::{material, tailwind}, text::ToSpan, widgets::*
+};
 use std::{
     sync::mpsc::{channel, Receiver, Sender},
     thread,
+    path::PathBuf,
 };
-use style::palette::tailwind;
+use throbber_widgets_tui::{Throbber, ThrobberState};
 
 #[derive(Default)]
 pub struct FetchArtworksPopup {
     pub done: bool,
-
-    num_movies: usize,
+    pub started: bool,
     pub progress: usize,
+    errored: Option<u32>,
+    movies: Vec<MovieID>,
+    trakt_client_id: String,
+    tmdb_access_token: String,
 
     tx_fetch_request: Option<Sender<Option<MovieID>>>,
     rx_fetch_response: Option<Receiver<(MovieID, anyhow::Result<()>)>>,
 
-    errored: Option<u32>,
+    tick: u64,
+    cache_dir: PathBuf,
+    throbber_state: ThrobberState,
 }
 
 impl FetchArtworksPopup {
-    pub fn begin(&mut self, app: &mut App) -> anyhow::Result<()> {
-        *self = Self::default();
-        self.num_movies = app.movies.len();
-
-        self.fetch_artworks(app)
+    pub fn new(cache_dir: &PathBuf) -> Self {
+        Self {
+            cache_dir: cache_dir.clone(),
+            ..Default::default()
+        }
     }
 
-    pub fn start_thread(&mut self, app: &App) {
+    pub fn update_next_frame(&self) -> bool {
+        self.started
+    }
+
+    fn start_thread(&mut self) {
         let (tx_fetch_request, rx_fetch_request) = channel::<Option<MovieID>>();
         let (tx_fetch_response, rx_fetch_response) = channel::<(MovieID, anyhow::Result<()>)>();
-
-        let conf = app.config.clone();
-        let tmdb_conf = app.tmdb_config.clone();
-        let trakt_conf = app.trakt_config.clone();
+        let cache_dir = self.cache_dir.clone();
+        let trakt_client_id = self.trakt_client_id.clone();
+        let tmdb_access_token = self.tmdb_access_token.clone();
 
         thread::spawn(move || {
             for fetch_request in rx_fetch_request.iter() {
@@ -48,13 +57,13 @@ impl FetchArtworksPopup {
                 let request = fetch_request.unwrap();
                 let tx_response = tx_fetch_response.clone();
 
-                let conf_owned = conf.clone();
-                let tmdb_conf_owned = tmdb_conf.clone();
-                let trakt_conf_owned = trakt_conf.clone();
+                let cache_dir = cache_dir.clone();
+                let trakt_client_id = trakt_client_id.clone();
+                let tmdb_access_token = tmdb_access_token.clone();
                 thread::spawn(move || {
                     let result = trakt::get_movie_poster_banner(
-                        &conf_owned,
-                        &trakt_conf_owned,
+                        &cache_dir,
+                        &trakt_client_id,
                         request.imdb.clone(),
                         true,
                     );
@@ -63,17 +72,13 @@ impl FetchArtworksPopup {
                         tx_response.send((request, Ok(())))
                     } else {
                         let result = tmdb::get_movie_poster_banner(
-                            &conf_owned,
-                            &tmdb_conf_owned,
+                            &cache_dir,
+                            &tmdb_access_token,
                             request.tmdb,
                             true,
                         );
 
-                        if let Err(error) = result {
-                            tx_response.send((request, Err(error)))
-                        } else {
-                            tx_response.send((request, Ok(())))
-                        }
+                        tx_response.send((request, result.map(|_| ())))
                     };
                 });
             }
@@ -83,49 +88,55 @@ impl FetchArtworksPopup {
         self.rx_fetch_response = Some(rx_fetch_response);
     }
 
-    pub fn check_done(&mut self, app: &App) -> bool {
-        if self.progress == app.movies.len() {
-            self.done = true;
-        }
-        self.done
-    }
-
-    fn check_artwork_fetched(&self, config: &Config, id: u32) -> bool {
-        config
-            .dirs
-            .poster_cache
+    fn check_artwork_fetched(&self, id: u32) -> bool {
+        self.cache_dir
+            .join("posters")
             .join(format!("{}.jpg", id))
             .is_file()
-            && config
-                .dirs
-                .backdrop_cache
-                .join(format!("{}.jpg", id))
-                .is_file()
+        && self.cache_dir
+            .join("backdrops")
+            .join(format!("{}.jpg", id))
+            .is_file()
     }
 
-    pub fn fetch_artworks(&mut self, app: &mut App) -> anyhow::Result<()> {
-        self.start_thread(app);
-        for movie in &app.movies {
-            if !self.check_artwork_fetched(&app.config, movie.id.tmdb) {
+    fn fetch_artworks(&mut self) {
+        self.start_thread();
+
+        for movie_id in &self.movies {
+            if !self.check_artwork_fetched(movie_id.tmdb) {
                 _ = self
                     .tx_fetch_request
                     .as_ref()
                     .unwrap()
-                    .send(Some(movie.id.clone()));
+                    .send(Some(movie_id.clone()));
             } else {
                 self.progress += 1;
             }
         }
-
-        Ok(())
     }
 
-    pub fn read_threads_responses(&mut self) -> anyhow::Result<()> {
+    pub fn set_movies(&mut self, movies: &[Movie], trakt_client_id: &str, tmdb_access_token: &str) {
+        self.trakt_client_id = trakt_client_id.to_string();
+        self.tmdb_access_token = tmdb_access_token.to_string();
+        self.movies = movies.iter().map(|x| x.id.clone()).collect();
+
+        self.done = false;
+        self.started = true;
+        self.fetch_artworks();
+    }
+
+    pub fn update (&mut self) {
+        if !self.started {
+            return;
+        }
+
+        self.tick += 1;
+        if self.tick & 7 == 0 {
+            self.throbber_state.calc_next();
+        }
+
         for (id, fetch_result) in self.rx_fetch_response.as_ref().unwrap().try_iter() {
             if fetch_result.is_err() {
-                // if let Err(error) = fetch_result {
-                // error!("error while downloading {}: {error}", id.tmdb);
-
                 self.errored = Some(id.tmdb);
                 _ = self.tx_fetch_request.as_ref().unwrap().send(Some(id));
             } else {
@@ -138,81 +149,69 @@ impl FetchArtworksPopup {
             }
         }
 
-        Ok(())
+        if self.progress == self.movies.len() && !self.done {
+            self.done = true;
+            self.started = false;
+
+            _ = self
+                .tx_fetch_request
+                .as_ref()
+                .unwrap()
+                .send(None);
+        }
     }
-}
 
-impl Drawer {
-    pub(crate) fn draw_fetch_artworks_popup(
-        &mut self,
-        frame: &mut Frame,
-        // app: &mut App,
-    ) -> anyhow::Result<()> {
-        let frame_area = frame.area();
+    pub fn render(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
+        key_event_handler.clear();
 
-        let progress = self.fetch_artwork_popup.progress;
-        let num_movies = self.fetch_artwork_popup.num_movies;
+        let progress = self.progress;
+        let num_movies = self.movies.len();
 
-        let popup_area = center_rect(
-            frame_area,
-            Constraint::Percentage(50),
-            Constraint::Length(12),
+        let popup_area = dynamic_popup(
+            frame,
+            Some(8),
+            5.0,
+            tailwind::BLUE.c950,
+            "  Fetching posters  ",
+            Style::new().fg(material::YELLOW.c800),
+            Alignment::Center,
+            Style::new().fg(tailwind::VIOLET.c950),
         );
 
-        let popup = Block::new()
-            .bg(tailwind::INDIGO.c950)
-            .fg(tailwind::INDIGO.c300)
-            .borders(Borders::ALL)
-            .border_type(BorderType::Thick)
-            .border_style(Style::new().fg(tailwind::EMERALD.c400))
-            .title_top("Working...")
-            .title_alignment(Alignment::Center)
-            .title_style(Style::new().fg(tailwind::AMBER.c300));
+        let [_, throbber_area, _, progress_area, _, errored_area] = vertical![==1, ==1, ==1, ==3, >=1, ==1].areas(popup_area);
 
-        frame.render_widget(Clear, popup_area);
-        frame.render_widget(&popup, popup_area);
-
-        let layout = vertical![==1, ==1, ==3, ==3, ==1, ==1, ==1].split(popup.inner(popup_area));
-
-        let info_text = "Getting movie posters...";
-        let [text_lay, throbber_lay] = horizontal![==(info_text.len() as u16), ==1]
+        let [throbber_area] = horizontal![==1]
             .flex(Flex::Center)
-            .areas(layout[1]);
+            .areas(throbber_area);
 
-        frame.render_widget(info_text, text_lay);
-
-        let throbber = throbber_widgets_tui::Throbber::default()
+        let throbber = Throbber::default()
             .throbber_set(throbber_widgets_tui::BRAILLE_SIX_DOUBLE)
             .throbber_style(Style::new().bold().fg(tailwind::VIOLET.c400));
-        frame.render_stateful_widget(throbber, throbber_lay, &mut self.throbber_state);
+        frame.render_stateful_widget(throbber, throbber_area, &mut self.throbber_state);
 
-        let [progress_lay] = horizontal![==(layout[3].width - 6)]
-            .flex(Flex::Center)
-            .areas(layout[3]);
+        let progress_area = add_padding(progress_area, Padding::horizontal(2));
 
         let progress_gauge = Gauge::default()
-            .ratio(progress as f64 / num_movies as f64)
+            .ratio(if num_movies == 0 { 0.0 } else { progress as f64 / num_movies as f64 })
             .gauge_style(
                 Style::new()
                     .fg(tailwind::LIME.c500)
                     .bg(tailwind::GREEN.c900)
                     .italic(),
             )
-            .label(format!("{}/{}", progress, num_movies).fg(tailwind::PINK.c500))
+            .label(format!("{}/{}", progress, num_movies).fg(tailwind::PINK.c500).bold())
             .use_unicode(true);
 
-        frame.render_widget(progress_gauge, progress_lay);
+        frame.render_widget(progress_gauge, progress_area);
 
-        if let Some(id) = self.fetch_artwork_popup.errored {
-            let errored_text = format!("movie {id} errored, retrying!!");
+        if let Some(id) = self.errored {
+            let errored_text = format!("movie {id} errored");
 
             let [text_lay] = horizontal![==(errored_text.len() as u16)]
                 .flex(Flex::Center)
-                .areas(layout[5]);
+                .areas(errored_area);
 
-            frame.render_widget(errored_text, text_lay);
+            frame.render_widget(errored_text.to_span().fg(tailwind::RED.c500).bold(), text_lay);
         }
-
-        Ok(())
     }
 }

@@ -1,4 +1,4 @@
-use crate::tokens::TraktTokens;
+use crate::tokens::TraktUserTokens;
 use anyhow::{bail, Context};
 use reqwest::{
     blocking::{Client, ClientBuilder, RequestBuilder, Response},
@@ -14,31 +14,6 @@ use std::{
     sync::mpsc::{Receiver, Sender},
     thread,
 };
-
-// pub struct TraktTokens {
-//     pub client_id: String,
-//     pub client_secret: String,
-//     pub access_token: String,
-//     pub refresh_token: String,
-//     pub expires_on: i64,
-// }
-// impl TraktTokens {
-//     pub fn new(client_id: &str, client_secret: &str) -> Self {
-//         Self {
-//             client_id: client_id.to_string(),
-//             client_secret: client_secret.to_string(),
-//             access_token: String::new(),
-//             refresh_token: String::new(),
-//             expires_on: 0,
-//         }
-//     }
-
-//     pub fn set_tokens(&mut self, token_response: TokenResponse) {
-//         self.access_token = token_response.access_token;
-//         self.refresh_token = token_response.refresh_token;
-//         self.expires_on = token_response.created_at + token_response.expires_in;
-//     }
-// }
 
 #[derive(Deserialize, Debug)]
 pub struct TokenResponse {
@@ -71,65 +46,54 @@ pub struct TraktDetailsResponse {
     pub overview: String,
     pub released: String,
     pub runtime: u32,
-    // pub country: String,
+    // country: String,
     pub trailer: Option<String>,
-    // pub homepage: String,
+    // homepage: String,
     pub status: String,
     pub rating: f64,
     pub votes: u32,
-    // pub comment_count: u32,
-    // pub updated_at: String,
-    // pub language: String,
-    // pub languages: Vec<String>,
-    // pub available_translations: Vec<String>,
+    // comment_count: u32,
+    // updated_at: String,
+    // language: String,
+    // languages: Vec<String>,
+    // available_translations: Vec<String>,
     pub genres: Vec<String>,
     pub certification: Option<String>,
     pub images: TraktMovieImages,
 }
 
 #[derive(Deserialize, Debug, Default, Clone)]
-struct TraktMovieImages {
+pub struct TraktMovieImages {
     fanart: Vec<String>,
     poster: Vec<String>,
-    logo: Vec<String>,
-    clearart: Vec<String>,
+    // logo: Vec<String>,
+    // clearart: Vec<String>,
     banner: Vec<String>,
-    thumb: Vec<String>,
+    // thumb: Vec<String>,
 }
 
 #[derive(Deserialize, Debug, Default, Clone)]
-struct IDs {
-    trakt: u32,
-    slug: String,
-    imdb: String,
+pub struct IDs {
+    // trakt: u32,
+    // slug: String,
+    // imdb: String,
     tmdb: u32,
 }
 
-pub fn check_tokens(trakt_tokens: &TraktTokens) -> bool {
-    if unix_ts::Timestamp::now().seconds() - trakt_tokens.expires_on() > 0 {
-        // debug!(
-        //     "Trakt tokens outdated {} {} {}, refreshing...",
-        //     unix_ts::Timestamp::now().seconds(),
-        //     trakt_config.tokens_expiration_date() as i64,
-        //     unix_ts::Timestamp::now().seconds() - trakt_config.tokens_expiration_date() as i64
-        // );
-
-        return false;
-    }
-
-    true
+pub fn should_refresh_tokens(trakt_tokens: &TraktUserTokens) -> bool {
+    unix_ts::Timestamp::now().seconds() - trakt_tokens.expires_on > 0
 }
 
 // https://trakt.docs.apiary.io/#reference/authentication-oauth/authorize/authorize-application
 pub fn get_tokens(
     client_id: &str,
     client_secret: &str,
-    tx_authorization_url: Sender<String>,
+    tx_auth_url: Sender<String>,
     rx_auth_code: Receiver<String>,
 ) -> anyhow::Result<TokenResponse> {
     let client = reqwest::blocking::Client::new();
 
-    // Step 1: ask the user for an authorization token
+    // Step 1: ask the user for an authorization code
     let authorization_url = client
         .get("https://trakt.tv/oauth/authorize")
         .query(&[
@@ -142,10 +106,10 @@ pub fn get_tokens(
         .url()
         .to_string();
 
-    _ = tx_authorization_url.send(authorization_url);
+    _ = tx_auth_url.send(authorization_url);
 
     let auth_code = rx_auth_code
-        .recv_timeout(std::time::Duration::from_secs(180))
+        .recv_timeout(std::time::Duration::from_secs(120))
         .unwrap_or_default();
     if auth_code.is_empty() {
         bail!("Trakt: no auth code received");

@@ -66,8 +66,8 @@ impl DeleteMoviePopup {
 
         let popup_area = dynamic_popup(
             frame,
-            Some(5),
-            10.0,
+            Some(7),
+            5.0,
             tailwind::BLUE.c950,
             "  Remove movie  ",
             Style::new().fg(material::YELLOW.c800),
@@ -83,7 +83,7 @@ impl DeleteMoviePopup {
         frame.render_widget(
             Paragraph::new(format!("Do you really want to remove {}?", self.name))
                 .wrap(Wrap { trim: false }),
-            add_padding(message_area, Padding::left(2)),
+            add_padding(message_area, Padding::horizontal(2)),
         );
 
         let actions = vec![
@@ -106,12 +106,12 @@ impl DeleteMoviePopup {
                     .fg(if self.item == 0 {
                         tailwind::SLATE.c200
                     } else {
-                        tailwind::SLATE.c300
+                        material::BLUE.c500
                     })
                     .bg(if self.item == 0 {
                         material::BLUE.c600
                     } else {
-                        material::BLUE.c900
+                        tailwind::SLATE.c950
                     }),
             ),
             Span::from("  "),

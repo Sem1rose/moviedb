@@ -165,7 +165,7 @@ impl RatatuiImage {
                         .insert(protocol);
                     self.loading -= 1;
                 }
-            } else if let Err(e) = result {
+            } else if let Err(_) = result {
                 _ = self.tx_load.send(Actions::Load(
                     artwork_id,
                     format!(

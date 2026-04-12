@@ -30,7 +30,7 @@ impl Display for RequestResponseError {
 
 #[derive(Deserialize, Debug, Clone)]
 struct ConfigurationResponse {
-    // pub change_keys: Vec<String>,
+    // change_keys: Vec<String>,
     images: ImagesConfiguration,
 }
 #[derive(Deserialize, Debug, Clone)]
@@ -50,20 +50,20 @@ pub struct TMDBSearchResponse {
 
 #[derive(Deserialize, Debug, PartialEq)]
 pub struct TMDBSearchResult {
-    // pub adult: bool,
-    // pub backdrop_path: Option<String>,
-    // pub genre_ids: Vec<u64>,
+    // adult: bool,
+    // backdrop_path: Option<String>,
+    // genre_ids: Vec<u64>,
     pub id: u32,
-    // pub original_language: String,
-    // pub original_title: String,
-    // pub overview: String,
-    // pub popularity: f64,
-    // pub poster_path: Option<String>,
+    // original_language: String,
+    // original_title: String,
+    // overview: String,
+    // popularity: f64,
+    // poster_path: Option<String>,
     pub release_date: Option<String>,
     pub title: String,
-    // pub video: bool,
+    // video: bool,
     pub vote_average: Option<f64>,
-    // pub vote_count: u64,
+    // vote_count: u64,
 }
 
 #[derive(Deserialize, Debug, Default, Clone)]
@@ -74,37 +74,37 @@ pub struct TMDBMovieImagesResponse {
 
 #[derive(Deserialize, Debug, Default, Clone)]
 pub struct TMDBMovieImage {
-    // pub aspect_ratio: f32,
-    // pub height: u32,
-    // pub iso_639_1: String,
+    // aspect_ratio: f32,
+    // height: u32,
+    // iso_639_1: String,
     pub file_path: String,
-    // pub vote_average: f32,
-    // pub vote_count: u32,
-    // pub width: u32,
+    // vote_average: f32,
+    // vote_count: u32,
+    // width: u32,
 }
 
 #[derive(Deserialize, Debug, Default, Clone)]
 pub struct TMDBDetailsResponse {
-    // pub adult: bool,
-    // pub backdrop_path: Option<String>,
+    // adult: bool,
+    // backdrop_path: Option<String>,
     pub belongs_to_collection: Option<TMDBCollection>,
-    // pub budget: u32,
+    // budget: u32,
     pub genres: Vec<TMDBGenre>,
-    // pub homepage: Option<String>,
+    // homepage: Option<String>,
     pub id: u32,
     pub imdb_id: String,
     pub original_language: String,
-    // pub original_title: String,
+    // original_title: String,
     pub overview: String,
-    // pub popularity: f32,
-    // pub poster_path: Option<String>,
+    // popularity: f32,
+    // poster_path: Option<String>,
     pub release_date: String,
-    // pub revenue: u32,
+    // revenue: u32,
     pub runtime: u32,
     pub status: String,
     pub tagline: String,
     pub title: String,
-    // pub video: bool,
+    // video: bool,
     pub vote_average: f64,
     pub vote_count: u32,
 }
@@ -113,13 +113,13 @@ pub struct TMDBDetailsResponse {
 pub struct TMDBCollection {
     pub id: u32,
     pub name: String,
-    // pub poster_path: Option<String>,
-    // pub backdrop_path: Option<String>,
+    // poster_path: Option<String>,
+    // backdrop_path: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct TMDBGenre {
-    // pub id: u32,
+    // id: u32,
     pub name: String,
 }
 
@@ -371,11 +371,6 @@ pub fn get_movie_poster_banner(
     );
 
     let movie_images = get_movie_images(access_token, id)?;
-
-    // print!(
-    //     "{:#?}\n{:#?}",
-    //     movie_images.backdrops[0], movie_images.posters[0]
-    // );
 
     let configuration_response = send_tmdb_request(
         &client,

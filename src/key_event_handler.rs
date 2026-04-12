@@ -316,6 +316,15 @@ impl KeyEventHandler {
                 crate::popups::Popups::TMDBInit(tmdb_init) => {
                     state = tmdb_init.get_state();
                 }
+                crate::popups::Popups::OMDBInit(omdb_init) => {
+                    state = omdb_init.get_state();
+                }
+                crate::popups::Popups::TraktInit(trakt_init) => {
+                    state = trakt_init.get_state();
+                }
+                crate::popups::Popups::FetchArtworks(_) => {
+                    return None;
+                }
             }
         } else if let Some(screen) = drawer.current_screen.as_ref() {
             match screen {
@@ -329,7 +338,10 @@ impl KeyEventHandler {
 
         match event.code {
             KeyCode::Up | KeyCode::Down => {
-                if let Some(callback) = self.try_get_key_bind(state, Bind::Vertical) {
+                if self.semi_bind.is_some() {
+                    self.semi_bind = None;
+                    None
+                } else if let Some(callback) = self.try_get_key_bind(state, Bind::Vertical) {
                     Some((
                         callback,
                         Data::Direction(event.code == KeyCode::Down, event.modifiers),
@@ -339,7 +351,10 @@ impl KeyEventHandler {
                 }
             }
             KeyCode::Tab | KeyCode::BackTab => {
-                if let Some(callback) = self.try_get_key_bind(state, Bind::Tab) {
+                if self.semi_bind.is_some() {
+                    self.semi_bind = None;
+                    None
+                } else if let Some(callback) = self.try_get_key_bind(state, Bind::Tab) {
                     Some((
                         callback,
                         Data::Direction(event.code == KeyCode::Tab, KeyModifiers::NONE),
@@ -349,28 +364,40 @@ impl KeyEventHandler {
                 }
             }
             KeyCode::Enter => {
-                if let Some(callback) = self.try_get_key_bind(state, Bind::Enter) {
+                if self.semi_bind.is_some() {
+                    self.semi_bind = None;
+                    None
+                } else if let Some(callback) = self.try_get_key_bind(state, Bind::Enter) {
                     Some((callback, Data::None))
                 } else {
                     None
                 }
             }
             KeyCode::Esc => {
-                if let Some(callback) = self.try_get_key_bind(state, Bind::Esc) {
+                if self.semi_bind.is_some() {
+                    self.semi_bind = None;
+                    None
+                } else if let Some(callback) = self.try_get_key_bind(state, Bind::Esc) {
                     Some((callback, Data::None))
                 } else {
                     None
                 }
             }
             KeyCode::Backspace | KeyCode::Delete => {
-                if let Some(callback) = self.try_get_key_bind(state, Bind::Input) {
+                if self.semi_bind.is_some() {
+                    self.semi_bind = None;
+                    None
+                } else if let Some(callback) = self.try_get_key_bind(state, Bind::Input) {
                     Some((callback, Data::Key(event)))
                 } else {
                     None
                 }
             }
             KeyCode::Left | KeyCode::Right => {
-                if let Some(callback) = self.try_get_key_bind(state, Bind::Input) {
+                if self.semi_bind.is_some() {
+                    self.semi_bind = None;
+                    None
+                } else if let Some(callback) = self.try_get_key_bind(state, Bind::Input) {
                     Some((callback, Data::Key(event)))
                 } else if let Some(callback) = self.try_get_key_bind(state, Bind::Horizontal) {
                     Some((
@@ -413,6 +440,15 @@ impl KeyEventHandler {
                 }
                 crate::popups::Popups::TMDBInit(tmdb_init) => {
                     state = tmdb_init.get_state();
+                }
+                crate::popups::Popups::OMDBInit(omdb_init) => {
+                    state = omdb_init.get_state();
+                }
+                crate::popups::Popups::TraktInit(trakt_init) => {
+                    state = trakt_init.get_state();
+                }
+                crate::popups::Popups::FetchArtworks(_) => {
+                    return None;
                 }
             }
         } else if let Some(screen) = drawer.current_screen.as_ref() {

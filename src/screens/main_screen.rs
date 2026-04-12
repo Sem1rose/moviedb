@@ -87,16 +87,18 @@ impl MainScreen {
     }
 
     pub fn render(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
-        for tab in 0..=1 {
-            key_event_handler.bind_key((Some(tab), None), 'A', "Add play".into(), |app, _| {
-                app.drawer.open_add_play_popup();
-            });
-            key_event_handler.bind_key((Some(tab), None), 'e', "Edit movie".into(), |app, _| {
-                app.drawer.open_edit_movie_popup();
-            });
-            key_event_handler.bind_key((Some(tab), None), 'd', "Delete movie".into(), |app, _| {
-                app.drawer.open_delete_movie_popup();
-            });
+        if !self.movies.is_empty() {
+            for tab in 0..=1 {
+                key_event_handler.bind_key((Some(tab), None), 'A', "Add play".into(), |app, _| {
+                    app.drawer.open_add_play_popup();
+                });
+                key_event_handler.bind_key((Some(tab), None), 'e', "Edit movie".into(), |app, _| {
+                    app.drawer.open_edit_movie_popup();
+                });
+                key_event_handler.bind_key((Some(tab), None), 'd', "Delete movie".into(), |app, _| {
+                    app.drawer.open_delete_movie_popup();
+                });
+            }
         }
         key_event_handler.bind_key((Some(0), None), ',', "Sort by".into(), |app, _| {
             if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
@@ -741,84 +743,86 @@ impl MainScreen {
         key_event_handler: &mut KeyEventHandler,
     ) {
         let num_visible_items = self.movies_list_visible_items;
-        key_event_handler.bind_vertical((Some(0), None), "Scroll".into(), move |app, data| {
-            if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                match data {
-                    crate::key_event_handler::Data::Direction(true, modifiers) => {
-                        if num_movies > 0 {
-                            if modifiers.contains(KeyModifiers::SHIFT) {
-                                main_screen.goto_index(
-                                    (main_screen.movies_list_selected_item + num_visible_items)
-                                        as isize,
-                                );
-                            } else {
-                                main_screen.movies_list_selected_item = main_screen
-                                    .movies_list_selected_item
-                                    .add(1)
-                                    .min(main_screen.filtered_movies.len() - 1);
-                                if main_screen.movies_list_selected_item
-                                    - main_screen.movies_list_scroll_pos
-                                    >= main_screen.movies_list_visible_items
-                                {
-                                    main_screen.movies_list_scroll_pos += 1;
+        if self.movies.len() > 0 {
+            key_event_handler.bind_vertical((Some(0), None), "Scroll".into(), move |app, data| {
+                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                    match data {
+                        crate::key_event_handler::Data::Direction(true, modifiers) => {
+                            if num_movies > 0 {
+                                if modifiers.contains(KeyModifiers::SHIFT) {
+                                    main_screen.goto_index(
+                                        (main_screen.movies_list_selected_item + num_visible_items)
+                                            as isize,
+                                    );
+                                } else {
+                                    main_screen.movies_list_selected_item = main_screen
+                                        .movies_list_selected_item
+                                        .add(1)
+                                        .min(main_screen.filtered_movies.len().saturating_sub(1));
+                                    if main_screen.movies_list_selected_item
+                                        - main_screen.movies_list_scroll_pos
+                                        >= main_screen.movies_list_visible_items
+                                    {
+                                        main_screen.movies_list_scroll_pos += 1;
+                                    }
                                 }
                             }
                         }
-                    }
-                    crate::key_event_handler::Data::Direction(false, modifiers) => {
-                        if modifiers.contains(KeyModifiers::SHIFT) {
-                            main_screen.goto_index(
-                                (main_screen
-                                    .movies_list_selected_item
-                                    .saturating_sub(num_visible_items))
-                                    as isize,
-                            );
-                        } else {
-                            main_screen.movies_list_selected_item =
-                                main_screen.movies_list_selected_item.saturating_sub(1);
-                            if main_screen.movies_list_selected_item
-                                < main_screen.movies_list_scroll_pos
-                            {
-                                main_screen.movies_list_scroll_pos -= 1;
+                        crate::key_event_handler::Data::Direction(false, modifiers) => {
+                            if modifiers.contains(KeyModifiers::SHIFT) {
+                                main_screen.goto_index(
+                                    (main_screen
+                                        .movies_list_selected_item
+                                        .saturating_sub(num_visible_items))
+                                        as isize,
+                                );
+                            } else {
+                                main_screen.movies_list_selected_item =
+                                    main_screen.movies_list_selected_item.saturating_sub(1);
+                                if main_screen.movies_list_selected_item
+                                    < main_screen.movies_list_scroll_pos
+                                {
+                                    main_screen.movies_list_scroll_pos -= 1;
+                                }
                             }
                         }
+                        _ => (),
                     }
-                    _ => (),
                 }
-            }
-        });
-        key_event_handler.bind_key((Some(0), None), "gg", "Jump to top".into(), |app, _| {
-            if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                main_screen.goto_index(0);
-            }
-        });
-        key_event_handler.bind_key((Some(0), None), 'G', "Jump to bottom".into(), |app, _| {
-            if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                main_screen.goto_index(-1);
-            }
-        });
-        key_event_handler.bind_tab((Some(0), None), "Change focus".into(), |app, data| {
-            if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                match data {
-                    crate::key_event_handler::Data::Direction(true, _) => {
-                        main_screen.tab += 1;
-                        if main_screen.tab > 1 {
-                            main_screen.tab = 0;
+            });
+            key_event_handler.bind_key((Some(0), None), "gg", "Jump to top".into(), |app, _| {
+                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                    main_screen.goto_index(0);
+                }
+            });
+            key_event_handler.bind_key((Some(0), None), 'G', "Jump to bottom".into(), |app, _| {
+                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                    main_screen.goto_index(-1);
+                }
+            });
+            key_event_handler.bind_tab((Some(0), None), "Change focus".into(), |app, data| {
+                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                    match data {
+                        crate::key_event_handler::Data::Direction(true, _) => {
+                            main_screen.tab += 1;
+                            if main_screen.tab > 1 {
+                                main_screen.tab = 0;
+                            }
                         }
+                        crate::key_event_handler::Data::Direction(false, _) => {
+                            main_screen.tab = main_screen.tab.checked_sub(1).unwrap_or(1);
+                        }
+                        _ => (),
                     }
-                    crate::key_event_handler::Data::Direction(false, _) => {
-                        main_screen.tab = main_screen.tab.checked_sub(1).unwrap_or(1);
-                    }
-                    _ => (),
                 }
-            }
-        });
+            });
+        }
 
         if self.movies_list_selected_item >= self.filtered_movies.len() {
             self.movies_list_selected_item = self.filtered_movies.len().saturating_sub(1);
             self.movies_list_scroll_pos = self
                 .movies_list_selected_item
-                .saturating_sub(self.movies_list_visible_items - 1);
+                .saturating_sub(self.movies_list_visible_items.saturating_sub(1));
         }
 
         let [movies_area, scrollbar_area] = horizontal![>=0, ==1].areas(area);

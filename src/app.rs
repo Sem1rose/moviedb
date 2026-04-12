@@ -9,7 +9,7 @@ use crate::{
 use log::{error, warn};
 use ratatui::crossterm::event::{self, Event, KeyEvent, KeyEventState, KeyModifiers};
 use std::{
-    fs::{read_to_string, rename, write},
+    fs,
     path::PathBuf,
     time::Duration,
 };
@@ -17,17 +17,16 @@ use std::{
 pub struct App {
     home: PathBuf,
     cache: PathBuf,
-
-    pub movies: Vec<Movie>,
     pub quit: bool,
+    pub movies: Vec<Movie>,
 
     terminal: Term,
-    pub key_event_handler: KeyEventHandler,
     pub drawer: Drawer,
+    pub key_event_handler: KeyEventHandler,
 
-    pub trakt_tokens: TraktTokens,
     pub tmdb_tokens: TMDBTokens,
     pub omdb_tokens: OMDBTokens,
+    pub trakt_tokens: TraktTokens,
 }
 
 impl App {
@@ -39,22 +38,17 @@ impl App {
             .expect("Couldn't get user's cache dir")
             .join("moviedb");
 
-        // let credentials_contents =
-        //     read_to_string(home.join(".credentials")).expect("Couldn't read credentials");
-        // let creds = serde_json::from_str(&credentials_contents).expect("Couldn't deserialize credentials");
-
         Self {
-            quit: false,
-
             movies: vec![],
             terminal: initialize_terminal()?,
-            key_event_handler: KeyEventHandler::default(),
             drawer: Drawer::new(&home_dir, &cache_dir),
+            key_event_handler: KeyEventHandler::default(),
 
             tmdb_tokens: TMDBTokens::new(&home_dir),
             omdb_tokens: OMDBTokens::new(&home_dir),
             trakt_tokens: TraktTokens::new(&home_dir),
 
+            quit: false,
             home: home_dir,
             cache: cache_dir,
         }
@@ -64,7 +58,7 @@ impl App {
     pub fn fetch_movies(mut self) -> anyhow::Result<Self> {
         let file_path = &self.home.join("ratings.json");
 
-        let read_result = read_to_string(file_path);
+        let read_result = fs::read_to_string(file_path);
         if let Err(error) = read_result {
             error!("Error reading ratings file: {}.\nRenaming corrupted file and creating a new database.", error);
 
@@ -75,12 +69,12 @@ impl App {
                 i += 1;
             }
 
-            rename(file_path, renamed)?;
+            fs::rename(file_path, renamed)?;
 
-            write(&self.home.join("ratings.json"), "[]")?;
+            fs::write(&self.home.join("ratings.json"), "[]")?;
             return Ok(self);
         }
-        let contents = read_to_string(file_path)?;
+        let contents = fs::read_to_string(file_path)?;
 
         let result = serde_json::from_str(&contents);
         if let Err(error) = result {
@@ -100,9 +94,9 @@ impl App {
                     i += 1;
                 }
 
-                rename(file_path, renamed)?;
+                fs::rename(file_path, renamed)?;
 
-                write(&self.home.join("ratings.json"), "[]")?;
+                fs::write(&self.home.join("ratings.json"), "[]")?;
             } else {
                 let movies: Vec<Movie> = result.unwrap().into_iter().map(|x| x.into()).collect();
                 self.set_movies(Self::remove_duplicates(movies));
@@ -116,10 +110,6 @@ impl App {
     }
 
     pub fn run(&mut self) -> anyhow::Result<()> {
-        if let Some(Screens::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
-            main_screen.set_movies(&self.movies);
-        }
-
         loop {
             self.key_event_handler.clear();
 
@@ -172,7 +162,6 @@ impl App {
     pub fn set_movies(&mut self, _movies: Vec<Movie>) {
         self.movies = _movies;
     }
-
     pub fn add_play(&mut self) {
         if let Some(Screens::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
             if let Some(Popups::EditMovie(edit_movie_popup)) = self.drawer.active_popup.as_mut() {
@@ -222,6 +211,7 @@ impl App {
             main_screen.goto_index(-1);
             self.drawer.close_popups();
         }
+
         self.save_movies().unwrap();
     }
     pub fn edit_movie(&mut self) {
@@ -240,6 +230,7 @@ impl App {
             }
             main_screen.set_movies(&self.movies);
         }
+
         self.save_movies().unwrap();
     }
     pub fn remove_movie(&mut self) {
@@ -252,9 +243,49 @@ impl App {
             self.movies.remove(index);
             main_screen.set_movies(&self.movies);
         }
+
         self.save_movies().unwrap();
     }
 
+    pub fn set_tmdb_user_tokens(&mut self) {
+        if let Some(Popups::TMDBInit(tmdb_init_popup)) = self.drawer.active_popup.as_mut() {
+            if let Some(tokens) = tmdb_init_popup.tokens.take() {
+                self.tmdb_tokens.set_creds(tokens).unwrap();
+
+                self.drawer.close_popups();
+            }
+        }
+    }
+    pub fn set_omdb_user_tokens(&mut self) {
+        if let Some(Popups::OMDBInit(omdb_init_popup)) = self.drawer.active_popup.as_mut() {
+            if let Some(tokens) = omdb_init_popup.tokens.take() {
+                self.omdb_tokens.set_creds(tokens).unwrap();
+
+                self.drawer.close_popups();
+            }
+        }
+    }
+    pub fn set_trakt_user_tokens(&mut self) {
+        if let Some(Popups::TraktInit(trakt_init_popup)) = self.drawer.active_popup.as_mut() {
+            if let Some(tokens) = trakt_init_popup.tokens.take() {
+                self.trakt_tokens.set_creds(tokens).unwrap();
+
+                self.drawer.close_popups();
+            }
+        }
+    }
+
+    fn save_movies(&self) -> anyhow::Result<()> {
+        let string = serde_json::to_string_pretty(self.movies.as_slice()).unwrap();
+
+        fs::rename(
+            &self.home.join("ratings.json"),
+            self.home.join("ratings.json").with_extension("json.bak"),
+        )?;
+        fs::write(&self.home.join("ratings.json"), string)?;
+
+        Ok(())
+    }
     fn remove_duplicates(mut movies: Vec<Movie>) -> Vec<Movie> {
         let mut new_movies = vec![];
 
@@ -278,18 +309,6 @@ impl App {
         }
 
         new_movies
-    }
-
-    fn save_movies(&self) -> anyhow::Result<()> {
-        let string = serde_json::to_string_pretty(self.movies.as_slice()).unwrap();
-
-        rename(
-            &self.home.join("ratings.json"),
-            self.home.join("ratings.json").with_extension("json.bak"),
-        )?;
-        write(&self.home.join("ratings.json"), string)?;
-
-        Ok(())
     }
 
     fn handle_event(&mut self, event: Event) {

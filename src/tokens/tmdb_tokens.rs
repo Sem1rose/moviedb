@@ -1,10 +1,7 @@
 use anyhow::{bail, Context};
-use cocoon::Cocoon;
+use std::{fs, path::PathBuf};
 use serde::{Deserialize, Serialize};
-use std::{
-    fs::File,
-    path::{Path, PathBuf},
-};
+use simple_encrypt::{encrypt_bytes, decrypt_bytes};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct UserTokens {
@@ -40,6 +37,7 @@ impl TMDBTokens {
 
     pub fn init(home_dir: &PathBuf) -> anyhow::Result<UserTokens> {
         let tokens_file_exists = home_dir.join(".tmdb_tokens").is_file();
+
         if tokens_file_exists {
             Self::read_creds(home_dir)
         } else {
@@ -47,13 +45,12 @@ impl TMDBTokens {
         }
     }
     fn read_creds(home_dir: &PathBuf) -> anyhow::Result<UserTokens> {
-        let cocoon = Cocoon::new(b"0123456789abcdef");
-        let mut encrypted_file = File::open(home_dir.join(".tmdb_tokens"))?;
+        let encrypted_data = fs::read(&home_dir.join(".tmdb_tokens"))
+            .context("TMDB: unable to read tokens")?;
 
         serde_json::from_str(
             &String::from_utf8(
-                cocoon
-                    .parse(&mut encrypted_file)
+                decrypt_bytes(&encrypted_data, b"0123456789abcdef0123456789abcdef")
                     .context("TMDB: error decrypting user tokens")?,
             )
             .context("TMDB: error decoding utf8")?,
@@ -67,14 +64,13 @@ impl TMDBTokens {
         self.save_creds()
     }
     fn save_creds(&self) -> anyhow::Result<()> {
-        let mut cocoon = Cocoon::new(b"0123456789abcdef");
+        let data = serde_json::to_string(&self.user_tokens)?;
 
-        let mut encrypted_file = File::create(&self.home_dir.join(".tmdb_tokens"))?;
-        let dump_json = serde_json::to_string(&self.user_tokens)?;
-
-        cocoon.dump(dump_json.into_bytes(), &mut encrypted_file)?;
-
-        Ok(())
+        fs::write(
+            &self.home_dir.join(".tmdb_tokens"),
+            &encrypt_bytes(data.as_bytes(),b"0123456789abcdef0123456789abcdef")
+            .context("TMDB: failed to encrypt user tokens")?
+        ).context("TMDB: failed to write encrypted file")
     }
 
     pub fn access_token(&self) -> &str {
