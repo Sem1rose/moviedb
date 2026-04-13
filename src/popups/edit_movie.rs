@@ -2,11 +2,12 @@ use crate::{
     helpers::{add_padding, dynamic_popup},
     key_event_handler::KeyEventHandler,
     popups::Popups,
+    widgets::{self, ActionTypes},
 };
 use ratatui::{
-    layout::*, macros::{vertical, span}, prelude::*, style::palette::material, widgets::*, Frame,
+    layout::*, macros::vertical, prelude::*, style::palette::material, widgets::*, Frame,
 };
-use ratatui_textarea::TextArea;
+use ratatui_textarea::{TextArea, WrapMode};
 use style::palette::tailwind;
 
 #[derive(Default)]
@@ -147,66 +148,7 @@ impl EditMoviePopup {
             vertical![==3, ==1, ==1].areas(add_padding(popup_area, Padding::proportional(1)));
 
         let search_selected = self.item == 0;
-        if search_selected {
-            key_event_handler.bind_input_field((Some(2), Some(0)), "".into(), |app, data| {
-                if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut()
-                {
-                    match data {
-                        crate::key_event_handler::Data::Key(key_event) => {
-                            edit_movie_popup.user_rating_input.input(key_event);
-                        }
-                        _ => {}
-                    }
-                }
-            });
-        }
-        self.user_rating_input
-            .set_style(Style::new().fg(if search_selected {
-                tailwind::SLATE.c200
-            } else {
-                tailwind::STONE.c400
-            }));
-        self.user_rating_input.set_cursor_style(
-            Style::new()
-                .fg(if search_selected {
-                    tailwind::SLATE.c300
-                } else {
-                    tailwind::STONE.c400
-                })
-                .add_modifier(if search_selected {
-                    Modifier::REVERSED
-                } else {
-                    Modifier::default()
-                }),
-        );
-        self.user_rating_input.set_block(
-            Block::bordered()
-                .border_type(ratatui::widgets::BorderType::Thick)
-                .style(Style::new().fg(if search_selected {
-                    if valid {
-                        material::BLUE.c500
-                    } else {
-                        material::RED.c600
-                    }
-                } else {
-                    tailwind::STONE.c600
-                }))
-                .title(" Rating ")
-                .title_style(Style::new().fg(if search_selected {
-                    if valid {
-                        material::BLUE.c600
-                    } else {
-                        material::RED.c600
-                    }
-                } else {
-                    tailwind::SLATE.c600
-                }))
-                .padding(Padding::symmetric(1, 0)),
-        );
-        self.user_rating_input.set_placeholder_text("Enter rating");
-        self.user_rating_input
-            .set_placeholder_style(Style::new().fg(material::GRAY.c700));
-
+        widgets::input_field(search_selected, valid, &mut self.user_rating_input, WrapMode::None, frame, input_area, (0, 0), " Rating ", "Enter a rating");
         key_event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
             add_padding(input_area, Padding::horizontal(2)),
@@ -217,62 +159,14 @@ impl EditMoviePopup {
                 }
             },
         );
-        frame.render_widget(
-            &self.user_rating_input,
-            add_padding(input_area, Padding::horizontal(2)),
-        );
 
-        let actions = vec![
-            span!(" Confirm ")
-                .fg(if valid {
-                    if self.item == 1 {
-                        tailwind::SLATE.c300
-                    } else {
-                        material::BLUE.c500
-                    }
-                } else {
-                    tailwind::SLATE.c500
-                })
-                .bg(if valid {
-                    if self.item == 1 {
-                        material::BLUE.c800
-                    } else {
-                        tailwind::SLATE.c950
-                    }
-                } else {
-                    if self.item == 1 {
-                        tailwind::SLATE.c700
-                    } else {
-                        tailwind::SLATE.c800
-                    }
-                }),
-            span!(" "),
-            span!(" Cancel ")
-                .fg(if self.item == 2 {
-                    tailwind::SLATE.c300
-                } else {
-                    tailwind::RED.c500
-                })
-                .bg(if self.item == 2 {
-                    material::RED.c800
-                } else {
-                    tailwind::SLATE.c950
-                }),
-        ];
-        let mut mouse_area = actions_area
-            .offset(Offset::new(actions_area.width as i32, 0));
-        for (i, action) in actions.iter().rev().enumerate() {
-            mouse_area = mouse_area.offset(Offset::new(-(action.width() as i32), 0));
-            if i & 1 == 1 {
-                continue;
-            }
-            mouse_area = mouse_area.resize(Size::new(action.width() as u16, 1));
-
+        let actions_mouse_areas = widgets::actions([" Confirm ", " Cancel "], [ActionTypes::Normal, ActionTypes::Critical], [self.item == 1, self.item == 2], [valid, true], HorizontalAlignment::Right, 1, actions_area, frame);
+        for (i, mouse_area) in actions_mouse_areas.into_iter().enumerate() {
             key_event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,
                 mouse_area,
                 move |app, _| {
-                    if i == 0 {
+                    if i == 1 {
                         app.drawer.close_popups();
                     } else {
                         if valid {
@@ -288,6 +182,5 @@ impl EditMoviePopup {
                 },
             );
         }
-        frame.render_widget(Line::from(actions).right_aligned(), actions_area);
     }
 }

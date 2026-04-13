@@ -10,6 +10,7 @@ mod tmdb;
 mod tokens;
 mod trakt;
 mod types;
+mod widgets;
 
 use app::App;
 use drawer::Drawer;

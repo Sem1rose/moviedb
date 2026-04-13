@@ -2,9 +2,10 @@ use crate::{
     helpers::{add_padding, dynamic_popup},
     key_event_handler::{self, KeyEventHandler},
     popups::Popups,
+    widgets::{self, ActionTypes}
 };
 use ratatui::{
-    layout::*, macros::{vertical, span}, prelude::*, style::palette::material, widgets::*, Frame,
+    layout::*, macros::vertical, prelude::*, style::palette::material, widgets::*, Frame,
 };
 use style::palette::tailwind;
 
@@ -86,51 +87,18 @@ impl DeleteMoviePopup {
             message_area,
         );
 
-        let actions = vec![
-            span!(" Confirm ")
-                .fg(if self.item == 1 {
-                    tailwind::SLATE.c300
-                } else {
-                    tailwind::RED.c500
-                })
-                .bg(if self.item == 1 {
-                    material::RED.c800
-                } else {
-                    tailwind::SLATE.c950
-                }),
-            span!(" "),
-            span!(" Cancel ")
-                .fg(if self.item == 0 {
-                    tailwind::SLATE.c200
-                } else {
-                    material::BLUE.c500
-                })
-                .bg(if self.item == 0 {
-                    material::BLUE.c800
-                } else {
-                    tailwind::SLATE.c950
-                }),
-        ];
-        let mut mouse_area = actions_area
-            .offset(Offset::new(actions_area.width as i32, 0));
-        for (i, action) in actions.iter().rev().enumerate() {
-            mouse_area = mouse_area.offset(Offset::new(-(action.width() as i32), 0));
-            if i & 1 == 1 {
-                continue;
-            }
-
-            mouse_area = mouse_area.resize(Size::new(action.width() as u16, 1));
+        let actions_mouse_areas = widgets::actions([" Confirm ", " Cancel "], [ActionTypes::Critical, ActionTypes::Normal], [self.item == 1, self.item == 0], [true, true], HorizontalAlignment::Right, 1, actions_area, frame);
+        for (i, mouse_area) in actions_mouse_areas.into_iter().enumerate() {
             key_event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,
                 mouse_area,
                 move |app, _| {
-                    if i == 2 {
+                    if i == 0 {
                         app.remove_movie();
                     }
                     app.drawer.close_popups();
                 },
             );
         }
-        frame.render_widget(Line::from(actions).right_aligned(), actions_area);
     }
 }

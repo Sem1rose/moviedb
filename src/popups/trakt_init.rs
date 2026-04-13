@@ -1,20 +1,15 @@
 use crate::{
-    helpers::{add_padding, center_rect, dynamic_popup},
-    key_event_handler::{self, KeyEventHandler},
-    popups::Popups,
-    trakt::{self, TokenResponse},
-    tokens::trakt_tokens::{TraktTokens, UserTokens},
+    helpers::{add_padding, center_rect, dynamic_popup}, key_event_handler::{self, KeyEventHandler}, popups::Popups, tokens::trakt_tokens::{TraktTokens, UserTokens}, trakt::{self, TokenResponse}, widgets
 };
-use itertools::Itertools;
 use ratatui::{
-    Frame, layout::*, macros::{constraint, vertical, horizontal, span, text}, prelude::*, style::palette::{material, tailwind}, widgets::*
+    Frame, layout::*, macros::{constraint, vertical, horizontal, text}, prelude::*, style::palette::{material, tailwind}, widgets::*
 };
 use std::{
     path::PathBuf,
     sync::mpsc::{Receiver, Sender, channel},
     thread,
 };
-use ratatui_textarea::TextArea;
+use ratatui_textarea::{TextArea, WrapMode};
 use throbber_widgets_tui::{Throbber, ThrobberState};
 
 #[derive(Default, Debug)]
@@ -35,7 +30,6 @@ pub struct TraktInitPopup {
     item: usize,
     pub tick: u64,
     pub phase: Phase,
-    home_dir: PathBuf,
     throbber_visible: bool,
     one_shot: bool,
 
@@ -63,7 +57,6 @@ impl TraktInitPopup {
         Self {
             one_shot,
             rx_init: Some(rx_init),
-            home_dir: home_dir.clone(),
             ..Default::default()
         }
     }
@@ -332,7 +325,7 @@ impl TraktInitPopup {
                 key_event_handler.bind_enter(
                     (None, Some(2)),
                     "Confirm".into(),
-                   move |app, _| {
+                move |app, _| {
                         if let Some(Popups::TraktInit(trakt_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
@@ -402,43 +395,7 @@ impl TraktInitPopup {
                     vertical![==3, ==3, >=1, ==1].areas(add_padding(popup_area, Padding::proportional(1)));
 
                 let ci_input_selected = self.item == 0;
-                self.input0.set_style(Style::new().fg(if ci_input_selected {
-                    tailwind::SLATE.c300
-                } else {
-                    tailwind::STONE.c400
-                }));
-                self.input0.set_cursor_style(
-                    Style::new()
-                        .fg(if ci_input_selected {
-                            tailwind::SLATE.c300
-                        } else {
-                            tailwind::STONE.c400
-                        })
-                        .add_modifier(if ci_input_selected {
-                            Modifier::REVERSED
-                        } else {
-                            Modifier::default()
-                        }),
-                );
-                self.input0.set_block(
-                    Block::bordered()
-                        .border_type(ratatui::widgets::BorderType::Thick)
-                        .fg(if ci_input_selected {
-                            material::BLUE.c500
-                        } else {
-                            tailwind::STONE.c500
-                        })
-                        .title(" Client ID ")
-                        .title_style(Style::new().fg(if ci_input_selected {
-                            material::BLUE.c400
-                        } else {
-                            material::BLUE.c600
-                        }))
-                        .padding(Padding::symmetric(1, 0)),
-                );
-                self.input0.set_placeholder_text("Enter the Client ID");
-                self.input0
-                    .set_placeholder_style(Style::new().fg(material::GRAY.c700));
+                widgets::input_field(ci_input_selected, !self.input0.is_empty(), &mut self.input0, WrapMode::None, frame, ci_input_area, (0, 0), " Client ID ", "Enter the Client ID");
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     ci_input_area,
@@ -450,49 +407,9 @@ impl TraktInitPopup {
                         }
                     },
                 );
-                frame.render_widget(
-                    &self.input0,
-                    ci_input_area,
-                );
 
                 let cs_input_selected = self.item == 1;
-                self.input1.set_style(Style::new().fg(if cs_input_selected {
-                    tailwind::SLATE.c300
-                } else {
-                    tailwind::STONE.c400
-                }));
-                self.input1.set_cursor_style(
-                    Style::new()
-                        .fg(if cs_input_selected {
-                            tailwind::SLATE.c300
-                        } else {
-                            tailwind::STONE.c400
-                        })
-                        .add_modifier(if cs_input_selected {
-                            Modifier::REVERSED
-                        } else {
-                            Modifier::default()
-                        }),
-                );
-                self.input1.set_block(
-                    Block::bordered()
-                        .border_type(ratatui::widgets::BorderType::Thick)
-                        .fg(if cs_input_selected {
-                            material::BLUE.c500
-                        } else {
-                            tailwind::STONE.c500
-                        })
-                        .title(" Client Secret ")
-                        .title_style(Style::new().fg(if cs_input_selected {
-                            material::BLUE.c400
-                        } else {
-                            material::BLUE.c600
-                        }))
-                        .padding(Padding::symmetric(1, 0)),
-                );
-                self.input1.set_placeholder_text("Enter the Client Secret");
-                self.input1
-                    .set_placeholder_style(Style::new().fg(material::GRAY.c700));
+                widgets::input_field(cs_input_selected, !self.input1.is_empty(), &mut self.input1, WrapMode::None, frame, cs_input_area, (0, 0), " Client Secret ", "Enter the Client Secret");
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     cs_input_area,
@@ -504,54 +421,24 @@ impl TraktInitPopup {
                         }
                     },
                 );
-                frame.render_widget(
-                    &self.input1,
-                    cs_input_area,
-                );
 
-                let confirm = span!(" Confirm ")
-                    .fg(if input_valid {
-                        if self.item == 2 {
-                            tailwind::SLATE.c200
-                        } else {
-                            tailwind::SLATE.c300
-                        }
-                    } else {
-                        tailwind::SLATE.c500
-                    })
-                    .bg(if input_valid {
-                        if self.item == 2 {
-                            material::BLUE.c600
-                        } else {
-                            material::BLUE.c900
-                        }
-                    } else {
-                        if self.item == 2 {
-                            tailwind::SLATE.c700
-                        } else {
-                            tailwind::SLATE.c800
-                        }
-                    });
-                let mouse_area = actions_area
-                    .offset(Offset::new(actions_area.width as i32 - (confirm.width() as i32), 0))
-                    .resize(Size::new(confirm.width() as u16, 1));
-                key_event_handler.bind_mouse_button_down(
-                    ratatui::crossterm::event::MouseButton::Left,
-                    mouse_area,
-                    move |app, _| {
-                        if let Some(Popups::TraktInit(trakt_init_popup)) =
-                            app.drawer.active_popup.as_mut()
-                        {
-                            if input_valid {
-                                trakt_init_popup.advance_phase();
+                let mouse_area = widgets::action(" Confirm ", widgets::ActionTypes::Normal, self.item == 2, input_valid, HorizontalAlignment::Right, actions_area, frame);
+                if input_valid {
+                    key_event_handler.bind_mouse_button_down(
+                        ratatui::crossterm::event::MouseButton::Left,
+                        mouse_area,
+                        |app, _| {
+                            if let Some(Popups::TraktInit(trakt_init_popup)) =
+                                app.drawer.active_popup.as_mut()
+                            {
+                                    trakt_init_popup.advance_phase();
                             }
-                        }
-                    },
-                );
-                frame.render_widget(Line::from(confirm).right_aligned(), actions_area);
+                        },
+                    );
+                }
             }
             Phase::Authorize(authorization_url) => {
-                let input_valid = !self.input0.lines()[0].is_empty();
+                let input_valid = !self.input0.is_empty();
 
                 key_event_handler.bind_tab((None, None), "".into(), |app, data| {
                     if let Some(Popups::TraktInit(trakt_init_popup)) =
@@ -595,7 +482,7 @@ impl TraktInitPopup {
                 key_event_handler.bind_enter(
                     (None, Some(0)),
                     "".into(),
-                    move |app, _| {
+                    |app, _| {
                         if let Some(Popups::TraktInit(trakt_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
@@ -603,19 +490,19 @@ impl TraktInitPopup {
                         }
                     },
                 );
-                key_event_handler.bind_enter(
-                    (None, Some(1)),
-                    "Confirm".into(),
-                    move |app, _| {
-                        if let Some(Popups::TraktInit(trakt_init_popup)) =
-                            app.drawer.active_popup.as_mut()
-                        {
-                            if input_valid {
-                                trakt_init_popup.advance_phase();
+                if input_valid {
+                    key_event_handler.bind_enter(
+                        (None, Some(1)),
+                        "Confirm".into(),
+                        |app, _| {
+                            if let Some(Popups::TraktInit(trakt_init_popup)) =
+                                app.drawer.active_popup.as_mut()
+                            {
+                                    trakt_init_popup.advance_phase();
                             }
-                        }
-                    },
-                );
+                        },
+                    );
+                }
                 key_event_handler.bind_enter(
                     (None, Some(2)),
                     "Skip".into(),
@@ -677,23 +564,10 @@ impl TraktInitPopup {
                     |_, _| {},
                 );
 
-                let skip = span!(" Skip ")
-                    .fg(if self.item == 2 {
-                        tailwind::SLATE.c200
-                    } else {
-                        tailwind::SLATE.c300
-                    })
-                    .bg(if self.item == 2 {
-                        material::BLUE.c700
-                    } else {
-                        material::BLUE.c900
-                    });
-                let mouse_area = popup_area
-                    .offset(Offset::new(popup_area.width as i32 - (skip.width() as i32), 0))
-                    .resize(Size::new(skip.width() as u16, 1));
+                let skip_mouse_area = widgets::action(" Skip ", widgets::ActionTypes::Normal, self.item == 2, true, HorizontalAlignment::Right, popup_area, frame);
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
-                    mouse_area,
+                    skip_mouse_area,
                     |app, _| {
                         if let Some(Popups::TraktInit(trakt_init_popup)) =
                             app.drawer.active_popup.as_mut()
@@ -702,24 +576,11 @@ impl TraktInitPopup {
                         }
                     },
                 );
-                frame.render_widget(Line::from(skip).right_aligned(), popup_area);
 
-                let back = span!(" Back ")
-                    .fg(if self.item == 3 {
-                        tailwind::SLATE.c200
-                    } else {
-                        tailwind::SLATE.c300
-                    })
-                    .bg(if self.item == 3 {
-                        material::BLUE.c600
-                    } else {
-                        material::BLUE.c900
-                    });
-                let mouse_area = popup_area
-                    .resize(Size::new(back.width() as u16, 1));
+                let back_mouse_area = widgets::action(" Back ", widgets::ActionTypes::Normal, self.item == 3, true, HorizontalAlignment::Left, popup_area, frame);
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
-                    mouse_area,
+                    back_mouse_area,
                     |app, _| {
                         if let Some(Popups::TraktInit(trakt_init_popup)) =
                             app.drawer.active_popup.as_mut()
@@ -734,104 +595,61 @@ impl TraktInitPopup {
                         }
                     },
                 );
-                frame.render_widget(Line::from(back), popup_area);
 
                 let [_, message_area, _, input_area, _, actions_area] =
                     vertical![==1, ==3, >=1, ==3, ==1, ==1].areas(add_padding(popup_area, Padding::proportional(1)));
 
-                let hyperlink = Hyperlink::new(text!["                      ", "  Click to Authorize  ", "                      "].fg(material::GREEN.c100).bg(material::BLUE.c800), authorization_url);
-                let [message_area] = horizontal![==(hyperlink.text.width() as u16)].flex(Flex::Center).areas(message_area);
+                let hyperlink_text = "  Click to Authorize  ";
+                let [message_area] = horizontal![==(hyperlink_text.len() as u16)].flex(Flex::Center).areas(message_area);
+                widgets::hyperlink(text![" ".repeat(hyperlink_text.len()), hyperlink_text, " ".repeat(hyperlink_text.len())].fg(material::GREEN.c100).bg(material::BLUE.c800), authorization_url, message_area, frame);
 
-                frame.render_widget(&hyperlink, message_area);
-
-                self.input0.set_style(Style::new().fg(if self.item == 0 {
-                    tailwind::SLATE.c300
-                } else {
-                    tailwind::STONE.c400
-                }));
-                self.input0.set_cursor_style(
-                    Style::new()
-                        .fg(if self.item == 0 {
-                            tailwind::SLATE.c300
-                        } else {
-                            tailwind::STONE.c400
-                        })
-                        .add_modifier(if self.item == 0 {
-                            Modifier::REVERSED
-                        } else {
-                            Modifier::default()
-                        }),
-                );
-                self.input0.set_block(
-                    Block::bordered()
-                        .border_type(ratatui::widgets::BorderType::Thick)
-                        .fg(if self.item == 0 {
-                            material::BLUE.c500
-                        } else {
-                            tailwind::STONE.c500
-                        })
-                        .title(" Client ID ")
-                        .title_style(Style::new().fg(if self.item == 0 {
-                            material::BLUE.c400
-                        } else {
-                            material::BLUE.c600
-                        }))
-                        .padding(Padding::symmetric(1, 0)),
-                );
-                self.input0.set_placeholder_text("Enter the Client ID");
-                self.input0
-                    .set_placeholder_style(Style::new().fg(material::GRAY.c700));
-                frame.render_widget(
-                    &self.input0,
-                    add_padding(
-                        input_area,
-                        Padding::horizontal(1),
-                    ),
-                );
-
-                let confirm = span!(" Confirm ")
-                    .fg(if input_valid {
-                        if self.item == 1 {
-                            tailwind::SLATE.c200
-                        } else {
-                            tailwind::SLATE.c300
-                        }
-                    } else {
-                        tailwind::SLATE.c500
-                    })
-                    .bg(if input_valid {
-                        if self.item == 1 {
-                            material::BLUE.c600
-                        } else {
-                            material::BLUE.c900
-                        }
-                    } else {
-                        if self.item == 1 {
-                            tailwind::SLATE.c700
-                        } else {
-                            tailwind::SLATE.c800
-                        }
-                    });
-                let mouse_area = actions_area
-                    .offset(Offset::new(actions_area.width as i32 - (confirm.width() as i32), 0))
-                    .resize(Size::new(confirm.width() as u16, 1));
+                widgets::input_field(self.item == 0, input_valid, &mut self.input0, WrapMode::None, frame, input_area, (8, 8), " Authorization Code ", "Enter the authorization code");
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
-                    mouse_area,
-                    move |app, _| {
+                    input_area,
+                    |app, _| {
                         if let Some(Popups::TraktInit(trakt_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
-                            if input_valid {
-                                trakt_init_popup.advance_phase();
-                            }
+                            trakt_init_popup.item = 0;
                         }
                     },
                 );
-                frame.render_widget(Line::from(confirm).right_aligned(), actions_area);
+
+                let confirm_mouse_area = widgets::action(" Confirm ", widgets::ActionTypes::Normal, self.item == 1, input_valid, HorizontalAlignment::Right, actions_area, frame);
+                if input_valid {
+                    key_event_handler.bind_mouse_button_down(
+                        ratatui::crossterm::event::MouseButton::Left,
+                        confirm_mouse_area,
+                        |app, _| {
+                            if let Some(Popups::TraktInit(trakt_init_popup)) =
+                                app.drawer.active_popup.as_mut()
+                            {
+                                    trakt_init_popup.advance_phase();
+                            }
+                        },
+                    );
+                }
             }
             Phase::Error(error) => {
                 key_event_handler.bind_enter(
+                    (None, None),
+                    "Back".into(),
+                    |app, _| {
+                        if let Some(Popups::TraktInit(trakt_init_popup)) =
+                            app.drawer.active_popup.as_mut()
+                        {
+                            trakt_init_popup.item = 0;
+                            trakt_init_popup.rx_tokens = None;
+                            trakt_init_popup.rx_auth_url = None;
+                            trakt_init_popup.tx_auth_code = None;
+                            trakt_init_popup.input0.clear();
+                            trakt_init_popup.input1.clear();
+                            trakt_init_popup.phase = Phase::GetSecrets;
+                        }
+                    },
+                );
+                key_event_handler.bind_esc(
                     (None, None),
                     "Back".into(),
                     |app, _| {
@@ -873,11 +691,7 @@ impl TraktInitPopup {
                     message_area,
                 );
 
-                let back = span!(" Back ")
-                    .fg(tailwind::SLATE.c200)
-                    .bg(material::BLUE.c600);
-                let mouse_area = actions_area
-                    .resize(Size::new(back.width() as u16, 1));
+                let mouse_area = widgets::action(" Back ", widgets::ActionTypes::Default, true, true, HorizontalAlignment::Center, actions_area, frame);
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     mouse_area,
@@ -895,46 +709,6 @@ impl TraktInitPopup {
                         }
                     },
                 );
-
-                frame.render_widget(Line::from(back), actions_area);
-            }
-        }
-    }
-}
-
-struct Hyperlink<'content> {
-    text: Text<'content>,
-    url: String,
-}
-
-impl<'content> Hyperlink<'content> {
-    fn new(text: impl Into<Text<'content>>, url: impl Into<String>) -> Self {
-        Self {
-            text: text.into(),
-            url: url.into(),
-        }
-    }
-}
-
-impl Widget for &Hyperlink<'_> {
-    fn render(self, area: Rect, buffer: &mut Buffer) {
-        (&self.text).render(area, buffer);
-
-        // this is a hacky workaround for https://github.com/ratatui/ratatui/issues/902, a bug
-        // in the terminal code that incorrectly calculates the width of ANSI escape sequences. It
-        // works by rendering the hyperlink as a series of 2-character chunks, which is the
-        // calculated width of the hyperlink text.
-        for (j, line) in self.text.lines.clone().into_iter().enumerate() {
-            for (i, two_chars) in line
-                .to_string()
-                .chars()
-                .chunks(2)
-                .into_iter()
-                .enumerate()
-            {
-                let text = two_chars.collect::<String>();
-                let hyperlink = format!("\x1B]8;;{}\x07{}\x1B]8;;\x07", self.url, text);
-                buffer[(area.x + i as u16 * 2, area.y + j as u16)].set_symbol(hyperlink.as_str());
             }
         }
     }
