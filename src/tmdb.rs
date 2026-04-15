@@ -63,7 +63,7 @@ pub struct TMDBSearchResult {
     pub title: String,
     // video: bool,
     pub vote_average: Option<f64>,
-    // vote_count: u64,
+    pub vote_count: u32,
 }
 
 #[derive(Deserialize, Debug, Default, Clone)]
@@ -231,7 +231,7 @@ pub fn get_session_id(
     Ok(session_id)
 }
 
-pub fn find_movie(access_token: &str, name: &str) -> anyhow::Result<TMDBSearchResponse> {
+pub fn find_movie(access_token: &str, name: &str) -> anyhow::Result<Vec<TMDBSearchResult>> {
     let client = ClientBuilder::new().build()?;
     let mut headers = HeaderMap::new();
     headers.insert("accept", "application/json".parse().unwrap());
@@ -258,7 +258,7 @@ pub fn find_movie(access_token: &str, name: &str) -> anyhow::Result<TMDBSearchRe
     }
 
     let json = search_response.json::<TMDBSearchResponse>()?;
-    Ok(json)
+    Ok(json.results)
 }
 
 pub fn get_movie_details(access_token: &str, tmdb_id: u32) -> anyhow::Result<TMDBDetailsResponse> {
@@ -357,7 +357,7 @@ pub fn get_movie_images(
 pub fn get_movie_poster_banner(
     cache_dir: &PathBuf,
     access_token: &str,
-    id: u32,
+    tmdb_id: u32,
     add_placeholder: bool,
 ) -> anyhow::Result<bool> {
     let client = ClientBuilder::new().build()?;
@@ -370,7 +370,7 @@ pub fn get_movie_poster_banner(
         format!("Bearer {}", access_token).parse().unwrap(),
     );
 
-    let movie_images = get_movie_images(access_token, id)?;
+    let movie_images = get_movie_images(access_token, tmdb_id)?;
 
     let configuration_response = send_tmdb_request(
         &client,
@@ -466,7 +466,7 @@ pub fn get_movie_poster_banner(
         Ok(0)
     };
 
-    let poster_path = cache_dir.join("posters").join(format!("{}.jpg", id));
+    let poster_path = cache_dir.join("posters").join(format!("{}.jpg", tmdb_id));
     let _configurations = images_configurations.clone();
     let _images = movie_images.clone();
     let poster_handle = thread::spawn(move || -> anyhow::Result<()> {
@@ -495,7 +495,7 @@ pub fn get_movie_poster_banner(
         Ok(())
     });
 
-    let backdrop_path = cache_dir.join("backdrops").join(format!("{}.jpg", id));
+    let backdrop_path = cache_dir.join("backdrops").join(format!("{}.jpg", tmdb_id));
     let backdrop_handle = thread::spawn(move || -> anyhow::Result<()> {
         if !movie_images.backdrops.is_empty() {
             let mut success = false;

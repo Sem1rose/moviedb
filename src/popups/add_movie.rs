@@ -1,16 +1,19 @@
 use crate::{
     helpers::{add_padding, center_rect, dynamic_popup},
-    key_event_handler::{self, KeyEventHandler},
-    omdb::{self, OMDBDetailsResponse},
     popups::Popups,
-    tmdb::{self, TMDBDetailsResponse, TMDBSearchResponse, TMDBSearchResult},
+    widgets::{self, ActionTypes},
+    omdb::{self, OMDBDetailsResponse},
+    key_event_handler::{self, KeyEventHandler},
     tokens::{OMDBTokens, TMDBTokens, TraktTokens},
-    trakt::{self, TraktDetailsResponse},
-    widgets::{self, ActionTypes}
+    trakt::{self, TraktDetailsResponse, TraktSearchResponseMovie},
+    tmdb::{self, TMDBDetailsResponse, TMDBSearchResult},
+    types::Rating,
 };
+use anyhow::anyhow;
+use itertools::Itertools;
 use ratatui::{
     layout::*,
-    macros::{constraint, horizontal, vertical},
+    macros::{constraint, horizontal, vertical, line, span},
     prelude::*,
     style::palette::material,
     style::palette::tailwind,
@@ -37,9 +40,47 @@ pub enum Phase {
     Done,
 }
 
-pub struct DetailsResponse {
+#[derive(Clone)]
+enum SearchResultID {
+    TMDB(u32),
+    IMDBTMDB(String, u32),
+}
+enum SearchResults {
+    TMDB(anyhow::Result<Vec<TMDBSearchResult>>),
+    Trakt(anyhow::Result<Vec<TraktSearchResponseMovie>>),
+}
+
+struct Movie {
+    title: String,
+    release_year: String,
+    rating: Rating,
+    id: SearchResultID,
+}
+
+impl From::<TMDBSearchResult> for Movie {
+    fn from(value: TMDBSearchResult) -> Self {
+        Self {
+            title: value.title,
+            release_year: value.release_date.unwrap_or("1970".into()),
+            rating: Rating::TMDB(value.vote_average.unwrap_or(0.0), value.vote_count),
+            id: SearchResultID::TMDB(value.id),
+        }
+    }
+}
+impl From::<TraktSearchResponseMovie> for Movie {
+    fn from(value: TraktSearchResponseMovie) -> Self {
+        Self {
+            title: value.title,
+            release_year: value.year.unwrap_or(1970).to_string(),
+            rating: Rating::Trakt(value.rating, value.votes),
+            id: SearchResultID::IMDBTMDB(value.ids.imdb, value.ids.tmdb),
+        }
+    }
+}
+
+struct DetailsResponse {
     pub trakt: Option<TraktDetailsResponse>,
-    pub tmdb: TMDBDetailsResponse,
+    pub tmdb: Option<TMDBDetailsResponse>,
     pub omdb: Option<OMDBDetailsResponse>,
 }
 
@@ -60,8 +101,8 @@ pub struct AddMoviePopup {
 
     search_ticket: u64,
     last_input_tick: Option<u64>,
-    pub search_results: Option<Vec<TMDBSearchResult>>,
-    rx_search_result: Option<Receiver<(u64, anyhow::Result<TMDBSearchResponse>)>>,
+    search_results: Option<Vec<Movie>>,
+    rx_search_result: Option<Receiver<(u64, SearchResults)>>,
 
     pub user_rating: f64,
     pub tmdb_movie_details_result: Option<TMDBDetailsResponse>,
@@ -105,59 +146,146 @@ impl AddMoviePopup {
 
         let search_string = self.input.lines()[0].clone();
         let access_token = self.tmdb_tokens.access_token_owned();
+        let client_id = self.trakt_tokens.client_id_owned();
         let ticket = rand::random();
         self.search_ticket = ticket;
 
         thread::spawn(move || {
-            _ = tx_search_results.send((ticket, tmdb::find_movie(&access_token, &search_string)));
+            if !client_id.is_empty() {
+                _ = tx_search_results.send((ticket, SearchResults::Trakt(trakt::find_movie(&client_id, &search_string))));
+            } else {
+                _ = tx_search_results.send((ticket, SearchResults::TMDB(tmdb::find_movie(&access_token, &search_string))));
+            }
         });
 
         self.rx_search_result = Some(rx_search_results);
     }
 
     pub fn request_details(&mut self) {
-        let (tx_details_request, rx_details_request) = mpsc::channel();
+        let (tx_details_request, rx_details_request): (mpsc::Sender<anyhow::Result<DetailsResponse>>, Receiver<anyhow::Result<DetailsResponse>>) = mpsc::channel();
 
-        let tmdb_access_token = self.tmdb_tokens.access_token_owned();
-        let trakt_client_id = self.trakt_tokens.client_id_owned();
-        let omdb_api_key = self.omdb_tokens.key_owned();
-        let movie_id = self.search_results.as_ref().unwrap()[self.selected_item].id;
         let cache_dir = self.cache_dir.clone();
-        let access_token = self.tmdb_tokens.access_token_owned();
-        let client_id = self.trakt_tokens.client_id_owned();
+        let omdb_api_key = self.omdb_tokens.key_owned();
+        let trakt_client_id = self.trakt_tokens.client_id_owned();
+        let tmdb_access_token = self.tmdb_tokens.access_token_owned();
+        let movie_id = self.search_results.as_ref().unwrap()[self.selected_item].id.clone();
 
         thread::spawn(move || {
-            let tmdb_result = tmdb::get_movie_details(&tmdb_access_token, movie_id);
+            macro_rules! join_or_return {
+                ($handle:expr) => {
+                    match $handle.join() {
+                        Err(e) => {
+                            _ = tx_details_request.send(Err(anyhow!("{:#?}", e)));
+                            return;
+                        }
+                        Ok(val) => val,
+                    }
+                };
+            }
 
-            if let Ok(tmdb_response) = tmdb_result {
-                let trakt_result =
-                    trakt::get_movie_details(&trakt_client_id, &tmdb_response.imdb_id);
-                let omdb_result = omdb::get_movie_details(&omdb_api_key, &tmdb_response.imdb_id);
+            let tmdb_result;
+            let omdb_result;
+            let trakt_result;
+            let tmdb_id;
+            let imdb_id;
 
-                let result = tmdb::get_movie_poster_banner(
+            match movie_id {
+                SearchResultID::TMDB(id) => {
+                    tmdb_id = id;
+                    let tmdb_handle = {
+                        let access_token = tmdb_access_token.clone();
+                        thread::spawn(move || {
+                            tmdb::get_movie_details(&access_token, tmdb_id)
+                        })
+                    };
+                    tmdb_result = join_or_return!(tmdb_handle);
+                    if let Err(error) = tmdb_result {
+                        _ = tx_details_request.send(Err(error));
+                        return;
+                    }
+
+                    imdb_id = tmdb_result.as_ref().unwrap().imdb_id.clone();
+                    let trakt_handle = {
+                        let imdb_id = imdb_id.clone();
+                        let client_id = trakt_client_id.clone();
+                        thread::spawn(move || {
+                            trakt::get_movie_details(&client_id, &imdb_id)
+                        })
+                    };
+                    let omdb_handle = {
+                        let imdb_id = imdb_id.clone();
+                        thread::spawn(move || {
+                            omdb::get_movie_details(&omdb_api_key, &imdb_id)
+                        })
+                    };
+                    trakt_result = join_or_return!(trakt_handle);
+                    omdb_result = join_or_return!(omdb_handle);
+                },
+                SearchResultID::IMDBTMDB(id_imdb, id_tmdb) => {
+                    imdb_id = id_imdb;
+                    tmdb_id = id_tmdb;
+                    let trakt_handle = {
+                        let imdb_id = imdb_id.clone();
+                        let client_id = trakt_client_id.clone();
+                        thread::spawn(move || {
+                            trakt::get_movie_details(&client_id, &imdb_id)
+                        })
+                    };
+                    let omdb_handle = {
+                        let imdb_id = imdb_id.clone();
+                        thread::spawn(move || {
+                            omdb::get_movie_details(&omdb_api_key, &imdb_id)
+                        })
+                    };
+                    let tmdb_handle = {
+                        let access_token = tmdb_access_token.clone();
+                        thread::spawn(move || {
+                            tmdb::get_movie_details(&access_token, tmdb_id)
+                        })
+                    };
+                    trakt_result = join_or_return!(trakt_handle);
+                    if let Err(error) = trakt_result {
+                        _ = tx_details_request.send(Err(error));
+                        return;
+                    }
+                    omdb_result = join_or_return!(omdb_handle);
+                    tmdb_result = join_or_return!(tmdb_handle);
+                },
+            }
+
+            // let result = tmdb::get_movie_poster_banner(
+            //     &cache_dir,
+            //     &tmdb_access_token,
+            //     tmdb_id,
+            //     true,
+            // );
+            let result = trakt::get_movie_poster_banner(
+                &cache_dir,
+                &trakt_client_id,
+                &imdb_id,
+                true,
+            );
+            if let Ok(true) = result {
+            } else {
+                // _ = trakt::get_movie_poster_banner(
+                //     &cache_dir,
+                //     &trakt_client_id,
+                //     &imdb_id,
+                //     true,
+                // );
+                _ = tmdb::get_movie_poster_banner(
                     &cache_dir,
-                    &access_token,
-                    tmdb_response.id,
+                    &tmdb_access_token,
+                    tmdb_id,
                     true,
                 );
-                if let Ok(true) = result {
-                } else {
-                    _ = trakt::get_movie_poster_banner(
-                        &cache_dir,
-                        &client_id,
-                        tmdb_response.imdb_id.clone(),
-                        true,
-                    );
-                }
-
-                _ = tx_details_request.send(Ok(DetailsResponse {
-                    trakt: trakt_result.map(Some).unwrap_or(None),
-                    tmdb: tmdb_response,
-                    omdb: omdb_result.map(Some).unwrap_or(None),
-                }));
-            } else if let Err(error) = tmdb_result {
-                _ = tx_details_request.send(Err(error));
             }
+
+            _ = tx_details_request.send(Ok(DetailsResponse {
+                trakt: trakt_result.ok(),
+                tmdb: tmdb_result.ok(),
+                omdb: omdb_result.ok(),
+            }));
         });
 
         self.rx_details_response = Some(rx_details_request);
@@ -218,28 +346,46 @@ impl AddMoviePopup {
                             return;
                         }
 
-                        self.search_results = Some(search_result.unwrap().results);
+                        self.search_results = match search_result {
+                            SearchResults::TMDB(tmdbsearch_results) => {
+                                if let Ok(results) = tmdbsearch_results {
+                                    Some(results.into_iter().map(|x| x.into()).collect_vec())
+                                } else {
+                                    None
+                                }
+                            },
+                            SearchResults::Trakt(trakt_results) => {
+                                if let Ok(results) = trakt_results {
+                                    Some(results.into_iter().map(|x| x.into()).collect_vec())
+                                } else {
+                                    None
+                                }
+                            },
+                        };
                     }
                 }
             }
             Phase::GettingDetails => {
-                let result = self.rx_details_response.as_ref().unwrap().try_recv();
-                if let Ok(details_response) = result {
-                    if let Ok(details_response) = details_response {
-                        self.tmdb_movie_details_result = Some(details_response.tmdb);
-                        self.trakt_movie_details_result = details_response.trakt;
-                        self.omdb_movie_details_result = details_response.omdb;
+                match self.rx_details_response.as_ref().unwrap().try_recv() {
+                    Ok(details_response) => {
+                        if let Ok(details_response) = details_response {
+                            self.tmdb_movie_details_result = details_response.tmdb;
+                            self.trakt_movie_details_result = details_response.trakt;
+                            self.omdb_movie_details_result = details_response.omdb;
 
-                        self.advance_phase();
+                            self.advance_phase();
 
-                        self.rx_details_response = None;
-                    } else if let Err(error) = details_response {
-                        self.rx_details_response = None;
-                        self.phase = Phase::Error(format!("{error}"));
+                            self.rx_details_response = None;
+                        } else if let Err(error) = details_response {
+                            self.rx_details_response = None;
+                            self.phase = Phase::Error(format!("{error}"));
+                        }
                     }
-                } else if let Err(mpsc::TryRecvError::Disconnected) = result {
-                    self.rx_details_response = None;
-                    self.phase = Phase::Error("Error while fetching movie details".into());
+                    Err(mpsc::TryRecvError::Disconnected) => {
+                        self.rx_details_response = None;
+                        self.phase = Phase::Error("Error while fetching movie details".into());
+                    }
+                    _ => ()
                 }
             }
             _ => (),
@@ -356,12 +502,12 @@ impl AddMoviePopup {
 
                 widgets::input_field(true, true, &mut self.input, WrapMode::None, frame, search_input_area, (0, 1), " Name ", "Search");
 
-                let num_visible_projects = results_list_area.height as usize / 5;
-                let partially_visible_project_height =
-                    results_list_area.height as usize - num_visible_projects * 5;
-                let render_partially_visible_project = partially_visible_project_height > 0;
-                self.num_visible_items = num_visible_projects
-                    + if render_partially_visible_project {
+                let num_visible_results = results_list_area.height as usize / 5;
+                let partially_visible_result_height =
+                    results_list_area.height as usize - num_visible_results * 5;
+                let render_partially_visible_result = partially_visible_result_height > 0;
+                self.num_visible_items = num_visible_results
+                    + if render_partially_visible_result {
                         1
                     } else {
                         0
@@ -381,7 +527,7 @@ impl AddMoviePopup {
                         .saturating_sub(self.num_visible_items + 1);
                 }
 
-                if num_results <= num_visible_projects {
+                if num_results <= num_visible_results {
                     self.alignment_bottom = false;
                 } else if self.selected_item - self.scroll_pos == 0 {
                     self.alignment_bottom = false;
@@ -392,17 +538,17 @@ impl AddMoviePopup {
                 let mut remaining_area = results_list_area;
                 for i in 0..self.num_visible_items {
                     let [area, remaining] =
-                        if render_partially_visible_project && i == 0 && self.alignment_bottom {
+                        if render_partially_visible_result && i == 0 && self.alignment_bottom {
                             Layout::vertical([
-                                Constraint::Length(partially_visible_project_height as u16),
+                                Constraint::Length(partially_visible_result_height as u16),
                                 Constraint::Min(0),
                             ])
-                        } else if render_partially_visible_project
+                        } else if render_partially_visible_result
                             && i == self.num_visible_items - 1
                             && !self.alignment_bottom
                         {
                             Layout::vertical([
-                                Constraint::Length(partially_visible_project_height as u16),
+                                Constraint::Length(partially_visible_result_height as u16),
                                 Constraint::Min(0),
                             ])
                         } else {
@@ -483,53 +629,8 @@ impl AddMoviePopup {
                                 );
                             } else if index == 1 {
                                 frame.render_widget(
-                                    Line::from(vec![
-                                        Span::from(&result.title).style(
-                                            Style::new()
-                                                .fg(if selected {
-                                                    material::CYAN.c100
-                                                } else {
-                                                    material::ORANGE.c400
-                                                })
-                                                .add_modifier(if selected {
-                                                    Modifier::BOLD
-                                                } else {
-                                                    Modifier::empty()
-                                                }),
-                                        ),
-                                        Span::from("  "),
-                                        Span::from(
-                                            result
-                                                .release_date
-                                                .as_ref()
-                                                .unwrap_or(&"1970".to_string()),
-                                        )
-                                        .style(
-                                            Style::new()
-                                                .fg(if selected {
-                                                    material::CYAN.c100
-                                                } else {
-                                                    material::ORANGE.c400
-                                                })
-                                                .add_modifier(if selected {
-                                                    Modifier::BOLD
-                                                } else {
-                                                    Modifier::empty()
-                                                })
-                                                .italic(),
-                                        ),
-                                    ])
-                                    .left_aligned(),
-                                    add_padding(areas[i as usize], Padding::left(2)),
-                                );
-                            } else if index == 3 {
-                                frame.render_widget(
-                                    Line::from(vec![Span::from(format!(
-                                        "{:.1}",
-                                        result.vote_average.unwrap_or(0.0)
-                                    ))
-                                    .style(
-                                        Style::new()
+                                    line![
+                                        span!(&result.title)
                                             .fg(if selected {
                                                 material::CYAN.c100
                                             } else {
@@ -540,8 +641,36 @@ impl AddMoviePopup {
                                             } else {
                                                 Modifier::empty()
                                             }),
-                                    )])
-                                    .left_aligned(),
+                                        span!("  "),
+                                        span!(result.release_year)
+                                            .fg(if selected {
+                                                material::CYAN.c100
+                                            } else {
+                                                material::ORANGE.c400
+                                            })
+                                            .add_modifier(if selected {
+                                                Modifier::BOLD
+                                            } else {
+                                                Modifier::empty()
+                                            })
+                                            .italic(),
+                                    ].left_aligned(),
+                                    add_padding(areas[i as usize], Padding::left(2)),
+                                );
+                            } else if index == 3 {
+                                frame.render_widget(
+                                    line![span!("{:.1}", f64::from(result.rating))
+                                        .fg(if selected {
+                                            material::CYAN.c100
+                                        } else {
+                                            material::ORANGE.c400
+                                        })
+                                        .add_modifier(if selected {
+                                            Modifier::BOLD
+                                        } else {
+                                            Modifier::empty()
+                                        }),
+                                    ].left_aligned(),
                                     add_padding(areas[i as usize], Padding::left(2)),
                                 );
                             } else if index == 4 {

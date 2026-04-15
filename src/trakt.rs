@@ -1,5 +1,6 @@
 use crate::tokens::TraktUserTokens;
 use anyhow::{bail, Context};
+use itertools::Itertools;
 use reqwest::{
     blocking::{Client, ClientBuilder, RequestBuilder, Response},
     header::{HeaderMap, CONTENT_TYPE, USER_AGENT},
@@ -38,13 +39,56 @@ impl Display for TokenResponseError {
 }
 
 #[derive(Deserialize, Debug, Default, Clone)]
+pub struct TraktSearchResponseID {
+    // trakt: u32,
+    pub imdb: String,
+    pub tmdb: u32,
+    // slug: String,
+    // plex: UNKNOWN
+}
+#[derive(Deserialize, Debug, Default, Clone)]
+pub struct TraktSearchResponseMovie {
+    pub title: String,
+    pub year: Option<usize>,
+    pub ids: TraktSearchResponseID,
+    // tagline: String,
+    // overview: String,
+    // runtime: usize,
+    // country: String,
+    // trailer: Option<String>,
+    // homepage: String,
+    // status: String,
+    pub rating: f64,
+    pub votes: u32,
+    // comment_count: String,
+    // updated_at: String,
+    // language: String,
+    // languages: Vec<String>,
+    // available_translations: Vec<String>,
+    // genres: Vec<String>,
+    // subgenres: Vec<String>,
+    // original_title: String,
+    // images: TraktMovieImages,
+    // released: String,
+    // after_credits: bool,
+    // during_credits: bool,
+    // certification: String
+}
+#[derive(Deserialize, Debug, Default, Clone)]
+pub struct TraktSearchResponse {
+    // score: String,
+    // type: String,
+    movie: TraktSearchResponseMovie
+}
+
+#[derive(Deserialize, Debug, Default, Clone)]
 pub struct TraktDetailsResponse {
     pub title: String,
-    pub year: u32,
+    pub year: Option<usize>,
     pub ids: IDs,
     pub tagline: String,
     pub overview: String,
-    pub released: String,
+    // released: String,
     pub runtime: u32,
     // country: String,
     pub trailer: Option<String>,
@@ -54,11 +98,11 @@ pub struct TraktDetailsResponse {
     pub votes: u32,
     // comment_count: u32,
     // updated_at: String,
-    // language: String,
+    pub language: String,
     // languages: Vec<String>,
     // available_translations: Vec<String>,
     pub genres: Vec<String>,
-    pub certification: Option<String>,
+    // certification: Option<String>,
     pub images: TraktMovieImages,
 }
 
@@ -74,10 +118,10 @@ pub struct TraktMovieImages {
 
 #[derive(Deserialize, Debug, Default, Clone)]
 pub struct IDs {
-    // trakt: u32,
     // slug: String,
-    // imdb: String,
-    tmdb: u32,
+    // trakt: u32,
+    pub imdb: String,
+    pub tmdb: u32,
 }
 
 pub fn should_refresh_tokens(trakt_tokens: &TraktUserTokens) -> bool {
@@ -187,8 +231,6 @@ pub fn refresh_tokens(
         None,
     )?;
 
-    // debug!("{:#?}", token_response);
-
     if token_response.status().as_u16() >= 400 {
         return Err::<_, anyhow::Error>(match token_response.json::<TokenResponseError>() {
             Ok(err) => err.into(),
@@ -198,6 +240,32 @@ pub fn refresh_tokens(
     }
 
     Ok(token_response.json::<TokenResponse>()?)
+}
+
+pub fn find_movie(client_id: &str, name: &str) -> anyhow::Result<Vec<TraktSearchResponseMovie>> {
+    let client = ClientBuilder::new().build()?;
+
+    let mut headers = HeaderMap::new();
+    headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
+    headers.insert(USER_AGENT, "reqwest/0.12.8".parse().unwrap());
+    headers.insert("trakt-api-version", "2".parse().unwrap());
+    headers.insert("trakt-api-key", client_id.parse().unwrap());
+
+    // let escaped_name = url_escape::encode_fragment(name).to_string();
+    let query = [("query", name)];
+    let search_response = send_trakt_request(
+        &client,
+        "https://api.trakt.tv/search/movie",
+        &headers,
+        None,
+        Some(&query),
+    )?;
+    if search_response.status().as_u16() != 200 {
+        bail!(format!("Trakt: Error while searching for movie: {}", name));
+    }
+
+    let json = search_response.json::<Vec<TraktSearchResponse>>()?;
+    Ok(json.into_iter().map(|x| x.movie).collect_vec())
 }
 
 pub fn get_movie_details(client_id: &str, imdb_id: &str) -> anyhow::Result<TraktDetailsResponse> {
@@ -223,15 +291,13 @@ pub fn get_movie_details(client_id: &str, imdb_id: &str) -> anyhow::Result<Trakt
         bail!("couldn't get movie details with trakt");
     }
 
-    // let movies = details_response.text()?;
-    // panic!("{:#}", json::parse(movies.as_str()).unwrap());
     Ok(details_response.json()?)
 }
 
 pub fn get_movie_poster_banner(
     cache_dir: &PathBuf,
     client_id: &str,
-    id: String,
+    imdb_id: &str,
     add_placeholder: bool,
 ) -> anyhow::Result<bool> {
     let mut headers = HeaderMap::new();
@@ -240,7 +306,7 @@ pub fn get_movie_poster_banner(
     headers.insert("trakt-api-version", "2".parse().unwrap());
     headers.insert("trakt-api-key", client_id.parse().unwrap());
 
-    let movie_details = get_movie_details(client_id, &id)?;
+    let movie_details = get_movie_details(client_id, &imdb_id)?;
 
     if !add_placeholder
         && ((movie_details.images.banner.is_empty() && movie_details.images.fanart.is_empty())

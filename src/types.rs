@@ -12,9 +12,8 @@ use ratatui::{
 use serde::{Deserialize, Serialize};
 use std::io::stdout;
 
-// pub type OptionalResult<T> = anyhow::Result<T, Option<anyhow::Error>>;
-type TermBackend = CrosstermBackend<std::io::Stdout>;
 pub type Term = Terminal<TermBackend>;
+type TermBackend = CrosstermBackend<std::io::Stdout>;
 
 pub fn initialize_terminal() -> anyhow::Result<Term> {
     set_panic_hook();
@@ -55,6 +54,16 @@ pub enum Rating {
     IMDB(f64, u32),
 }
 
+impl From::<Rating> for f64 {
+    fn from(value: Rating) -> Self {
+        match value {
+            Rating::Trakt(rating, _) => rating,
+            Rating::TMDB(rating, _) => rating,
+            Rating::IMDB(rating, _) => rating,
+        }
+    }
+}
+
 #[derive(Serialize, Clone, Deserialize, Debug)]
 pub struct MovieID {
     pub tmdb: u32,
@@ -79,13 +88,13 @@ pub struct Movie {
     pub plays: Vec<(DateTime<Local>, f64)>,
 }
 
-impl Movie {
-    pub fn from(movie_details: TMDBDetailsResponse, user_rating: f64) -> Self {
-        let mut collection: Option<String> = None;
-        let mut collection_id: Option<u32> = None;
-        if movie_details.belongs_to_collection.is_some() {
-            collection = Some(movie_details.belongs_to_collection.clone().unwrap().name);
-            collection_id = Some(movie_details.belongs_to_collection.clone().unwrap().id);
+impl From::<TMDBDetailsResponse> for Movie {
+    fn from(movie_details: TMDBDetailsResponse) -> Self {
+        let mut collection = None;
+        let mut collection_id = None;
+        if let Some(belongs_to_collection) = movie_details.belongs_to_collection {
+            collection = Some(belongs_to_collection.name);
+            collection_id = Some(belongs_to_collection.id);
         }
 
         Self {
@@ -113,10 +122,51 @@ impl Movie {
             released: movie_details.status == "Released",
             tagline: movie_details.tagline,
             trailer: None,
-            plays: vec![(Local::now(), user_rating)],
+            plays: vec![],
         }
     }
+}
+impl From::<TraktDetailsResponse> for Movie {
+    fn from(movie_details: TraktDetailsResponse) -> Self {
+        Self {
+            name: movie_details.title,
+            ratings: [
+                Rating::TMDB(0.0, 0),
+                Rating::Trakt(movie_details.rating, movie_details.votes),
+                Rating::IMDB(0.0, 0),
+            ],
+            year: movie_details.year.unwrap_or(1970).to_string(),
+            language: movie_details.language,
+            id: MovieID {
+                tmdb: movie_details.ids.tmdb,
+                imdb: movie_details.ids.imdb,
+            },
+            genres: movie_details.genres,
+            overview: movie_details.overview,
+            collection: None,
+            collection_id: None,
+            runtime: movie_details.runtime,
+            released: movie_details.status == "released",
+            tagline: movie_details.tagline,
+            trailer: movie_details.trailer,
+            plays: vec![],
+        }
+    }
+}
 
+impl Movie {
+    pub fn add_tmdb_details(&mut self, tmdb_details: TMDBDetailsResponse) {
+        let mut collection = None;
+        let mut collection_id = None;
+        if let Some(belongs_to_collection) = tmdb_details.belongs_to_collection {
+            collection = Some(belongs_to_collection.name);
+            collection_id = Some(belongs_to_collection.id);
+        }
+
+        self.collection = collection;
+        self.collection_id = collection_id;
+        self.ratings[0] = Rating::TMDB(tmdb_details.vote_average, tmdb_details.vote_count);
+    }
     pub fn add_trakt_details(&mut self, trakt_details: TraktDetailsResponse) {
         self.ratings[1] = Rating::Trakt(trakt_details.rating, trakt_details.votes);
         self.trailer = trakt_details.trailer;
@@ -146,16 +196,16 @@ impl Movie {
     }
 }
 
-impl std::cmp::PartialEq<&Movie> for Movie {
-    fn eq(&self, other: &&Movie) -> bool {
+impl std::cmp::PartialEq<Movie> for Movie {
+    fn eq(&self, other: &Movie) -> bool {
         self.id.imdb == other.id.imdb
     }
 }
-impl std::cmp::PartialEq<&Movie> for &Movie {
-    fn eq(&self, other: &&Movie) -> bool {
-        self.id.imdb == other.id.imdb
-    }
-}
+// impl std::cmp::PartialEq<&Movie> for &Movie {
+//     fn eq(&self, other: &&Movie) -> bool {
+//         self.id.imdb == other.id.imdb
+//     }
+// }
 
 #[derive(Serialize, Deserialize)]
 pub struct OldMovie {

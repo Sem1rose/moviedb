@@ -160,7 +160,7 @@ impl EditMoviePopup {
             },
         );
 
-        let actions_mouse_areas = widgets::actions([" Confirm ", " Cancel "], [ActionTypes::Normal, ActionTypes::Critical], [self.item == 1, self.item == 2], [valid, true], HorizontalAlignment::Right, 1, actions_area, frame);
+        let actions_mouse_areas = widgets::actions([" Confirm ", " Cancel "], [ActionTypes::Default, ActionTypes::Critical], [self.item == 1, self.item == 2], [valid, true], HorizontalAlignment::Right, 1, actions_area, frame);
         for (i, mouse_area) in actions_mouse_areas.into_iter().enumerate() {
             key_event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,

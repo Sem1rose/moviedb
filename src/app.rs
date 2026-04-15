@@ -6,6 +6,7 @@ use crate::{
     types::{initialize_terminal, reset_terminal, Movie, OldMovie, Term},
     KeyEventHandler,
 };
+use chrono::Local;
 use log::{error, warn};
 use ratatui::crossterm::event::{self, Event, KeyEvent, KeyEventState, KeyModifiers};
 use std::{
@@ -128,23 +129,11 @@ impl App {
                     if event::poll(Duration::from_millis(10))? {
                         if let Ok(event) = event::read() {
                             self.handle_event(event);
-
-                            // while event::poll(Duration::from_millis(0))? {
-                            //     if let Ok(event) = event::read() {
-                            //         self.handle_event(event);
-                            //     }
-                            // }
                         }
                     }
                 } else {
                     if let Ok(event) = event::read() {
                         self.handle_event(event);
-
-                        // while event::poll(Duration::from_millis(0))? {
-                        //     if let Ok(event) = event::read() {
-                        //         self.handle_event(event);
-                        //     }
-                        // }
                     }
                 }
             }
@@ -187,26 +176,43 @@ impl App {
     pub fn add_movie(&mut self) {
         if let Some(Screens::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
             if let Some(Popups::AddMovie(add_movie_popup)) = self.drawer.active_popup.as_mut() {
-                let tmdb_movie_details = add_movie_popup.tmdb_movie_details_result.take().unwrap();
+                let tmdb_movie_details = add_movie_popup.tmdb_movie_details_result.take();
                 let trakt_movie_details = add_movie_popup.trakt_movie_details_result.take();
                 let omdb_movie_details = add_movie_popup.omdb_movie_details_result.take();
 
-                let mut movie = Movie::from(tmdb_movie_details, add_movie_popup.user_rating);
-                let x = self.movies.iter().position(|x| movie == x);
-                if x.is_some() {
-                    let mut movie = self.movies.remove(x.unwrap());
-                    movie.add_play(chrono::Local::now(), add_movie_popup.user_rating);
-                    self.movies.push(movie);
-                } else {
-                    if let Some(trakt) = trakt_movie_details {
-                        movie.add_trakt_details(trakt);
+                let mut movie = if let Some(tmdb_details) = tmdb_movie_details {
+                    let mut movie = Movie::from(tmdb_details);
+                    if let Some(trakt_details) = trakt_movie_details {
+                        movie.add_trakt_details(trakt_details);
                     }
                     if let Some(omdb) = omdb_movie_details {
                         movie.add_omdb_details(omdb);
                     }
-                    self.movies.push(movie);
+
+                    movie
+                } else if let Some(trakt_details) = trakt_movie_details {
+                    let mut movie = Movie::from(trakt_details);
+                    if let Some(tmdb_details) = tmdb_movie_details {
+                        movie.add_tmdb_details(tmdb_details);
+                    }
+                    if let Some(omdb) = omdb_movie_details {
+                        movie.add_omdb_details(omdb);
+                    }
+
+                    movie
+                } else {
+                    unreachable!()
+                };
+
+                let x = self.movies.iter().position(|x| movie == *x);
+                if let Some(index) = x {
+                    movie = self.movies.remove(index);
                 }
+
+                movie.add_play(Local::now(), add_movie_popup.user_rating);
+                self.movies.push(movie);
             }
+
             main_screen.set_movies(&self.movies);
             main_screen.goto_index(-1);
             self.drawer.close_popups();
@@ -289,13 +295,13 @@ impl App {
         let mut i = movies.len() - 1;
         while i < movies.len() {
             let mut new_movie = movies[i].clone();
-            let mut id = movies.iter().position(|x| movies[i] == &x).unwrap();
+            let mut id = movies.iter().position(|x| movies[i] == *x).unwrap();
             while id != i {
                 new_movie.add_play(movies[id].plays[0].0.clone(), movies[id].get_user_rating());
 
                 movies.remove(id);
                 i -= 1;
-                id = movies.iter().position(|x| movies[i] == &x).unwrap();
+                id = movies.iter().position(|x| movies[i] == *x).unwrap();
             }
 
             movies.remove(i);

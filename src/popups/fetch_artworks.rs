@@ -64,7 +64,7 @@ impl FetchArtworksPopup {
                     let result = trakt::get_movie_poster_banner(
                         &cache_dir,
                         &trakt_client_id,
-                        request.imdb.clone(),
+                        &request.imdb.clone(),
                         true,
                     );
 
