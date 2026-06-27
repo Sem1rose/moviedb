@@ -3,7 +3,7 @@ use crate::{
     key_event_handler::{self, KeyEventHandler},
     popups::Popups,
     tmdb,
-    tokens::tmdb_tokens::{TMDBTokens, UserTokens}, widgets,
+    tokens::tmdb_tokens::{TMDBTokens, UserTokens}, widgets::{self, Action, ActionTypes},
 };
 use ratatui::{
     layout::*,
@@ -306,7 +306,7 @@ impl TMDBInitPopup {
                 let [input_area, _, actions_area] =
                     vertical![==5, >=1, ==1].areas(add_padding(popup_area, Padding::proportional(1)));
 
-                let confirm_mouse_area = widgets::action(" Confirm ", widgets::ActionTypes::Default, self.item == 1, input_valid, HorizontalAlignment::Right, actions_area, frame);
+                let confirm_mouse_area = widgets::action(Action::new(" Confirm ", ActionTypes::Default, self.item == 1, input_valid), HorizontalAlignment::Right, actions_area, frame);
                 if input_valid {
                     key_event_handler.bind_mouse_button_down(
                         ratatui::crossterm::event::MouseButton::Left,
@@ -364,7 +364,7 @@ impl TMDBInitPopup {
                     |_, _| {},
                 );
 
-                let back_mouse_area = widgets::action(" Back ", widgets::ActionTypes::Default, false, true, HorizontalAlignment::Left, popup_area, frame);
+                let back_mouse_area = widgets::action(Action::new(" Back ", ActionTypes::Default, false, true), HorizontalAlignment::Left, popup_area, frame);
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     back_mouse_area,
@@ -444,7 +444,7 @@ impl TMDBInitPopup {
                     message_area,
                 );
 
-                let mouse_area = widgets::action(" Back ", widgets::ActionTypes::Default, true, true, HorizontalAlignment::Center, actions_area, frame);
+                let mouse_area = widgets::action(Action::new(" Back ", ActionTypes::Default, true, true), HorizontalAlignment::Center, actions_area, frame);
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     mouse_area,

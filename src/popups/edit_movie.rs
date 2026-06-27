@@ -2,7 +2,7 @@ use crate::{
     helpers::{add_padding, dynamic_popup},
     key_event_handler::KeyEventHandler,
     popups::Popups,
-    widgets::{self, ActionTypes},
+    widgets::{self, Action, ActionTypes},
 };
 use ratatui::{
     layout::*, macros::vertical, prelude::*, style::palette::material, widgets::*, Frame,
@@ -160,7 +160,7 @@ impl EditMoviePopup {
             },
         );
 
-        let actions_mouse_areas = widgets::actions([" Confirm ", " Cancel "], [ActionTypes::Default, ActionTypes::Critical], [self.item == 1, self.item == 2], [valid, true], HorizontalAlignment::Right, 1, actions_area, frame);
+        let actions_mouse_areas = widgets::actions([Action::new(" Confirm ", ActionTypes::Default, self.item == 1, valid), Action::new(" Cancel ", ActionTypes::Critical, self.item == 2, true)], HorizontalAlignment::Right, 1, actions_area, frame);
         for (i, mouse_area) in actions_mouse_areas.into_iter().enumerate() {
             key_event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,

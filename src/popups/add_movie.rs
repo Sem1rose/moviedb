@@ -1,7 +1,7 @@
 use crate::{
     helpers::{add_padding, center_rect, dynamic_popup},
     popups::Popups,
-    widgets::{self, ActionTypes},
+    widgets::{self, Action, ActionTypes},
     omdb::{self, OMDBDetailsResponse},
     key_event_handler::{self, KeyEventHandler},
     tokens::{OMDBTokens, TMDBTokens, TraktTokens},
@@ -56,7 +56,6 @@ struct Movie {
     rating: Rating,
     id: SearchResultID,
 }
-
 impl From::<TMDBSearchResult> for Movie {
     fn from(value: TMDBSearchResult) -> Self {
         Self {
@@ -253,31 +252,17 @@ impl AddMoviePopup {
                 },
             }
 
-            // let result = tmdb::get_movie_poster_banner(
-            //     &cache_dir,
-            //     &tmdb_access_token,
-            //     tmdb_id,
-            //     true,
-            // );
             let result = trakt::get_movie_poster_banner(
                 &cache_dir,
                 &trakt_client_id,
                 &imdb_id,
-                true,
             );
-            if let Ok(true) = result {
+            if result.is_ok() {
             } else {
-                // _ = trakt::get_movie_poster_banner(
-                //     &cache_dir,
-                //     &trakt_client_id,
-                //     &imdb_id,
-                //     true,
-                // );
                 _ = tmdb::get_movie_poster_banner(
                     &cache_dir,
                     &tmdb_access_token,
                     tmdb_id,
-                    true,
                 );
             }
 
@@ -842,7 +827,7 @@ impl AddMoviePopup {
                 let [ _, input_area, _, actions_area] =
                     vertical![==1, ==3, >=1, ==1].areas(add_padding(popup_area, Padding::proportional(1)));
 
-                let mouse_area = widgets::action(" Back ", widgets::ActionTypes::Normal, self.item == 0, true, HorizontalAlignment::Left, popup_area, frame);
+                let mouse_area = widgets::action(Action::new(" Back ", ActionTypes::Normal, self.item == 0, true), HorizontalAlignment::Left, popup_area, frame);
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     mouse_area,
@@ -857,7 +842,7 @@ impl AddMoviePopup {
                     },
                 );
 
-                let actions_mouse_areas = widgets::actions([" Confirm ", " Cancel "], [ActionTypes::Default, ActionTypes::Critical], [self.item == 2, self.item == 3], [valid, true], HorizontalAlignment::Right, 1, actions_area, frame);
+                let actions_mouse_areas = widgets::actions([Action::new(" Confirm ", ActionTypes::Default, self.item == 2, valid), Action::new(" Cancel ", ActionTypes::Critical, self.item == 3, true)], HorizontalAlignment::Right, 1, actions_area, frame);
                 for (i, mouse_area) in actions_mouse_areas.into_iter().enumerate() {
                     key_event_handler.bind_mouse_button_down(
                         ratatui::crossterm::event::MouseButton::Left,
@@ -954,7 +939,7 @@ impl AddMoviePopup {
                     vertical![>=1, ==1, ==1].areas(add_padding(popup_area, Padding::proportional(1)));
                 frame.render_widget(Paragraph::new(error.as_str()).centered(), message_area);
 
-                let mouse_area = widgets::action(" Back ", ActionTypes::Default, true, true, HorizontalAlignment::Center, actions_area, frame);
+                let mouse_area = widgets::action(Action::new(" Back ", ActionTypes::Default, true, true), HorizontalAlignment::Center, actions_area, frame);
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     mouse_area,

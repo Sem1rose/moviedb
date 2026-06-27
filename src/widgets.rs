@@ -62,19 +62,34 @@ pub fn input_field(selected: bool, valid: bool, input: &mut TextArea<'static>, w
     );
 }
 
-pub enum ActionTypes {
-    Default,
-    Normal,
-    Critical,
+pub struct Action {
+    action: &'static str,
+    action_type: ActionTypes,
+    selected: bool,
+    valid: bool,
 }
-
-pub fn action(action: &'static str, action_type: ActionTypes, selected: bool, valid: bool, alignment: HorizontalAlignment, area: Rect, frame: &mut Frame) -> Rect {
-    let action = span!(action)
-        .fg(if valid {
-            if selected {
+impl Action {
+    pub fn new(
+        action: &'static str,
+        action_type: ActionTypes,
+        selected: bool,
+        valid: bool,
+    ) -> Self {
+        Self {
+            action,
+            action_type,
+            selected,
+            valid,
+        }
+    }
+}
+impl<'a> Into<Span<'a>> for Action {
+    fn into(self) -> Span<'a> {
+        span!(self.action).fg(if self.valid {
+            if self.selected {
                 tailwind::SLATE.c300
             } else {
-                match action_type {
+                match self.action_type {
                     ActionTypes::Default => tailwind::SLATE.c300,
                     ActionTypes::Normal => material::BLUE.c500,
                     ActionTypes::Critical => tailwind::RED.c500,
@@ -82,49 +97,59 @@ pub fn action(action: &'static str, action_type: ActionTypes, selected: bool, va
             }
         } else {
             tailwind::SLATE.c500
-        })
-        .bg(if valid {
-            if selected {
-                match action_type {
+        }).bg(if self.valid {
+            if self.selected {
+                match self.action_type {
                     ActionTypes::Default => material::BLUE.c600,
                     ActionTypes::Normal => material::BLUE.c800,
-                    ActionTypes::Critical => material::RED.c800,
+                    ActionTypes::Critical => tailwind::RED.c800,
                 }
             } else {
-                if matches!(action_type, ActionTypes::Default) {
+                if matches!(self.action_type, ActionTypes::Default) {
                     material::BLUE.c900
                 } else {
                     tailwind::SLATE.c950
                 }
             }
         } else {
-            if selected {
+            if self.selected {
                 tailwind::SLATE.c700
             } else {
                 tailwind::SLATE.c800
             }
-        });
+        })
+    }
+}
+
+pub enum ActionTypes {
+    Default,
+    Normal,
+    Critical,
+}
+
+pub fn action(action: Action, alignment: HorizontalAlignment, area: Rect, frame: &mut Frame) -> Rect {
+    let span: Span<'_> = action.into();
 
     let mouse_area = match alignment {
         HorizontalAlignment::Left => {
             area
         },
         HorizontalAlignment::Center => {
-            area.offset(Offset::new((area.width as i32 - action.width() as i32) / 2, 0))
+            area.offset(Offset::new((area.width as i32 - span.width() as i32) / 2, 0))
         },
         HorizontalAlignment::Right => {
-            area.offset(Offset::new(area.width as i32 - action.width() as i32, 0))
+            area.offset(Offset::new(area.width as i32 - span.width() as i32, 0))
         },
-    }.resize(Size::new(action.width() as u16, 1));
+    }.resize(Size::new(span.width() as u16, 1));
     let line = match alignment {
         HorizontalAlignment::Left => {
-            Line::from(action)
+            Line::from(span)
         },
         HorizontalAlignment::Center => {
-            Line::from(action).centered()
+            Line::from(span).centered()
         },
         HorizontalAlignment::Right => {
-            Line::from(action).right_aligned()
+            Line::from(span).right_aligned()
         },
     };
 
@@ -132,55 +157,21 @@ pub fn action(action: &'static str, action_type: ActionTypes, selected: bool, va
 
     mouse_area
 }
-pub fn actions<const N: usize>(actions: [&'static str; N], types: [ActionTypes; N], selected: [bool; N], valid: [bool; N], alignment: HorizontalAlignment, spacing: u16, area: Rect, frame: &mut Frame) -> [Rect; N] {
-    let actions = actions.into_iter().enumerate().map(|(i, x)| {
-        let valid = valid[i];
-        let selected = selected[i];
-        let action_type = &types[i];
-        span!(x)
-            .fg(if valid {
-                if selected {
-                    tailwind::SLATE.c300
-                } else {
-                    match action_type {
-                        ActionTypes::Default => tailwind::SLATE.c300,
-                        ActionTypes::Normal => material::BLUE.c500,
-                        ActionTypes::Critical => tailwind::RED.c500,
-                    }
-                }
-            } else {
-                tailwind::SLATE.c500
-            })
-            .bg(if valid {
-                if selected {
-                    match action_type {
-                        ActionTypes::Default => material::BLUE.c600,
-                        ActionTypes::Normal => material::BLUE.c800,
-                        ActionTypes::Critical => material::RED.c800,
-                    }
-                } else {
-                    if matches!(action_type, ActionTypes::Default) {
-                        material::BLUE.c900
-                    } else {
-                        tailwind::SLATE.c950
-                    }
-                }
-            } else {
-                if selected {
-                    tailwind::SLATE.c700
-                } else {
-                    tailwind::SLATE.c800
-                }
-            })
-    }).collect_vec();
-    let actions_count = actions.len();
-    let actions_width = actions.iter().fold(0, |a, x| a + x.width()) + spacing as usize * (actions_count - 1);
+
+pub fn actions<const N: usize>(
+    actions: [Action; N],
+    alignment: HorizontalAlignment,
+    spacing: u16,
+    area: Rect,
+    frame: &mut Frame,
+) -> [Rect; N] {
+    let spans: Vec<Span<'_>> = actions.into_iter().map(|x| x.into()).collect_vec();
+    let actions_count = spans.len();
+    let actions_width = spans.iter().fold(0, |a, x| a + x.width()) + spacing as usize * (actions_count - 1);
 
     let mut mouse_areas = [Rect::default(); N];
     let mut mouse_area = match alignment {
-        HorizontalAlignment::Left => {
-            area
-        },
+        HorizontalAlignment::Left => area,
         HorizontalAlignment::Center => {
             area.offset(Offset::new((area.width as i32 - actions_width as i32) / 2, 0))
         },
@@ -188,14 +179,14 @@ pub fn actions<const N: usize>(actions: [&'static str; N], types: [ActionTypes; 
             area.offset(Offset::new(area.width as i32 - actions_width as i32, 0))
         },
     };
-    for (i, action) in actions.iter().enumerate() {
-        mouse_area = mouse_area.resize(Size::new(action.width() as u16, 1));
+    for (i, span) in spans.iter().enumerate() {
+        mouse_area = mouse_area.resize(Size::new(span.width() as u16, 1));
         mouse_areas[i] = mouse_area;
 
-        mouse_area = mouse_area.offset(Offset::new(action.width() as i32 + spacing as i32, 0));
+        mouse_area = mouse_area.offset(Offset::new(span.width() as i32 + spacing as i32, 0));
     }
 
-    let mut line = Line::from(actions.into_iter().flat_map(|x| [x, span!(" ".repeat(spacing as usize))]).take(actions_count * 2 - 1).collect_vec());
+    let mut line = Line::from(spans.into_iter().flat_map(|x| [x, span!(" ".repeat(spacing as usize))]).take(actions_count * 2 - 1).collect_vec());
     line = match alignment {
         HorizontalAlignment::Left => line,
         HorizontalAlignment::Center => {

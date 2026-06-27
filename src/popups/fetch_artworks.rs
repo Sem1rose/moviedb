@@ -61,24 +61,32 @@ impl FetchArtworksPopup {
                 let trakt_client_id = trakt_client_id.clone();
                 let tmdb_access_token = tmdb_access_token.clone();
                 thread::spawn(move || {
-                    let result = trakt::get_movie_poster_banner(
-                        &cache_dir,
-                        &trakt_client_id,
-                        &request.imdb.clone(),
-                        true,
-                    );
-
-                    _ = if let Ok(true) = result {
-                        tx_response.send((request, Ok(())))
+                    let result = if !trakt_client_id.is_empty() {
+                        trakt::get_movie_poster_banner(
+                            &cache_dir,
+                            &trakt_client_id,
+                            &request.imdb.clone(),
+                        )
                     } else {
+                        tmdb::get_movie_poster_banner(
+                            &cache_dir,
+                            &tmdb_access_token,
+                            request.tmdb,
+                        )
+                    };
+
+                    _ = if result.is_ok() {
+                        tx_response.send((request, result))
+                    } else if !trakt_client_id.is_empty() {
                         let result = tmdb::get_movie_poster_banner(
                             &cache_dir,
                             &tmdb_access_token,
                             request.tmdb,
-                            true,
                         );
 
-                        tx_response.send((request, result.map(|_| ())))
+                        tx_response.send((request, result))
+                    } else {
+                        tx_response.send((request, result))
                     };
                 });
             }

@@ -2,7 +2,7 @@ use crate::{
     helpers::{add_padding, center_rect, dynamic_popup},
     key_event_handler::{self, KeyEventHandler},
     popups::Popups,
-    tokens::omdb_tokens::OMDBTokens, widgets::{self, ActionTypes},
+    tokens::omdb_tokens::OMDBTokens, widgets::{self, Action, ActionTypes},
 };
 use ratatui::{
     layout::*,
@@ -178,7 +178,7 @@ impl OMDBInitPopup {
                 |_, _| {},
             );
 
-            let skip_mouse_area = widgets::action(" Skip ", widgets::ActionTypes::Normal, self.item == 2, true, HorizontalAlignment::Right, popup_area, frame);
+            let skip_mouse_area = widgets::action(Action::new(" Skip ", ActionTypes::Normal, self.item == 2, true), HorizontalAlignment::Right, popup_area, frame);
             key_event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,
                 skip_mouse_area,
@@ -209,7 +209,7 @@ impl OMDBInitPopup {
                 },
             );
 
-            let confirm_mouse_area = widgets::action(" Confirm ", ActionTypes::Default, self.item == 1, input_valid, HorizontalAlignment::Right, actions_area, frame);
+            let confirm_mouse_area = widgets::action(Action::new(" Confirm ", ActionTypes::Default, self.item == 1, input_valid), HorizontalAlignment::Right, actions_area, frame);
             if input_valid {
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,

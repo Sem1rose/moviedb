@@ -22,7 +22,5 @@ fn main() -> anyhow::Result<()> {
         .format_timestamp_millis()
         .init();
 
-    App::new()?.run()?;
-
-    Ok(())
+    App::new()?.run()
 }

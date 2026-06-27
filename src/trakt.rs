@@ -298,108 +298,77 @@ pub fn get_movie_poster_banner(
     cache_dir: &PathBuf,
     client_id: &str,
     imdb_id: &str,
-    add_placeholder: bool,
-) -> anyhow::Result<bool> {
+) -> anyhow::Result<()> {
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
     headers.insert(USER_AGENT, "reqwest/0.12.8".parse().unwrap());
     headers.insert("trakt-api-version", "2".parse().unwrap());
     headers.insert("trakt-api-key", client_id.parse().unwrap());
-
-    let movie_details = get_movie_details(client_id, &imdb_id)?;
-
-    if !add_placeholder
-        && ((movie_details.images.banner.is_empty() && movie_details.images.fanart.is_empty())
-            || movie_details.images.poster.is_empty())
-    {
-        return Ok(false);
-    }
-
     let client = Client::builder().default_headers(headers).build()?;
 
-    let _client = client.clone();
+    let movie_details = get_movie_details(client_id, &imdb_id)?;
+    let download_image = move |client: Client, url: &str, placeholder: &str, path: PathBuf| -> anyhow::Result<()> {
+        let image_url = url.strip_suffix(".webp").unwrap_or(url);
+
+        let image_bytes: Vec<_> = client
+            .get(format!("https://{image_url}"))
+            .send()?
+            .bytes()?
+            .into_iter()
+            .collect();
+
+        if let Ok(img) = image::load_from_memory(&image_bytes) {
+            img.save(path)?;
+        } else {
+            fs::copy(placeholder, path)?;
+        }
+
+        Ok(())
+    };
+
     let path = cache_dir
         .join("posters")
         .join(format!("{}.jpg", movie_details.ids.tmdb));
-    let poster_handle = thread::spawn(move || -> anyhow::Result<()> {
-        if !movie_details.images.poster.is_empty() {
-            let mut image_url = movie_details.images.poster[0].as_str();
-            if let Some(stripped) = image_url.strip_suffix(".webp") {
-                image_url = stripped;
-            }
+    let poster_handle = {
+        let client = client.clone();
 
-            let image_bytes: Vec<_> = _client
-                .get(format!("https://{image_url}"))
-                .send()?
-                .bytes()?
-                .iter()
-                .copied()
-                .collect();
-
-            if let Ok(img) = image::load_from_memory(&image_bytes) {
-                img.save(path)?;
-            } else if add_placeholder {
+        thread::spawn(move || -> anyhow::Result<()> {
+            if !movie_details.images.poster.is_empty() {
+                let image_url = movie_details.images.poster[0].as_str();
+                download_image(client, image_url, "poster_placeholder.jpg", path)?;
+            } else {
                 fs::copy("poster_placeholder.jpg", path)?;
             }
-        } else if add_placeholder {
-            fs::copy("poster_placeholder.jpg", path)?;
-        }
-        Ok(())
-    });
+
+            Ok(())
+        })
+    };
 
     let path = cache_dir
         .join("backdrops")
         .join(format!("{}.jpg", movie_details.ids.tmdb));
-    let backdrop_handle = thread::spawn(move || -> anyhow::Result<()> {
-        if !movie_details.images.fanart.is_empty() {
-            let mut image_url = movie_details.images.fanart[0].as_str();
-            if let Some(stripped) = image_url.strip_suffix(".webp") {
-                image_url = stripped;
-            }
+    let backdrop_handle = {
+        let client = client.clone();
 
-            let image_bytes: Vec<_> = client
-                .get(format!("https://{image_url}"))
-                .send()?
-                .bytes()?
-                .iter()
-                .copied()
-                .collect();
-
-            if let Ok(img) = image::load_from_memory(&image_bytes) {
-                img.save(path)?;
-            } else if add_placeholder {
+        thread::spawn(move || -> anyhow::Result<()> {
+            if !movie_details.images.fanart.is_empty() {
+                let image_url = movie_details.images.fanart[0].as_str();
+                download_image(client, image_url, "backdrop_placeholder.jpg", path)?;
+            } else if !movie_details.images.banner.is_empty() {
+                let image_url = movie_details.images.banner[0].as_str();
+                download_image(client, image_url, "backdrop_placeholder.jpg", path)?;
+            } else {
                 fs::copy("backdrop_placeholder.jpg", path)?;
             }
-        } else if !movie_details.images.banner.is_empty() {
-            let mut image_url = movie_details.images.banner[0].as_str();
-            if let Some(stripped) = image_url.strip_suffix(".webp") {
-                image_url = stripped;
-            }
 
-            let image_bytes: Vec<_> = client
-                .get(format!("https://{image_url}"))
-                .send()?
-                .bytes()?
-                .iter()
-                .copied()
-                .collect();
-
-            if let Ok(img) = image::load_from_memory(&image_bytes) {
-                img.save(path)?;
-            } else if add_placeholder {
-                fs::copy("backdrop_placeholder.jpg", path)?;
-            }
-        } else if add_placeholder {
-            fs::copy("backdrop_placeholder.jpg", path)?;
-        }
-
-        Ok(())
-    });
+            Ok(())
+        })
+    };
 
     poster_handle.join().unwrap()?;
     backdrop_handle.join().unwrap()?;
 
-    Ok(true)
+    Ok(())
 }
 
 fn send_trakt_request(

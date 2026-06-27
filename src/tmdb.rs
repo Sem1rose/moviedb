@@ -358,8 +358,7 @@ pub fn get_movie_poster_banner(
     cache_dir: &PathBuf,
     access_token: &str,
     tmdb_id: u32,
-    add_placeholder: bool,
-) -> anyhow::Result<bool> {
+) -> anyhow::Result<()> {
     let client = ClientBuilder::new().build()?;
     let mut headers = HeaderMap::new();
 
@@ -371,7 +370,6 @@ pub fn get_movie_poster_banner(
     );
 
     let movie_images = get_movie_images(access_token, tmdb_id)?;
-
     let configuration_response = send_tmdb_request(
         &client,
         "https://api.themoviedb.org/3/configuration",
@@ -392,17 +390,11 @@ pub fn get_movie_poster_banner(
     let images_configurations = configuration_response
         .json::<ConfigurationResponse>()?
         .images;
-
-    if !add_placeholder && (movie_images.posters.is_empty() || movie_images.backdrops.is_empty()) {
-        return Ok(false);
-    }
-
     let try_get_artwork = |images_configurations: &ImagesConfiguration,
                            movie_images: &TMDBMovieImagesResponse,
                            path: &PathBuf,
                            backdrop: bool,
-                           id: usize|
-     -> anyhow::Result<u8> {
+                           id: usize| -> anyhow::Result<u8> {
         if (backdrop && id >= movie_images.posters.len()) || id >= movie_images.backdrops.len() {
             return Ok(2);
         }
@@ -422,8 +414,7 @@ pub fn get_movie_poster_banner(
             }
         ))?
         .bytes()?
-        .iter()
-        .copied()
+        .into_iter()
         .collect();
 
         let img = image::load_from_memory(&image_bytes);
@@ -445,8 +436,7 @@ pub fn get_movie_poster_banner(
                 }
             ))?
             .bytes()?
-            .iter()
-            .copied()
+            .into_iter()
             .collect();
 
             let img = image::load_from_memory(&image_bytes);
@@ -467,70 +457,76 @@ pub fn get_movie_poster_banner(
     };
 
     let poster_path = cache_dir.join("posters").join(format!("{}.jpg", tmdb_id));
-    let _configurations = images_configurations.clone();
-    let _images = movie_images.clone();
-    let poster_handle = thread::spawn(move || -> anyhow::Result<()> {
-        if !_images.posters.is_empty() {
-            let mut success = false;
-            for i in 0..5 {
-                let result = try_get_artwork(&_configurations, &_images, &poster_path, false, i)?;
-                match result {
-                    0 => {
-                        success = true;
-                        break;
+    let poster_handle = {
+        let images_configurations = images_configurations.clone();
+        let movie_images = movie_images.clone();
+
+        thread::spawn(move || -> anyhow::Result<()> {
+            if !movie_images.posters.is_empty() {
+                let mut success = false;
+                for i in 0..5 {
+                    let result = try_get_artwork(&images_configurations, &movie_images, &poster_path, false, i)?;
+                    match result {
+                        0 => {
+                            success = true;
+                            break;
+                        }
+                        2 => {
+                            break;
+                        }
+                        _ => (),
                     }
-                    2 => {
-                        break;
-                    }
-                    _ => (),
                 }
-            }
-            if !success && add_placeholder {
+                if !success {
+                    std::fs::copy("poster_placeholder.jpg", poster_path)?;
+                }
+            } else {
                 std::fs::copy("poster_placeholder.jpg", poster_path)?;
             }
-        } else {
-            std::fs::copy("poster_placeholder.jpg", poster_path)?;
-        }
 
-        Ok(())
-    });
+            Ok(())
+        })
+    };
 
     let backdrop_path = cache_dir.join("backdrops").join(format!("{}.jpg", tmdb_id));
-    let backdrop_handle = thread::spawn(move || -> anyhow::Result<()> {
-        if !movie_images.backdrops.is_empty() {
-            let mut success = false;
-            for i in 0..5 {
-                let result = try_get_artwork(
-                    &images_configurations,
-                    &movie_images,
-                    &backdrop_path,
-                    true,
-                    i,
-                )?;
-                match result {
-                    0 => {
-                        success = true;
-                        break;
+    let backdrop_handle = {
+        thread::spawn(move || -> anyhow::Result<()> {
+            if !movie_images.backdrops.is_empty() {
+                let mut success = false;
+                for i in 0..5 {
+                    let result = try_get_artwork(
+                        &images_configurations,
+                        &movie_images,
+                        &backdrop_path,
+                        true,
+                        i,
+                    )?;
+                    match result {
+                        0 => {
+                            success = true;
+                            break;
+                        }
+                        2 => {
+                            break;
+                        }
+                        _ => (),
                     }
-                    2 => {
-                        break;
-                    }
-                    _ => (),
                 }
-            }
-            if !success && add_placeholder {
+                if !success {
+                    std::fs::copy("backdrop_placeholder.jpg", backdrop_path)?;
+                }
+            } else {
                 std::fs::copy("backdrop_placeholder.jpg", backdrop_path)?;
             }
-        } else {
-            std::fs::copy("backdrop_placeholder.jpg", backdrop_path)?;
-        }
-        Ok(())
-    });
+
+            Ok(())
+        })
+    };
 
     poster_handle.join().unwrap()?;
     backdrop_handle.join().unwrap()?;
 
-    Ok(true)
+    Ok(())
 }
 
 fn send_tmdb_request(

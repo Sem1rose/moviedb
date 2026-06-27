@@ -100,9 +100,7 @@ impl RatatuiImage {
 
                                 let protocol = _picker.new_protocol(
                                     decoded,
-                                    Rect {
-                                        x: 0,
-                                        y: 0,
+                                    Size {
                                         width: if artwork_id.backdrop {
                                             backdrop_size.width
                                         } else {
@@ -228,7 +226,7 @@ impl RatatuiImage {
         let mut drawn = false;
         if let Some(value) = self.hashed_images.get(&artwork_id) {
             if let Some(protocol) = value {
-                let Size { width, height } = protocol.area().as_size();
+                let Size { width, height } = protocol.size();
 
                 frame.render_widget(
                     Image::new(protocol),
