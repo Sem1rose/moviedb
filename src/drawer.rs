@@ -7,11 +7,7 @@ use crate::{
     KeyEventHandler,
 };
 use ratatui::{
-    layout::Constraint,
-    style::{palette::tailwind::*, Stylize},
-    text::{Line, Text},
-    widgets::Block,
-    Frame,
+    Frame, layout::Constraint, macros::constraint, style::{Stylize, palette::tailwind::*}, text::{Line, Text}, widgets::Block,
 };
 
 pub struct Drawer {
@@ -278,10 +274,9 @@ impl Drawer {
                 MINTERMSIZE[1].to_string().green(),
             ]),
         ];
-        let area = crate::helpers::center_rect(
-            frame_area,
-            Constraint::Min(0),
-            Constraint::Length(lines.len() as u16),
+        let area = frame_area.centered(
+            constraint!(>= 0),
+            constraint!(== lines.len() as u16),
         );
         let text = Text::from(lines).centered();
 

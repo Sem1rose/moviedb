@@ -1,5 +1,5 @@
 use crate::{
-    helpers::{add_padding, center_rect, dynamic_popup},
+    helpers::{add_padding, dynamic_popup},
     popups::Popups,
     widgets::{self, Action, ActionTypes},
     omdb::{self, OMDBDetailsResponse},
@@ -469,7 +469,7 @@ impl AddMoviePopup {
 
                 let popup_area = dynamic_popup(
                     frame,
-                    Some(24),
+                    Some(26),
                     2.4,
                     tailwind::BLUE.c950,
                     "  Add movie  ",
@@ -524,20 +524,14 @@ impl AddMoviePopup {
                 for i in 0..self.num_visible_items {
                     let [area, remaining] =
                         if render_partially_visible_result && i == 0 && self.alignment_bottom {
-                            Layout::vertical([
-                                Constraint::Length(partially_visible_result_height as u16),
-                                Constraint::Min(0),
-                            ])
+                            vertical![==partially_visible_result_height as u16, >= 0]
                         } else if render_partially_visible_result
                             && i == self.num_visible_items - 1
                             && !self.alignment_bottom
                         {
-                            Layout::vertical([
-                                Constraint::Length(partially_visible_result_height as u16),
-                                Constraint::Min(0),
-                            ])
+                            vertical![==partially_visible_result_height as u16, >= 0]
                         } else {
-                            Layout::vertical([Constraint::Length(5), Constraint::Min(0)])
+                            vertical![==5, >= 0]
                         }
                         .areas(remaining_area);
 
@@ -904,7 +898,7 @@ impl AddMoviePopup {
                     Throbber::default()
                         .throbber_set(throbber_widgets_tui::BRAILLE_SIX_DOUBLE)
                         .throbber_style(Style::new().bold().fg(tailwind::VIOLET.c400)),
-                    center_rect(throbber_area, constraint!(==1), constraint!(==1)),
+                    throbber_area.centered(constraint!(==1), constraint!(==1)),
                     &mut self.throbber_state,
                 );
             }

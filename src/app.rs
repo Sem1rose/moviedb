@@ -292,7 +292,7 @@ impl App {
     fn remove_duplicates(mut movies: Vec<Movie>) -> Vec<Movie> {
         let mut new_movies = vec![];
 
-        let mut i = movies.len() - 1;
+        let mut i = movies.len().saturating_sub(1);
         while i < movies.len() {
             let mut new_movie = movies[i].clone();
             let mut id = movies.iter().position(|x| movies[i] == *x).unwrap();

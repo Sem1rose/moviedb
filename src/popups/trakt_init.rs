@@ -1,5 +1,5 @@
 use crate::{
-    helpers::{add_padding, center_rect, dynamic_popup}, key_event_handler::{self, KeyEventHandler}, popups::Popups, tokens::trakt_tokens::{TraktTokens, UserTokens}, trakt::{self, TokenResponse}, widgets::{self, Action, ActionTypes}
+    helpers::{add_padding, dynamic_popup}, key_event_handler::{self, KeyEventHandler}, popups::Popups, tokens::trakt_tokens::{TraktTokens, UserTokens}, trakt::{self, TokenResponse}, widgets::{self, Action, ActionTypes}
 };
 use ratatui::{
     Frame, layout::*, macros::{constraint, vertical, horizontal, text}, prelude::*, style::palette::{material, tailwind}, widgets::*
@@ -289,7 +289,7 @@ impl TraktInitPopup {
                     Throbber::default()
                         .throbber_set(throbber_widgets_tui::BRAILLE_SIX_DOUBLE)
                         .throbber_style(Style::new().bold().fg(tailwind::VIOLET.c400)),
-                    center_rect(throbber_area, constraint!(==1), constraint!(==1)),
+                    throbber_area.centered(constraint!(==1), constraint!(==1)),
                     &mut self.throbber_state,
                 );
             }

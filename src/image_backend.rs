@@ -1,13 +1,9 @@
 use anyhow::bail;
 use log::error;
 use ratatui::{
-    layout::{Constraint, Rect, Size},
-    style::palette::tailwind,
-    style::Stylize,
-    widgets::Block,
-    Frame,
+    Frame, layout::{Rect, Size}, macros::constraint, style::{Stylize, palette::tailwind}, widgets::Block,
 };
-use ratatui_image::{picker::Picker, protocol::Protocol, Image, Resize};
+use ratatui_image::{picker::Picker, Resize, sliced::*};
 use std::{
     collections::HashMap,
     path::PathBuf,
@@ -15,15 +11,13 @@ use std::{
     thread,
 };
 
-use crate::helpers::center_rect;
-
 #[derive(Eq, Hash, PartialEq, Clone, Copy, Debug)]
 pub struct ArtworkID {
     pub tmdb_id: u32,
     pub backdrop: bool,
 }
 
-type LoadResult = (ArtworkID, anyhow::Result<Protocol>);
+type LoadResult = (ArtworkID, anyhow::Result<SlicedProtocol>);
 
 enum Actions {
     Load(ArtworkID, String),
@@ -32,7 +26,7 @@ enum Actions {
 }
 
 pub struct RatatuiImage {
-    hashed_images: HashMap<ArtworkID, Option<Protocol>>,
+    hashed_images: HashMap<ArtworkID, Option<SlicedProtocol>>,
     preload_images: Vec<ArtworkID>,
 
     tx_load: Sender<Actions>,
@@ -98,7 +92,8 @@ impl RatatuiImage {
                                     decoded = result.unwrap();
                                 }
 
-                                let protocol = _picker.new_protocol(
+                                let protocol = SlicedProtocol::new_with_resize(
+                                    &_picker,
                                     decoded,
                                     Size {
                                         width: if artwork_id.backdrop {
@@ -186,40 +181,49 @@ impl RatatuiImage {
         tmdb_id: u32,
         backdrop: bool,
         area: Rect,
+        sliced_pos: Option<SignedPosition>,
         frame: &mut Frame,
     ) -> bool {
         let artwork_id = ArtworkID { tmdb_id, backdrop };
-        if backdrop {
-            if self.backdrop_size.is_none() {
-                _ = self.tx_load.send(Actions::ResizeBackdrop(area.as_size()));
-                self.backdrop_size = Some(area.as_size());
-            } else if self.backdrop_size.unwrap() != area.as_size() {
-                _ = self.tx_load.send(Actions::ResizeBackdrop(area.as_size()));
-                self.backdrop_size = Some(area.as_size());
+        if sliced_pos.is_none() {
+            if backdrop {
+                if self.backdrop_size.is_none() {
+                    _ = self.tx_load.send(Actions::ResizeBackdrop(area.as_size()));
+                    self.backdrop_size = Some(area.as_size());
+                } else if self.backdrop_size.unwrap() != area.as_size() {
+                    _ = self.tx_load.send(Actions::ResizeBackdrop(area.as_size()));
+                    self.backdrop_size = Some(area.as_size());
 
-                let mut cached = self.hashed_images.clone();
-                self.hashed_images.retain(|k, _| !k.backdrop);
-                for (path, _) in cached.drain().filter(|(k, _)| k.backdrop) {
-                    self.hash_image(path);
+                    let mut rehash = vec![];
+                    for (artwork_id, _) in self.hashed_images.iter().filter(|(k, _)| k.backdrop) {
+                        rehash.push(artwork_id.clone());
+                    }
+                    self.hashed_images.retain(|k, _| !k.backdrop);
+                    for artwork_id in rehash.into_iter() {
+                        self.hash_image(artwork_id);
+                    }
+
+                    return false;
                 }
+            } else {
+                if self.artwork_size.is_none() {
+                    _ = self.tx_load.send(Actions::ResizeArtwork(area.as_size()));
+                    self.artwork_size = Some(area.as_size());
+                } else if self.artwork_size.unwrap() != area.as_size() {
+                    _ = self.tx_load.send(Actions::ResizeArtwork(area.as_size()));
+                    self.artwork_size = Some(area.as_size());
 
-                return false;
-            }
-        } else {
-            if self.artwork_size.is_none() {
-                _ = self.tx_load.send(Actions::ResizeArtwork(area.as_size()));
-                self.artwork_size = Some(area.as_size());
-            } else if self.artwork_size.unwrap() != area.as_size() {
-                _ = self.tx_load.send(Actions::ResizeArtwork(area.as_size()));
-                self.artwork_size = Some(area.as_size());
+                    let mut rehash = vec![];
+                    for (artwork_id, _) in self.hashed_images.iter().filter(|(k, _)| k.backdrop) {
+                        rehash.push(artwork_id.clone());
+                    }
+                    self.hashed_images.retain(|k, _| k.backdrop);
+                    for artwork_id in rehash.into_iter() {
+                        self.hash_image(artwork_id);
+                    }
 
-                let mut cached = self.hashed_images.clone();
-                self.hashed_images.retain(|k, _| k.backdrop);
-                for (path, _) in cached.drain().filter(|(k, _)| !k.backdrop) {
-                    self.hash_image(path);
+                    return false;
                 }
-
-                return false;
             }
         }
 
@@ -229,8 +233,8 @@ impl RatatuiImage {
                 let Size { width, height } = protocol.size();
 
                 frame.render_widget(
-                    Image::new(protocol),
-                    center_rect(area, Constraint::Length(width), Constraint::Length(height)),
+                    SlicedImage::new(protocol, sliced_pos.unwrap_or(SignedPosition { x: 0, y: 0 })),
+                    area.centered(constraint!(== width), constraint!(== height)),
                 );
                 drawn = true;
             } else {

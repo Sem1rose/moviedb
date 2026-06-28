@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use ratatui::{
     layout::{Alignment, Constraint, Flex, Layout, Rect},
     style::{Color, Style, Stylize},
@@ -6,12 +7,28 @@ use ratatui::{
     Frame,
 };
 
-pub fn center_rect(area: Rect, horizontal: Constraint, vertical: Constraint) -> Rect {
-    let [area] = Layout::horizontal([horizontal])
-        .flex(Flex::Center)
-        .areas(area);
-    let [area] = Layout::vertical([vertical]).flex(Flex::Center).areas(area);
-    area
+pub fn wrap_text(line: &str, width: usize) -> Vec<String> {
+    if line.chars().count() <= width {
+        return vec![line.to_string()];
+    }
+
+    let mut lines = vec![line.to_string()];
+    loop {
+        let line = lines.pop().unwrap();
+        if line.chars().count() <= width {
+            lines.push(line);
+            break
+        }
+        let wrap_whitespace_index = line.chars().collect_vec().into_iter().take(width).rposition(|x| x.is_whitespace()).unwrap_or(width - 1) + 1;
+
+        let mut line = line.chars().collect_vec();
+        let remaining_line = line.split_off(wrap_whitespace_index).iter().collect();
+
+        lines.push(line.iter().collect());
+        lines.push(remaining_line);
+    }
+
+    lines
 }
 
 pub fn dynamic_area(
