@@ -1,13 +1,14 @@
+use ratatui::{
+    Frame, layout::*, macros::vertical, prelude::*, style::palette::material, widgets::*,
+};
+use style::palette::tailwind;
+
 use crate::{
     helpers::{add_padding, dynamic_popup},
     key_event_handler::{self, KeyEventHandler},
     popups::Popups,
-    widgets::{self, ActionTypes}
+    widgets::{self, ActionTypes},
 };
-use ratatui::{
-    layout::*, macros::vertical, prelude::*, style::palette::material, widgets::*, Frame,
-};
-use style::palette::tailwind;
 
 #[derive(Default)]
 pub struct OutOfBoxPopup {
@@ -20,13 +21,10 @@ impl OutOfBoxPopup {
     }
 
     pub fn new() -> Self {
-        Self {
-            item: 0,
-        }
+        Self { item: 0 }
     }
 
     pub fn render(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
         key_event_handler.clear();
-
     }
 }

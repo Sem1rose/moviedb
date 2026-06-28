@@ -1,12 +1,13 @@
-use anyhow::{bail, Context};
+use std::{
+    collections::HashMap, error::Error, fmt::Display, path::PathBuf, sync::mpsc::Sender, thread,
+};
+
+use anyhow::{Context, bail};
 use reqwest::{
     blocking::{Client, ClientBuilder, RequestBuilder, Response},
     header::HeaderMap,
 };
 use serde::Deserialize;
-use std::{
-    collections::HashMap, error::Error, fmt::Display, path::PathBuf, sync::mpsc::Sender, thread,
-};
 
 #[derive(Deserialize, Debug)]
 struct RequestTokenResponse {
@@ -17,7 +18,7 @@ struct RequestTokenResponse {
 
 #[derive(Deserialize, Debug)]
 pub struct RequestResponseError {
-    status_code: i32,
+    status_code:    i32,
     status_message: String,
     // success: bool,
 }
@@ -35,9 +36,9 @@ struct ConfigurationResponse {
 }
 #[derive(Deserialize, Debug, Clone)]
 struct ImagesConfiguration {
-    base_url: String,
+    base_url:       String,
     backdrop_sizes: Vec<String>, // w92 w154 w185 w342 w500 w780 original
-    poster_sizes: Vec<String>,   // w92 w154 w185 w342 w500 w780 original
+    poster_sizes:   Vec<String>, // w92 w154 w185 w342 w500 w780 original
 }
 
 #[derive(PartialEq, Deserialize, Debug, Default)]
@@ -53,23 +54,23 @@ pub struct TMDBSearchResult {
     // adult: bool,
     // backdrop_path: Option<String>,
     // genre_ids: Vec<u64>,
-    pub id: u32,
+    pub id:           u32,
     // original_language: String,
     // original_title: String,
     // overview: String,
     // popularity: f64,
     // poster_path: Option<String>,
     pub release_date: Option<String>,
-    pub title: String,
+    pub title:        String,
     // video: bool,
     pub vote_average: Option<f64>,
-    pub vote_count: u32,
+    pub vote_count:   u32,
 }
 
 #[derive(Deserialize, Debug, Default, Clone)]
 pub struct TMDBMovieImagesResponse {
     pub backdrops: Vec<TMDBMovieImage>,
-    pub posters: Vec<TMDBMovieImage>,
+    pub posters:   Vec<TMDBMovieImage>,
 }
 
 #[derive(Deserialize, Debug, Default, Clone)]
@@ -89,29 +90,29 @@ pub struct TMDBDetailsResponse {
     // backdrop_path: Option<String>,
     pub belongs_to_collection: Option<TMDBCollection>,
     // budget: u32,
-    pub genres: Vec<TMDBGenre>,
+    pub genres:                Vec<TMDBGenre>,
     // homepage: Option<String>,
-    pub id: u32,
-    pub imdb_id: String,
-    pub original_language: String,
+    pub id:                    u32,
+    pub imdb_id:               String,
+    pub original_language:     String,
     // original_title: String,
-    pub overview: String,
+    pub overview:              String,
     // popularity: f32,
     // poster_path: Option<String>,
-    pub release_date: String,
+    pub release_date:          String,
     // revenue: u32,
-    pub runtime: u32,
-    pub status: String,
-    pub tagline: String,
-    pub title: String,
+    pub runtime:               u32,
+    pub status:                String,
+    pub tagline:               String,
+    pub title:                 String,
     // video: bool,
-    pub vote_average: f64,
-    pub vote_count: u32,
+    pub vote_average:          f64,
+    pub vote_count:            u32,
 }
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct TMDBCollection {
-    pub id: u32,
+    pub id:   u32,
     pub name: String,
     // poster_path: Option<String>,
     // backdrop_path: Option<String>,
@@ -394,7 +395,8 @@ pub fn get_movie_poster_banner(
                            movie_images: &TMDBMovieImagesResponse,
                            path: &PathBuf,
                            backdrop: bool,
-                           id: usize| -> anyhow::Result<u8> {
+                           id: usize|
+     -> anyhow::Result<u8> {
         if (backdrop && id >= movie_images.posters.len()) || id >= movie_images.backdrops.len() {
             return Ok(2);
         }
@@ -465,7 +467,13 @@ pub fn get_movie_poster_banner(
             if !movie_images.posters.is_empty() {
                 let mut success = false;
                 for i in 0..5 {
-                    let result = try_get_artwork(&images_configurations, &movie_images, &poster_path, false, i)?;
+                    let result = try_get_artwork(
+                        &images_configurations,
+                        &movie_images,
+                        &poster_path,
+                        false,
+                        i,
+                    )?;
                     match result {
                         0 => {
                             success = true;

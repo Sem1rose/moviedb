@@ -1,13 +1,14 @@
+use ratatui::{
+    Frame, layout::*, macros::vertical, prelude::*, style::palette::material, widgets::*,
+};
+use style::palette::tailwind;
+
 use crate::{
     helpers::{add_padding, dynamic_popup},
     key_event_handler::{self, KeyEventHandler},
     popups::Popups,
-    widgets::{self, Action, ActionTypes}
+    widgets::{self, Action, ActionTypes},
 };
-use ratatui::{
-    layout::*, macros::vertical, prelude::*, style::palette::material, widgets::*, Frame,
-};
-use style::palette::tailwind;
 
 #[derive(Default)]
 pub struct DeleteMoviePopup {
@@ -80,14 +81,24 @@ impl DeleteMoviePopup {
             popup_area.outer(Margin::new(1, 1)),
             |_, _| {},
         );
-        let [message_area, actions_area] = vertical![ >=1, ==1].areas(add_padding(popup_area, Padding::proportional(1)));
+        let [message_area, actions_area] =
+            vertical![ >=1, ==1].areas(add_padding(popup_area, Padding::proportional(1)));
         frame.render_widget(
             Paragraph::new(format!("Do you really want to remove {}?", self.name))
                 .wrap(Wrap { trim: false }),
             message_area,
         );
 
-        let actions_mouse_areas = widgets::actions([Action::new(" Confirm ", ActionTypes::Critical, self.item == 1, true), Action::new(" Cancel ", ActionTypes::Normal, self.item == 0, true)], HorizontalAlignment::Right, 1, actions_area, frame);
+        let actions_mouse_areas = widgets::actions(
+            [
+                Action::new(" Confirm ", ActionTypes::Critical, self.item == 1, true),
+                Action::new(" Cancel ", ActionTypes::Normal, self.item == 0, true),
+            ],
+            HorizontalAlignment::Right,
+            1,
+            actions_area,
+            frame,
+        );
         for (i, mouse_area) in actions_mouse_areas.into_iter().enumerate() {
             key_event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,

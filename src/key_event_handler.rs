@@ -1,9 +1,10 @@
+use std::collections::HashMap;
+
 use itertools::Itertools;
 use ratatui::{
     crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind},
     layout::{Position, Rect},
 };
-use std::collections::HashMap;
 
 use crate::{App, Drawer};
 
@@ -32,9 +33,9 @@ pub enum Bind {
 
 #[derive(Default)]
 pub struct KeyEventHandler {
-    key_binds: HashMap<(Bind, State), (String, Callback)>,
+    key_binds:         HashMap<(Bind, State), (String, Callback)>,
     execute_immediate: Vec<Callback>,
-    mouse_binds: HashMap<(usize, Bind, Rect), Callback>,
+    mouse_binds:       HashMap<(usize, Bind, Rect), Callback>,
 
     semi_bind: Option<char>,
 }
@@ -61,6 +62,7 @@ impl KeyEventHandler {
             .key_binds
             .insert((Bind::Horizontal, state), (description, Box::new(callback)));
     }
+
     pub fn bind_vertical(
         &mut self,
         state: State,
@@ -71,6 +73,7 @@ impl KeyEventHandler {
             .key_binds
             .insert((Bind::Vertical, state), (description, Box::new(callback)));
     }
+
     pub fn bind_tab(
         &mut self,
         state: State,
@@ -81,6 +84,7 @@ impl KeyEventHandler {
             .key_binds
             .insert((Bind::Tab, state), (description, Box::new(callback)));
     }
+
     pub fn bind_input_field(
         &mut self,
         state: State,
@@ -91,6 +95,7 @@ impl KeyEventHandler {
             .key_binds
             .insert((Bind::Input, state), (description, Box::new(callback)));
     }
+
     pub fn bind_esc(
         &mut self,
         state: State,
@@ -101,6 +106,7 @@ impl KeyEventHandler {
             .key_binds
             .insert((Bind::Esc, state), (description, Box::new(callback)));
     }
+
     pub fn bind_enter(
         &mut self,
         state: State,
@@ -111,6 +117,7 @@ impl KeyEventHandler {
             .key_binds
             .insert((Bind::Enter, state), (description, Box::new(callback)));
     }
+
     pub fn bind_key(
         &mut self,
         state: State,
@@ -123,6 +130,7 @@ impl KeyEventHandler {
             (description, Box::new(callback)),
         );
     }
+
     pub fn bind_mouse_button_down(
         &mut self,
         button: MouseButton,
@@ -134,6 +142,7 @@ impl KeyEventHandler {
             Box::new(callback),
         );
     }
+
     pub fn bind_mouse_button_up(
         &mut self,
         button: MouseButton,
@@ -337,7 +346,7 @@ impl KeyEventHandler {
         }
 
         match event.code {
-            KeyCode::Up | KeyCode::Down => {
+            KeyCode::Up | KeyCode::Down =>
                 if self.semi_bind.is_some() {
                     self.semi_bind = None;
                     None
@@ -348,9 +357,8 @@ impl KeyEventHandler {
                     ))
                 } else {
                     None
-                }
-            }
-            KeyCode::Tab | KeyCode::BackTab => {
+                },
+            KeyCode::Tab | KeyCode::BackTab =>
                 if self.semi_bind.is_some() {
                     self.semi_bind = None;
                     None
@@ -361,9 +369,8 @@ impl KeyEventHandler {
                     ))
                 } else {
                     None
-                }
-            }
-            KeyCode::Enter => {
+                },
+            KeyCode::Enter =>
                 if self.semi_bind.is_some() {
                     self.semi_bind = None;
                     None
@@ -371,9 +378,8 @@ impl KeyEventHandler {
                     Some((callback, Data::None))
                 } else {
                     None
-                }
-            }
-            KeyCode::Esc => {
+                },
+            KeyCode::Esc =>
                 if self.semi_bind.is_some() {
                     self.semi_bind = None;
                     None
@@ -381,9 +387,8 @@ impl KeyEventHandler {
                     Some((callback, Data::None))
                 } else {
                     None
-                }
-            }
-            KeyCode::Backspace | KeyCode::Delete => {
+                },
+            KeyCode::Backspace | KeyCode::Delete =>
                 if self.semi_bind.is_some() {
                     self.semi_bind = None;
                     None
@@ -391,9 +396,8 @@ impl KeyEventHandler {
                     Some((callback, Data::Key(event)))
                 } else {
                     None
-                }
-            }
-            KeyCode::Left | KeyCode::Right => {
+                },
+            KeyCode::Left | KeyCode::Right =>
                 if self.semi_bind.is_some() {
                     self.semi_bind = None;
                     None
@@ -406,17 +410,15 @@ impl KeyEventHandler {
                     ))
                 } else {
                     None
-                }
-            }
-            KeyCode::Char(key) => {
+                },
+            KeyCode::Char(key) =>
                 if let Some(callback) = self.try_get_key_bind(state, Bind::Input) {
                     Some((callback, Data::Key(event)))
                 } else if let Some(callback) = self.try_get_keys_bind(state, key) {
                     Some((callback, Data::Key(event)))
                 } else {
                     None
-                }
-            }
+                },
             _ => None,
         }
     }

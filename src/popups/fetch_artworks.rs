@@ -1,31 +1,42 @@
-use crate::{
-    helpers::{add_padding, dynamic_popup}, key_event_handler::KeyEventHandler, trakt, tmdb, types::{Movie, MovieID}
-};
-use ratatui::{
-    Frame, layout::*, macros::{horizontal, vertical}, prelude::*, style::palette::{material, tailwind}, text::ToSpan, widgets::*
-};
 use std::{
-    sync::mpsc::{channel, Receiver, Sender},
-    thread,
     path::PathBuf,
+    sync::mpsc::{Receiver, Sender, channel},
+    thread,
+};
+
+use ratatui::{
+    Frame,
+    layout::*,
+    macros::{horizontal, vertical},
+    prelude::*,
+    style::palette::{material, tailwind},
+    text::ToSpan,
+    widgets::*,
 };
 use throbber_widgets_tui::{Throbber, ThrobberState};
 
+use crate::{
+    helpers::{add_padding, dynamic_popup},
+    key_event_handler::KeyEventHandler,
+    tmdb, trakt,
+    types::{Movie, MovieID},
+};
+
 #[derive(Default)]
 pub struct FetchArtworksPopup {
-    pub done: bool,
-    pub started: bool,
-    pub progress: usize,
-    errored: Option<u32>,
-    movies: Vec<MovieID>,
-    trakt_client_id: String,
+    pub done:          bool,
+    pub started:       bool,
+    pub progress:      usize,
+    errored:           Option<u32>,
+    movies:            Vec<MovieID>,
+    trakt_client_id:   String,
     tmdb_access_token: String,
 
-    tx_fetch_request: Option<Sender<Option<MovieID>>>,
+    tx_fetch_request:  Option<Sender<Option<MovieID>>>,
     rx_fetch_response: Option<Receiver<(MovieID, anyhow::Result<()>)>>,
 
-    tick: u64,
-    cache_dir: PathBuf,
+    tick:           u64,
+    cache_dir:      PathBuf,
     throbber_state: ThrobberState,
 }
 
@@ -68,11 +79,7 @@ impl FetchArtworksPopup {
                             &request.imdb.clone(),
                         )
                     } else {
-                        tmdb::get_movie_poster_banner(
-                            &cache_dir,
-                            &tmdb_access_token,
-                            request.tmdb,
-                        )
+                        tmdb::get_movie_poster_banner(&cache_dir, &tmdb_access_token, request.tmdb)
                     };
 
                     _ = if result.is_ok() {
@@ -101,10 +108,11 @@ impl FetchArtworksPopup {
             .join("posters")
             .join(format!("{}.jpg", id))
             .is_file()
-        && self.cache_dir
-            .join("backdrops")
-            .join(format!("{}.jpg", id))
-            .is_file()
+            && self
+                .cache_dir
+                .join("backdrops")
+                .join(format!("{}.jpg", id))
+                .is_file()
     }
 
     fn fetch_artworks(&mut self) {
@@ -133,7 +141,7 @@ impl FetchArtworksPopup {
         self.fetch_artworks();
     }
 
-    pub fn update (&mut self) {
+    pub fn update(&mut self) {
         if !self.started {
             return;
         }
@@ -161,11 +169,7 @@ impl FetchArtworksPopup {
             self.done = true;
             self.started = false;
 
-            _ = self
-                .tx_fetch_request
-                .as_ref()
-                .unwrap()
-                .send(None);
+            _ = self.tx_fetch_request.as_ref().unwrap().send(None);
         }
     }
 
@@ -186,11 +190,10 @@ impl FetchArtworksPopup {
             Style::new().fg(tailwind::VIOLET.c950),
         );
 
-        let [_, throbber_area, _, progress_area, _, errored_area] = vertical![==1, ==1, ==1, ==3, >=1, ==1].areas(popup_area);
+        let [_, throbber_area, _, progress_area, _, errored_area] =
+            vertical![==1, ==1, ==1, ==3, >=1, ==1].areas(popup_area);
 
-        let [throbber_area] = horizontal![==1]
-            .flex(Flex::Center)
-            .areas(throbber_area);
+        let [throbber_area] = horizontal![==1].flex(Flex::Center).areas(throbber_area);
 
         let throbber = Throbber::default()
             .throbber_set(throbber_widgets_tui::BRAILLE_SIX_DOUBLE)
@@ -200,14 +203,22 @@ impl FetchArtworksPopup {
         let progress_area = add_padding(progress_area, Padding::horizontal(2));
 
         let progress_gauge = Gauge::default()
-            .ratio(if num_movies == 0 { 0.0 } else { progress as f64 / num_movies as f64 })
+            .ratio(if num_movies == 0 {
+                0.0
+            } else {
+                progress as f64 / num_movies as f64
+            })
             .gauge_style(
                 Style::new()
                     .fg(tailwind::LIME.c500)
                     .bg(tailwind::GREEN.c900)
                     .italic(),
             )
-            .label(format!("{}/{}", progress, num_movies).fg(tailwind::PINK.c500).bold())
+            .label(
+                format!("{}/{}", progress, num_movies)
+                    .fg(tailwind::PINK.c500)
+                    .bold(),
+            )
             .use_unicode(true);
 
         frame.render_widget(progress_gauge, progress_area);
@@ -219,7 +230,10 @@ impl FetchArtworksPopup {
                 .flex(Flex::Center)
                 .areas(errored_area);
 
-            frame.render_widget(errored_text.to_span().fg(tailwind::RED.c500).bold(), text_lay);
+            frame.render_widget(
+                errored_text.to_span().fg(tailwind::RED.c500).bold(),
+                text_lay,
+            );
         }
     }
 }

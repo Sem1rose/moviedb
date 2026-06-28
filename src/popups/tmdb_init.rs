@@ -1,25 +1,28 @@
+use std::{
+    path::PathBuf,
+    sync::mpsc::{Receiver, channel},
+    thread,
+};
+
+use ratatui::{
+    Frame,
+    layout::*,
+    macros::{constraint, horizontal, text, vertical},
+    prelude::*,
+    style::palette::{material, tailwind},
+    widgets::*,
+};
+use ratatui_textarea::{TextArea, WrapMode};
+use throbber_widgets_tui::{Throbber, ThrobberState};
+
 use crate::{
     helpers::{add_padding, dynamic_popup},
     key_event_handler::{self, KeyEventHandler},
     popups::Popups,
     tmdb,
-    tokens::tmdb_tokens::{TMDBTokens, UserTokens}, widgets::{self, Action, ActionTypes},
+    tokens::tmdb_tokens::{TMDBTokens, UserTokens},
+    widgets::{self, Action, ActionTypes},
 };
-use ratatui::{
-    layout::*,
-    macros::{constraint, vertical, horizontal, text},
-    prelude::*,
-    style::palette::{material, tailwind},
-    widgets::*,
-    Frame,
-};
-use std::{
-    path::PathBuf,
-    sync::mpsc::{channel, Receiver},
-    thread,
-};
-use throbber_widgets_tui::{Throbber, ThrobberState};
-use ratatui_textarea::{TextArea, WrapMode};
 
 #[derive(Default, Debug)]
 pub enum Phase {
@@ -35,17 +38,17 @@ pub enum Phase {
 
 #[derive(Default)]
 pub struct TMDBInitPopup {
-    pub tick: u64,
-    pub phase: Phase,
+    pub tick:         u64,
+    pub phase:        Phase,
     throbber_visible: bool,
-    item: usize,
+    item:             usize,
 
-    input: TextArea<'static>,
+    input:          TextArea<'static>,
     throbber_state: ThrobberState,
 
-    rx_init: Option<Receiver<anyhow::Result<UserTokens>>>,
+    rx_init:              Option<Receiver<anyhow::Result<UserTokens>>>,
     rx_authorization_url: Option<Receiver<String>>,
-    rx_session_id: Option<Receiver<anyhow::Result<String>>>,
+    rx_session_id:        Option<Receiver<anyhow::Result<String>>>,
 
     pub tokens: Option<UserTokens>,
 
@@ -84,7 +87,7 @@ impl TMDBInitPopup {
 
                 self.tokens = Some(UserTokens {
                     access_token: access_token.clone(),
-                    session_id: String::default(),
+                    session_id:   String::default(),
                 });
 
                 let (tx_authorization_url, rx_authorization_url) = channel();
@@ -112,7 +115,7 @@ impl TMDBInitPopup {
         }
 
         match self.phase {
-            Phase::Initializing => {
+            Phase::Initializing =>
                 if let Some(rx_init_response) = self.rx_init.as_ref() {
                     if let Ok(result) = rx_init_response.try_recv() {
                         if let Ok(tokens) = result {
@@ -130,8 +133,7 @@ impl TMDBInitPopup {
                             self.advance_phase();
                         }
                     }
-                }
-            }
+                },
             Phase::GettingAuthorizationUrl => {
                 if let Some(rx_authorization_url) = self.rx_authorization_url.as_ref() {
                     if let Ok(authorization_url) = rx_authorization_url.try_recv() {
@@ -162,7 +164,7 @@ impl TMDBInitPopup {
                     }
                 }
             }
-            Phase::Finalize => {
+            Phase::Finalize =>
                 if let Some(rx_session_id) = self.rx_session_id.as_ref() {
                     if let Ok(result) = rx_session_id.try_recv() {
                         match result {
@@ -178,8 +180,7 @@ impl TMDBInitPopup {
                             }
                         }
                     }
-                }
-            }
+                },
             _ => (),
         }
     }
@@ -258,34 +259,26 @@ impl TMDBInitPopup {
                     }
                 });
                 if input_valid {
-                    key_event_handler.bind_enter(
-                        (None, None),
-                        "Confirm".into(),
-                        |app, _| {
-                            if let Some(Popups::TMDBInit(tmdb_init_popup)) =
-                                app.drawer.active_popup.as_mut()
-                            {
-                                tmdb_init_popup.advance_phase();
-                            }
-                        },
-                    );
-                }
-                key_event_handler.bind_input_field(
-                    (None, Some(0)),
-                    "".into(),
-                    |app, data| {
+                    key_event_handler.bind_enter((None, None), "Confirm".into(), |app, _| {
                         if let Some(Popups::TMDBInit(tmdb_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
-                            match data {
-                                key_event_handler::Data::Key(key_event) => {
-                                    tmdb_init_popup.input.input(key_event);
-                                }
-                                _ => (),
-                            }
+                            tmdb_init_popup.advance_phase();
                         }
-                    },
-                );
+                    });
+                }
+                key_event_handler.bind_input_field((None, Some(0)), "".into(), |app, data| {
+                    if let Some(Popups::TMDBInit(tmdb_init_popup)) =
+                        app.drawer.active_popup.as_mut()
+                    {
+                        match data {
+                            key_event_handler::Data::Key(key_event) => {
+                                tmdb_init_popup.input.input(key_event);
+                            }
+                            _ => (),
+                        }
+                    }
+                });
 
                 let popup_area = dynamic_popup(
                     frame,
@@ -303,10 +296,20 @@ impl TMDBInitPopup {
                     |_, _| {},
                 );
 
-                let [input_area, _, actions_area] =
-                    vertical![==5, >=1, ==1].areas(add_padding(popup_area, Padding::proportional(1)));
+                let [input_area, _, actions_area] = vertical![==5, >=1, ==1]
+                    .areas(add_padding(popup_area, Padding::proportional(1)));
 
-                let confirm_mouse_area = widgets::action(Action::new(" Confirm ", ActionTypes::Default, self.item == 1, input_valid), HorizontalAlignment::Right, actions_area, frame);
+                let confirm_mouse_area = widgets::action(
+                    Action::new(
+                        " Confirm ",
+                        ActionTypes::Default,
+                        self.item == 1,
+                        input_valid,
+                    ),
+                    HorizontalAlignment::Right,
+                    actions_area,
+                    frame,
+                );
                 if input_valid {
                     key_event_handler.bind_mouse_button_down(
                         ratatui::crossterm::event::MouseButton::Left,
@@ -322,7 +325,17 @@ impl TMDBInitPopup {
                 }
 
                 let input_selected = self.item == 0;
-                widgets::input_field(input_selected, input_valid, &mut self.input, WrapMode::Glyph, frame, input_area, (0, 0), " Access Token ", "Enter the Access Token");
+                widgets::input_field(
+                    input_selected,
+                    input_valid,
+                    &mut self.input,
+                    WrapMode::Glyph,
+                    frame,
+                    input_area,
+                    (0, 0),
+                    " Access Token ",
+                    "Enter the Access Token",
+                );
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     input_area,
@@ -364,7 +377,12 @@ impl TMDBInitPopup {
                     |_, _| {},
                 );
 
-                let back_mouse_area = widgets::action(Action::new(" Back ", ActionTypes::Default, false, true), HorizontalAlignment::Left, popup_area, frame);
+                let back_mouse_area = widgets::action(
+                    Action::new(" Back ", ActionTypes::Default, false, true),
+                    HorizontalAlignment::Left,
+                    popup_area,
+                    frame,
+                );
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     back_mouse_area,
@@ -381,44 +399,49 @@ impl TMDBInitPopup {
                     },
                 );
 
-                let [_, hyperlink_area, _] =
-                    vertical![>=1, ==3, >=1].areas(add_padding(popup_area, Padding::proportional(1)));
+                let [_, hyperlink_area, _] = vertical![>=1, ==3, >=1]
+                    .areas(add_padding(popup_area, Padding::proportional(1)));
 
                 let hyperlink_text = "  Click to Authorize  ";
-                let [hyperlink_area] = horizontal![==(hyperlink_text.len() as u16)].flex(Flex::Center).areas(hyperlink_area);
-                widgets::hyperlink(text![" ".repeat(hyperlink_text.len()), hyperlink_text, " ".repeat(hyperlink_text.len())].fg(material::GREEN.c100).bg(material::BLUE.c800), authorization_url, hyperlink_area, frame);
+                let [hyperlink_area] = horizontal![==(hyperlink_text.len() as u16)]
+                    .flex(Flex::Center)
+                    .areas(hyperlink_area);
+                widgets::hyperlink(
+                    text![
+                        " ".repeat(hyperlink_text.len()),
+                        hyperlink_text,
+                        " ".repeat(hyperlink_text.len())
+                    ]
+                    .fg(material::GREEN.c100)
+                    .bg(material::BLUE.c800),
+                    authorization_url,
+                    hyperlink_area,
+                    frame,
+                );
             }
             Phase::Error(error) => {
-                key_event_handler.bind_enter(
-                    (None, None),
-                    "Back".into(),
-                    |app, _| {
-                        if let Some(Popups::TMDBInit(tmdb_init_popup)) =
-                            app.drawer.active_popup.as_mut()
-                        {
-                            tmdb_init_popup.item = 0;
-                            tmdb_init_popup.input.clear();
-                            tmdb_init_popup.rx_session_id = None;
-                            tmdb_init_popup.rx_authorization_url = None;
-                            tmdb_init_popup.phase = Phase::GetAccessToken;
-                        }
-                    },
-                );
-                key_event_handler.bind_esc(
-                    (None, None),
-                    "Back".into(),
-                    |app, _| {
-                        if let Some(Popups::TMDBInit(tmdb_init_popup)) =
-                            app.drawer.active_popup.as_mut()
-                        {
-                            tmdb_init_popup.item = 0;
-                            tmdb_init_popup.input.clear();
-                            tmdb_init_popup.rx_session_id = None;
-                            tmdb_init_popup.rx_authorization_url = None;
-                            tmdb_init_popup.phase = Phase::GetAccessToken;
-                        }
-                    },
-                );
+                key_event_handler.bind_enter((None, None), "Back".into(), |app, _| {
+                    if let Some(Popups::TMDBInit(tmdb_init_popup)) =
+                        app.drawer.active_popup.as_mut()
+                    {
+                        tmdb_init_popup.item = 0;
+                        tmdb_init_popup.input.clear();
+                        tmdb_init_popup.rx_session_id = None;
+                        tmdb_init_popup.rx_authorization_url = None;
+                        tmdb_init_popup.phase = Phase::GetAccessToken;
+                    }
+                });
+                key_event_handler.bind_esc((None, None), "Back".into(), |app, _| {
+                    if let Some(Popups::TMDBInit(tmdb_init_popup)) =
+                        app.drawer.active_popup.as_mut()
+                    {
+                        tmdb_init_popup.item = 0;
+                        tmdb_init_popup.input.clear();
+                        tmdb_init_popup.rx_session_id = None;
+                        tmdb_init_popup.rx_authorization_url = None;
+                        tmdb_init_popup.phase = Phase::GetAccessToken;
+                    }
+                });
 
                 let popup_area = dynamic_popup(
                     frame,
@@ -435,8 +458,8 @@ impl TMDBInitPopup {
                     popup_area.outer(Margin::new(1, 1)),
                     |_, _| {},
                 );
-                let [message_area, _, actions_area] =
-                    vertical![>=1, ==1, ==1].areas(add_padding(popup_area, Padding::proportional(1)));
+                let [message_area, _, actions_area] = vertical![>=1, ==1, ==1]
+                    .areas(add_padding(popup_area, Padding::proportional(1)));
                 frame.render_widget(
                     Paragraph::new(error.as_str())
                         .wrap(Wrap { trim: true })
@@ -444,7 +467,12 @@ impl TMDBInitPopup {
                     message_area,
                 );
 
-                let mouse_area = widgets::action(Action::new(" Back ", ActionTypes::Default, true, true), HorizontalAlignment::Center, actions_area, frame);
+                let mouse_area = widgets::action(
+                    Action::new(" Back ", ActionTypes::Default, true, true),
+                    HorizontalAlignment::Center,
+                    actions_area,
+                    frame,
+                );
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     mouse_area,

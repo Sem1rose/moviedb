@@ -1,7 +1,8 @@
+use std::{error::Error, fmt::Display};
+
 use anyhow::Context;
 use reqwest::blocking::{ClientBuilder, RequestBuilder};
 use serde::Deserialize;
-use std::{error::Error, fmt::Display};
 
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
@@ -34,7 +35,7 @@ pub struct OMDBDetailsResponse {
     // pub Awards: String,
     // pub Metascore: String,
     pub imdbRating: String,
-    pub imdbVotes: String,
+    pub imdbVotes:  String,
     // pub imdbID: String,
     // pub Type: String,
     // pub Result: String,

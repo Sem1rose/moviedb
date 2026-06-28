@@ -1,32 +1,30 @@
+use std::{fs, path::PathBuf, time::Duration};
+
+use chrono::Local;
+use log::{error, warn};
+use ratatui::crossterm::event::{self, Event, KeyEvent, KeyEventState, KeyModifiers};
+
 use crate::{
+    KeyEventHandler,
     drawer::Drawer,
     popups::Popups,
     screens::Screens,
     tokens::*,
-    types::{initialize_terminal, reset_terminal, Movie, OldMovie, Term},
-    KeyEventHandler,
-};
-use chrono::Local;
-use log::{error, warn};
-use ratatui::crossterm::event::{self, Event, KeyEvent, KeyEventState, KeyModifiers};
-use std::{
-    fs,
-    path::PathBuf,
-    time::Duration,
+    types::{Movie, OldMovie, Term, initialize_terminal, reset_terminal},
 };
 
 pub struct App {
-    home: PathBuf,
-    cache: PathBuf,
-    pub quit: bool,
+    home:       PathBuf,
+    cache:      PathBuf,
+    pub quit:   bool,
     pub movies: Vec<Movie>,
 
-    terminal: Term,
-    pub drawer: Drawer,
+    terminal:              Term,
+    pub drawer:            Drawer,
     pub key_event_handler: KeyEventHandler,
 
-    pub tmdb_tokens: TMDBTokens,
-    pub omdb_tokens: OMDBTokens,
+    pub tmdb_tokens:  TMDBTokens,
+    pub omdb_tokens:  OMDBTokens,
     pub trakt_tokens: TraktTokens,
 }
 
@@ -40,17 +38,17 @@ impl App {
             .join("moviedb");
 
         Self {
-            movies: vec![],
-            terminal: initialize_terminal()?,
-            drawer: Drawer::new(&home_dir, &cache_dir),
+            movies:            vec![],
+            terminal:          initialize_terminal()?,
+            drawer:            Drawer::new(&home_dir, &cache_dir),
             key_event_handler: KeyEventHandler::default(),
 
-            tmdb_tokens: TMDBTokens::new(&home_dir),
-            omdb_tokens: OMDBTokens::new(&home_dir),
+            tmdb_tokens:  TMDBTokens::new(&home_dir),
+            omdb_tokens:  OMDBTokens::new(&home_dir),
             trakt_tokens: TraktTokens::new(&home_dir),
 
-            quit: false,
-            home: home_dir,
+            quit:  false,
+            home:  home_dir,
             cache: cache_dir,
         }
         .fetch_movies()
@@ -61,7 +59,10 @@ impl App {
 
         let read_result = fs::read_to_string(file_path);
         if let Err(error) = read_result {
-            error!("Error reading ratings file: {}.\nRenaming corrupted file and creating a new database.", error);
+            error!(
+                "Error reading ratings file: {}.\nRenaming corrupted file and creating a new database.",
+                error
+            );
 
             let mut renamed = self.home.join("corrupted_ratings.json");
             let mut i = 1;
@@ -86,7 +87,10 @@ impl App {
 
             let result = serde_json::from_str::<Vec<OldMovie>>(&contents);
             if let Err(error) = result {
-                error!("Error deserializing ratings file: {}.\nRenaming corrupted file and creating a new database.", error);
+                error!(
+                    "Error deserializing ratings file: {}.\nRenaming corrupted file and creating a new database.",
+                    error
+                );
 
                 let mut renamed = self.home.join("corrupted_ratings.json");
                 let mut i = 1;
@@ -151,6 +155,7 @@ impl App {
     pub fn set_movies(&mut self, _movies: Vec<Movie>) {
         self.movies = _movies;
     }
+
     pub fn add_play(&mut self) {
         if let Some(Screens::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
             if let Some(Popups::EditMovie(edit_movie_popup)) = self.drawer.active_popup.as_mut() {
@@ -173,6 +178,7 @@ impl App {
         }
         self.save_movies().unwrap();
     }
+
     pub fn add_movie(&mut self) {
         if let Some(Screens::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
             if let Some(Popups::AddMovie(add_movie_popup)) = self.drawer.active_popup.as_mut() {
@@ -220,6 +226,7 @@ impl App {
 
         self.save_movies().unwrap();
     }
+
     pub fn edit_movie(&mut self) {
         if let Some(Screens::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
             if let Some(Popups::EditMovie(edit_movie_popup)) = self.drawer.active_popup.as_ref() {
@@ -239,6 +246,7 @@ impl App {
 
         self.save_movies().unwrap();
     }
+
     pub fn remove_movie(&mut self) {
         if let Some(Screens::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
             let index = self
@@ -261,6 +269,7 @@ impl App {
             self.drawer.close_popups();
         }
     }
+
     pub fn set_omdb_user_tokens(&mut self) {
         if let Some(Popups::OMDBInit(omdb_init_popup)) = self.drawer.active_popup.as_mut() {
             if let Some(tokens) = omdb_init_popup.tokens.take() {
@@ -269,6 +278,7 @@ impl App {
             self.drawer.close_popups();
         }
     }
+
     pub fn set_trakt_user_tokens(&mut self) {
         if let Some(Popups::TraktInit(trakt_init_popup)) = self.drawer.active_popup.as_mut() {
             if let Some(tokens) = trakt_init_popup.tokens.take() {
@@ -289,6 +299,7 @@ impl App {
 
         Ok(())
     }
+
     fn remove_duplicates(mut movies: Vec<Movie>) -> Vec<Movie> {
         let mut new_movies = vec![];
 
@@ -333,21 +344,20 @@ impl App {
             }
             Event::FocusGained => (),
             Event::FocusLost => (),
-            Event::Paste(string) => {
+            Event::Paste(string) =>
                 for c in string.chars() {
                     if let Some((callback, data)) = self.key_event_handler.handle_key_event(
                         KeyEvent {
-                            code: event::KeyCode::Char(c),
+                            code:      event::KeyCode::Char(c),
                             modifiers: KeyModifiers::NONE,
-                            kind: event::KeyEventKind::Press,
-                            state: KeyEventState::NONE,
+                            kind:      event::KeyEventKind::Press,
+                            state:     KeyEventState::NONE,
                         },
                         &self.drawer,
                     ) {
                         callback(self, data);
                     }
-                }
-            }
+                },
             Event::Resize(_, _) => (),
         }
     }

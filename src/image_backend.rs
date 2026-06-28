@@ -1,9 +1,3 @@
-use anyhow::bail;
-use log::error;
-use ratatui::{
-    Frame, layout::{Rect, Size}, macros::constraint, style::{Stylize, palette::tailwind}, widgets::Block,
-};
-use ratatui_image::{picker::Picker, Resize, sliced::*};
 use std::{
     collections::HashMap,
     path::PathBuf,
@@ -11,9 +5,20 @@ use std::{
     thread,
 };
 
+use anyhow::bail;
+use log::error;
+use ratatui::{
+    Frame,
+    layout::{Rect, Size},
+    macros::constraint,
+    style::{Stylize, palette::tailwind},
+    widgets::Block,
+};
+use ratatui_image::{Resize, picker::Picker, sliced::*};
+
 #[derive(Eq, Hash, PartialEq, Clone, Copy, Debug)]
 pub struct ArtworkID {
-    pub tmdb_id: u32,
+    pub tmdb_id:  u32,
     pub backdrop: bool,
 }
 
@@ -26,15 +31,15 @@ enum Actions {
 }
 
 pub struct RatatuiImage {
-    hashed_images: HashMap<ArtworkID, Option<SlicedProtocol>>,
+    hashed_images:  HashMap<ArtworkID, Option<SlicedProtocol>>,
     preload_images: Vec<ArtworkID>,
 
     tx_load: Sender<Actions>,
     rx_main: Receiver<LoadResult>,
 
-    artwork_size: Option<Size>,
+    artwork_size:  Option<Size>,
     backdrop_size: Option<Size>,
-    cache_dir: PathBuf,
+    cache_dir:     PathBuf,
 
     pub loading: u32,
 }
@@ -55,6 +60,7 @@ impl RatatuiImage {
             cache_dir: cache_dir.clone(),
         }
     }
+
     fn start_load_thread(tx_main: &Sender<LoadResult>) -> Sender<Actions> {
         let (tx_load, rx_load) = mpsc::channel::<Actions>();
 
@@ -96,7 +102,7 @@ impl RatatuiImage {
                                     &_picker,
                                     decoded,
                                     Size {
-                                        width: if artwork_id.backdrop {
+                                        width:  if artwork_id.backdrop {
                                             backdrop_size.width
                                         } else {
                                             artwork_size.width
@@ -233,7 +239,10 @@ impl RatatuiImage {
                 let Size { width, height } = protocol.size();
 
                 frame.render_widget(
-                    SlicedImage::new(protocol, sliced_pos.unwrap_or(SignedPosition { x: 0, y: 0 })),
+                    SlicedImage::new(
+                        protocol,
+                        sliced_pos.unwrap_or(SignedPosition { x: 0, y: 0 }),
+                    ),
                     area.centered(constraint!(== width), constraint!(== height)),
                 );
                 drawn = true;
@@ -259,7 +268,7 @@ impl RatatuiImage {
         self.preload_images = items
             .into_iter()
             .map(|&id| ArtworkID {
-                tmdb_id: id,
+                tmdb_id:  id,
                 backdrop: false,
             })
             .collect();

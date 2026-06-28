@@ -1,24 +1,29 @@
 use std::path::PathBuf;
 
+use ratatui::{
+    Frame,
+    macros::constraint,
+    style::{Stylize, palette::tailwind::*},
+    text::{Line, Text},
+    widgets::Block,
+};
+
 use crate::{
+    KeyEventHandler,
     popups::*,
     screens::*,
     tokens::{OMDBTokens, TMDBTokens, TraktTokens},
-    KeyEventHandler,
-};
-use ratatui::{
-    Frame, layout::Constraint, macros::constraint, style::{Stylize, palette::tailwind::*}, text::{Line, Text}, widgets::Block,
 };
 
 pub struct Drawer {
-    pub refresh_immediate: u8,
+    pub refresh_immediate:  u8,
     show_term_size_warning: bool,
-    pub active_popup: Option<Popups>,
-    pub current_screen: Option<Screens>,
-    pub popup_queue: Vec<Popups>,
-    pub screen_queue: Vec<Screens>,
+    pub active_popup:       Option<Popups>,
+    pub current_screen:     Option<Screens>,
+    pub popup_queue:        Vec<Popups>,
+    pub screen_queue:       Vec<Screens>,
 
-    home_dir: PathBuf,
+    home_dir:  PathBuf,
     cache_dir: PathBuf,
 }
 
@@ -26,15 +31,15 @@ const MINTERMSIZE: [u32; 2] = [100, 30];
 impl Drawer {
     pub fn new(home_dir: &PathBuf, cache_dir: &PathBuf) -> Self {
         Drawer {
-            refresh_immediate: 0,
-            home_dir: home_dir.clone(),
-            cache_dir: cache_dir.clone(),
+            refresh_immediate:      0,
+            home_dir:               home_dir.clone(),
+            cache_dir:              cache_dir.clone(),
             show_term_size_warning: false,
 
-            active_popup: None,
+            active_popup:   None,
             current_screen: None,
-            screen_queue: vec![Screens::MainScreen(MainScreen::new(cache_dir))],
-            popup_queue: vec![
+            screen_queue:   vec![Screens::MainScreen(MainScreen::new(cache_dir))],
+            popup_queue:    vec![
                 Popups::FetchArtworks(FetchArtworksPopup::new(cache_dir)),
                 Popups::OMDBInit(OMDBInitPopup::new(home_dir)),
                 Popups::TMDBInit(TMDBInitPopup::new(home_dir)),
@@ -165,8 +170,14 @@ impl Drawer {
 
                 if matches!(self.active_popup, Some(Popups::FetchArtworks(_))) {
                     key_event_handler.bind_immediate(|app, _| {
-                        if let Some(Popups::FetchArtworks(fetch_artworks_popup)) = app.drawer.active_popup.as_mut() {
-                            fetch_artworks_popup.set_movies(&app.movies, app.trakt_tokens.client_id(), app.tmdb_tokens.access_token());
+                        if let Some(Popups::FetchArtworks(fetch_artworks_popup)) =
+                            app.drawer.active_popup.as_mut()
+                        {
+                            fetch_artworks_popup.set_movies(
+                                &app.movies,
+                                app.trakt_tokens.client_id(),
+                                app.tmdb_tokens.access_token(),
+                            );
                         }
                     });
                 }
@@ -175,7 +186,9 @@ impl Drawer {
 
                 if matches!(self.current_screen, Some(Screens::MainScreen(_))) {
                     key_event_handler.bind_immediate(|app, _| {
-                        if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                        if let Some(Screens::MainScreen(main_screen)) =
+                            app.drawer.current_screen.as_mut()
+                        {
                             main_screen.set_movies(&app.movies);
                         }
                     });
@@ -183,6 +196,7 @@ impl Drawer {
             }
         }
     }
+
     pub fn open_add_movie_popup(
         &mut self,
         trakt_tokens: TraktTokens,
@@ -196,9 +210,12 @@ impl Drawer {
             &self.cache_dir,
         )));
     }
+
     pub fn open_add_play_popup(&mut self) {
-        self.popup_queue.push(Popups::EditMovie(EditMoviePopup::new(true, 0.0)));
+        self.popup_queue
+            .push(Popups::EditMovie(EditMoviePopup::new(true, 0.0)));
     }
+
     pub fn open_edit_movie_popup(&mut self) {
         if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_mut() {
             self.popup_queue.push(Popups::EditMovie(EditMoviePopup::new(
@@ -207,13 +224,16 @@ impl Drawer {
             )));
         }
     }
+
     pub fn open_delete_movie_popup(&mut self) {
         if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_mut() {
-            self.popup_queue.push(Popups::DeleteMovie(DeleteMoviePopup::new(
-                &main_screen.current_movie().unwrap().name,
-            )));
+            self.popup_queue
+                .push(Popups::DeleteMovie(DeleteMoviePopup::new(
+                    &main_screen.current_movie().unwrap().name,
+                )));
         }
     }
+
     pub fn close_popups(&mut self) {
         self.active_popup = None;
 
@@ -226,6 +246,7 @@ impl Drawer {
     pub fn check_refresh_immediate(&mut self) -> bool {
         self.refresh_immediate > 0
     }
+
     pub fn check_refresh_delayed(&mut self) -> bool {
         match self.active_popup.as_ref() {
             Some(Popups::AddMovie(add_movie_popup)) => {
@@ -274,10 +295,7 @@ impl Drawer {
                 MINTERMSIZE[1].to_string().green(),
             ]),
         ];
-        let area = frame_area.centered(
-            constraint!(>= 0),
-            constraint!(== lines.len() as u16),
-        );
+        let area = frame_area.centered(constraint!(>= 0), constraint!(== lines.len() as u16));
         let text = Text::from(lines).centered();
 
         frame.render_widget(text, area);

@@ -1,10 +1,11 @@
 use itertools::Itertools;
 use ratatui::{
-    layout::{Alignment, Constraint, Flex, Layout, Rect},
+    Frame,
+    layout::{Alignment, Flex, Rect},
+    macros::{horizontal, vertical},
     style::{Color, Style, Stylize},
     symbols::border,
     widgets::{Block, Clear, Padding},
-    Frame,
 };
 
 pub fn wrap_text(line: &str, width: usize) -> Vec<String> {
@@ -17,9 +18,16 @@ pub fn wrap_text(line: &str, width: usize) -> Vec<String> {
         let line = lines.pop().unwrap();
         if line.chars().count() <= width {
             lines.push(line);
-            break
+            break;
         }
-        let wrap_whitespace_index = line.chars().collect_vec().into_iter().take(width).rposition(|x| x.is_whitespace()).unwrap_or(width - 1) + 1;
+        let wrap_whitespace_index = line
+            .chars()
+            .collect_vec()
+            .into_iter()
+            .take(width)
+            .rposition(|x| x.is_whitespace())
+            .unwrap_or(width - 1)
+            + 1;
 
         let mut line = line.chars().collect_vec();
         let remaining_line = line.split_off(wrap_whitespace_index).iter().collect();
@@ -49,13 +57,9 @@ pub fn dynamic_area(
         }
     }
 
-    Layout::vertical([Constraint::Length(height)])
+    vertical![==height]
         .flex(v_align)
-        .split(
-            Layout::horizontal([Constraint::Length(width)])
-                .flex(h_align)
-                .split(area)[0],
-        )[0]
+        .split(horizontal![==width].flex(h_align).split(area)[0])[0]
 }
 
 pub fn dynamic_popup(

@@ -1,11 +1,3 @@
-use crate::tokens::TraktUserTokens;
-use anyhow::{bail, Context};
-use itertools::Itertools;
-use reqwest::{
-    blocking::{Client, ClientBuilder, RequestBuilder, Response},
-    header::{HeaderMap, CONTENT_TYPE, USER_AGENT},
-};
-use serde::Deserialize;
 use std::{
     collections::HashMap,
     error::Error,
@@ -16,19 +8,29 @@ use std::{
     thread,
 };
 
+use anyhow::{Context, bail};
+use itertools::Itertools;
+use reqwest::{
+    blocking::{Client, ClientBuilder, RequestBuilder, Response},
+    header::{CONTENT_TYPE, HeaderMap, USER_AGENT},
+};
+use serde::Deserialize;
+
+use crate::tokens::TraktUserTokens;
+
 #[derive(Deserialize, Debug)]
 pub struct TokenResponse {
-    pub access_token: String,
+    pub access_token:  String,
     // token_type: String,
-    pub expires_in: i64,
+    pub expires_in:    i64,
     pub refresh_token: String,
     // scope: String,
-    pub created_at: i64,
+    pub created_at:    i64,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct TokenResponseError {
-    error: String,
+    error:             String,
     error_description: String,
 }
 impl Error for TokenResponseError {}
@@ -48,9 +50,9 @@ pub struct TraktSearchResponseID {
 }
 #[derive(Deserialize, Debug, Default, Clone)]
 pub struct TraktSearchResponseMovie {
-    pub title: String,
-    pub year: Option<usize>,
-    pub ids: TraktSearchResponseID,
+    pub title:  String,
+    pub year:   Option<usize>,
+    pub ids:    TraktSearchResponseID,
     // tagline: String,
     // overview: String,
     // runtime: usize,
@@ -59,7 +61,7 @@ pub struct TraktSearchResponseMovie {
     // homepage: String,
     // status: String,
     pub rating: f64,
-    pub votes: u32,
+    pub votes:  u32,
     // comment_count: String,
     // updated_at: String,
     // language: String,
@@ -78,32 +80,32 @@ pub struct TraktSearchResponseMovie {
 pub struct TraktSearchResponse {
     // score: String,
     // type: String,
-    movie: TraktSearchResponseMovie
+    movie: TraktSearchResponseMovie,
 }
 
 #[derive(Deserialize, Debug, Default, Clone)]
 pub struct TraktDetailsResponse {
-    pub title: String,
-    pub year: Option<usize>,
-    pub ids: IDs,
-    pub tagline: String,
+    pub title:    String,
+    pub year:     Option<usize>,
+    pub ids:      IDs,
+    pub tagline:  String,
     pub overview: String,
     // released: String,
-    pub runtime: u32,
+    pub runtime:  u32,
     // country: String,
-    pub trailer: Option<String>,
+    pub trailer:  Option<String>,
     // homepage: String,
-    pub status: String,
-    pub rating: f64,
-    pub votes: u32,
+    pub status:   String,
+    pub rating:   f64,
+    pub votes:    u32,
     // comment_count: u32,
     // updated_at: String,
     pub language: String,
     // languages: Vec<String>,
     // available_translations: Vec<String>,
-    pub genres: Vec<String>,
+    pub genres:   Vec<String>,
     // certification: Option<String>,
-    pub images: TraktMovieImages,
+    pub images:   TraktMovieImages,
 }
 
 #[derive(Deserialize, Debug, Default, Clone)]
@@ -307,24 +309,25 @@ pub fn get_movie_poster_banner(
     let client = Client::builder().default_headers(headers).build()?;
 
     let movie_details = get_movie_details(client_id, &imdb_id)?;
-    let download_image = move |client: Client, url: &str, placeholder: &str, path: PathBuf| -> anyhow::Result<()> {
-        let image_url = url.strip_suffix(".webp").unwrap_or(url);
+    let download_image =
+        move |client: Client, url: &str, placeholder: &str, path: PathBuf| -> anyhow::Result<()> {
+            let image_url = url.strip_suffix(".webp").unwrap_or(url);
 
-        let image_bytes: Vec<_> = client
-            .get(format!("https://{image_url}"))
-            .send()?
-            .bytes()?
-            .into_iter()
-            .collect();
+            let image_bytes: Vec<_> = client
+                .get(format!("https://{image_url}"))
+                .send()?
+                .bytes()?
+                .into_iter()
+                .collect();
 
-        if let Ok(img) = image::load_from_memory(&image_bytes) {
-            img.save(path)?;
-        } else {
-            fs::copy(placeholder, path)?;
-        }
+            if let Ok(img) = image::load_from_memory(&image_bytes) {
+                img.save(path)?;
+            } else {
+                fs::copy(placeholder, path)?;
+            }
 
-        Ok(())
-    };
+            Ok(())
+        };
 
     let path = cache_dir
         .join("posters")

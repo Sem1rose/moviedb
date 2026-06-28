@@ -1,22 +1,24 @@
-use anyhow::{bail, Context};
 use std::{fs, path::PathBuf};
+
+use anyhow::{Context, bail};
 use serde::{Deserialize, Serialize};
-use simple_encrypt::{encrypt_bytes, decrypt_bytes};
+use simple_encrypt::{decrypt_bytes, encrypt_bytes};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct UserTokens {
-    pub client_id: String,
+    pub client_id:     String,
     pub client_secret: String,
 
-    pub access_token: String,
+    pub access_token:  String,
     pub refresh_token: String,
-    pub expires_on: i64,
+    pub expires_on:    i64,
 }
 
 impl UserTokens {
     pub fn has_secrets(&self) -> bool {
         !(self.client_id.is_empty() || self.client_secret.is_empty())
     }
+
     pub fn has_tokens(&self) -> bool {
         !(self.access_token.is_empty() || self.refresh_token.is_empty())
     }
@@ -26,7 +28,7 @@ impl UserTokens {
 pub struct TraktTokens {
     user_tokens: UserTokens,
 
-    home_dir: PathBuf
+    home_dir: PathBuf,
 }
 
 impl TraktTokens {
@@ -47,9 +49,10 @@ impl TraktTokens {
             bail!("Trakt: User tokens file does not exist.")
         }
     }
+
     fn read_creds(home_dir: &PathBuf) -> anyhow::Result<UserTokens> {
-        let encrypted_data = fs::read(&home_dir.join(".trakt_tokens"))
-            .context("Trakt: unable to read tokens")?;
+        let encrypted_data =
+            fs::read(&home_dir.join(".trakt_tokens")).context("Trakt: unable to read tokens")?;
 
         serde_json::from_str(
             &String::from_utf8(
@@ -66,25 +69,30 @@ impl TraktTokens {
 
         self.save_creds()
     }
+
     pub fn save_creds(&self) -> anyhow::Result<()> {
         let data = serde_json::to_string(&self.user_tokens)?;
 
         fs::write(
             &self.home_dir.join(".trakt_tokens"),
-            &encrypt_bytes(data.as_bytes(),b"0123456789abcdef0123456789abcdef")
-            .context("Trakt: failed to encrypt user tokens")?
-        ).context("Trakt: failed to write encrypted file")
+            &encrypt_bytes(data.as_bytes(), b"0123456789abcdef0123456789abcdef")
+                .context("Trakt: failed to encrypt user tokens")?,
+        )
+        .context("Trakt: failed to write encrypted file")
     }
 
     pub fn client_id(&self) -> &str {
         &self.user_tokens.client_id
     }
+
     pub fn client_secret(&self) -> &str {
         &self.user_tokens.client_secret
     }
+
     pub fn client_id_owned(&self) -> String {
         self.user_tokens.client_id.clone()
     }
+
     pub fn client_secret_owned(&self) -> String {
         self.user_tokens.client_secret.clone()
     }
@@ -92,15 +100,19 @@ impl TraktTokens {
     pub fn access_token(&self) -> &str {
         &self.user_tokens.access_token
     }
+
     pub fn refresh_token(&self) -> &str {
         &self.user_tokens.refresh_token
     }
+
     pub fn expires_on(&self) -> i64 {
         self.user_tokens.expires_on
     }
+
     pub fn access_token_owned(&self) -> String {
         self.user_tokens.access_token.clone()
     }
+
     pub fn refresh_token_owned(&self) -> String {
         self.user_tokens.refresh_token.clone()
     }

@@ -1,0 +1,13 @@
+enum_discrim_align_threshold = 20
+fn_call_width = 60
+hex_literal_case = "Upper"
+float_literal_trailing_zero = "IfNoPostfix"
+match_arm_blocks = false
+group_imports = "StdExternalCrate"
+imports_granularity = "Crate"
+normalize_doc_attributes = true
+reorder_impl_items = true
+struct_field_align_threshold = 30
+use_try_shorthand = true
+style_edition = "2024"
+single_line_if_else_max_width = 60
