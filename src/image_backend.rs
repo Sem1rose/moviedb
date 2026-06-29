@@ -6,7 +6,8 @@ use std::{
 };
 
 use anyhow::bail;
-use log::error;
+use itertools::Itertools;
+use log::{error, info};
 use ratatui::{
     Frame,
     layout::{Rect, Size},
@@ -101,17 +102,10 @@ impl RatatuiImage {
                                 let protocol = SlicedProtocol::new_with_resize(
                                     &_picker,
                                     decoded,
-                                    Size {
-                                        width:  if artwork_id.backdrop {
-                                            backdrop_size.width
-                                        } else {
-                                            artwork_size.width
-                                        },
-                                        height: if artwork_id.backdrop {
-                                            backdrop_size.height
-                                        } else {
-                                            artwork_size.height
-                                        },
+                                    if artwork_id.backdrop {
+                                        backdrop_size
+                                    } else {
+                                        artwork_size
                                     },
                                     Resize::Scale(Some(ratatui_image::FilterType::Triangle)),
                                 )?;
@@ -194,18 +188,20 @@ impl RatatuiImage {
         if sliced_pos.is_none() {
             if backdrop {
                 if self.backdrop_size.is_none() {
-                    _ = self.tx_load.send(Actions::ResizeBackdrop(area.as_size()));
                     self.backdrop_size = Some(area.as_size());
+                    _ = self.tx_load.send(Actions::ResizeBackdrop(area.as_size()));
                 } else if self.backdrop_size.unwrap() != area.as_size() {
-                    _ = self.tx_load.send(Actions::ResizeBackdrop(area.as_size()));
                     self.backdrop_size = Some(area.as_size());
+                    _ = self.tx_load.send(Actions::ResizeBackdrop(area.as_size()));
 
-                    let mut rehash = vec![];
-                    for (artwork_id, _) in self.hashed_images.iter().filter(|(k, _)| k.backdrop) {
-                        rehash.push(artwork_id.clone());
-                    }
+                    let rehash = self
+                        .hashed_images
+                        .iter()
+                        .filter_map(|(k, _)| if k.backdrop { Some(k.clone()) } else { None })
+                        .collect_vec();
                     self.hashed_images.retain(|k, _| !k.backdrop);
-                    for artwork_id in rehash.into_iter() {
+
+                    for artwork_id in rehash {
                         self.hash_image(artwork_id);
                     }
 
@@ -219,11 +215,13 @@ impl RatatuiImage {
                     _ = self.tx_load.send(Actions::ResizeArtwork(area.as_size()));
                     self.artwork_size = Some(area.as_size());
 
-                    let mut rehash = vec![];
-                    for (artwork_id, _) in self.hashed_images.iter().filter(|(k, _)| k.backdrop) {
-                        rehash.push(artwork_id.clone());
-                    }
+                    let rehash = self
+                        .hashed_images
+                        .iter()
+                        .filter_map(|(k, _)| if !k.backdrop { Some(k.clone()) } else { None })
+                        .collect_vec();
                     self.hashed_images.retain(|k, _| k.backdrop);
+
                     for artwork_id in rehash.into_iter() {
                         self.hash_image(artwork_id);
                     }
@@ -254,10 +252,10 @@ impl RatatuiImage {
         }
 
         let preload_images = self.preload_images.clone();
-        self.preload_images.clear();
-        for artwork_id in preload_images {
-            if let None = self.hashed_images.get(&artwork_id) {
-                self.hash_image(artwork_id);
+        self.preload_images.retain(|x| x.backdrop != backdrop);
+        for artwork_id in preload_images.iter().filter(|x| x.backdrop == backdrop) {
+            if let None = self.hashed_images.get(artwork_id) {
+                self.hash_image(*artwork_id);
             }
         }
 
@@ -272,5 +270,10 @@ impl RatatuiImage {
                 backdrop: false,
             })
             .collect();
+        self.preload_images
+            .extend(items.into_iter().map(|&id| ArtworkID {
+                tmdb_id:  id,
+                backdrop: true,
+            }));
     }
 }

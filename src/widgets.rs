@@ -1,7 +1,17 @@
 use itertools::Itertools;
-use ratatui::{Frame, layout::*, macros::span, prelude::*, style::palette::material, widgets::*};
+use ratatui::{
+    Frame,
+    buffer::Buffer,
+    layout::{HorizontalAlignment, Offset, Rect, Size},
+    macros::{line, span},
+    style::{
+        Modifier, Style, Stylize,
+        palette::{material, tailwind},
+    },
+    text::{Line, Span, Text},
+    widgets::{Block, Padding, Widget},
+};
 use ratatui_textarea::{TextArea, WrapMode};
-use style::palette::tailwind;
 
 use crate::helpers::add_padding;
 
@@ -37,11 +47,11 @@ pub fn input_field(
     input.set_block(
         Block::bordered()
             .border_type(ratatui::widgets::BorderType::Thick)
-            .style(Style::new().fg(if selected {
+            .fg(if selected {
                 if valid { material::BLUE.c500 } else { material::RED.c600 }
             } else {
                 tailwind::STONE.c600
-            }))
+            })
             .title(title)
             .title_style(Style::new().fg(if selected {
                 material::BLUE.c400
@@ -146,9 +156,9 @@ pub fn action(
     }
     .resize(Size::new(span.width() as u16, 1));
     let line = match alignment {
-        HorizontalAlignment::Left => Line::from(span),
-        HorizontalAlignment::Center => Line::from(span).centered(),
-        HorizontalAlignment::Right => Line::from(span).right_aligned(),
+        HorizontalAlignment::Left => line!(span),
+        HorizontalAlignment::Center => line!(span).centered(),
+        HorizontalAlignment::Right => line!(span).right_aligned(),
     };
 
     frame.render_widget(line, area);
@@ -185,12 +195,11 @@ pub fn actions<const N: usize>(
         mouse_area = mouse_area.offset(Offset::new(span.width() as i32 + spacing as i32, 0));
     }
 
-    let mut line = Line::from(
+    let mut line = Line::from_iter(
         spans
             .into_iter()
             .flat_map(|x| [x, span!(" ".repeat(spacing as usize))])
-            .take(actions_count * 2 - 1)
-            .collect_vec(),
+            .take(actions_count * 2 - 1),
     );
     line = match alignment {
         HorizontalAlignment::Left => line,

@@ -2,9 +2,9 @@ use std::path::PathBuf;
 
 use ratatui::{
     Frame,
-    macros::constraint,
-    style::{Stylize, palette::tailwind::*},
-    text::{Line, Text},
+    macros::{constraint, line, span},
+    style::{Stylize, palette::tailwind},
+    text::Text,
     widgets::Block,
 };
 
@@ -70,7 +70,7 @@ impl Drawer {
     }
 
     fn draw_current_screen(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
-        frame.render_widget(Block::new().bg(SLATE.c900), frame.area());
+        frame.render_widget(Block::new().bg(tailwind::SLATE.c900), frame.area());
 
         if self.show_term_size_warning {
             self.render_term_size_warning(frame);
@@ -281,22 +281,22 @@ impl Drawer {
     fn render_term_size_warning(&mut self, frame: &mut Frame) {
         let frame_area = frame.area();
         let lines = vec![
-            Line::from_iter([
-                "Terminal is too small: ".into(),
+            line![
+                span!("Terminal is too small: "),
                 frame_area.width.to_string().red(),
-                "x".into(),
+                span!("x"),
                 frame_area.height.to_string().red(),
-            ]),
-            Line::default(),
-            Line::from_iter([
-                "Minimum size is: ".into(),
+            ],
+            line!(),
+            line![
+                span!("Minimum size is: "),
                 MINTERMSIZE[0].to_string().green(),
-                "x".into(),
+                span!("x"),
                 MINTERMSIZE[1].to_string().green(),
-            ]),
+            ],
         ];
         let area = frame_area.centered(constraint!(>= 0), constraint!(== lines.len() as u16));
-        let text = Text::from(lines).centered();
+        let text = Text::from_iter(lines).centered();
 
         frame.render_widget(text, area);
     }

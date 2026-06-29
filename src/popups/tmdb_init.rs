@@ -6,17 +6,20 @@ use std::{
 
 use ratatui::{
     Frame,
-    layout::*,
-    macros::{constraint, horizontal, text, vertical},
-    prelude::*,
-    style::palette::{material, tailwind},
-    widgets::*,
+    layout::{Alignment, Flex, HorizontalAlignment, Margin},
+    macros::{constraint, horizontal, line, text, vertical},
+    style::{
+        Style, Stylize,
+        palette::{material, tailwind},
+    },
+    text::Text,
+    widgets::Padding,
 };
 use ratatui_textarea::{TextArea, WrapMode};
 use throbber_widgets_tui::{Throbber, ThrobberState};
 
 use crate::{
-    helpers::{add_padding, dynamic_popup},
+    helpers::{add_padding, dynamic_popup, wrap_text},
     key_event_handler::{self, KeyEventHandler},
     popups::Popups,
     tmdb,
@@ -219,7 +222,7 @@ impl TMDBInitPopup {
                 );
                 let [_, message_area, throbber_area, _] =
                     vertical![>=1, ==2, ==1, >=1].areas(popup_area);
-                frame.render_widget(Paragraph::new("Processing").centered(), message_area);
+                frame.render_widget(line!("Processing").centered(), message_area);
 
                 frame.render_stateful_widget(
                     Throbber::default()
@@ -461,8 +464,7 @@ impl TMDBInitPopup {
                 let [message_area, _, actions_area] = vertical![>=1, ==1, ==1]
                     .areas(add_padding(popup_area, Padding::proportional(1)));
                 frame.render_widget(
-                    Paragraph::new(error.as_str())
-                        .wrap(Wrap { trim: true })
+                    Text::from_iter(wrap_text(error.as_str(), message_area.width as usize))
                         .centered(),
                     message_area,
                 );

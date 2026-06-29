@@ -1,3 +1,4 @@
 /target
 .credentials
 codebook.toml
+output.log

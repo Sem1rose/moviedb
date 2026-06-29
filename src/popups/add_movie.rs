@@ -9,12 +9,14 @@ use anyhow::anyhow;
 use itertools::Itertools;
 use ratatui::{
     Frame,
-    layout::*,
+    layout::{Alignment, HorizontalAlignment, Layout, Margin},
     macros::{constraint, horizontal, line, span, vertical},
-    prelude::*,
-    style::palette::{material, tailwind},
+    style::{
+        Modifier, Style, Stylize,
+        palette::{material, tailwind},
+    },
     symbols::{block, scrollbar::Set},
-    widgets::*,
+    widgets::{Block, Padding, Scrollbar, ScrollbarState},
 };
 use ratatui_textarea::{TextArea, WrapMode};
 use throbber_widgets_tui::{Throbber, ThrobberState};
@@ -586,15 +588,13 @@ impl AddMoviePopup {
                             };
                             if index == 0 {
                                 frame.render_widget(
-                                    Line::from("▔".repeat(area.width as usize)).style(
-                                        Style::new().fg(if selected {
-                                            tailwind::EMERALD.c700
-                                        } else if !alternate {
-                                            tailwind::GRAY.c600
-                                        } else {
-                                            tailwind::SLATE.c600
-                                        }),
-                                    ),
+                                    line!("▔".repeat(area.width as usize)).fg(if selected {
+                                        tailwind::EMERALD.c700
+                                    } else if !alternate {
+                                        tailwind::GRAY.c600
+                                    } else {
+                                        tailwind::SLATE.c600
+                                    }),
                                     areas[i as usize],
                                 );
                             } else if index == 1 {
@@ -646,15 +646,13 @@ impl AddMoviePopup {
                                 );
                             } else if index == 4 {
                                 frame.render_widget(
-                                    Line::from("▁".repeat(area.width as usize)).style(
-                                        Style::new().fg(if selected {
-                                            tailwind::EMERALD.c700
-                                        } else if !alternate {
-                                            tailwind::GRAY.c600
-                                        } else {
-                                            tailwind::SLATE.c600
-                                        }),
-                                    ),
+                                    line!("▁".repeat(area.width as usize)).fg(if selected {
+                                        tailwind::EMERALD.c700
+                                    } else if !alternate {
+                                        tailwind::GRAY.c600
+                                    } else {
+                                        tailwind::SLATE.c600
+                                    }),
                                     areas[i as usize],
                                 );
                             }
@@ -928,7 +926,7 @@ impl AddMoviePopup {
                 );
                 let [message_area, throbber_area, _] = vertical![>=1, ==1, >=1]
                     .areas(add_padding(popup_area, Padding::proportional(1)));
-                frame.render_widget(Paragraph::new("Getting details").centered(), message_area);
+                frame.render_widget(line!("Getting details").centered(), message_area);
 
                 frame.render_stateful_widget(
                     Throbber::default()
@@ -967,7 +965,7 @@ impl AddMoviePopup {
                 );
                 let [message_area, _, actions_area] = vertical![>=1, ==1, ==1]
                     .areas(add_padding(popup_area, Padding::proportional(1)));
-                frame.render_widget(Paragraph::new(error.as_str()).centered(), message_area);
+                frame.render_widget(line!(error.as_str()).centered(), message_area);
 
                 let mouse_area = widgets::action(
                     Action::new(" Back ", ActionTypes::Default, true, true),

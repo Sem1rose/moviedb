@@ -1,10 +1,14 @@
 use ratatui::{
-    Frame, layout::*, macros::vertical, prelude::*, style::palette::material, widgets::*,
+    Frame,
+    layout::{Alignment, HorizontalAlignment, Margin},
+    macros::vertical,
+    style::{Style, palette::tailwind},
+    text::Text,
+    widgets::Padding,
 };
-use style::palette::tailwind;
 
 use crate::{
-    helpers::{add_padding, dynamic_popup},
+    helpers::{add_padding, dynamic_popup, wrap_text},
     key_event_handler::{self, KeyEventHandler},
     popups::Popups,
     widgets::{self, Action, ActionTypes},
@@ -72,7 +76,7 @@ impl DeleteMoviePopup {
             5.0,
             tailwind::BLUE.c950,
             "  Remove movie  ",
-            Style::new().fg(material::YELLOW.c800),
+            Style::new().fg(tailwind::AMBER.c500),
             Alignment::Center,
             Style::new().fg(tailwind::VIOLET.c950),
         );
@@ -84,8 +88,10 @@ impl DeleteMoviePopup {
         let [message_area, actions_area] =
             vertical![ >=1, ==1].areas(add_padding(popup_area, Padding::proportional(1)));
         frame.render_widget(
-            Paragraph::new(format!("Do you really want to remove {}?", self.name))
-                .wrap(Wrap { trim: false }),
+            Text::from_iter(wrap_text(
+                &format!("Do you really want to remove {}?", self.name),
+                message_area.width as usize,
+            )),
             message_area,
         );
 

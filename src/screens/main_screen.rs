@@ -5,16 +5,17 @@ use nucleo_matcher::{Config, Matcher, pattern::Atom};
 use num_derive::{FromPrimitive, ToPrimitive};
 use num_traits::{FromPrimitive, ToPrimitive};
 use ratatui::{
+    Frame,
     crossterm::event::KeyModifiers,
-    layout::Offset,
+    layout::{Layout, Margin, Offset, Position, Rect, Size},
     macros::{constraint, horizontal, line, span, text, vertical},
-    prelude::*,
     style::{
-        Styled,
+        Color, Modifier, Style, Styled, Stylize,
         palette::{material, tailwind},
     },
     symbols::{block, border, scrollbar::Set},
-    widgets::{Block, Clear, Padding, Paragraph, Scrollbar, ScrollbarState, Wrap},
+    text::{Line, Span, Text},
+    widgets::{Block, Clear, Padding, Scrollbar, ScrollbarState},
 };
 use ratatui_image::sliced::SignedPosition;
 use ratatui_textarea::TextArea;
@@ -73,7 +74,7 @@ pub struct MainScreen {
     movies_description_overview_scroll: usize,
 }
 
-const MOVIE_WIDGET_HEIGHT: usize = 10;
+const MOVIE_WIDGET_HEIGHT: usize = 11;
 
 impl MainScreen {
     pub fn get_state(&self) -> (Option<usize>, Option<usize>) {
@@ -216,7 +217,7 @@ impl MainScreen {
             });
             let sort_popup_block = Block::bordered()
                 .border_set(border::PROPORTIONAL_WIDE)
-                .style(Style::new().fg(material::INDIGO.c900));
+                .fg(material::INDIGO.c900);
             frame.render_widget(&sort_popup_block, sort_popup_area);
             frame.render_widget(
                 Block::new().bg(material::BLUE.c600),
@@ -232,22 +233,13 @@ impl MainScreen {
                 " Relevance",
             ]
             .iter()
-            .map(|&x| {
-                line!(x).style(
-                    Style::new()
-                        .fg(material::INDIGO.c200)
-                        .bg(material::INDIGO.c900),
-                )
-            })
+            .map(|&x| line!(x).fg(material::INDIGO.c200).bg(material::INDIGO.c900))
             .collect();
             items[ToPrimitive::to_usize(&self.sort).unwrap()] = items
                 [ToPrimitive::to_usize(&self.sort).unwrap()]
             .clone()
-            .style(
-                Style::new()
-                    .fg(material::BLUE.c100)
-                    .bg(material::LIGHT_BLUE.c900),
-            );
+            .fg(material::BLUE.c100)
+            .bg(material::LIGHT_BLUE.c900);
 
             let mut mouse_area = sort_popup_block.inner(sort_popup_area).resize(Size {
                 width:  sort_popup_block.inner(sort_popup_area).width,
@@ -375,20 +367,12 @@ impl MainScreen {
 
             let mut actions = vec![" add play ", " edit ", " delete "]
                 .iter()
-                .map(|&x| {
-                    line!(x).style(
-                        Style::new()
-                            .fg(material::INDIGO.c200)
-                            .bg(material::INDIGO.c900),
-                    )
-                })
+                .map(|&x| line!(x).fg(material::INDIGO.c200).bg(material::INDIGO.c900))
                 .collect_vec();
-            actions[self.context_menu_selected] =
-                actions[self.context_menu_selected].clone().style(
-                    Style::new()
-                        .fg(material::BLUE.c100)
-                        .bg(material::LIGHT_BLUE.c900),
-                );
+            actions[self.context_menu_selected] = actions[self.context_menu_selected]
+                .clone()
+                .fg(material::BLUE.c100)
+                .bg(material::LIGHT_BLUE.c900);
             let width = actions.iter().map(|x| x.width()).max().unwrap() as u16 + 4;
             let height = actions.len() as u16 + 2;
 
@@ -428,7 +412,7 @@ impl MainScreen {
 
             let actions_popup_block = Block::bordered()
                 .border_set(border::PROPORTIONAL_WIDE)
-                .style(Style::new().fg(material::INDIGO.c900));
+                .fg(material::INDIGO.c900);
             frame.render_widget(Clear, actions_popup_area);
             frame.render_widget(&actions_popup_block, actions_popup_area);
             frame.render_widget(
@@ -613,10 +597,10 @@ impl MainScreen {
             }
         });
 
-        let [debug_area, input_area, _, sort_area, _, direction_area, _] =
+        let [_debug_area, input_area, _, sort_area, _, direction_area, _] =
             horizontal![>=1, <=25, ==1, <=14, ==1, ==3, ==1].areas(area);
 
-        frame.render_widget(Paragraph::new(format!("scroll_pos: {} selected_item: {} movies_num: {} num_visible_items: {} partially_visible: {} alignment_bottom: {}", self.movies_list_scroll_pos, self.movies_list_selected_item, self.filtered_movies.len(), self.movies_list_num_visible_items, self.movies_list_partially_visible_item, self.movies_list_alignment_bottom)).wrap(Wrap { trim: false }), debug_area);
+        // frame.render_widget(Paragraph::new(format!("scroll_pos: {} selected_item: {} movies_num: {} num_visible_items: {} partially_visible: {} alignment_bottom: {}", self.movies_list_scroll_pos, self.movies_list_selected_item, self.filtered_movies.len(), self.movies_list_num_visible_items, self.movies_list_partially_visible_item, self.movies_list_alignment_bottom)).wrap(Wrap { trim: false }), debug_area);
 
         let tab_selected = self.tab == 2;
         self.search_input
@@ -649,7 +633,7 @@ impl MainScreen {
         self.search_input.set_block(
             Block::bordered()
                 .border_type(ratatui::widgets::BorderType::Thick)
-                .style(Style::new().fg(if tab_selected {
+                .fg(if tab_selected {
                     if self.item == 0 {
                         material::BLUE.c500
                     } else {
@@ -657,7 +641,7 @@ impl MainScreen {
                     }
                 } else {
                     tailwind::STONE.c600
-                }))
+                })
                 .padding(Padding::symmetric(1, 0)),
         );
         self.search_input.set_placeholder_text("Search");
@@ -679,7 +663,7 @@ impl MainScreen {
             },
         );
 
-        let bg = |x: usize| -> Color {
+        let get_bg = |x: usize| -> Color {
             if tab_selected {
                 if self.item == x {
                     material::BLUE.c600
@@ -690,7 +674,7 @@ impl MainScreen {
                 tailwind::SLATE.c700
             }
         };
-        let fg = |x: usize| -> Color {
+        let get_fg = |x: usize| -> Color {
             if tab_selected {
                 if self.item == x {
                     material::TEAL.c100
@@ -705,7 +689,7 @@ impl MainScreen {
         // "▼⬇⬆⏷"
         let sort_block = Block::bordered()
             .border_set(border::PROPORTIONAL_WIDE)
-            .style(Style::new().fg(bg(1)));
+            .fg(get_bg(1));
         let sort = ellipsize_string(
             match self.sort {
                 Sort::AddedDate => "Added",
@@ -719,13 +703,15 @@ impl MainScreen {
         );
         frame.render_widget(&sort_block, sort_area);
         frame.render_widget(
-            line![span!(sort)].style(Style::new().bold().fg(fg(1)).bg(bg(1))),
+            span!(sort).bold().fg(get_fg(1)).bg(get_bg(1)),
             sort_block.inner(sort_area),
         );
         frame.render_widget(
-            span!(" ▼")
-                .into_right_aligned_line()
-                .style(Style::new().bold().fg(fg(1)).bg(bg(1))),
+            line!(" ▼")
+                .right_aligned()
+                .bold()
+                .fg(get_fg(1))
+                .bg(get_bg(1)),
             sort_block.inner(sort_area),
         );
         key_event_handler.bind_mouse_button_down(
@@ -741,13 +727,15 @@ impl MainScreen {
 
         let direction_block = Block::bordered()
             .border_set(border::PROPORTIONAL_WIDE)
-            .style(Style::new().fg(bg(2)));
+            .fg(get_bg(2));
         let direction = if self.sort_ascending { "⬆" } else { "⬇" };
         frame.render_widget(&direction_block, direction_area);
         frame.render_widget(
-            span!(direction)
-                .into_centered_line()
-                .style(Style::new().bold().fg(fg(2)).bg(bg(2))),
+            line!(direction)
+                .centered()
+                .bold()
+                .fg(get_fg(2))
+                .bg(get_bg(2)),
             direction_block.inner(direction_area),
         );
         key_event_handler.bind_mouse_button_down(
@@ -1056,7 +1044,7 @@ impl MainScreen {
                 Padding::proportional(1)
             },
         );
-        let poster_width = ((MOVIE_WIDGET_HEIGHT - 2) as f32 / 1.5).ceil() as u16 * 2 + 1;
+        let poster_width = ((MOVIE_WIDGET_HEIGHT - 2) as f32 * 2.0 / 3.0).ceil() as u16 * 2;
         let [poster_area, _, description_area] =
             horizontal![==poster_width, ==2, >=0].areas(vert_lay);
         let highlight_area = area
@@ -1117,11 +1105,11 @@ impl MainScreen {
                     line!(format!("#{}", movie_index + 1))
                         .right_aligned()
                         .bold()
-                        .style(Style::new().fg(if selected {
+                        .fg(if selected {
                             tailwind::GRAY.c200
                         } else {
                             tailwind::GRAY.c400
-                        })),
+                        }),
                     area,
                 ),
                 _ =>
@@ -1148,7 +1136,7 @@ impl MainScreen {
         };
         if selected {
             frame.render_widget(
-                text![line!["▐"]; highlight_area.height as usize].fg(if tab_selected {
+                text![span!("▐"); highlight_area.height as usize].fg(if tab_selected {
                     rating_color
                 } else {
                     unfocused_rating_color
@@ -1245,25 +1233,61 @@ impl MainScreen {
         };
 
         let inner = add_padding(area, Padding::proportional(1));
-        let backdrop_height = ((inner.width - 4) as f32 * 9.0 / 32.0).ceil() as u16;
+        let backdrop_height = (inner.width as f32 * 9.0 / 16.0).ceil() as u16 >> 1;
         let [backdrop_area, title_area, description_area] =
             vertical![==backdrop_height, ==8, >=1].areas(inner);
 
-        frame.render_widget(Block::new().bg(tailwind::SLATE.c800), area);
-
         if let Some(movie) = movie {
-            let [title_area, _, ratings_area, _, tabs_area] =
-                vertical![==2, ==1, ==2, ==1, ==2].areas(title_area);
+            let [title_area, ratings_area, _, tabs_area] =
+                vertical![==3, ==2, ==1, ==2].areas(title_area);
 
             let mut name = movie.name.clone();
             name = ellipsize_string(&name, title_area.width as usize);
 
+            let rating = movie.get_user_rating();
+            let user_rating_widget_bg = if rating >= 9.0 {
+                tailwind::SKY.c400
+            } else if rating >= 8.0 {
+                tailwind::GREEN.c500
+            } else if rating >= 7.5 {
+                tailwind::LIME.c400
+            } else if rating >= 7.0 {
+                material::AMBER.c400
+            } else if rating >= 6.0 {
+                tailwind::ORANGE.c500
+            } else {
+                material::RED.c400
+            };
+            let user_rating_widget_fg = if rating >= 7.0 {
+                tailwind::STONE.c950
+            } else {
+                tailwind::STONE.c200
+            };
+            let user_rating_widget = line![
+                span!("").fg(user_rating_widget_bg),
+                span!(format!("{rating:.1}"))
+                    .bold()
+                    .fg(user_rating_widget_fg)
+                    .bg(user_rating_widget_bg),
+                span!("").fg(user_rating_widget_bg)
+            ];
+
             frame.render_widget(
-                text![
-                    name.bold().into_centered_line(),
-                    movie.year.as_str().italic().into_centered_line(),
+                line![
+                    span!("     "),
+                    name.clone().bold(),
+                    span!(" "),
+                    movie.year.as_str().italic()
                 ],
-                title_area,
+                title_area
+                    .resize(Size::new(title_area.width, 1))
+                    .centered(constraint!(==name.len() as u16 + 10), constraint!(==1)),
+            );
+            frame.render_widget(
+                user_rating_widget,
+                add_padding(title_area, Padding::top(1))
+                    .resize(Size::new(title_area.width, 1))
+                    .centered(constraint!(==5), constraint!(==1)),
             );
             self.draw_ratings(movie, frame, ratings_area);
 
@@ -1321,7 +1345,7 @@ impl MainScreen {
             frame.render_widget(
                 text![
                     tabs,
-                    Line::from("🮂".repeat(title_area.width as usize)).fg(if description_selected {
+                    line!("🮂".repeat(title_area.width as usize)).fg(if description_selected {
                         BGS[self.movies_description_selected_tab]
                     } else {
                         _BGS[self.movies_description_selected_tab]
@@ -1335,17 +1359,63 @@ impl MainScreen {
                     frame.render_widget(Block::new().bg(tailwind::SLATE.c900), description_area);
 
                     let mut overview_lines =
-                        wrap_text(&movie.overview, description_area.width as usize);
-                    let line_count = overview_lines.len();
-                    self.movies_description_overview_scroll = self
-                        .movies_description_overview_scroll
-                        .min(line_count.saturating_sub(description_area.height as usize));
-                    frame.render_widget(
-                        Text::from_iter(
-                            overview_lines.split_off(self.movies_description_overview_scroll),
-                        ),
-                        description_area,
+                        wrap_text(&movie.overview, description_area.width as usize)
+                            .into_iter()
+                            .map(|x| line!(x))
+                            .collect_vec();
+
+                    let genres_widgets = movie
+                        .genres
+                        .iter()
+                        .sorted_by(|a, b| a.len().cmp(&b.len()))
+                        .map(|genre| {
+                            vec![
+                                span!("").fg(tailwind::SLATE.c100),
+                                span!(genre)
+                                    .bold()
+                                    .fg(tailwind::SLATE.c950)
+                                    .bg(tailwind::SLATE.c100),
+                                span!("").fg(tailwind::SLATE.c100),
+                            ]
+                        });
+                    let mut genres_lines = vec![];
+                    for widget in genres_widgets {
+                        let mut line: Vec<Span<'_>> = genres_lines.pop().unwrap_or(vec![]);
+
+                        if widget.iter().fold(0, |a, b| a + b.content.chars().count())
+                            + line.iter().fold(0, |a, b| a + b.content.chars().count())
+                            + if !line.is_empty() { 1 } else { 0 }
+                            <= description_area.width as usize
+                        {
+                            if !line.is_empty() {
+                                line.push(" ".into());
+                            }
+
+                            line.extend(widget);
+                            genres_lines.push(line);
+                        } else {
+                            genres_lines.push(line);
+                            genres_lines.push(widget);
+                        }
+                    }
+
+                    overview_lines.push(line!());
+                    overview_lines.extend(
+                        genres_lines
+                            .into_iter()
+                            .map(|x| Line::from_iter(x).centered()),
                     );
+                    self.movies_description_overview_scroll =
+                        self.movies_description_overview_scroll.min(
+                            overview_lines
+                                .len()
+                                .saturating_sub(description_area.height as usize),
+                        );
+                    let text = Text::from_iter(
+                        overview_lines.split_off(self.movies_description_overview_scroll),
+                    );
+
+                    frame.render_widget(text, description_area);
 
                     key_event_handler.bind_vertical(
                         (Some(1), Some(self.movies_description_selected_tab << 9)),
@@ -1475,51 +1545,52 @@ impl MainScreen {
         }
 
         if ratings.is_empty() {
-            frame.render_widget(Line::from("NA").centered(), area);
+            frame.render_widget(line!("NA").centered(), area);
 
             return;
         }
 
-        let spaces = ((area.width - 5 * (ratings.len() as u16)) as f64 / (ratings.len() + 1) as f64)
-            .ceil() as usize;
-
-        let mut widgets = Line::from(" ".repeat(spaces));
-        let mut labels = Line::from(" ".repeat(spaces));
-        for (i, rating) in ratings.iter().enumerate() {
+        let mut widgets = vec![];
+        let mut labels = line!();
+        for (i, rating) in ratings
+            .iter()
+            .sorted_by(|&&a, &b| a.partial_cmp(b).unwrap())
+            .enumerate()
+        {
             let (bg, fg, r) = if let Rating::IMDB(a, _) = rating {
-                labels.push_span(Span::from("IMDB").fg(imdb_label_fg));
-                if i != ratings.len() - 1 {
-                    labels.push_span(" ".repeat(spaces + 1));
-                }
+                labels.push_span(span!("IMDB").fg(imdb_label_fg));
 
                 (imdb_bg, imdb_fg, a)
             } else if let Rating::Trakt(a, _) = rating {
-                labels.push_span(Span::from("Trakt").fg(trakt_label_fg));
-                if i != ratings.len() - 1 {
-                    labels.push_span(" ".repeat(spaces));
-                }
+                labels.push_span(span!("Trakt").fg(trakt_label_fg));
 
                 (trakt_bg, trakt_fg, a)
             } else if let Rating::TMDB(a, _) = rating {
-                labels.push_span(Span::from("TMDB").fg(tmdb_label_fg));
-                if i != ratings.len() - 1 {
-                    labels.push_span(" ".repeat(spaces + 1));
-                }
+                labels.push_span(span!("TMDB").fg(tmdb_label_fg));
 
                 (tmdb_bg, tmdb_fg, a)
             } else {
                 continue;
             };
 
-            widgets.push_span("".fg(bg));
-            widgets.push_span(format!("{:.1}", r).bg(bg).fg(fg).bold());
-            widgets.push_span("".fg(bg));
-            if i != ratings.len() - 1 {
-                widgets.push_span(" ".repeat(spaces));
-            }
+            widgets.push(vec![
+                "".fg(bg),
+                format!("{:.1}", r).bg(bg).fg(fg).bold(),
+                "".fg(bg),
+            ]);
         }
 
-        frame.render_widget(text![labels, widgets], area);
+        let widget_areas = Layout::horizontal(vec![constraint!(==5); ratings.len()])
+            .flex(ratatui::layout::Flex::SpaceEvenly)
+            .split(add_padding(area, Padding::top(1)));
+        for ((widget, label), &area) in widgets
+            .into_iter()
+            .zip(labels.into_iter())
+            .zip(widget_areas.into_iter())
+        {
+            frame.render_widget(label, area.offset(Offset::new(0, -1)));
+            frame.render_widget(Line::from_iter(widget), area);
+        }
     }
 
     fn draw_plays_tab(
@@ -1675,13 +1746,11 @@ impl MainScreen {
                                 );
                             } else {
                                 frame.render_widget(
-                                    Line::from("▔".repeat(area.width as usize)).fg(
-                                        if tab_selected {
-                                            tailwind::ZINC.c500
-                                        } else {
-                                            tailwind::ZINC.c600
-                                        },
-                                    ),
+                                    span!("▔".repeat(area.width as usize)).fg(if tab_selected {
+                                        tailwind::ZINC.c500
+                                    } else {
+                                        tailwind::ZINC.c600
+                                    }),
                                     add_padding(areas[i as usize], Padding::left(2)),
                                 );
                             },
@@ -1734,13 +1803,11 @@ impl MainScreen {
                             }
                             if latest {
                                 frame.render_widget(
-                                    Line::from("▁".repeat(area.width as usize)).fg(
-                                        if tab_selected {
-                                            tailwind::ZINC.c500
-                                        } else {
-                                            tailwind::ZINC.c600
-                                        },
-                                    ),
+                                    span!("▁".repeat(area.width as usize)).fg(if tab_selected {
+                                        tailwind::ZINC.c500
+                                    } else {
+                                        tailwind::ZINC.c600
+                                    }),
                                     add_padding(areas[i as usize], Padding::left(2)),
                                 );
                             }

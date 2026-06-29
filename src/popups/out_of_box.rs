@@ -1,7 +1,4 @@
-use ratatui::{
-    Frame, layout::*, macros::vertical, prelude::*, style::palette::material, widgets::*,
-};
-use style::palette::tailwind;
+use ratatui::{Frame, macros::vertical, style::palette::material};
 
 use crate::{
     helpers::{add_padding, dynamic_popup},

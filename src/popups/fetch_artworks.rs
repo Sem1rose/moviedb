@@ -6,12 +6,14 @@ use std::{
 
 use ratatui::{
     Frame,
-    layout::*,
+    layout::{Alignment, Flex},
     macros::{horizontal, vertical},
-    prelude::*,
-    style::palette::{material, tailwind},
+    style::{
+        Style, Stylize,
+        palette::{material, tailwind},
+    },
     text::ToSpan,
-    widgets::*,
+    widgets::{Gauge, Padding},
 };
 use throbber_widgets_tui::{Throbber, ThrobberState};
 

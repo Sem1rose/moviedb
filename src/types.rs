@@ -1,13 +1,14 @@
-use std::io::stdout;
+use std::{cmp::Ordering, io::stdout};
 
 use chrono::{DateTime, Local};
 use ratatui::{
+    Terminal,
+    backend::CrosstermBackend,
     crossterm::{
         self, ExecutableCommand,
         event::{DisableMouseCapture, EnableMouseCapture},
         terminal::{EnterAlternateScreen, LeaveAlternateScreen},
     },
-    prelude::*,
 };
 use serde::{Deserialize, Serialize};
 
@@ -48,7 +49,7 @@ fn set_panic_hook() {
     }));
 }
 
-#[derive(Serialize, Clone, Copy, Deserialize, Debug)]
+#[derive(Serialize, Clone, Copy, Deserialize, Debug, PartialEq)]
 pub enum Rating {
     Trakt(f64, u32),
     TMDB(f64, u32),
@@ -62,6 +63,32 @@ impl From<Rating> for f64 {
             Rating::TMDB(rating, _) => rating,
             Rating::IMDB(rating, _) => rating,
         }
+    }
+}
+
+impl PartialOrd for Rating {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(if matches!(self, Rating::IMDB(_, _)) {
+            if matches!(other, Rating::IMDB(_, _)) {
+                Ordering::Equal
+            } else {
+                Ordering::Less
+            }
+        } else if matches!(self, Rating::Trakt(_, _)) {
+            if matches!(other, Rating::IMDB(_, _)) {
+                Ordering::Greater
+            } else if matches!(other, Rating::Trakt(_, _)) {
+                Ordering::Equal
+            } else {
+                Ordering::Less
+            }
+        } else {
+            if matches!(other, Rating::TMDB(_, _)) {
+                Ordering::Equal
+            } else {
+                Ordering::Greater
+            }
+        })
     }
 }
 
@@ -166,7 +193,7 @@ impl Movie {
 
         self.collection = collection;
         self.collection_id = collection_id;
-        self.ratings[0] = Rating::TMDB(tmdb_details.vote_average, tmdb_details.vote_count);
+        self.ratings[2] = Rating::TMDB(tmdb_details.vote_average, tmdb_details.vote_count);
     }
 
     pub fn add_trakt_details(&mut self, trakt_details: TraktDetailsResponse) {
@@ -175,7 +202,7 @@ impl Movie {
     }
 
     pub fn add_omdb_details(&mut self, omdb_details: OMDBDetailsResponse) {
-        self.ratings[2] = Rating::IMDB(
+        self.ratings[0] = Rating::IMDB(
             omdb_details.imdbRating.parse().unwrap_or(0.0),
             omdb_details
                 .imdbVotes
@@ -205,11 +232,6 @@ impl std::cmp::PartialEq<Movie> for Movie {
         self.id.imdb == other.id.imdb
     }
 }
-// impl std::cmp::PartialEq<&Movie> for &Movie {
-//     fn eq(&self, other: &&Movie) -> bool {
-//         self.id.imdb == other.id.imdb
-//     }
-// }
 
 #[derive(Serialize, Deserialize)]
 pub struct OldMovie {

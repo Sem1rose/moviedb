@@ -6,11 +6,13 @@ use std::{
 
 use ratatui::{
     Frame,
-    layout::*,
-    macros::{constraint, vertical},
-    prelude::*,
-    style::palette::{material, tailwind},
-    widgets::*,
+    layout::{Alignment, HorizontalAlignment, Margin},
+    macros::{constraint, line, vertical},
+    style::{
+        Style,
+        palette::{material, tailwind},
+    },
+    widgets::Padding,
 };
 use ratatui_textarea::{TextArea, WrapMode};
 use throbber_widgets_tui::{Throbber, ThrobberState};
@@ -250,7 +252,7 @@ impl OMDBInitPopup {
             );
             let [_, message_area, throbber_area, _] =
                 vertical![>=1, ==2, ==1, >=1].areas(popup_area);
-            frame.render_widget(Paragraph::new("Processing").centered(), message_area);
+            frame.render_widget(line!("Processing").centered(), message_area);
 
             frame.render_stateful_widget(
                 Throbber::default()

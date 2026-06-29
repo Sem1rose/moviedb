@@ -1,8 +1,14 @@
 use ratatui::{
-    Frame, layout::*, macros::vertical, prelude::*, style::palette::material, widgets::*,
+    Frame,
+    layout::{Alignment, HorizontalAlignment, Margin},
+    macros::vertical,
+    style::{
+        Style,
+        palette::{material, tailwind},
+    },
+    widgets::Padding,
 };
 use ratatui_textarea::{TextArea, WrapMode};
-use style::palette::tailwind;
 
 use crate::{
     helpers::{add_padding, dynamic_popup},
