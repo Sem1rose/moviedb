@@ -20,16 +20,14 @@ impl OMDBTokens {
     }
 
     pub fn init(home_dir: &PathBuf) -> anyhow::Result<String> {
-        let tokens_file_exists = home_dir.join(".omdb_tokens").is_file();
-
-        if tokens_file_exists {
+        if home_dir.join(".omdb_tokens").is_file() {
             Self::read_creds(home_dir)
         } else {
             bail!("OMDB: User tokens file does not exist.")
         }
     }
 
-    fn read_creds(home_dir: &PathBuf) -> anyhow::Result<String> {
+    pub fn read_creds(home_dir: &PathBuf) -> anyhow::Result<String> {
         let encrypted_data =
             fs::read(&home_dir.join(".omdb_tokens")).context("OMDB: unable to read tokens")?;
 

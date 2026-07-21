@@ -1163,8 +1163,6 @@ impl MainScreen {
             .resize(Size::new(2, area.height.saturating_sub(2)))
             .offset(Offset::new(0, 1));
 
-        let name = ellipsize_string(&movie.name, description_area.width as usize - 11);
-
         let rating = movie.get_user_rating();
         let rating_color = if rating >= 9.0 {
             tailwind::SKY.c400
@@ -1180,13 +1178,34 @@ impl MainScreen {
             material::RED.c400
         };
 
-        let mut description_lines = vec![
-            name.bold() + " ".into() + movie.year.clone().italic(),
+        let mut description_lines: Vec<Line<'_>> = vec![];
+
+        const TITLE_LINES: usize = 2;
+        let mut title_lines = wrap_text(&movie.name, description_area.width as usize - 4);
+        for _ in 0..(TITLE_LINES.saturating_sub(title_lines.len())) {
+            description_lines.push("".into());
+        }
+        title_lines.reverse();
+        for _ in 0..(TITLE_LINES.min(title_lines.len()) - 1) {
+            description_lines.push(title_lines.pop().unwrap().bold().into());
+        }
+        description_lines.push(
+            (ellipsize_string(
+                &title_lines.pop().unwrap(),
+                description_area.width as usize - 5,
+            )
+            .bold()
+                + " ".into()
+                + movie.year.clone().italic())
+            .into(),
+        );
+
+        description_lines.push(
             format!("{:.1}", rating)
                 .set_style(rating_color)
                 .bold()
                 .into(),
-        ];
+        );
 
         const TAGLINE_LINES: usize = 2;
         let mut tagline_lines = wrap_text(&movie.tagline, description_area.width as usize);
@@ -1225,10 +1244,15 @@ impl MainScreen {
                     area,
                 ),
                 _ =>
-                    for i in 0..4 {
-                        if index == MOVIE_WIDGET_HEIGHT as u16 - 2 - i - 1 {
-                            frame.render_widget(&description_lines[3 - i as usize], area)
-                        }
+                    if i > 0 &&
+                    (i as usize - 1)
+                        .checked_sub((MOVIE_WIDGET_HEIGHT - 3).saturating_sub(description_lines.len()))
+                        .is_some()
+                    {
+                        frame.render_widget(
+                            &description_lines[i as usize - 1 - (MOVIE_WIDGET_HEIGHT - 3).saturating_sub(description_lines.len())],
+                            area,
+                        )
                     },
             }
         }

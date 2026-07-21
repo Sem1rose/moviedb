@@ -45,16 +45,14 @@ impl TraktTokens {
     }
 
     pub fn init(home_dir: &PathBuf) -> anyhow::Result<UserTokens> {
-        let tokens_file_exists = home_dir.join(".trakt_tokens").is_file();
-
-        if tokens_file_exists {
+        if home_dir.join(".trakt_tokens").is_file() {
             Self::read_creds(home_dir)
         } else {
             bail!("Trakt: User tokens file does not exist.")
         }
     }
 
-    fn read_creds(home_dir: &PathBuf) -> anyhow::Result<UserTokens> {
+    pub fn read_creds(home_dir: &PathBuf) -> anyhow::Result<UserTokens> {
         let encrypted_data =
             fs::read(&home_dir.join(".trakt_tokens")).context("Trakt: unable to read tokens")?;
 

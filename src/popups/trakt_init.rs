@@ -155,31 +155,29 @@ impl TraktInitPopup {
                                     TextArea::new(vec![user_tokens.client_secret.clone()]);
                                 self.advance_phase();
                             } else {
-                                self.user_tokens = Some(user_tokens);
+                                if user_tokens.should_refresh_tokens() {
+                                    let client_id = user_tokens.client_id.clone();
+                                    let client_secret = user_tokens.client_secret.clone();
+                                    let refresh_token = user_tokens.refresh_token.clone();
+                                    let (tx_tokens, rx_tokens) = channel();
 
-                                if let Some(user_tokens) = self.user_tokens.as_ref() {
-                                    if user_tokens.should_refresh_tokens() {
-                                        let client_id = user_tokens.client_id.clone();
-                                        let client_secret = user_tokens.client_secret.clone();
-                                        let refresh_token = user_tokens.refresh_token.clone();
-                                        let (tx_tokens, rx_tokens) = channel();
+                                    thread::spawn(move || {
+                                        _ = tx_tokens.send(trakt::tokens::refresh_tokens(
+                                            &client_id,
+                                            &client_secret,
+                                            &refresh_token,
+                                        ));
+                                    });
 
-                                        thread::spawn(move || {
-                                            _ = tx_tokens.send(trakt::tokens::refresh_tokens(
-                                                &client_id,
-                                                &client_secret,
-                                                &refresh_token,
-                                            ));
-                                        });
+                                    self.rx_tokens = Some(rx_tokens);
 
-                                        self.rx_tokens = Some(rx_tokens);
-
-                                        self.refreshing = true;
-                                        self.phase = Phase::RefreshingTokens;
-                                    } else {
-                                        self.phase = Phase::Done;
-                                    }
+                                    self.refreshing = true;
+                                    self.phase = Phase::RefreshingTokens;
+                                } else {
+                                    self.phase = Phase::Done;
                                 }
+
+                                self.user_tokens = Some(user_tokens);
                             }
                         } else {
                             self.advance_phase();

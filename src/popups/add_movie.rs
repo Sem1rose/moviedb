@@ -59,13 +59,13 @@ enum SearchResults {
     Trakt(anyhow::Result<Vec<TraktSearchResponseMovie>>),
 }
 
-struct Movie {
+struct SearchResultMovie {
     title:        String,
     release_year: String,
     rating:       Rating,
     id:           SearchResultID,
 }
-impl From<TMDBSearchResult> for Movie {
+impl From<TMDBSearchResult> for SearchResultMovie {
     fn from(value: TMDBSearchResult) -> Self {
         Self {
             title:        value.title,
@@ -75,7 +75,7 @@ impl From<TMDBSearchResult> for Movie {
         }
     }
 }
-impl From<TraktSearchResponseMovie> for Movie {
+impl From<TraktSearchResponseMovie> for SearchResultMovie {
     fn from(value: TraktSearchResponseMovie) -> Self {
         Self {
             title:        value.title,
@@ -109,7 +109,7 @@ pub struct AddMoviePopup {
 
     search_ticket:    u64,
     last_input_tick:  Option<u64>,
-    search_results:   Option<Vec<Movie>>,
+    search_results:   Option<Vec<SearchResultMovie>>,
     rx_search_result: Option<Receiver<(u64, SearchResults)>>,
 
     pub user_rating:                f64,
@@ -176,7 +176,7 @@ impl AddMoviePopup {
     }
 
     pub fn request_details(&mut self) {
-        let (tx_details_request, rx_details_request): (
+        let (tx_details_request, rx_details_response): (
             mpsc::Sender<anyhow::Result<DetailsResponse>>,
             Receiver<anyhow::Result<DetailsResponse>>,
         ) = mpsc::channel();
@@ -255,12 +255,18 @@ impl AddMoviePopup {
                         })
                     };
                     trakt_result = join_or_return!(trakt_handle);
-                    if let Err(error) = trakt_result {
-                        _ = tx_details_request.send(Err(error));
-                        return;
-                    }
-                    omdb_result = join_or_return!(omdb_handle);
                     tmdb_result = join_or_return!(tmdb_handle);
+                    omdb_result = join_or_return!(omdb_handle);
+                    if let Err(error_trakt) = trakt_result.as_ref() {
+                        if let Err(error_tmdb) = tmdb_result {
+                            _ = tx_details_request.send(Err(anyhow!(
+                                "{}\n{}",
+                                error_trakt,
+                                error_tmdb
+                            )));
+                            return;
+                        }
+                    }
                 }
             }
 
@@ -277,7 +283,7 @@ impl AddMoviePopup {
             }));
         });
 
-        self.rx_details_response = Some(rx_details_request);
+        self.rx_details_response = Some(rx_details_response);
     }
 
     pub fn advance_phase(&mut self) {

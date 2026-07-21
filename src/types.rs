@@ -105,7 +105,6 @@ pub struct MovieID {
 pub struct Movie {
     pub id:            MovieID,
     pub name:          String,
-    // TODO: make year a DateTime
     pub year:          String,
     pub language:      String,
     pub ratings:       [Rating; 3],
@@ -120,7 +119,6 @@ pub struct Movie {
     pub plays:         Vec<(DateTime<Local>, f64)>,
 }
 
-// TODO: By prefering tmdb movie_details.release_date over the trakt alternative
 impl From<TMDBDetailsResponse> for Movie {
     fn from(movie_details: TMDBDetailsResponse) -> Self {
         let mut collection = None;
@@ -188,7 +186,6 @@ impl From<TraktDetailsResponse> for Movie {
 }
 
 impl Movie {
-    // TODO: here as well
     pub fn add_tmdb_details(&mut self, tmdb_details: TMDBDetailsResponse) {
         let mut collection = None;
         let mut collection_id = None;
@@ -267,7 +264,6 @@ pub struct OldMovie {
     pub id:            MovieID,
     pub name:          String,
     pub year:          String,
-    pub user_rating:   f64,
     pub language:      String,
     pub ratings:       [Rating; 3],
     pub genres:        Vec<String>,
@@ -297,12 +293,7 @@ impl From<OldMovie> for Movie {
             released:      value.released,
             tagline:       value.tagline,
             trailer:       value.trailer,
-            plays:         vec![(
-                DateTime::from_timestamp(0, 0)
-                    .unwrap()
-                    .with_timezone(&Local),
-                value.user_rating,
-            )],
+            plays:         value.plays,
         }
     }
 }
