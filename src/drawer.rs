@@ -41,9 +41,9 @@ impl Drawer {
             screen_queue:   vec![Screens::MainScreen(MainScreen::new(cache_dir))],
             popup_queue:    vec![
                 Popups::FetchArtworks(FetchArtworksPopup::new(cache_dir)),
-                Popups::OMDBInit(OMDBInitPopup::new(home_dir)),
-                Popups::TMDBInit(TMDBInitPopup::new(home_dir)),
                 Popups::TraktInit(TraktInitPopup::new(home_dir, false)),
+                Popups::TMDBInit(TMDBInitPopup::new(home_dir)),
+                Popups::OMDBInit(OMDBInitPopup::new(home_dir)),
             ],
         }
     }
@@ -237,10 +237,10 @@ impl Drawer {
     pub fn close_popups(&mut self) {
         self.active_popup = None;
 
-        self.refresh_immediate += 2;
         if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_mut() {
             main_screen.redraw_images = 1;
         }
+        self.refresh_immediate += 2;
     }
 
     pub fn check_refresh_immediate(&mut self) -> bool {

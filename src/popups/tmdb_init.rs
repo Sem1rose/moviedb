@@ -17,12 +17,12 @@ use ratatui::{
 };
 use ratatui_textarea::{TextArea, WrapMode};
 use throbber_widgets_tui::{Throbber, ThrobberState};
+use tmdb;
 
 use crate::{
     helpers::{add_padding, dynamic_popup, wrap_text},
     key_event_handler::{self, KeyEventHandler},
     popups::Popups,
-    tmdb,
     tokens::tmdb_tokens::{TMDBTokens, UserTokens},
     widgets::{self, Action, ActionTypes},
 };
@@ -96,8 +96,10 @@ impl TMDBInitPopup {
                 let (tx_authorization_url, rx_authorization_url) = channel();
                 let (tx_session_id, rx_session_id) = channel();
                 thread::spawn(move || {
-                    _ = tx_session_id
-                        .send(tmdb::get_session_id(&access_token, tx_authorization_url));
+                    _ = tx_session_id.send(tmdb::tokens::get_session_id(
+                        &access_token,
+                        tx_authorization_url,
+                    ));
                 });
 
                 self.rx_authorization_url = Some(rx_authorization_url);

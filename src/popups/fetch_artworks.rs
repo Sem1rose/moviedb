@@ -16,11 +16,12 @@ use ratatui::{
     widgets::{Gauge, Padding},
 };
 use throbber_widgets_tui::{Throbber, ThrobberState};
+use tmdb;
+use trakt;
 
 use crate::{
     helpers::{add_padding, dynamic_popup},
     key_event_handler::KeyEventHandler,
-    tmdb, trakt,
     types::{Movie, MovieID},
 };
 
@@ -75,19 +76,23 @@ impl FetchArtworksPopup {
                 let tmdb_access_token = tmdb_access_token.clone();
                 thread::spawn(move || {
                     let result = if !trakt_client_id.is_empty() {
-                        trakt::get_movie_poster_banner(
+                        trakt::movie::get_movie_poster_banner(
                             &cache_dir,
                             &trakt_client_id,
                             &request.imdb.clone(),
                         )
                     } else {
-                        tmdb::get_movie_poster_banner(&cache_dir, &tmdb_access_token, request.tmdb)
+                        tmdb::movie::get_movie_poster_banner(
+                            &cache_dir,
+                            &tmdb_access_token,
+                            request.tmdb,
+                        )
                     };
 
                     _ = if result.is_ok() {
                         tx_response.send((request, result))
                     } else if !trakt_client_id.is_empty() {
-                        let result = tmdb::get_movie_poster_banner(
+                        let result = tmdb::movie::get_movie_poster_banner(
                             &cache_dir,
                             &tmdb_access_token,
                             request.tmdb,

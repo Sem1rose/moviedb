@@ -1,4 +1,5 @@
 mod add_movie;
+mod advanced_filter;
 mod delete_movie;
 mod edit_movie;
 mod fetch_artworks;
@@ -8,6 +9,7 @@ mod tmdb_init;
 mod trakt_init;
 
 pub use add_movie::{AddMoviePopup, Phase as AddMoviePopupPhase};
+pub use advanced_filter::AdvancedFilterPopup;
 pub use delete_movie::DeleteMoviePopup;
 pub use edit_movie::EditMoviePopup;
 pub use fetch_artworks::FetchArtworksPopup;
@@ -25,4 +27,5 @@ pub enum Popups {
     OMDBInit(OMDBInitPopup),
     FetchArtworks(FetchArtworksPopup),
     // OutOfBox(OutOfBoxPopup),
+    // AdvancedFilter(AdvancedFilterPopup),
 }

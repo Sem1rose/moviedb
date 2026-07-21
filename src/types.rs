@@ -1,6 +1,7 @@
 use std::{cmp::Ordering, io::stdout};
 
 use chrono::{DateTime, Local};
+use itertools::Itertools;
 use ratatui::{
     Terminal,
     backend::CrosstermBackend,
@@ -11,8 +12,10 @@ use ratatui::{
     },
 };
 use serde::{Deserialize, Serialize};
+use tmdb::smo::TMDBDetailsResponse;
+use trakt::smo::TraktDetailsResponse;
 
-use crate::{omdb::OMDBDetailsResponse, tmdb::TMDBDetailsResponse, trakt::TraktDetailsResponse};
+use crate::omdb::OMDBDetailsResponse;
 
 pub type Term = Terminal<TermBackend>;
 type TermBackend = CrosstermBackend<std::io::Stdout>;
@@ -102,6 +105,7 @@ pub struct MovieID {
 pub struct Movie {
     pub id:            MovieID,
     pub name:          String,
+    // TODO: make year a DateTime
     pub year:          String,
     pub language:      String,
     pub ratings:       [Rating; 3],
@@ -116,6 +120,7 @@ pub struct Movie {
     pub plays:         Vec<(DateTime<Local>, f64)>,
 }
 
+// TODO: By prefering tmdb movie_details.release_date over the trakt alternative
 impl From<TMDBDetailsResponse> for Movie {
     fn from(movie_details: TMDBDetailsResponse) -> Self {
         let mut collection = None;
@@ -132,7 +137,7 @@ impl From<TMDBDetailsResponse> for Movie {
                 Rating::Trakt(0.0, 0),
                 Rating::IMDB(0.0, 0),
             ],
-            year: movie_details.release_date.split('-').collect::<Vec<_>>()[0].to_string(),
+            year: movie_details.release_date.split('-').collect_vec()[0].to_string(),
             language: movie_details.original_language,
             id: MovieID {
                 tmdb: movie_details.id,
@@ -183,6 +188,7 @@ impl From<TraktDetailsResponse> for Movie {
 }
 
 impl Movie {
+    // TODO: here as well
     pub fn add_tmdb_details(&mut self, tmdb_details: TMDBDetailsResponse) {
         let mut collection = None;
         let mut collection_id = None;
@@ -214,8 +220,31 @@ impl Movie {
         );
     }
 
+    pub fn get_external_rating(&self) -> f64 {
+        for _r in self
+            .ratings
+            .iter()
+            .sorted_by(|&&a, &b| a.partial_cmp(b).unwrap())
+        {
+            match _r {
+                Rating::IMDB(r, _) | Rating::Trakt(r, _) | Rating::TMDB(r, _) if *r > 0.0 => {
+                    return *r;
+                }
+                _ => (),
+            }
+        }
+        f64::NAN
+    }
+
     pub fn get_user_rating(&self) -> f64 {
         self.plays.last().map(|x| x.1).unwrap_or(0.0)
+    }
+
+    pub fn get_first_play(&self) -> DateTime<Local> {
+        self.plays
+            .first()
+            .map(|x| x.0)
+            .unwrap_or(DateTime::default())
     }
 
     pub fn add_play(&mut self, datetime: DateTime<Local>, rating: f64) {

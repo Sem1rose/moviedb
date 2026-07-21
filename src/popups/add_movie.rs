@@ -20,15 +20,21 @@ use ratatui::{
 };
 use ratatui_textarea::{TextArea, WrapMode};
 use throbber_widgets_tui::{Throbber, ThrobberState};
+use tmdb::{
+    self,
+    smo::{TMDBDetailsResponse, TMDBSearchResult},
+};
+use trakt::{
+    self,
+    smo::{TraktDetailsResponse, TraktSearchResponseMovie},
+};
 
 use crate::{
     helpers::{add_padding, dynamic_popup},
     key_event_handler::{self, KeyEventHandler},
     omdb::{self, OMDBDetailsResponse},
     popups::Popups,
-    tmdb::{self, TMDBDetailsResponse, TMDBSearchResult},
     tokens::{OMDBTokens, TMDBTokens, TraktTokens},
-    trakt::{self, TraktDetailsResponse, TraktSearchResponseMovie},
     types::Rating,
     widgets::{self, Action, ActionTypes},
 };
@@ -156,12 +162,12 @@ impl AddMoviePopup {
             if !client_id.is_empty() {
                 _ = tx_search_results.send((
                     ticket,
-                    SearchResults::Trakt(trakt::find_movie(&client_id, &search_string)),
+                    SearchResults::Trakt(trakt::movie::find_movie(&client_id, &search_string)),
                 ));
             } else {
                 _ = tx_search_results.send((
                     ticket,
-                    SearchResults::TMDB(tmdb::find_movie(&access_token, &search_string)),
+                    SearchResults::TMDB(tmdb::movie::find_movie(&access_token, &search_string)),
                 ));
             }
         });
@@ -207,7 +213,9 @@ impl AddMoviePopup {
                     tmdb_id = id;
                     let tmdb_handle = {
                         let access_token = tmdb_access_token.clone();
-                        thread::spawn(move || tmdb::get_movie_details(&access_token, tmdb_id))
+                        thread::spawn(move || {
+                            tmdb::movie::get_movie_details(&access_token, tmdb_id)
+                        })
                     };
                     tmdb_result = join_or_return!(tmdb_handle);
                     if let Err(error) = tmdb_result {
@@ -219,7 +227,7 @@ impl AddMoviePopup {
                     let trakt_handle = {
                         let imdb_id = imdb_id.clone();
                         let client_id = trakt_client_id.clone();
-                        thread::spawn(move || trakt::get_movie_details(&client_id, &imdb_id))
+                        thread::spawn(move || trakt::movie::get_movie_details(&client_id, &imdb_id))
                     };
                     let omdb_handle = {
                         let imdb_id = imdb_id.clone();
@@ -234,7 +242,7 @@ impl AddMoviePopup {
                     let trakt_handle = {
                         let imdb_id = imdb_id.clone();
                         let client_id = trakt_client_id.clone();
-                        thread::spawn(move || trakt::get_movie_details(&client_id, &imdb_id))
+                        thread::spawn(move || trakt::movie::get_movie_details(&client_id, &imdb_id))
                     };
                     let omdb_handle = {
                         let imdb_id = imdb_id.clone();
@@ -242,7 +250,9 @@ impl AddMoviePopup {
                     };
                     let tmdb_handle = {
                         let access_token = tmdb_access_token.clone();
-                        thread::spawn(move || tmdb::get_movie_details(&access_token, tmdb_id))
+                        thread::spawn(move || {
+                            tmdb::movie::get_movie_details(&access_token, tmdb_id)
+                        })
                     };
                     trakt_result = join_or_return!(trakt_handle);
                     if let Err(error) = trakt_result {
@@ -254,9 +264,10 @@ impl AddMoviePopup {
                 }
             }
 
-            let result = trakt::get_movie_poster_banner(&cache_dir, &trakt_client_id, &imdb_id);
+            let result =
+                trakt::movie::get_movie_poster_banner(&cache_dir, &trakt_client_id, &imdb_id);
             if result.is_err() {
-                _ = tmdb::get_movie_poster_banner(&cache_dir, &tmdb_access_token, tmdb_id);
+                _ = tmdb::movie::get_movie_poster_banner(&cache_dir, &tmdb_access_token, tmdb_id);
             }
 
             _ = tx_details_request.send(Ok(DetailsResponse {

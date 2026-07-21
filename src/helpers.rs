@@ -20,17 +20,24 @@ pub fn wrap_text(line: &str, width: usize) -> Vec<String> {
             lines.push(line);
             break;
         }
-        let wrap_whitespace_index = line
-            .chars()
-            .collect_vec()
-            .into_iter()
-            .take(width)
-            .rposition(|x| x.is_whitespace())
-            .unwrap_or(width - 1)
-            + 1;
+        let wrap_whitespace_index = if line.chars().nth(width).unwrap().is_whitespace() {
+            width - 1
+        } else {
+            line.chars()
+                .collect_vec()
+                .into_iter()
+                .take(width)
+                .rposition(|x| x.is_whitespace())
+                .unwrap_or(width - 1)
+        } + 1;
 
         let mut line = line.chars().collect_vec();
-        let remaining_line = line.split_off(wrap_whitespace_index).iter().collect();
+        let remaining_line = line
+            .split_off(wrap_whitespace_index)
+            .iter()
+            .collect::<String>()
+            .trim_start()
+            .to_string();
 
         lines.push(line.iter().collect());
         lines.push(remaining_line);

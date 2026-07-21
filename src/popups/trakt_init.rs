@@ -17,13 +17,13 @@ use ratatui::{
 };
 use ratatui_textarea::{TextArea, WrapMode};
 use throbber_widgets_tui::{Throbber, ThrobberState};
+use trakt::{self, smo::TokenResponse};
 
 use crate::{
     helpers::{add_padding, dynamic_popup, wrap_text},
     key_event_handler::{self, KeyEventHandler},
     popups::Popups,
     tokens::trakt_tokens::{TraktTokens, UserTokens},
-    trakt::{self, TokenResponse},
     widgets::{self, Action, ActionTypes},
 };
 
@@ -47,17 +47,18 @@ pub struct TraktInitPopup {
     pub phase:        Phase,
     throbber_visible: bool,
     one_shot:         bool,
+    refreshing:       bool,
 
+    throbber_state: ThrobberState,
     input0:         TextArea<'static>,
     input1:         TextArea<'static>,
-    throbber_state: ThrobberState,
 
     rx_init:      Option<Receiver<anyhow::Result<UserTokens>>>,
     tx_auth_code: Option<Sender<String>>,
     rx_auth_url:  Option<Receiver<String>>,
     rx_tokens:    Option<Receiver<anyhow::Result<TokenResponse>>>,
 
-    pub tokens: Option<UserTokens>,
+    pub user_tokens: Option<UserTokens>,
 }
 
 impl TraktInitPopup {
@@ -81,7 +82,7 @@ impl TraktInitPopup {
     }
 
     pub fn update_next_frame(&self) -> bool {
-        self.throbber_visible || matches!(self.phase, Phase::Authorize(_))
+        self.throbber_visible // || matches!(self.phase, Phase::Authorize(_))
     }
 
     pub fn advance_phase(&mut self) {
@@ -93,7 +94,7 @@ impl TraktInitPopup {
                 let client_id = self.input0.lines()[0].clone();
                 let client_secret = self.input1.lines()[0].clone();
 
-                self.tokens = Some(UserTokens {
+                self.user_tokens = Some(UserTokens {
                     client_id:     client_id.clone(),
                     client_secret: client_secret.clone(),
 
@@ -106,7 +107,7 @@ impl TraktInitPopup {
                 let (tx_auth_code, rx_auth_code) = channel();
                 let (tx_tokens, rx_tokens) = channel();
                 thread::spawn(move || {
-                    _ = tx_tokens.send(trakt::get_tokens(
+                    _ = tx_tokens.send(trakt::tokens::get_tokens(
                         &client_id,
                         &client_secret,
                         tx_auth_url,
@@ -144,26 +145,27 @@ impl TraktInitPopup {
             Phase::Initializing =>
                 if let Some(rx_init_response) = self.rx_init.as_ref() {
                     if let Ok(result) = rx_init_response.try_recv() {
-                        if let Ok(tokens) = result {
-                            if !tokens.has_secrets() {
+                        if let Ok(user_tokens) = result {
+                            if !user_tokens.has_secrets() {
                                 self.advance_phase();
-                            } else if !tokens.has_tokens() {
+                            } else if !user_tokens.has_tokens() {
                                 self.advance_phase();
-                                self.input0 = TextArea::new(vec![tokens.client_id.clone()]);
-                                self.input1 = TextArea::new(vec![tokens.client_secret.clone()]);
+                                self.input0 = TextArea::new(vec![user_tokens.client_id.clone()]);
+                                self.input1 =
+                                    TextArea::new(vec![user_tokens.client_secret.clone()]);
                                 self.advance_phase();
                             } else {
-                                self.tokens = Some(tokens);
+                                self.user_tokens = Some(user_tokens);
 
-                                if let Some(tokens) = self.tokens.as_ref() {
-                                    if trakt::should_refresh_tokens(tokens) {
-                                        let client_id = tokens.client_id.clone();
-                                        let client_secret = tokens.client_secret.clone();
-                                        let refresh_token = tokens.refresh_token.clone();
+                                if let Some(user_tokens) = self.user_tokens.as_ref() {
+                                    if user_tokens.should_refresh_tokens() {
+                                        let client_id = user_tokens.client_id.clone();
+                                        let client_secret = user_tokens.client_secret.clone();
+                                        let refresh_token = user_tokens.refresh_token.clone();
                                         let (tx_tokens, rx_tokens) = channel();
 
                                         thread::spawn(move || {
-                                            _ = tx_tokens.send(trakt::refresh_tokens(
+                                            _ = tx_tokens.send(trakt::tokens::refresh_tokens(
                                                 &client_id,
                                                 &client_secret,
                                                 &refresh_token,
@@ -172,6 +174,7 @@ impl TraktInitPopup {
 
                                         self.rx_tokens = Some(rx_tokens);
 
+                                        self.refreshing = true;
                                         self.phase = Phase::RefreshingTokens;
                                     } else {
                                         self.phase = Phase::Done;
@@ -200,10 +203,8 @@ impl TraktInitPopup {
             }
             Phase::Authorize(_) =>
                 if let Some(rx_tokens) = self.rx_tokens.as_ref() {
-                    if let Ok(result) = rx_tokens.try_recv() {
-                        if let Err(error) = result {
-                            self.phase = Phase::Error(format!("{:#}", error));
-                        }
+                    if let Ok(Err(error)) = rx_tokens.try_recv() {
+                        self.phase = Phase::Error(format!("{:#}", error));
                     }
                 },
             Phase::Finalize =>
@@ -211,7 +212,7 @@ impl TraktInitPopup {
                     if let Ok(result) = rx_tokens.try_recv() {
                         match result {
                             Ok(token_response) => {
-                                if let Some(user_tokens) = self.tokens.as_mut() {
+                                if let Some(user_tokens) = self.user_tokens.as_mut() {
                                     user_tokens.access_token = token_response.access_token;
                                     user_tokens.refresh_token = token_response.refresh_token;
                                     user_tokens.expires_on =
@@ -231,7 +232,7 @@ impl TraktInitPopup {
                     if let Ok(result) = rx_tokens.try_recv() {
                         match result {
                             Ok(token_response) => {
-                                if let Some(user_tokens) = self.tokens.as_mut() {
+                                if let Some(user_tokens) = self.user_tokens.as_mut() {
                                     user_tokens.access_token = token_response.access_token;
                                     user_tokens.refresh_token = token_response.refresh_token;
                                     user_tokens.expires_on =
@@ -268,13 +269,13 @@ impl TraktInitPopup {
             key_event_handler.bind_key((None, None), 'q', "Quit".into(), |app, _| {
                 app.quit = true;
             });
-            key_event_handler.bind_mouse_button_down(
-                ratatui::crossterm::event::MouseButton::Left,
-                frame.area(),
-                |app, _| {
-                    app.quit = true;
-                },
-            );
+            // key_event_handler.bind_mouse_button_down(
+            //     ratatui::crossterm::event::MouseButton::Left,
+            //     frame.area(),
+            //     |app, _| {
+            //         app.quit = true;
+            //     },
+            // );
         }
 
         self.throbber_visible = false;
@@ -703,19 +704,6 @@ impl TraktInitPopup {
                 }
             }
             Phase::Error(error) => {
-                key_event_handler.bind_enter((None, None), "Back".into(), |app, _| {
-                    if let Some(Popups::TraktInit(trakt_init_popup)) =
-                        app.drawer.active_popup.as_mut()
-                    {
-                        trakt_init_popup.item = 0;
-                        trakt_init_popup.rx_tokens = None;
-                        trakt_init_popup.rx_auth_url = None;
-                        trakt_init_popup.tx_auth_code = None;
-                        trakt_init_popup.input0.clear();
-                        trakt_init_popup.input1.clear();
-                        trakt_init_popup.phase = Phase::GetSecrets;
-                    }
-                });
                 key_event_handler.bind_esc((None, None), "Back".into(), |app, _| {
                     if let Some(Popups::TraktInit(trakt_init_popup)) =
                         app.drawer.active_popup.as_mut()
@@ -729,6 +717,47 @@ impl TraktInitPopup {
                         trakt_init_popup.phase = Phase::GetSecrets;
                     }
                 });
+                key_event_handler.bind_enter((None, Some(0)), "Back".into(), |app, _| {
+                    if let Some(Popups::TraktInit(trakt_init_popup)) =
+                        app.drawer.active_popup.as_mut()
+                    {
+                        trakt_init_popup.item = 0;
+                        trakt_init_popup.rx_tokens = None;
+                        trakt_init_popup.rx_auth_url = None;
+                        trakt_init_popup.tx_auth_code = None;
+                        trakt_init_popup.input0.clear();
+                        trakt_init_popup.input1.clear();
+                        trakt_init_popup.phase = Phase::GetSecrets;
+                    }
+                });
+                if self.refreshing {
+                    key_event_handler.bind_enter((None, Some(1)), "Skip".into(), |app, _| {
+                        if let Some(Popups::TraktInit(trakt_init_popup)) =
+                            app.drawer.active_popup.as_mut()
+                        {
+                            trakt_init_popup.phase = Phase::Done;
+                        }
+                    });
+                    key_event_handler.bind_tab((None, None), "".into(), |app, data| {
+                        if let Some(Popups::TraktInit(trakt_init_popup)) =
+                            app.drawer.active_popup.as_mut()
+                        {
+                            match data {
+                                crate::key_event_handler::Data::Direction(true, _) => {
+                                    trakt_init_popup.item += 1;
+                                    if trakt_init_popup.item > 1 {
+                                        trakt_init_popup.item = 0;
+                                    }
+                                }
+                                crate::key_event_handler::Data::Direction(false, _) => {
+                                    trakt_init_popup.item =
+                                        trakt_init_popup.item.checked_sub(1).unwrap_or(1);
+                                }
+                                _ => {}
+                            }
+                        }
+                    });
+                }
 
                 let popup_area = dynamic_popup(
                     frame,
@@ -753,8 +782,26 @@ impl TraktInitPopup {
                     message_area,
                 );
 
+                let skip_mouse_area = widgets::action(
+                    Action::new(" Skip ", ActionTypes::Normal, self.item == 1, true),
+                    HorizontalAlignment::Right,
+                    popup_area,
+                    frame,
+                );
+                key_event_handler.bind_mouse_button_down(
+                    ratatui::crossterm::event::MouseButton::Left,
+                    skip_mouse_area,
+                    |app, _| {
+                        if let Some(Popups::TraktInit(trakt_init_popup)) =
+                            app.drawer.active_popup.as_mut()
+                        {
+                            trakt_init_popup.phase = Phase::Done;
+                        }
+                    },
+                );
+
                 let mouse_area = widgets::action(
-                    Action::new(" Back ", ActionTypes::Default, true, true),
+                    Action::new(" Back ", ActionTypes::Default, self.item == 0, true),
                     HorizontalAlignment::Center,
                     actions_area,
                     frame,

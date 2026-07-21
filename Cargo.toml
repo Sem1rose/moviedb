@@ -24,3 +24,5 @@ num-traits = "0.2.19"
 ratatui-textarea = "0.9.1"
 simple-encrypt = "0.1.3"
 fern = { version = "0.7.1", features = ["colored", "chrono"] }
+trakt = { version = "0.1.0", path = "trakt" }
+tmdb = { version = "0.1.0", path = "tmdb" }

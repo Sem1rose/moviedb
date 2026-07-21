@@ -22,6 +22,10 @@ impl UserTokens {
     pub fn has_tokens(&self) -> bool {
         !(self.access_token.is_empty() || self.refresh_token.is_empty())
     }
+
+    pub fn should_refresh_tokens(&self) -> bool {
+        unix_ts::Timestamp::now().seconds() - self.expires_on > 0
+    }
 }
 
 #[derive(Clone, Default)]

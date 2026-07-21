@@ -7,7 +7,7 @@ use std::{
 
 use anyhow::bail;
 use itertools::Itertools;
-use log::{error, info};
+use log::error;
 use ratatui::{
     Frame,
     layout::{Rect, Size},
@@ -143,8 +143,10 @@ impl RatatuiImage {
             .display()
         );
 
-        _ = self.tx_load.send(Actions::Load(artwork_id, path));
-        self.loading += 1;
+        if PathBuf::from(&path).is_file() {
+            _ = self.tx_load.send(Actions::Load(artwork_id, path));
+            self.loading += 1;
+        }
     }
 
     pub fn update(&mut self) {
@@ -262,16 +264,16 @@ impl RatatuiImage {
         return drawn;
     }
 
-    pub fn preload_images(&mut self, items: &[u32]) {
+    pub fn preload_images(&mut self, items: Vec<u32>) {
         self.preload_images = items
-            .into_iter()
+            .iter()
             .map(|&id| ArtworkID {
                 tmdb_id:  id,
                 backdrop: false,
             })
             .collect();
         self.preload_images
-            .extend(items.into_iter().map(|&id| ArtworkID {
+            .extend(items.into_iter().map(|id| ArtworkID {
                 tmdb_id:  id,
                 backdrop: true,
             }));

@@ -6,9 +6,7 @@ mod key_event_handler;
 mod omdb;
 mod popups;
 mod screens;
-mod tmdb;
 mod tokens;
-mod trakt;
 mod types;
 mod widgets;
 

@@ -281,7 +281,7 @@ impl App {
 
     pub fn set_trakt_user_tokens(&mut self) {
         if let Some(Popups::TraktInit(trakt_init_popup)) = self.drawer.active_popup.as_mut() {
-            if let Some(tokens) = trakt_init_popup.tokens.take() {
+            if let Some(tokens) = trakt_init_popup.user_tokens.take() {
                 self.trakt_tokens.set_creds(tokens).unwrap();
             }
             self.drawer.close_popups();
