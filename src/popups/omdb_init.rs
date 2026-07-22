@@ -27,10 +27,11 @@ use crate::{
 
 #[derive(Default)]
 pub struct OMDBInitPopup {
-    item:     usize,
-    started:  bool,
-    pub tick: u64,
-    pub done: bool,
+    item:      usize,
+    started:   bool,
+    can_close: bool,
+    pub tick:  u64,
+    pub done:  bool,
 
     input:          TextArea<'static>,
     throbber_state: ThrobberState,
@@ -41,7 +42,7 @@ pub struct OMDBInitPopup {
 }
 
 impl OMDBInitPopup {
-    pub fn new(home_dir: &PathBuf) -> Self {
+    pub fn new(home_dir: &PathBuf, can_close: bool) -> Self {
         let (tx_init, rx_init) = channel();
         let home_dir_cloned = home_dir.clone();
 
@@ -50,6 +51,7 @@ impl OMDBInitPopup {
         });
 
         Self {
+            can_close,
             rx_init: Some(rx_init),
             ..Default::default()
         }
@@ -87,12 +89,28 @@ impl OMDBInitPopup {
 
     pub fn render(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
         key_event_handler.clear();
-        key_event_handler.bind_esc((None, None), "Close".into(), |app, _| {
-            app.quit = true;
-        });
-        key_event_handler.bind_key((None, None), 'q', "Close".into(), |app, _| {
-            app.quit = true;
-        });
+        if self.can_close {
+            key_event_handler.bind_esc((None, None), "Close".into(), |app, _| {
+                app.drawer.close_popups();
+            });
+            key_event_handler.bind_key((None, None), 'q', "Close".into(), |app, _| {
+                app.drawer.close_popups();
+            });
+            key_event_handler.bind_mouse_button_down(
+                ratatui::crossterm::event::MouseButton::Left,
+                frame.area(),
+                |app, _| {
+                    app.drawer.close_popups();
+                },
+            );
+        } else {
+            // key_event_handler.bind_esc((None, None), "Close".into(), |app, _| {
+            //     app.quit = true;
+            // });
+            key_event_handler.bind_key((None, None), 'q', "Close".into(), |app, _| {
+                app.quit = true;
+            });
+        }
 
         if self.started {
             let input_valid = !self.input.is_empty();

@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{cell::RefCell, path::PathBuf, rc::Rc};
 
 use ratatui::{
     Frame,
@@ -10,6 +10,7 @@ use ratatui::{
 
 use crate::{
     KeyEventHandler,
+    config::Config,
     popups::*,
     screens::*,
     tokens::{OMDBTokens, TMDBTokens, TraktTokens},
@@ -22,29 +23,35 @@ pub struct Drawer {
     pub current_screen:     Option<Screens>,
     pub popup_queue:        Vec<Popups>,
     pub screen_queue:       Vec<Screens>,
+    pub config:             Rc<RefCell<Config>>,
 
-    home_dir:  PathBuf,
+    // home_dir:  PathBuf,
     cache_dir: PathBuf,
 }
 
 const MINTERMSIZE: [u32; 2] = [100, 30];
 impl Drawer {
-    pub fn new(home_dir: &PathBuf, cache_dir: &PathBuf) -> Self {
+    pub fn new(home_dir: &PathBuf, cache_dir: &PathBuf, config: Rc<RefCell<Config>>) -> Self {
         Drawer {
-            refresh_immediate:      0,
-            home_dir:               home_dir.clone(),
-            cache_dir:              cache_dir.clone(),
+            refresh_immediate: 0,
+            // home_dir: home_dir.clone(),
+            cache_dir: cache_dir.clone(),
             show_term_size_warning: false,
 
-            active_popup:   None,
+            active_popup: None,
             current_screen: None,
-            screen_queue:   vec![Screens::MainScreen(MainScreen::new(cache_dir))],
-            popup_queue:    vec![
+            screen_queue: vec![Screens::MainScreen(MainScreen::new(
+                cache_dir,
+                config.clone(),
+            ))],
+            popup_queue: vec![
                 Popups::FetchArtworks(FetchArtworksPopup::new(cache_dir)),
                 Popups::TraktInit(TraktInitPopup::new(home_dir, false)),
-                Popups::TMDBInit(TMDBInitPopup::new(home_dir)),
-                Popups::OMDBInit(OMDBInitPopup::new(home_dir)),
+                Popups::TMDBInit(TMDBInitPopup::new(home_dir, false)),
+                Popups::OMDBInit(OMDBInitPopup::new(home_dir, false)),
             ],
+
+            config,
         }
     }
 
@@ -175,8 +182,8 @@ impl Drawer {
                         {
                             fetch_artworks_popup.set_movies(
                                 &app.movies,
-                                app.trakt_tokens.client_id(),
-                                app.tmdb_tokens.access_token(),
+                                &app.trakt_tokens,
+                                &app.tmdb_tokens,
                             );
                         }
                     });

@@ -6,6 +6,7 @@ use std::{
 };
 
 use anyhow::anyhow;
+use chrono::{DateTime, Local};
 use itertools::Itertools;
 use ratatui::{
     Frame,
@@ -104,7 +105,8 @@ pub struct AddMoviePopup {
     alignment_bottom:  bool,
     num_visible_items: usize,
 
-    input:          TextArea<'static>,
+    input0:         TextArea<'static>,
+    input1:         TextArea<'static>,
     throbber_state: ThrobberState,
 
     search_ticket:    u64,
@@ -113,6 +115,7 @@ pub struct AddMoviePopup {
     rx_search_result: Option<Receiver<(u64, SearchResults)>>,
 
     pub user_rating:                f64,
+    pub watched_at:                 DateTime<Local>,
     pub tmdb_movie_details_result:  Option<TMDBDetailsResponse>,
     pub omdb_movie_details_result:  Option<OMDBDetailsResponse>,
     pub trakt_movie_details_result: Option<TraktDetailsResponse>,
@@ -137,6 +140,7 @@ impl AddMoviePopup {
             tmdb_tokens,
             omdb_tokens,
             cache_dir: cache_dir.clone(),
+            input1: TextArea::from([""]),
             ..Default::default()
         }
     }
@@ -152,23 +156,28 @@ impl AddMoviePopup {
     pub fn request_search(&mut self) {
         let (tx_search_results, rx_search_results) = mpsc::channel();
 
-        let search_string = self.input.lines()[0].clone();
+        let trakt_status = self.trakt_tokens.status;
+        let tmdb_status = self.tmdb_tokens.status;
+        let search_string = self.input0.lines()[0].clone();
         let access_token = self.tmdb_tokens.access_token_owned();
         let client_id = self.trakt_tokens.client_id_owned();
         let ticket = rand::random();
         self.search_ticket = ticket;
 
         thread::spawn(move || {
-            if !client_id.is_empty() {
+            if trakt_status.is_some() {
                 _ = tx_search_results.send((
                     ticket,
                     SearchResults::Trakt(trakt::movie::find_movie(&client_id, &search_string)),
                 ));
-            } else {
+            } else if tmdb_status.is_some() {
                 _ = tx_search_results.send((
                     ticket,
                     SearchResults::TMDB(tmdb::movie::find_movie(&access_token, &search_string)),
                 ));
+            } else {
+                // unreachable!();
+                panic!();
             }
         });
 
@@ -181,6 +190,9 @@ impl AddMoviePopup {
             Receiver<anyhow::Result<DetailsResponse>>,
         ) = mpsc::channel();
 
+        let trakt_status = self.trakt_tokens.status;
+        let tmdb_status = self.tmdb_tokens.status;
+        let omdb_status = self.omdb_tokens.status;
         let cache_dir = self.cache_dir.clone();
         let omdb_api_key = self.omdb_tokens.key_owned();
         let trakt_client_id = self.trakt_tokens.client_id_owned();
@@ -190,24 +202,12 @@ impl AddMoviePopup {
             .clone();
 
         thread::spawn(move || {
-            macro_rules! join_or_return {
-                ($handle:expr) => {
-                    match $handle.join() {
-                        Err(e) => {
-                            _ = tx_details_request.send(Err(anyhow!("{:#?}", e)));
-                            return;
-                        }
-                        Ok(val) => val,
-                    }
-                };
-            }
-
             let tmdb_result;
-            let omdb_result;
-            let trakt_result;
+            let mut trakt_result = None;
+            let mut omdb_result = None;
+
             let tmdb_id;
             let imdb_id;
-
             match movie_id {
                 SearchResultID::TMDB(id) => {
                     tmdb_id = id;
@@ -217,24 +217,38 @@ impl AddMoviePopup {
                             tmdb::movie::get_movie_details(&access_token, tmdb_id)
                         })
                     };
-                    tmdb_result = join_or_return!(tmdb_handle);
-                    if let Err(error) = tmdb_result {
-                        _ = tx_details_request.send(Err(error));
-                        return;
-                    }
+                    tmdb_result = match tmdb_handle.join() {
+                        Err(e) => {
+                            _ = tx_details_request.send(Err(anyhow!("{:#?}", e)));
+                            return;
+                        }
+                        Ok(val) => match val {
+                            Err(error) => {
+                                _ = tx_details_request.send(Err(error));
+                                return;
+                            }
+                            Ok(val) => Some(val),
+                        },
+                    };
 
                     imdb_id = tmdb_result.as_ref().unwrap().imdb_id.clone();
-                    let trakt_handle = {
-                        let imdb_id = imdb_id.clone();
-                        let client_id = trakt_client_id.clone();
-                        thread::spawn(move || trakt::movie::get_movie_details(&client_id, &imdb_id))
-                    };
-                    let omdb_handle = {
-                        let imdb_id = imdb_id.clone();
-                        thread::spawn(move || omdb::get_movie_details(&omdb_api_key, &imdb_id))
-                    };
-                    trakt_result = join_or_return!(trakt_handle);
-                    omdb_result = join_or_return!(omdb_handle);
+                    if trakt_status.is_some() {
+                        let trakt_handle = {
+                            let imdb_id = imdb_id.clone();
+                            let client_id = trakt_client_id.clone();
+                            thread::spawn(move || {
+                                trakt::movie::get_movie_details(&client_id, &imdb_id)
+                            })
+                        };
+                        trakt_result = trakt_handle.join().map(|x| x.ok()).ok().flatten();
+                    }
+                    if omdb_status {
+                        let omdb_handle = {
+                            let imdb_id = imdb_id.clone();
+                            thread::spawn(move || omdb::get_movie_details(&omdb_api_key, &imdb_id))
+                        };
+                        omdb_result = omdb_handle.join().map(|x| x.ok()).ok().flatten();
+                    }
                 }
                 SearchResultID::IMDBTMDB(id_imdb, id_tmdb) => {
                     imdb_id = id_imdb;
@@ -244,42 +258,83 @@ impl AddMoviePopup {
                         let client_id = trakt_client_id.clone();
                         thread::spawn(move || trakt::movie::get_movie_details(&client_id, &imdb_id))
                     };
-                    let omdb_handle = {
-                        let imdb_id = imdb_id.clone();
-                        thread::spawn(move || omdb::get_movie_details(&omdb_api_key, &imdb_id))
-                    };
+                    // let _trakt_result = match trakt_handle.join() {
+                    //     Err(error) => {
+                    //         Err(anyhow!("{:#?}", error))
+                    //     }
+                    //     Ok(val) => {
+                    //         match val {
+                    //             Err(error) => {
+                    //                 Err(anyhow!("{:#?}", error))
+                    //             }
+                    //             Ok(val) => {
+                    //                 Ok(val)
+                    //             }
+                    //         }
+                    //     }
+                    // };
+                    // haha one liners are always fun
+                    let _trakt_result = trakt_handle
+                        .join()
+                        .map_err(|err| anyhow!("{:#?}", err))
+                        .flatten();
+
                     let tmdb_handle = {
                         let access_token = tmdb_access_token.clone();
                         thread::spawn(move || {
                             tmdb::movie::get_movie_details(&access_token, tmdb_id)
                         })
                     };
-                    trakt_result = join_or_return!(trakt_handle);
-                    tmdb_result = join_or_return!(tmdb_handle);
-                    omdb_result = join_or_return!(omdb_handle);
-                    if let Err(error_trakt) = trakt_result.as_ref() {
-                        if let Err(error_tmdb) = tmdb_result {
+                    let _tmdb_result = tmdb_handle
+                        .join()
+                        .map_err(|err| anyhow!("{:#?}", err))
+                        .flatten();
+
+                    if let Err(error_trakt) = _trakt_result.as_ref() {
+                        if let Err(error_tmdb) = _tmdb_result {
                             _ = tx_details_request.send(Err(anyhow!(
-                                "{}\n{}",
+                                "Trakt: {}\nTMDB: {}",
                                 error_trakt,
                                 error_tmdb
                             )));
                             return;
                         }
                     }
+                    trakt_result = _trakt_result.ok();
+                    tmdb_result = _tmdb_result.ok();
+
+                    if omdb_status {
+                        let omdb_handle = {
+                            let imdb_id = imdb_id.clone();
+                            thread::spawn(move || omdb::get_movie_details(&omdb_api_key, &imdb_id))
+                        };
+                        omdb_result = omdb_handle.join().map(|x| x.ok()).ok().flatten();
+                    }
                 }
             }
 
-            let result =
-                trakt::movie::get_movie_poster_banner(&cache_dir, &trakt_client_id, &imdb_id);
+            let result = if trakt_status.is_some() {
+                trakt::movie::get_movie_poster_banner(&cache_dir, &trakt_client_id, &imdb_id)
+            } else if tmdb_status.is_some() {
+                tmdb::movie::get_movie_poster_banner(&cache_dir, &tmdb_access_token, tmdb_id)
+            } else {
+                // unreachable!();
+                panic!();
+            };
             if result.is_err() {
-                _ = tmdb::movie::get_movie_poster_banner(&cache_dir, &tmdb_access_token, tmdb_id);
+                if trakt_status.is_some() && tmdb_status.is_some() {
+                    _ = tmdb::movie::get_movie_poster_banner(
+                        &cache_dir,
+                        &tmdb_access_token,
+                        tmdb_id,
+                    );
+                }
             }
 
             _ = tx_details_request.send(Ok(DetailsResponse {
-                trakt: trakt_result.ok(),
-                tmdb:  tmdb_result.ok(),
-                omdb:  omdb_result.ok(),
+                trakt: trakt_result,
+                tmdb:  tmdb_result,
+                omdb:  omdb_result,
             }));
         });
 
@@ -290,13 +345,21 @@ impl AddMoviePopup {
         self.phase = match self.phase {
             Phase::SelectMovie => {
                 self.item = 1;
-                self.input = TextArea::from([""]);
+                self.input0 = TextArea::from([""]);
+                self.input1 = TextArea::from(["Now"]);
                 Phase::GetRating
             }
             Phase::GetRating => {
-                self.user_rating = format!("{:.1}", self.input.lines()[0].parse::<f64>().unwrap())
+                self.user_rating = format!("{:.1}", self.input0.lines()[0].parse::<f64>().unwrap())
                     .parse()
                     .unwrap();
+                self.watched_at = if ["now", ""]
+                    .contains(&self.input1.lines()[0].trim().to_lowercase().as_str())
+                {
+                    Local::now()
+                } else {
+                    self.input0.lines()[0].parse().unwrap()
+                };
 
                 self.request_details();
 
@@ -308,14 +371,19 @@ impl AddMoviePopup {
     }
 
     pub fn validate_input_rating(&mut self) -> bool {
-        if self.input.is_empty() {
+        if self.input0.is_empty() {
             return false;
         }
 
-        if let Ok(x) = self.input.lines()[0].parse() {
+        if let Ok(x) = self.input0.lines()[0].parse() {
             return (0.0..=10.0).contains(&x);
         }
         false
+    }
+
+    pub fn validate_input_date(&mut self) -> bool {
+        ["now", ""].contains(&self.input1.lines()[0].trim().to_lowercase().as_str())
+            || self.input1.lines()[0].parse::<DateTime<Local>>().is_ok()
     }
 
     pub fn update(&mut self) {
@@ -407,80 +475,65 @@ impl AddMoviePopup {
         self.throbber_visible = false;
         match &self.phase {
             Phase::SelectMovie => {
-                self.tab = 0;
-
-                key_event_handler.bind_vertical(
-                    (Some(self.tab), None),
-                    "Scroll".into(),
-                    move |app, data| {
-                        if let Some(Popups::AddMovie(add_movie_popup)) =
-                            app.drawer.active_popup.as_mut()
-                        {
-                            match data {
-                                key_event_handler::Data::Direction(true, _) => {
-                                    add_movie_popup.selected_item = add_movie_popup
-                                        .selected_item
-                                        .add(1)
-                                        .min(num_results.saturating_sub(1));
-                                    if add_movie_popup.selected_item - add_movie_popup.scroll_pos
-                                        >= add_movie_popup.num_visible_items
-                                    {
-                                        add_movie_popup.scroll_pos += 1;
-                                    }
+                key_event_handler.bind_vertical((None, None), "Scroll".into(), move |app, data| {
+                    if let Some(Popups::AddMovie(add_movie_popup)) =
+                        app.drawer.active_popup.as_mut()
+                    {
+                        match data {
+                            key_event_handler::Data::Direction(true, _) => {
+                                add_movie_popup.selected_item = add_movie_popup
+                                    .selected_item
+                                    .add(1)
+                                    .min(num_results.saturating_sub(1));
+                                if add_movie_popup.selected_item - add_movie_popup.scroll_pos
+                                    >= add_movie_popup.num_visible_items
+                                {
+                                    add_movie_popup.scroll_pos += 1;
                                 }
-                                key_event_handler::Data::Direction(false, _) => {
-                                    add_movie_popup.selected_item =
-                                        add_movie_popup.selected_item.saturating_sub(1);
-                                    if add_movie_popup.selected_item < add_movie_popup.scroll_pos {
-                                        add_movie_popup.scroll_pos -= 1;
-                                    }
-                                }
-                                _ => (),
                             }
+                            key_event_handler::Data::Direction(false, _) => {
+                                add_movie_popup.selected_item =
+                                    add_movie_popup.selected_item.saturating_sub(1);
+                                if add_movie_popup.selected_item < add_movie_popup.scroll_pos {
+                                    add_movie_popup.scroll_pos -= 1;
+                                }
+                            }
+                            _ => (),
                         }
-                    },
-                );
+                    }
+                });
                 if num_results > 0 {
-                    key_event_handler.bind_enter(
-                        (Some(self.tab), None),
-                        "Select".into(),
-                        |app, _| {
-                            if let Some(Popups::AddMovie(add_movie_popup)) =
-                                app.drawer.active_popup.as_mut()
-                            {
-                                add_movie_popup.advance_phase();
-                            }
-                        },
-                    );
-                }
-                key_event_handler.bind_input_field(
-                    (Some(self.tab), None),
-                    "".into(),
-                    |app, data| {
+                    key_event_handler.bind_enter((None, None), "Select".into(), |app, _| {
                         if let Some(Popups::AddMovie(add_movie_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
-                            match data {
-                                key_event_handler::Data::Key(key_event) => {
-                                    let old_query = add_movie_popup.input.lines()[0].clone();
-                                    add_movie_popup.input.input(key_event);
-
-                                    if add_movie_popup.input.lines()[0].trim() != old_query.trim()
-                                        && !add_movie_popup.input.is_empty()
-                                    {
-                                        add_movie_popup.search_ticket = 0;
-                                        add_movie_popup.search_results = None;
-                                        add_movie_popup.last_input_tick =
-                                            Some(add_movie_popup.tick);
-                                    } else if add_movie_popup.input.is_empty() {
-                                        add_movie_popup.search_results = None;
-                                    }
-                                }
-                                _ => (),
-                            }
+                            add_movie_popup.advance_phase();
                         }
-                    },
-                );
+                    });
+                }
+                key_event_handler.bind_input_field((None, None), "".into(), |app, data| {
+                    if let Some(Popups::AddMovie(add_movie_popup)) =
+                        app.drawer.active_popup.as_mut()
+                    {
+                        match data {
+                            key_event_handler::Data::Key(key_event) => {
+                                let old_query = add_movie_popup.input0.lines()[0].clone();
+                                add_movie_popup.input0.input(key_event);
+
+                                if add_movie_popup.input0.lines()[0].trim() != old_query.trim()
+                                    && !add_movie_popup.input0.is_empty()
+                                {
+                                    add_movie_popup.search_ticket = 0;
+                                    add_movie_popup.search_results = None;
+                                    add_movie_popup.last_input_tick = Some(add_movie_popup.tick);
+                                } else if add_movie_popup.input0.is_empty() {
+                                    add_movie_popup.search_results = None;
+                                }
+                            }
+                            _ => (),
+                        }
+                    }
+                });
 
                 let popup_area = dynamic_popup(
                     frame,
@@ -503,7 +556,7 @@ impl AddMoviePopup {
                 widgets::input_field(
                     true,
                     true,
-                    &mut self.input,
+                    &mut self.input0,
                     WrapMode::None,
                     frame,
                     search_input_area,
@@ -719,110 +772,33 @@ impl AddMoviePopup {
                 frame.render_stateful_widget(scrollbar, scrollbar_area, &mut scrollbar_state);
             }
             Phase::GetRating => {
-                self.tab = 1;
-                let valid = self.validate_input_rating();
+                let rating_valid = self.validate_input_rating();
+                let date_valid = self.validate_input_date();
 
-                key_event_handler.bind_tab((Some(self.tab), None), "".into(), |app, data| {
+                key_event_handler.bind_tab((None, None), "".into(), |app, data| {
                     if let Some(Popups::AddMovie(add_movie_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
                         match data {
                             crate::key_event_handler::Data::Direction(true, _) => {
                                 add_movie_popup.item += 1;
-                                if add_movie_popup.item > 2 {
+                                if add_movie_popup.item > 3 {
                                     add_movie_popup.item = 0;
                                 }
                             }
                             crate::key_event_handler::Data::Direction(false, _) => {
                                 add_movie_popup.item =
-                                    add_movie_popup.item.checked_sub(1).unwrap_or(2);
+                                    add_movie_popup.item.checked_sub(1).unwrap_or(3);
                             }
                             _ => {}
                         }
                     }
                 });
-                key_event_handler.bind_horizontal(
-                    (Some(self.tab), Some(2)),
-                    "".into(),
-                    |app, data| {
-                        if let Some(Popups::AddMovie(add_movie_popup)) =
-                            app.drawer.active_popup.as_mut()
-                        {
-                            match data {
-                                crate::key_event_handler::Data::Direction(true, _) => {
-                                    add_movie_popup.item = 3;
-                                }
-                                _ => {}
-                            }
-                        }
-                    },
-                );
-                key_event_handler.bind_horizontal(
-                    (Some(self.tab), Some(3)),
-                    "".into(),
-                    |app, data| {
-                        if let Some(Popups::AddMovie(add_movie_popup)) =
-                            app.drawer.active_popup.as_mut()
-                        {
-                            match data {
-                                crate::key_event_handler::Data::Direction(false, _) => {
-                                    add_movie_popup.item = 2;
-                                }
-                                _ => {}
-                            }
-                        }
-                    },
-                );
-                key_event_handler.bind_enter(
-                    (Some(self.tab), Some(3)),
-                    "Cancel".into(),
-                    |app, _| {
-                        app.drawer.close_popups();
-                    },
-                );
-                key_event_handler.bind_enter((Some(self.tab), Some(0)), "Back".into(), |app, _| {
-                    if let Some(Popups::AddMovie(add_movie_popup)) =
-                        app.drawer.active_popup.as_mut()
-                    {
-                        add_movie_popup.item = 0;
-                        add_movie_popup.phase = Phase::SelectMovie;
-                        add_movie_popup.input = TextArea::from([""]);
-                    }
-                });
-                if valid {
-                    key_event_handler.bind_enter(
-                        (Some(self.tab), None),
-                        "Confirm".into(),
-                        |app, _| {
-                            if let Some(Popups::AddMovie(add_movie_popup)) =
-                                app.drawer.active_popup.as_mut()
-                            {
-                                add_movie_popup.advance_phase();
-                                add_movie_popup.throbber_visible = true;
-                            }
-                        },
-                    );
-                }
-                key_event_handler.bind_input_field(
-                    (Some(self.tab), Some(1)),
-                    "".into(),
-                    |app, data| {
-                        if let Some(Popups::AddMovie(add_movie_popup)) =
-                            app.drawer.active_popup.as_mut()
-                        {
-                            match data {
-                                key_event_handler::Data::Key(key_event) => {
-                                    add_movie_popup.input.input(key_event);
-                                }
-                                _ => (),
-                            }
-                        }
-                    },
-                );
-                key_event_handler.bind_esc((Some(self.tab), Some(0)), "Close".into(), |app, _| {
+
+                key_event_handler.bind_esc((None, Some(0)), "Close".into(), |app, _| {
                     app.drawer.close_popups();
                 });
-                key_event_handler.bind_esc((Some(self.tab), None), "Back".into(), |app, _| {
+                key_event_handler.bind_esc((None, None), "Back".into(), |app, _| {
                     if let Some(Popups::AddMovie(add_movie_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -830,10 +806,133 @@ impl AddMoviePopup {
                     }
                 });
 
+                key_event_handler.bind_horizontal((None, Some(3)), "".into(), |app, data| {
+                    if let Some(Popups::AddMovie(add_movie_popup)) =
+                        app.drawer.active_popup.as_mut()
+                    {
+                        match data {
+                            crate::key_event_handler::Data::Direction(true, _) => {
+                                add_movie_popup.item = 4;
+                            }
+                            _ => {}
+                        }
+                    }
+                });
+                key_event_handler.bind_horizontal((None, Some(4)), "".into(), |app, data| {
+                    if let Some(Popups::AddMovie(add_movie_popup)) =
+                        app.drawer.active_popup.as_mut()
+                    {
+                        match data {
+                            crate::key_event_handler::Data::Direction(false, _) => {
+                                add_movie_popup.item = 3;
+                            }
+                            _ => {}
+                        }
+                    }
+                });
+
+                key_event_handler.bind_vertical((None, Some(1)), "".into(), |app, data| {
+                    if let Some(Popups::AddMovie(add_movie_popup)) =
+                        app.drawer.active_popup.as_mut()
+                    {
+                        match data {
+                            crate::key_event_handler::Data::Direction(true, _) => {
+                                add_movie_popup.item = 2;
+                            }
+                            _ => {}
+                        }
+                    }
+                });
+                key_event_handler.bind_vertical((None, Some(2)), "".into(), |app, data| {
+                    if let Some(Popups::AddMovie(add_movie_popup)) =
+                        app.drawer.active_popup.as_mut()
+                    {
+                        match data {
+                            crate::key_event_handler::Data::Direction(false, _) => {
+                                add_movie_popup.item = 1;
+                            }
+                            _ => {}
+                        }
+                    }
+                });
+
+                key_event_handler.bind_enter((None, Some(0)), "Back".into(), |app, _| {
+                    if let Some(Popups::AddMovie(add_movie_popup)) =
+                        app.drawer.active_popup.as_mut()
+                    {
+                        add_movie_popup.item = 0;
+                        add_movie_popup.input0 = TextArea::from([""]);
+                        add_movie_popup.phase = Phase::SelectMovie;
+                    }
+                });
+                if rating_valid {
+                    key_event_handler.bind_enter((None, Some(1)), "".into(), |app, _| {
+                        if let Some(Popups::AddMovie(add_movie_popup)) =
+                            app.drawer.active_popup.as_mut()
+                        {
+                            add_movie_popup.item = 2;
+                        }
+                    });
+                    if date_valid {
+                        // key_event_handler.bind_enter(
+                        //     (None, Some(1)),
+                        //     "Confirm".into(),
+                        //     |app, _| {
+                        //         if let Some(Popups::AddMovie(add_movie_popup)) =
+                        //             app.drawer.active_popup.as_mut()
+                        //         {
+                        //             add_movie_popup.advance_phase();
+                        //             add_movie_popup.throbber_visible = true;
+                        //         }
+                        //     },
+                        // );
+                        key_event_handler.bind_enter(
+                            (None, Some(2)),
+                            "Confirm".into(),
+                            |app, _| {
+                                if let Some(Popups::AddMovie(add_movie_popup)) =
+                                    app.drawer.active_popup.as_mut()
+                                {
+                                    add_movie_popup.advance_phase();
+                                    add_movie_popup.throbber_visible = true;
+                                }
+                            },
+                        );
+                    }
+                }
+                key_event_handler.bind_enter((None, Some(4)), "Cancel".into(), |app, _| {
+                    app.drawer.close_popups();
+                });
+
+                key_event_handler.bind_input_field((None, Some(1)), "".into(), |app, data| {
+                    if let Some(Popups::AddMovie(add_movie_popup)) =
+                        app.drawer.active_popup.as_mut()
+                    {
+                        match data {
+                            key_event_handler::Data::Key(key_event) => {
+                                add_movie_popup.input0.input(key_event);
+                            }
+                            _ => (),
+                        }
+                    }
+                });
+                key_event_handler.bind_input_field((None, Some(2)), "".into(), |app, data| {
+                    if let Some(Popups::AddMovie(add_movie_popup)) =
+                        app.drawer.active_popup.as_mut()
+                    {
+                        match data {
+                            key_event_handler::Data::Key(key_event) => {
+                                add_movie_popup.input1.input(key_event);
+                            }
+                            _ => (),
+                        }
+                    }
+                });
+
                 let popup_area = dynamic_popup(
                     frame,
-                    Some(9),
-                    4.0,
+                    Some(11),
+                    3.0,
                     tailwind::BLUE.c950,
                     "  Add movie  ",
                     Style::new().fg(material::YELLOW.c800),
@@ -845,8 +944,9 @@ impl AddMoviePopup {
                     popup_area.outer(Margin::new(1, 1)),
                     |_, _| {},
                 );
-                let [_, input_area, _, actions_area] = vertical![==1, ==3, >=1, ==1]
-                    .areas(add_padding(popup_area, Padding::proportional(1)));
+                let [_, rating_input_area, date_input_area, _, actions_area] =
+                    vertical![==1, ==3, ==3, >=1, ==1]
+                        .areas(add_padding(popup_area, Padding::proportional(1)));
 
                 let mouse_area = widgets::action(
                     Action::new(" Back ", ActionTypes::Normal, self.item == 0, true),
@@ -863,15 +963,20 @@ impl AddMoviePopup {
                         {
                             add_movie_popup.item = 0;
                             add_movie_popup.phase = Phase::SelectMovie;
-                            add_movie_popup.input = TextArea::from([""]);
+                            add_movie_popup.input0 = TextArea::from([""]);
                         }
                     },
                 );
 
                 let actions_mouse_areas = widgets::actions(
                     [
-                        Action::new(" Confirm ", ActionTypes::Default, self.item == 2, valid),
-                        Action::new(" Cancel ", ActionTypes::Critical, self.item == 3, true),
+                        Action::new(
+                            " Confirm ",
+                            ActionTypes::Default,
+                            self.item == 3,
+                            rating_valid && date_valid,
+                        ),
+                        Action::new(" Cancel ", ActionTypes::Critical, self.item == 4, true),
                     ],
                     HorizontalAlignment::Right,
                     1,
@@ -887,7 +992,7 @@ impl AddMoviePopup {
                                 app.drawer.active_popup.as_mut()
                             {
                                 if i == 0 {
-                                    if valid {
+                                    if rating_valid && date_valid {
                                         add_movie_popup.advance_phase();
                                         add_movie_popup.throbber_visible = true;
                                     }
@@ -899,26 +1004,48 @@ impl AddMoviePopup {
                     );
                 }
 
-                let input_selected = self.item == 1;
                 widgets::input_field(
-                    input_selected,
-                    valid,
-                    &mut self.input,
+                    self.item == 1,
+                    rating_valid,
+                    &mut self.input0,
                     WrapMode::None,
                     frame,
-                    input_area,
+                    rating_input_area,
                     (0, 0),
                     " Rating ",
                     "Enter a rating",
                 );
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
-                    input_area,
+                    rating_input_area,
                     |app, _| {
                         if let Some(Popups::AddMovie(add_movie_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             add_movie_popup.item = 1;
+                        }
+                    },
+                );
+
+                widgets::input_field(
+                    self.item == 2,
+                    date_valid,
+                    &mut self.input1,
+                    WrapMode::None,
+                    frame,
+                    date_input_area,
+                    (0, 0),
+                    " Watched At ",
+                    "Now",
+                );
+                key_event_handler.bind_mouse_button_down(
+                    ratatui::crossterm::event::MouseButton::Left,
+                    date_input_area,
+                    |app, _| {
+                        if let Some(Popups::AddMovie(add_movie_popup)) =
+                            app.drawer.active_popup.as_mut()
+                        {
+                            add_movie_popup.item = 2;
                         }
                     },
                 );
@@ -954,14 +1081,13 @@ impl AddMoviePopup {
                 );
             }
             Phase::Error(error) => {
-                self.tab = 2;
-                key_event_handler.bind_enter((Some(2), None), "Back".into(), |app, _| {
+                key_event_handler.bind_enter((None, None), "Back".into(), |app, _| {
                     if let Some(Popups::AddMovie(add_movie_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
                         add_movie_popup.item = 0;
                         add_movie_popup.phase = Phase::SelectMovie;
-                        add_movie_popup.input = TextArea::from([""]);
+                        add_movie_popup.input0 = TextArea::from([""]);
                     }
                 });
 
@@ -999,7 +1125,7 @@ impl AddMoviePopup {
                         {
                             add_movie_popup.item = 0;
                             add_movie_popup.phase = Phase::SelectMovie;
-                            add_movie_popup.input = TextArea::from([""]);
+                            add_movie_popup.input0 = TextArea::from([""]);
                         }
                     },
                 );

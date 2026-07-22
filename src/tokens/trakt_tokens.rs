@@ -32,7 +32,8 @@ impl UserTokens {
 pub struct TraktTokens {
     user_tokens: UserTokens,
 
-    home_dir: PathBuf,
+    pub status: Option<bool>,
+    home_dir:   PathBuf,
 }
 
 impl TraktTokens {
@@ -40,6 +41,7 @@ impl TraktTokens {
         Self {
             home_dir: home_dir.clone(),
 
+            status:      None,
             user_tokens: UserTokens::default(),
         }
     }
@@ -68,6 +70,14 @@ impl TraktTokens {
 
     pub fn set_creds(&mut self, user_tokens: UserTokens) -> anyhow::Result<()> {
         self.user_tokens = user_tokens;
+        self.status = if self.user_tokens.has_tokens() && !self.user_tokens.should_refresh_tokens()
+        {
+            Some(true)
+        } else if self.user_tokens.has_secrets() {
+            Some(false)
+        } else {
+            None
+        };
 
         self.save_creds()
     }

@@ -7,7 +7,8 @@ use simple_encrypt::{decrypt_bytes, encrypt_bytes};
 pub struct OMDBTokens {
     key: String,
 
-    home_dir: PathBuf,
+    pub status: bool,
+    home_dir:   PathBuf,
 }
 
 impl OMDBTokens {
@@ -40,6 +41,7 @@ impl OMDBTokens {
 
     pub fn set_creds(&mut self, key: String) -> anyhow::Result<()> {
         self.key = key;
+        self.status = true;
 
         self.save_creds()
     }
@@ -51,10 +53,6 @@ impl OMDBTokens {
                 .context("OMDB: failed to encrypt user tokens")?,
         )
         .context("OMDB: failed to write encrypted file")
-    }
-
-    pub fn has_key(&self) -> bool {
-        !self.key.is_empty()
     }
 
     pub fn key(&self) -> &str {

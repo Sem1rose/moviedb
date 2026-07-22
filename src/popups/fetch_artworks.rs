@@ -22,17 +22,21 @@ use trakt;
 use crate::{
     helpers::{add_padding, dynamic_popup},
     key_event_handler::KeyEventHandler,
+    tokens::{tmdb_tokens::TMDBTokens, trakt_tokens::TraktTokens},
     types::{Movie, MovieID},
 };
 
 #[derive(Default)]
 pub struct FetchArtworksPopup {
-    pub done:          bool,
-    pub started:       bool,
-    pub progress:      usize,
-    errored:           Option<u32>,
-    movies:            Vec<MovieID>,
+    pub done:     bool,
+    pub started:  bool,
+    pub progress: usize,
+    errored:      Option<u32>,
+    movies:       Vec<MovieID>,
+
+    trakt_status:      Option<bool>,
     trakt_client_id:   String,
+    tmdb_status:       Option<bool>,
     tmdb_access_token: String,
 
     tx_fetch_request:  Option<Sender<Option<MovieID>>>,
@@ -59,7 +63,9 @@ impl FetchArtworksPopup {
         let (tx_fetch_request, rx_fetch_request) = channel::<Option<MovieID>>();
         let (tx_fetch_response, rx_fetch_response) = channel::<(MovieID, anyhow::Result<()>)>();
         let cache_dir = self.cache_dir.clone();
+        let trakt_status = self.trakt_status;
         let trakt_client_id = self.trakt_client_id.clone();
+        let tmdb_status = self.tmdb_status;
         let tmdb_access_token = self.tmdb_access_token.clone();
 
         thread::spawn(move || {
@@ -72,26 +78,31 @@ impl FetchArtworksPopup {
                 let tx_response = tx_fetch_response.clone();
 
                 let cache_dir = cache_dir.clone();
+                let trakt_status = trakt_status.clone();
                 let trakt_client_id = trakt_client_id.clone();
+                let tmdb_status = tmdb_status.clone();
                 let tmdb_access_token = tmdb_access_token.clone();
                 thread::spawn(move || {
-                    let result = if !trakt_client_id.is_empty() {
+                    let result = if trakt_status.is_some() {
                         trakt::movie::get_movie_poster_banner(
                             &cache_dir,
                             &trakt_client_id,
                             &request.imdb.clone(),
                         )
-                    } else {
+                    } else if tmdb_status.is_some() {
                         tmdb::movie::get_movie_poster_banner(
                             &cache_dir,
                             &tmdb_access_token,
                             request.tmdb,
                         )
+                    } else {
+                        // unreachable!();
+                        panic!();
                     };
 
                     _ = if result.is_ok() {
                         tx_response.send((request, result))
-                    } else if !trakt_client_id.is_empty() {
+                    } else if trakt_status.is_some() && tmdb_status.is_some() {
                         let result = tmdb::movie::get_movie_poster_banner(
                             &cache_dir,
                             &tmdb_access_token,
@@ -138,9 +149,16 @@ impl FetchArtworksPopup {
         }
     }
 
-    pub fn set_movies(&mut self, movies: &[Movie], trakt_client_id: &str, tmdb_access_token: &str) {
-        self.trakt_client_id = trakt_client_id.to_string();
-        self.tmdb_access_token = tmdb_access_token.to_string();
+    pub fn set_movies(
+        &mut self,
+        movies: &[Movie],
+        trakt_tokens: &TraktTokens,
+        tmdb_tokens: &TMDBTokens,
+    ) {
+        self.trakt_status = trakt_tokens.status;
+        self.trakt_client_id = trakt_tokens.client_id_owned();
+        self.tmdb_status = tmdb_tokens.status;
+        self.tmdb_access_token = tmdb_tokens.access_token_owned();
         self.movies = movies.iter().map(|x| x.id.clone()).collect();
 
         self.done = false;

@@ -25,13 +25,15 @@ impl UserTokens {
 pub struct TMDBTokens {
     user_tokens: UserTokens,
 
-    home_dir: PathBuf,
+    pub status: Option<bool>,
+    home_dir:   PathBuf,
 }
 
 impl TMDBTokens {
     pub fn new(home_dir: &PathBuf) -> Self {
         Self {
             user_tokens: UserTokens::default(),
+            status:      None,
 
             home_dir: home_dir.clone(),
         }
@@ -61,6 +63,13 @@ impl TMDBTokens {
 
     pub fn set_creds(&mut self, user_tokens: UserTokens) -> anyhow::Result<()> {
         self.user_tokens = user_tokens;
+        self.status = if self.user_tokens.has_session_id() {
+            Some(true)
+        } else if self.user_tokens.has_access_token() {
+            Some(false)
+        } else {
+            None
+        };
 
         self.save_creds()
     }

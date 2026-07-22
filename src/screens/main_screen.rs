@@ -1,8 +1,8 @@
-use std::{cmp::Ordering, ops::Add, path::PathBuf};
+use std::{cell::RefCell, cmp::Ordering, ops::Add, path::PathBuf, rc::Rc};
 
 use chrono::Datelike;
 use itertools::Itertools;
-use nucleo_matcher::{Config, Matcher, pattern::Atom};
+use nucleo_matcher::{Config as MatcherConfig, Matcher, pattern::Atom};
 use num_derive::{FromPrimitive, ToPrimitive};
 use num_traits::{FromPrimitive, ToPrimitive};
 use ratatui::{
@@ -22,6 +22,7 @@ use ratatui_image::sliced::SignedPosition;
 use ratatui_textarea::TextArea;
 
 use crate::{
+    config::Config,
     helpers::{add_padding, ellipsize_string, wrap_text},
     image_backend::RatatuiImage,
     key_event_handler::{self, KeyEventHandler},
@@ -66,24 +67,25 @@ pub enum FilterCriterion {
     Certification(Vec<Option<String>>, bool /*inverted*/),
 }
 
-macro_rules! pop_criterion(($criteria:expr, $p:pat, $d:expr) => (
-    {
-        let position = $criteria.iter().position(|x| matches!(x, $p));
-        if let Some(index) = position {
-            $criteria.remove(index)
-        } else {
-            $d
+macro_rules! pop_criterion(
+    ($criteria:expr, $p:pat, $d:expr) => (
+        {
+            let position = $criteria.iter().position(|x| matches!(x, $p));
+            if let Some(index) = position {
+                $criteria.remove(index)
+            } else {
+                $d
+            }
         }
-    }
-);
-($criteria:expr, $p:pat) => (
-    {
-        let position = $criteria.iter().position(|x| matches!(x, $p));
-        if let Some(index) = position {
-            _ = $criteria.remove(index);
+    );
+    ($criteria:expr, $p:pat) => (
+        {
+            let position = $criteria.iter().position(|x| matches!(x, $p));
+            if let Some(index) = position {
+                _ = $criteria.remove(index);
+            }
         }
-    }
-)
+    );
 );
 
 #[derive(Default)]
@@ -102,6 +104,7 @@ pub struct MainScreen {
     pub sort_ascending: bool,
     search_input:       TextArea<'static>,
     filter_criteria:    Vec<FilterCriterion>,
+    config:             Rc<RefCell<Config>>,
 
     movies:             Vec<Movie>,
     filtered_movies:    Vec<Movie>,
@@ -138,32 +141,33 @@ impl MainScreen {
         )
     }
 
-    pub fn new(cache_dir: &PathBuf) -> Self {
+    pub fn new(cache_dir: &PathBuf, config: Rc<RefCell<Config>>) -> Self {
         Self {
-            tab:             0,
-            item:            0,
-            sort:            Sort::default(),
-            redraw_images:   0,
-            drawing_images:  false,
-            sort_ascending:  false,
-            search_input:    TextArea::default(),
+            tab: 0,
+            item: 0,
+            sort: Sort::default(),
+            redraw_images: 0,
+            drawing_images: false,
+            sort_ascending: false,
+            search_input: TextArea::default(),
             filter_criteria: vec![],
+            config,
 
-            movies:          vec![],
+            movies: vec![],
             filtered_movies: vec![],
-            image_renderer:  RatatuiImage::new(cache_dir),
+            image_renderer: RatatuiImage::new(cache_dir),
 
-            movies_list_scroll_pos:             0,
-            movies_list_selected_item:          0,
-            movies_list_alignment_bottom:       false,
+            movies_list_scroll_pos: 0,
+            movies_list_selected_item: 0,
+            movies_list_alignment_bottom: false,
             movies_list_partially_visible_item: false,
-            movies_list_num_visible_items:      0,
-            movies_description_selected_tab:    0,
+            movies_list_num_visible_items: 0,
+            movies_description_selected_tab: 0,
 
-            context_menu_pos:      None,
+            context_menu_pos: None,
             context_menu_selected: 0,
 
-            movies_description_plays_tab:       PlaysTab::default(),
+            movies_description_plays_tab: PlaysTab::default(),
             movies_description_overview_scroll: 0,
         }
     }
@@ -1158,7 +1162,7 @@ impl MainScreen {
         );
         let poster_width = ((MOVIE_WIDGET_HEIGHT - 2) * 2 / 3) as u16 * 2;
         let [poster_area, _, description_area] =
-            horizontal![==poster_width, ==2, >=0].areas(vert_lay);
+            horizontal![==poster_width, ==1, >=0].areas(vert_lay);
         let highlight_area = area
             .resize(Size::new(2, area.height.saturating_sub(2)))
             .offset(Offset::new(0, 1));
@@ -1244,13 +1248,18 @@ impl MainScreen {
                     area,
                 ),
                 _ =>
-                    if i > 0 &&
-                    (i as usize - 1)
-                        .checked_sub((MOVIE_WIDGET_HEIGHT - 3).saturating_sub(description_lines.len()))
-                        .is_some()
+                    if i > 0
+                        && (i as usize - 1)
+                            .checked_sub(
+                                (MOVIE_WIDGET_HEIGHT - 3).saturating_sub(description_lines.len()),
+                            )
+                            .is_some()
                     {
                         frame.render_widget(
-                            &description_lines[i as usize - 1 - (MOVIE_WIDGET_HEIGHT - 3).saturating_sub(description_lines.len())],
+                            &description_lines[i as usize
+                                - 1
+                                - (MOVIE_WIDGET_HEIGHT - 3)
+                                    .saturating_sub(description_lines.len())],
                             area,
                         )
                     },
@@ -1285,7 +1294,7 @@ impl MainScreen {
             );
         }
 
-        // frame.render_widget(Block::new().bg(tailwind::SLATE.c700), poster_area);
+        frame.render_widget(Block::new().bg(tailwind::SLATE.c700), poster_area);
         if self.redraw_images < 1 {
             self.drawing_images |= !self.image_renderer.draw_image(
                 self.filtered_movies[movie_index].id.tmdb,
@@ -1305,8 +1314,6 @@ impl MainScreen {
                 },
                 frame,
             );
-        } else {
-            frame.render_widget(Block::new().bg(tailwind::SLATE.c700), poster_area);
         }
         // frame.render_widget(
         //     line!("1 2 3 4 5 6 7 8 9 a b c d e f "),
@@ -1982,8 +1989,10 @@ impl MainScreen {
 
     pub fn set_movies(&mut self, movies: &[Movie]) {
         self.movies = movies.to_vec();
-        self.image_renderer
-            .preload_images(movies.into_iter().map(|x| x.id.tmdb).collect_vec());
+        self.image_renderer.preload_images(
+            movies.into_iter().map(|x| x.id.tmdb).collect_vec(),
+            &self.config.borrow().options.image_preload_rule,
+        );
         self.filter_sort_movies(false);
     }
 
@@ -1993,7 +2002,7 @@ impl MainScreen {
             return;
         }
 
-        let mut conf = Config::DEFAULT;
+        let mut conf = MatcherConfig::DEFAULT;
         conf.prefer_prefix = true;
         let mut matcher = Matcher::new(conf);
         let pattern = Atom::parse(
@@ -2044,7 +2053,7 @@ impl MainScreen {
                     if name.is_empty() {
                         continue;
                     }
-                    let mut conf = Config::DEFAULT;
+                    let mut conf = MatcherConfig::DEFAULT;
                     conf.prefer_prefix = true;
                     let mut matcher = Matcher::new(conf);
                     let pattern = Atom::parse(

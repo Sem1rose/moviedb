@@ -1,11 +1,11 @@
-use std::{fs, path::PathBuf, time::Duration};
+use std::{cell::RefCell, fs, path::PathBuf, rc::Rc, time::Duration};
 
-use chrono::Local;
 use log::{error, warn};
 use ratatui::crossterm::event::{self, Event, KeyEvent, KeyEventState, KeyModifiers};
 
 use crate::{
     KeyEventHandler,
+    config::Config,
     drawer::Drawer,
     popups::Popups,
     screens::Screens,
@@ -14,14 +14,15 @@ use crate::{
 };
 
 pub struct App {
-    home:       PathBuf,
-    cache:      PathBuf,
+    // cache_dir:      PathBuf,
+    home_dir:   PathBuf,
     pub quit:   bool,
     pub movies: Vec<Movie>,
 
     terminal:              Term,
     pub drawer:            Drawer,
     pub key_event_handler: KeyEventHandler,
+    pub config:            Rc<RefCell<Config>>,
 
     pub tmdb_tokens:  TMDBTokens,
     pub omdb_tokens:  OMDBTokens,
@@ -36,26 +37,28 @@ impl App {
         let cache_dir = dirs::cache_dir()
             .expect("Couldn't get user's cache dir")
             .join("moviedb");
+        let config = Rc::new(RefCell::new(Config::new(&home_dir)?));
 
         Self {
-            movies:            vec![],
-            terminal:          initialize_terminal()?,
-            drawer:            Drawer::new(&home_dir, &cache_dir),
+            movies: vec![],
+            config: config,
+            terminal: initialize_terminal()?,
             key_event_handler: KeyEventHandler::default(),
+            drawer: Drawer::new(&home_dir, &cache_dir, config.clone()),
 
-            tmdb_tokens:  TMDBTokens::new(&home_dir),
-            omdb_tokens:  OMDBTokens::new(&home_dir),
+            tmdb_tokens: TMDBTokens::new(&home_dir),
+            omdb_tokens: OMDBTokens::new(&home_dir),
             trakt_tokens: TraktTokens::new(&home_dir),
 
-            quit:  false,
-            home:  home_dir,
-            cache: cache_dir,
+            quit: false,
+            home_dir,
+            // cache_dir,
         }
         .fetch_movies()
     }
 
     pub fn fetch_movies(mut self) -> anyhow::Result<Self> {
-        let file_path = &self.home.join("ratings.json");
+        let file_path = &self.home_dir.join("ratings.json");
 
         let read_result = fs::read_to_string(file_path);
         if let Err(error) = read_result {
@@ -64,16 +67,16 @@ impl App {
                 error
             );
 
-            let mut renamed = self.home.join("corrupted_ratings.json");
+            let mut renamed = self.home_dir.join("corrupted_ratings.json");
             let mut i = 1;
             while renamed.exists() {
-                renamed = self.home.join(format!("corrupted_ratings_{i}.json"));
+                renamed = self.home_dir.join(format!("corrupted_ratings_{i}.json"));
                 i += 1;
             }
 
             fs::rename(file_path, renamed)?;
 
-            fs::write(&self.home.join("ratings.json"), "[]")?;
+            fs::write(&self.home_dir.join("ratings.json"), "[]")?;
             return Ok(self);
         }
         let contents = fs::read_to_string(file_path)?;
@@ -92,16 +95,16 @@ impl App {
                     error
                 );
 
-                let mut renamed = self.home.join("corrupted_ratings.json");
+                let mut renamed = self.home_dir.join("corrupted_ratings.json");
                 let mut i = 1;
                 while renamed.exists() {
-                    renamed = self.home.join(format!("corrupted_ratings_{i}.json"));
+                    renamed = self.home_dir.join(format!("corrupted_ratings_{i}.json"));
                     i += 1;
                 }
 
                 fs::rename(file_path, renamed)?;
 
-                fs::write(&self.home.join("ratings.json"), "[]")?;
+                fs::write(&self.home_dir.join("ratings.json"), "[]")?;
             } else {
                 let movies: Vec<Movie> = result.unwrap().into_iter().map(|x| x.into()).collect();
                 self.set_movies(Self::remove_duplicates(movies));
@@ -215,7 +218,7 @@ impl App {
                     movie = self.movies.remove(index);
                 }
 
-                movie.add_play(Local::now(), add_movie_popup.user_rating);
+                movie.add_play(add_movie_popup.watched_at, add_movie_popup.user_rating);
                 self.movies.push(movie);
             }
 
@@ -261,9 +264,18 @@ impl App {
         self.save_movies().unwrap();
     }
 
+    pub fn set_trakt_user_tokens(&mut self) {
+        if let Some(Popups::TraktInit(trakt_init_popup)) = self.drawer.active_popup.as_mut() {
+            if let Some(tokens) = trakt_init_popup.user_tokens.take() {
+                self.trakt_tokens.set_creds(tokens).unwrap();
+            }
+            self.drawer.close_popups();
+        }
+    }
+
     pub fn set_tmdb_user_tokens(&mut self) {
         if let Some(Popups::TMDBInit(tmdb_init_popup)) = self.drawer.active_popup.as_mut() {
-            if let Some(tokens) = tmdb_init_popup.tokens.take() {
+            if let Some(tokens) = tmdb_init_popup.user_tokens.take() {
                 self.tmdb_tokens.set_creds(tokens).unwrap();
             }
             self.drawer.close_popups();
@@ -279,23 +291,16 @@ impl App {
         }
     }
 
-    pub fn set_trakt_user_tokens(&mut self) {
-        if let Some(Popups::TraktInit(trakt_init_popup)) = self.drawer.active_popup.as_mut() {
-            if let Some(tokens) = trakt_init_popup.user_tokens.take() {
-                self.trakt_tokens.set_creds(tokens).unwrap();
-            }
-            self.drawer.close_popups();
-        }
-    }
-
     fn save_movies(&self) -> anyhow::Result<()> {
         let string = serde_json::to_string_pretty(self.movies.as_slice()).unwrap();
 
         fs::rename(
-            &self.home.join("ratings.json"),
-            self.home.join("ratings.json").with_extension("json.bak"),
+            &self.home_dir.join("ratings.json"),
+            self.home_dir
+                .join("ratings.json")
+                .with_extension("json.bak"),
         )?;
-        fs::write(&self.home.join("ratings.json"), string)?;
+        fs::write(&self.home_dir.join("ratings.json"), string)?;
 
         Ok(())
     }

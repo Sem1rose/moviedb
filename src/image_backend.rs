@@ -264,18 +264,32 @@ impl RatatuiImage {
         return drawn;
     }
 
-    pub fn preload_images(&mut self, items: Vec<u32>) {
-        self.preload_images = items
-            .iter()
-            .map(|&id| ArtworkID {
-                tmdb_id:  id,
-                backdrop: false,
-            })
-            .collect();
-        self.preload_images
-            .extend(items.into_iter().map(|id| ArtworkID {
-                tmdb_id:  id,
-                backdrop: true,
-            }));
+    pub fn preload_images(&mut self, items: Vec<u32>, rule: &str) {
+        match rule {
+            "all" => {
+                self.preload_images = items
+                    .iter()
+                    .map(|&id| ArtworkID {
+                        tmdb_id:  id,
+                        backdrop: false,
+                    })
+                    .collect();
+                self.preload_images
+                    .extend(items.into_iter().map(|id| ArtworkID {
+                        tmdb_id:  id,
+                        backdrop: true,
+                    }));
+            }
+            "posters" => {
+                self.preload_images = items
+                    .iter()
+                    .map(|&id| ArtworkID {
+                        tmdb_id:  id,
+                        backdrop: false,
+                    })
+                    .collect();
+            }
+            _ => (),
+        }
     }
 }

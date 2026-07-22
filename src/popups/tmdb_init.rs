@@ -45,6 +45,8 @@ pub struct TMDBInitPopup {
     pub phase:        Phase,
     throbber_visible: bool,
     item:             usize,
+    status:           Option<bool>,
+    can_close:        bool,
 
     input:          TextArea<'static>,
     throbber_state: ThrobberState,
@@ -53,13 +55,11 @@ pub struct TMDBInitPopup {
     rx_authorization_url: Option<Receiver<String>>,
     rx_session_id:        Option<Receiver<anyhow::Result<String>>>,
 
-    pub tokens: Option<UserTokens>,
-
-    home_dir: PathBuf,
+    pub user_tokens: Option<UserTokens>,
 }
 
 impl TMDBInitPopup {
-    pub fn new(home_dir: &PathBuf) -> Self {
+    pub fn new(home_dir: &PathBuf, can_close: bool) -> Self {
         let (tx_init, rx_init) = channel();
         let home_dir_cloned = home_dir.clone();
 
@@ -68,7 +68,7 @@ impl TMDBInitPopup {
         });
 
         Self {
-            home_dir: home_dir.clone(),
+            can_close,
             rx_init: Some(rx_init),
             ..Default::default()
         }
@@ -88,7 +88,7 @@ impl TMDBInitPopup {
             Phase::GetAccessToken => {
                 let access_token = self.input.lines()[0].clone();
 
-                self.tokens = Some(UserTokens {
+                self.user_tokens = Some(UserTokens {
                     access_token: access_token.clone(),
                     session_id:   String::default(),
                 });
@@ -123,16 +123,17 @@ impl TMDBInitPopup {
             Phase::Initializing =>
                 if let Some(rx_init_response) = self.rx_init.as_ref() {
                     if let Ok(result) = rx_init_response.try_recv() {
-                        if let Ok(tokens) = result {
-                            if !tokens.has_access_token() {
+                        if let Ok(user_tokens) = result {
+                            if !user_tokens.has_access_token() {
                                 self.advance_phase();
-                            } else if !tokens.has_session_id() {
+                            } else if !user_tokens.has_session_id() {
                                 self.advance_phase();
-                                self.input = TextArea::new(vec![tokens.access_token.clone()]);
+                                self.input = TextArea::new(vec![user_tokens.access_token.clone()]);
                                 self.advance_phase();
                             } else {
-                                self.tokens = Some(tokens);
                                 self.phase = Phase::Done;
+                                self.status = Some(true);
+                                self.user_tokens = Some(user_tokens);
                             }
                         } else {
                             self.advance_phase();
@@ -142,12 +143,14 @@ impl TMDBInitPopup {
             Phase::GettingAuthorizationUrl => {
                 if let Some(rx_authorization_url) = self.rx_authorization_url.as_ref() {
                     if let Ok(authorization_url) = rx_authorization_url.try_recv() {
+                        self.status = Some(false);
                         self.phase = Phase::Authorize(authorization_url);
                     }
                 }
                 if let Some(rx_session_id) = self.rx_session_id.as_ref() {
                     if let Ok(result) = rx_session_id.try_recv() {
                         if let Err(error) = result {
+                            self.item = 0;
                             self.phase = Phase::Error(format!("{:#}", error));
                         }
                     }
@@ -162,10 +165,9 @@ impl TMDBInitPopup {
                     }
                 }
                 if let Some(rx_session_id) = self.rx_session_id.as_ref() {
-                    if let Ok(result) = rx_session_id.try_recv() {
-                        if let Err(error) = result {
-                            self.phase = Phase::Error(format!("{:#}", error));
-                        }
+                    if let Ok(Err(error)) = rx_session_id.try_recv() {
+                        self.item = 0;
+                        self.phase = Phase::Error(format!("{:#}", error));
                     }
                 }
             }
@@ -174,13 +176,15 @@ impl TMDBInitPopup {
                     if let Ok(result) = rx_session_id.try_recv() {
                         match result {
                             Ok(session_id) => {
-                                if let Some(tokens) = self.tokens.as_mut() {
+                                if let Some(tokens) = self.user_tokens.as_mut() {
                                     tokens.session_id = session_id;
                                 }
+                                self.status = Some(true);
 
                                 self.advance_phase();
                             }
                             Err(error) => {
+                                self.item = 0;
                                 self.phase = Phase::Error(format!("{:#}", error));
                             }
                         }
@@ -192,12 +196,28 @@ impl TMDBInitPopup {
 
     pub fn render(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
         key_event_handler.clear();
-        key_event_handler.bind_esc((None, None), "Close".into(), |app, _| {
-            app.quit = true;
-        });
-        key_event_handler.bind_key((None, None), 'q', "Close".into(), |app, _| {
-            app.quit = true;
-        });
+        if self.can_close {
+            key_event_handler.bind_esc((None, None), "Close".into(), |app, _| {
+                app.drawer.close_popups();
+            });
+            key_event_handler.bind_key((None, None), 'q', "Close".into(), |app, _| {
+                app.drawer.close_popups();
+            });
+            key_event_handler.bind_mouse_button_down(
+                ratatui::crossterm::event::MouseButton::Left,
+                frame.area(),
+                |app, _| {
+                    app.drawer.close_popups();
+                },
+            );
+        } else {
+            // key_event_handler.bind_esc((None, None), "Close".into(), |app, _| {
+            //     app.quit = true;
+            // });
+            key_event_handler.bind_key((None, None), 'q', "Close".into(), |app, _| {
+                app.quit = true;
+            });
+        }
 
         self.throbber_visible = false;
         match &self.phase {
@@ -436,7 +456,7 @@ impl TMDBInitPopup {
                         tmdb_init_popup.phase = Phase::GetAccessToken;
                     }
                 });
-                key_event_handler.bind_esc((None, None), "Back".into(), |app, _| {
+                key_event_handler.bind_esc((None, Some(0)), "Back".into(), |app, _| {
                     if let Some(Popups::TMDBInit(tmdb_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -447,6 +467,34 @@ impl TMDBInitPopup {
                         tmdb_init_popup.phase = Phase::GetAccessToken;
                     }
                 });
+                if self.status.is_some() {
+                    key_event_handler.bind_enter((None, Some(1)), "Skip".into(), |app, _| {
+                        if let Some(Popups::TMDBInit(tmdb_init_popup)) =
+                            app.drawer.active_popup.as_mut()
+                        {
+                            tmdb_init_popup.phase = Phase::Done;
+                        }
+                    });
+                    key_event_handler.bind_tab((None, None), "".into(), |app, data| {
+                        if let Some(Popups::TMDBInit(tmdb_init_popup)) =
+                            app.drawer.active_popup.as_mut()
+                        {
+                            match data {
+                                crate::key_event_handler::Data::Direction(true, _) => {
+                                    tmdb_init_popup.item += 1;
+                                    if tmdb_init_popup.item > 1 {
+                                        tmdb_init_popup.item = 0;
+                                    }
+                                }
+                                crate::key_event_handler::Data::Direction(false, _) => {
+                                    tmdb_init_popup.item =
+                                        tmdb_init_popup.item.checked_sub(1).unwrap_or(1);
+                                }
+                                _ => {}
+                            }
+                        }
+                    });
+                }
 
                 let popup_area = dynamic_popup(
                     frame,
@@ -470,6 +518,26 @@ impl TMDBInitPopup {
                         .centered(),
                     message_area,
                 );
+
+                if self.status.is_some() {
+                    let skip_mouse_area = widgets::action(
+                        Action::new(" Skip ", ActionTypes::Normal, self.item == 1, true),
+                        HorizontalAlignment::Right,
+                        popup_area,
+                        frame,
+                    );
+                    key_event_handler.bind_mouse_button_down(
+                        ratatui::crossterm::event::MouseButton::Left,
+                        skip_mouse_area,
+                        |app, _| {
+                            if let Some(Popups::TMDBInit(tmdb_init_popup)) =
+                                app.drawer.active_popup.as_mut()
+                            {
+                                tmdb_init_popup.phase = Phase::Done;
+                            }
+                        },
+                    );
+                }
 
                 let mouse_area = widgets::action(
                     Action::new(" Back ", ActionTypes::Default, true, true),
