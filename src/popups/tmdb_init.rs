@@ -353,6 +353,7 @@ impl PopupTrait for TMDBInitPopup {
 
                 let input_selected = self.item == 0;
                 widgets::input_field(
+                    true,
                     input_selected,
                     input_valid,
                     &mut self.input,

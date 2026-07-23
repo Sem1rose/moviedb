@@ -259,6 +259,69 @@ impl std::cmp::PartialEq<Movie> for Movie {
     }
 }
 
+impl std::cmp::PartialOrd<Movie> for Movie {
+    fn partial_cmp(&self, other: &Movie) -> Option<Ordering> {
+        let mut rating_a: f64 = f64::NAN;
+        let mut rating_b: f64 = f64::NAN;
+
+        for i in (0..self.ratings.len()).rev() {
+            if let Rating::IMDB(r_a, c_a) = self.ratings[i] {
+                if let Rating::IMDB(r_b, c_b) = other.ratings[i] {
+                    if r_a == 0.0 || r_b == 0.0 {
+                        continue;
+                    }
+
+                    if r_a != r_b {
+                        rating_a = r_a;
+                        rating_b = r_b;
+                    } else {
+                        rating_a = c_a as f64;
+                        rating_b = c_b as f64;
+                    }
+
+                    break;
+                }
+            }
+            if let Rating::Trakt(r_a, c_a) = self.ratings[i] {
+                if let Rating::Trakt(r_b, c_b) = other.ratings[i] {
+                    if r_a == 0.0 || r_b == 0.0 {
+                        continue;
+                    }
+
+                    if r_a != r_b {
+                        rating_a = r_a;
+                        rating_b = r_b;
+                    } else {
+                        rating_a = c_a as f64;
+                        rating_b = c_b as f64;
+                    }
+
+                    break;
+                }
+            }
+            if let Rating::TMDB(r_a, c_a) = self.ratings[i] {
+                if let Rating::TMDB(r_b, c_b) = other.ratings[i] {
+                    if r_a == 0.0 || r_b == 0.0 {
+                        continue;
+                    }
+
+                    if r_a != r_b {
+                        rating_a = r_a;
+                        rating_b = r_b;
+                    } else {
+                        rating_a = c_a as f64;
+                        rating_b = c_b as f64;
+                    }
+
+                    break;
+                }
+            }
+        }
+
+        rating_a.partial_cmp(&rating_b)
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct OldMovie {
     pub id:            MovieID,

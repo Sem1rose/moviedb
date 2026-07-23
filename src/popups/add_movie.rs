@@ -556,6 +556,7 @@ impl PopupTrait for AddMoviePopup {
                 widgets::input_field(
                     true,
                     true,
+                    true,
                     &mut self.input0,
                     WrapMode::None,
                     frame,
@@ -1005,6 +1006,7 @@ impl PopupTrait for AddMoviePopup {
                 }
 
                 widgets::input_field(
+                    true,
                     self.item == 1,
                     rating_valid,
                     &mut self.input0,
@@ -1028,6 +1030,7 @@ impl PopupTrait for AddMoviePopup {
                 );
 
                 widgets::input_field(
+                    true,
                     self.item == 2,
                     date_valid,
                     &mut self.input1,

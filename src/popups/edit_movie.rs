@@ -164,6 +164,7 @@ impl PopupTrait for EditMoviePopup {
 
         let search_selected = self.item == 0;
         widgets::input_field(
+            true,
             search_selected,
             valid,
             &mut self.user_rating_input,

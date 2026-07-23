@@ -424,6 +424,7 @@ impl PopupTrait for TraktInitPopup {
 
                 let ci_input_selected = self.item == 0;
                 widgets::input_field(
+                    true,
                     ci_input_selected,
                     !self.input0.is_empty(),
                     &mut self.input0,
@@ -448,6 +449,7 @@ impl PopupTrait for TraktInitPopup {
 
                 let cs_input_selected = self.item == 1;
                 widgets::input_field(
+                    true,
                     cs_input_selected,
                     !self.input1.is_empty(),
                     &mut self.input1,
@@ -666,6 +668,7 @@ impl PopupTrait for TraktInitPopup {
                 );
 
                 widgets::input_field(
+                    true,
                     self.item == 0,
                     input_valid,
                     &mut self.input0,

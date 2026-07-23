@@ -16,6 +16,7 @@ use ratatui_textarea::{TextArea, WrapMode};
 use crate::helpers::add_padding;
 
 pub fn input_field(
+    tab_selected: bool,
     selected: bool,
     valid: bool,
     input: &mut TextArea<'static>,
@@ -26,19 +27,23 @@ pub fn input_field(
     title: &'static str,
     placeholder_text: &'static str,
 ) {
-    input.set_style(Style::new().fg(if selected {
-        tailwind::SLATE.c200
+    input.set_style(Style::new().fg(if tab_selected {
+        if selected {
+            tailwind::SLATE.c200
+        } else {
+            tailwind::STONE.c400
+        }
     } else {
         tailwind::STONE.c400
     }));
     input.set_cursor_style(
         Style::new()
-            .fg(if selected {
+            .fg(if tab_selected && selected {
                 tailwind::SLATE.c300
             } else {
                 tailwind::STONE.c400
             })
-            .add_modifier(if selected {
+            .add_modifier(if tab_selected && selected {
                 Modifier::REVERSED
             } else {
                 Modifier::default()
@@ -47,16 +52,24 @@ pub fn input_field(
     input.set_block(
         Block::bordered()
             .border_type(ratatui::widgets::BorderType::Thick)
-            .fg(if selected {
-                if valid { material::BLUE.c500 } else { material::RED.c600 }
+            .fg(if tab_selected {
+                if selected {
+                    if valid { material::BLUE.c500 } else { material::RED.c600 }
+                } else {
+                    tailwind::STONE.c500
+                }
             } else {
                 tailwind::STONE.c600
             })
             .title(title)
-            .title_style(Style::new().fg(if selected {
-                material::BLUE.c400
+            .title_style(Style::new().fg(if tab_selected {
+                if selected {
+                    material::BLUE.c400
+                } else {
+                    if valid { material::BLUE.c600 } else { material::RED.c600 }
+                }
             } else {
-                if valid { material::BLUE.c600 } else { material::RED.c600 }
+                tailwind::STONE.c400
             }))
             .padding(Padding::symmetric(1, 0)),
     );
