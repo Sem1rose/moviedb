@@ -22,7 +22,7 @@ use tmdb;
 use crate::{
     helpers::{add_padding, dynamic_popup, wrap_text},
     key_event_handler::{self, KeyEventHandler},
-    popups::Popups,
+    popups::{PopupTrait, Popups},
     tokens::tmdb_tokens::{TMDBTokens, UserTokens},
     widgets::{self, Action, ActionTypes},
 };
@@ -74,14 +74,6 @@ impl TMDBInitPopup {
         }
     }
 
-    pub fn get_state(&self) -> (Option<usize>, Option<usize>) {
-        (None, Some(self.item))
-    }
-
-    pub fn update_next_frame(&self) -> bool {
-        self.throbber_visible || matches!(self.phase, Phase::Authorize(_))
-    }
-
     pub fn advance_phase(&mut self) {
         self.phase = match self.phase {
             Phase::Initializing => Phase::GetAccessToken,
@@ -112,8 +104,18 @@ impl TMDBInitPopup {
             _ => Phase::Initializing,
         };
     }
+}
 
-    pub fn update(&mut self) {
+impl PopupTrait for TMDBInitPopup {
+    fn get_state(&self) -> (Option<usize>, Option<usize>) {
+        (None, Some(self.item))
+    }
+
+    fn update_next_frame(&self) -> bool {
+        self.throbber_visible || matches!(self.phase, Phase::Authorize(_))
+    }
+
+    fn update(&mut self) {
         self.tick += 1;
         if self.tick & 7 == 0 {
             self.throbber_state.calc_next();
@@ -194,7 +196,7 @@ impl TMDBInitPopup {
         }
     }
 
-    pub fn render(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
+    fn render(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
         key_event_handler.clear();
         if self.can_close {
             key_event_handler.bind_esc((None, None), "Close".into(), |app, _| {

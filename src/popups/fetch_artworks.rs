@@ -22,6 +22,7 @@ use trakt;
 use crate::{
     helpers::{add_padding, dynamic_popup},
     key_event_handler::KeyEventHandler,
+    popups::PopupTrait,
     tokens::{tmdb_tokens::TMDBTokens, trakt_tokens::TraktTokens},
     types::{Movie, MovieID},
 };
@@ -53,10 +54,6 @@ impl FetchArtworksPopup {
             cache_dir: cache_dir.clone(),
             ..Default::default()
         }
-    }
-
-    pub fn update_next_frame(&self) -> bool {
-        self.started
     }
 
     fn start_thread(&mut self) {
@@ -165,8 +162,18 @@ impl FetchArtworksPopup {
         self.started = true;
         self.fetch_artworks();
     }
+}
 
-    pub fn update(&mut self) {
+impl PopupTrait for FetchArtworksPopup {
+    fn get_state(&self) -> (Option<usize>, Option<usize>) {
+        (None, None)
+    }
+
+    fn update_next_frame(&self) -> bool {
+        self.started
+    }
+
+    fn update(&mut self) {
         if !self.started {
             return;
         }
@@ -198,7 +205,7 @@ impl FetchArtworksPopup {
         }
     }
 
-    pub fn render(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
+    fn render(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
         key_event_handler.clear();
 
         let progress = self.progress;

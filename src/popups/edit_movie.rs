@@ -13,7 +13,7 @@ use ratatui_textarea::{TextArea, WrapMode};
 use crate::{
     helpers::{add_padding, dynamic_popup},
     key_event_handler::KeyEventHandler,
-    popups::Popups,
+    popups::{PopupTrait, Popups},
     widgets::{self, Action, ActionTypes},
 };
 
@@ -26,10 +26,6 @@ pub struct EditMoviePopup {
 }
 
 impl EditMoviePopup {
-    pub fn get_state(&self) -> (Option<usize>, Option<usize>) {
-        (None, Some(self.item))
-    }
-
     pub fn new(new_play: bool, user_rating: f64) -> Self {
         let mut popup = Self::default();
 
@@ -56,8 +52,20 @@ impl EditMoviePopup {
         }
         false
     }
+}
 
-    pub fn render(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
+impl PopupTrait for EditMoviePopup {
+    fn get_state(&self) -> (Option<usize>, Option<usize>) {
+        (None, Some(self.item))
+    }
+
+    fn update_next_frame(&self) -> bool {
+        false
+    }
+
+    fn update(&mut self) {}
+
+    fn render(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
         key_event_handler.clear();
         key_event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,

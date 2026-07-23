@@ -22,7 +22,7 @@ use trakt::{self, smo::TokenResponse};
 use crate::{
     helpers::{add_padding, dynamic_popup, wrap_text},
     key_event_handler::{self, KeyEventHandler},
-    popups::Popups,
+    popups::{PopupTrait, Popups},
     tokens::trakt_tokens::{TraktTokens, UserTokens},
     widgets::{self, Action, ActionTypes},
 };
@@ -77,14 +77,6 @@ impl TraktInitPopup {
         }
     }
 
-    pub fn get_state(&self) -> (Option<usize>, Option<usize>) {
-        (None, Some(self.item))
-    }
-
-    pub fn update_next_frame(&self) -> bool {
-        self.throbber_visible // || matches!(self.phase, Phase::Authorize(_))
-    }
-
     pub fn advance_phase(&mut self) {
         self.item = 0;
 
@@ -134,8 +126,18 @@ impl TraktInitPopup {
             _ => Phase::Initializing,
         };
     }
+}
 
-    pub fn update(&mut self) {
+impl PopupTrait for TraktInitPopup {
+    fn get_state(&self) -> (Option<usize>, Option<usize>) {
+        (None, Some(self.item))
+    }
+
+    fn update_next_frame(&self) -> bool {
+        self.throbber_visible // || matches!(self.phase, Phase::Authorize(_))
+    }
+
+    fn update(&mut self) {
         self.tick += 1;
         if self.tick & 7 == 0 {
             self.throbber_state.calc_next();
@@ -257,7 +259,7 @@ impl TraktInitPopup {
         }
     }
 
-    pub fn render(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
+    fn render(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
         key_event_handler.clear();
         if self.can_close {
             key_event_handler.bind_esc((None, None), "Close".into(), |app, _| {

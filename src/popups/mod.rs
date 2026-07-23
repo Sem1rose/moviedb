@@ -29,3 +29,60 @@ pub enum Popups {
     // OutOfBox(OutOfBoxPopup),
     // AdvancedFilter(AdvancedFilterPopup),
 }
+
+impl Popups {
+    fn as_trait(&self) -> &dyn PopupTrait {
+        match self {
+            Popups::AddMovie(add_movie_popup) => add_movie_popup,
+            Popups::EditMovie(edit_movie_popup) => edit_movie_popup,
+            Popups::DeleteMovie(delete_movie_popup) => delete_movie_popup,
+            Popups::TraktInit(trakt_init_popup) => trakt_init_popup,
+            Popups::TMDBInit(tmdbinit_popup) => tmdbinit_popup,
+            Popups::OMDBInit(omdbinit_popup) => omdbinit_popup,
+            Popups::FetchArtworks(fetch_artworks_popup) => fetch_artworks_popup,
+        }
+    }
+
+    fn as_trait_mut(&mut self) -> &mut dyn PopupTrait {
+        match self {
+            Popups::AddMovie(add_movie_popup) => add_movie_popup,
+            Popups::EditMovie(edit_movie_popup) => edit_movie_popup,
+            Popups::DeleteMovie(delete_movie_popup) => delete_movie_popup,
+            Popups::TraktInit(trakt_init_popup) => trakt_init_popup,
+            Popups::TMDBInit(tmdbinit_popup) => tmdbinit_popup,
+            Popups::OMDBInit(omdbinit_popup) => omdbinit_popup,
+            Popups::FetchArtworks(fetch_artworks_popup) => fetch_artworks_popup,
+        }
+    }
+
+    pub fn get_state(&self) -> (Option<usize>, Option<usize>) {
+        self.as_trait().get_state()
+    }
+
+    pub fn update_next_frame(&self) -> bool {
+        self.as_trait().update_next_frame()
+    }
+
+    pub fn update(&mut self) {
+        self.as_trait_mut().update()
+    }
+
+    pub fn render(
+        &mut self,
+        frame: &mut ratatui::Frame,
+        key_event_handler: &mut crate::key_event_handler::KeyEventHandler,
+    ) {
+        self.as_trait_mut().render(frame, key_event_handler)
+    }
+}
+
+pub trait PopupTrait {
+    fn get_state(&self) -> (Option<usize>, Option<usize>);
+    fn update_next_frame(&self) -> bool;
+    fn update(&mut self);
+    fn render(
+        &mut self,
+        frame: &mut ratatui::Frame,
+        key_event_handler: &mut crate::key_event_handler::KeyEventHandler,
+    );
+}

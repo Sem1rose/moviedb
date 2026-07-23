@@ -41,7 +41,6 @@ impl App {
 
         Self {
             movies: vec![],
-            config: config,
             terminal: initialize_terminal()?,
             key_event_handler: KeyEventHandler::default(),
             drawer: Drawer::new(&home_dir, &cache_dir, config.clone()),
@@ -50,6 +49,7 @@ impl App {
             omdb_tokens: OMDBTokens::new(&home_dir),
             trakt_tokens: TraktTokens::new(&home_dir),
 
+            config: config,
             quit: false,
             home_dir,
             // cache_dir,

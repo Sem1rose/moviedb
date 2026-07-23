@@ -20,7 +20,7 @@ use throbber_widgets_tui::{Throbber, ThrobberState};
 use crate::{
     helpers::{add_padding, dynamic_popup},
     key_event_handler::{self, KeyEventHandler},
-    popups::Popups,
+    popups::{PopupTrait, Popups},
     tokens::omdb_tokens::OMDBTokens,
     widgets::{self, Action, ActionTypes},
 };
@@ -56,16 +56,18 @@ impl OMDBInitPopup {
             ..Default::default()
         }
     }
+}
 
-    pub fn get_state(&self) -> (Option<usize>, Option<usize>) {
+impl PopupTrait for OMDBInitPopup {
+    fn get_state(&self) -> (Option<usize>, Option<usize>) {
         (None, Some(self.item))
     }
 
-    pub fn update_next_frame(&self) -> bool {
+    fn update_next_frame(&self) -> bool {
         !self.started
     }
 
-    pub fn update(&mut self) {
+    fn update(&mut self) {
         self.tick += 1;
         if self.tick & 7 == 0 {
             self.throbber_state.calc_next();
@@ -87,7 +89,7 @@ impl OMDBInitPopup {
         }
     }
 
-    pub fn render(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
+    fn render(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
         key_event_handler.clear();
         if self.can_close {
             key_event_handler.bind_esc((None, None), "Close".into(), |app, _| {

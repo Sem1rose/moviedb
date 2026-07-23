@@ -92,12 +92,12 @@ impl Drawer {
 
     fn check_popups(&mut self, key_event_handler: &mut KeyEventHandler) {
         if let Some(popup) = self.active_popup.as_mut() {
+            popup.update();
+
             match popup {
                 Popups::EditMovie(_) => {}
                 Popups::DeleteMovie(_) => {}
                 Popups::AddMovie(add_movie_popup) => {
-                    add_movie_popup.update();
-
                     if let AddMoviePopupPhase::Done = add_movie_popup.phase {
                         key_event_handler.bind_immediate(|app, _| {
                             app.add_movie();
@@ -105,68 +105,36 @@ impl Drawer {
                     }
                 }
                 Popups::TMDBInit(tmdb_init_popup) => {
-                    tmdb_init_popup.update();
-
                     if let TMDBInitPopupPhase::Done = tmdb_init_popup.phase {
                         key_event_handler.bind_immediate(|app, _| {
                             app.set_tmdb_user_tokens();
                         });
                     }
                 }
-                Popups::OMDBInit(omdb_init_popup) => {
-                    omdb_init_popup.update();
-
+                Popups::OMDBInit(omdb_init_popup) =>
                     if omdb_init_popup.done {
                         key_event_handler.bind_immediate(|app, _| {
                             app.set_omdb_user_tokens();
                         });
-                    }
-                }
+                    },
                 Popups::TraktInit(trakt_init_popup) => {
-                    trakt_init_popup.update();
-
                     if let TraktInitPopupPhase::Done = trakt_init_popup.phase {
                         key_event_handler.bind_immediate(|app, _| {
                             app.set_trakt_user_tokens();
                         });
                     }
                 }
-                Popups::FetchArtworks(fetch_artworks_popup) => {
-                    fetch_artworks_popup.update();
-
+                Popups::FetchArtworks(fetch_artworks_popup) =>
                     if fetch_artworks_popup.done {
                         self.close_popups();
-                    }
-                }
+                    },
             }
         }
     }
 
     fn draw_popup(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
         if let Some(active_popup) = self.active_popup.as_mut() {
-            match active_popup {
-                Popups::EditMovie(edit_movie_popup) => {
-                    edit_movie_popup.render(frame, key_event_handler);
-                }
-                Popups::DeleteMovie(delete_movie_popup) => {
-                    delete_movie_popup.render(frame, key_event_handler);
-                }
-                Popups::AddMovie(add_movie_popup) => {
-                    add_movie_popup.render(frame, key_event_handler);
-                }
-                Popups::TMDBInit(tmdb_init_popup) => {
-                    tmdb_init_popup.render(frame, key_event_handler);
-                }
-                Popups::OMDBInit(omdb_init_popup) => {
-                    omdb_init_popup.render(frame, key_event_handler);
-                }
-                Popups::TraktInit(trakt_init_popup) => {
-                    trakt_init_popup.render(frame, key_event_handler);
-                }
-                Popups::FetchArtworks(fetch_artworks_popup) => {
-                    fetch_artworks_popup.render(frame, key_event_handler);
-                }
-            }
+            active_popup.render(frame, key_event_handler);
         }
     }
 
@@ -255,23 +223,8 @@ impl Drawer {
     }
 
     pub fn check_refresh_delayed(&mut self) -> bool {
-        match self.active_popup.as_ref() {
-            Some(Popups::AddMovie(add_movie_popup)) => {
-                return add_movie_popup.update_next_frame();
-            }
-            Some(Popups::TMDBInit(tmdb_init_popup)) => {
-                return tmdb_init_popup.update_next_frame();
-            }
-            Some(Popups::OMDBInit(omdb_init_popup)) => {
-                return omdb_init_popup.update_next_frame();
-            }
-            Some(Popups::TraktInit(trakt_init_popup)) => {
-                return trakt_init_popup.update_next_frame();
-            }
-            Some(Popups::FetchArtworks(fetch_artworks_popup)) => {
-                return fetch_artworks_popup.update_next_frame();
-            }
-            _ => {}
+        if let Some(active_popup) = self.active_popup.as_ref() {
+            return active_popup.update_next_frame();
         }
         if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_ref() {
             return main_screen.drawing_images;

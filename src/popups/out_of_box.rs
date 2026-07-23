@@ -6,25 +6,45 @@ use crate::{
     config::Config,
     helpers::{add_padding, dynamic_popup},
     key_event_handler::{self, KeyEventHandler},
-    popups::Popups,
+    popups::{PopupTrait, Popups},
     widgets::{self, ActionTypes},
 };
 
+#[derive(Default, Debug)]
+pub enum Phase {
+    #[default]
+    Initializing,
+    Done,
+}
+
 pub struct OutOfBoxPopup {
-    item:   usize,
-    config: Rc<RefCell<Config>>,
+    pub phase: Phase,
+    item:      usize,
+    config:    Rc<RefCell<Config>>,
 }
 
 impl OutOfBoxPopup {
-    pub fn get_state(&self) -> (Option<usize>, Option<usize>) {
+    pub fn new(config: Rc<RefCell<Config>>) -> Self {
+        Self {
+            item: 0,
+            config,
+            phase: Phase::default(),
+        }
+    }
+}
+
+impl PopupTrait for OutOfBoxPopup {
+    fn get_state(&self) -> (Option<usize>, Option<usize>) {
         (None, Some(self.item))
     }
 
-    pub fn new(config: Rc<RefCell<Config>>) -> Self {
-        Self { item: 0, config }
+    fn update_next_frame(&self) -> bool {
+        false
     }
 
-    pub fn render(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
+    fn update(&mut self) {}
+
+    fn render(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
         key_event_handler.clear();
     }
 }

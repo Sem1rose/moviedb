@@ -34,7 +34,7 @@ use crate::{
     helpers::{add_padding, dynamic_popup},
     key_event_handler::{self, KeyEventHandler},
     omdb::{self, OMDBDetailsResponse},
-    popups::Popups,
+    popups::{PopupTrait, Popups},
     tokens::{OMDBTokens, TMDBTokens, TraktTokens},
     types::Rating,
     widgets::{self, Action, ActionTypes},
@@ -99,7 +99,6 @@ pub struct AddMoviePopup {
     pub phase:         Phase,
     throbber_visible:  bool,
     item:              usize,
-    tab:               usize,
     scroll_pos:        usize,
     selected_item:     usize,
     alignment_bottom:  bool,
@@ -140,17 +139,8 @@ impl AddMoviePopup {
             tmdb_tokens,
             omdb_tokens,
             cache_dir: cache_dir.clone(),
-            input1: TextArea::from([""]),
             ..Default::default()
         }
-    }
-
-    pub fn get_state(&self) -> (Option<usize>, Option<usize>) {
-        (Some(self.tab), Some(self.item))
-    }
-
-    pub fn update_next_frame(&self) -> bool {
-        self.throbber_visible || self.search_results.is_none()
     }
 
     pub fn request_search(&mut self) {
@@ -385,8 +375,18 @@ impl AddMoviePopup {
         ["now", ""].contains(&self.input1.lines()[0].trim().to_lowercase().as_str())
             || self.input1.lines()[0].parse::<DateTime<Local>>().is_ok()
     }
+}
 
-    pub fn update(&mut self) {
+impl PopupTrait for AddMoviePopup {
+    fn get_state(&self) -> (Option<usize>, Option<usize>) {
+        (None, Some(self.item))
+    }
+
+    fn update_next_frame(&self) -> bool {
+        self.throbber_visible || self.search_results.is_none()
+    }
+
+    fn update(&mut self) {
         self.tick += 1;
         if self.tick & 7 == 0 {
             self.throbber_state.calc_next();
@@ -451,7 +451,7 @@ impl AddMoviePopup {
         }
     }
 
-    pub fn render(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
+    fn render(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
         key_event_handler.clear();
         key_event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,

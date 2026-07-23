@@ -6,7 +6,7 @@ use ratatui::{
     layout::{Position, Rect},
 };
 
-use crate::{App, Drawer};
+use crate::{App, Drawer, popups::PopupTrait};
 
 pub enum Data {
     None,
@@ -310,40 +310,15 @@ impl KeyEventHandler {
         event: KeyEvent,
         drawer: &Drawer,
     ) -> Option<(Callback, Data)> {
-        let state;
-        if let Some(popup) = drawer.active_popup.as_ref() {
-            match popup {
-                crate::popups::Popups::EditMovie(edit_movie_popup) => {
-                    state = edit_movie_popup.get_state();
-                }
-                crate::popups::Popups::DeleteMovie(delete_movie_popup) => {
-                    state = delete_movie_popup.get_state();
-                }
-                crate::popups::Popups::AddMovie(add_movie_popup) => {
-                    state = add_movie_popup.get_state();
-                }
-                crate::popups::Popups::TMDBInit(tmdb_init) => {
-                    state = tmdb_init.get_state();
-                }
-                crate::popups::Popups::OMDBInit(omdb_init) => {
-                    state = omdb_init.get_state();
-                }
-                crate::popups::Popups::TraktInit(trakt_init) => {
-                    state = trakt_init.get_state();
-                }
-                crate::popups::Popups::FetchArtworks(_) => {
-                    return None;
-                }
-            }
+        let state = if let Some(popup) = drawer.active_popup.as_ref() {
+            popup.get_state()
         } else if let Some(screen) = drawer.current_screen.as_ref() {
             match screen {
-                crate::screens::Screens::MainScreen(main_screen) => {
-                    state = main_screen.get_state();
-                }
+                crate::screens::Screens::MainScreen(main_screen) => main_screen.get_state(),
             }
         } else {
             return None;
-        }
+        };
 
         match event.code {
             KeyCode::Up | KeyCode::Down =>
@@ -428,40 +403,15 @@ impl KeyEventHandler {
         event: MouseEvent,
         drawer: &Drawer,
     ) -> Option<(Callback, Data)> {
-        let state;
-        if let Some(popup) = drawer.active_popup.as_ref() {
-            match popup {
-                crate::popups::Popups::EditMovie(edit_movie_popup) => {
-                    state = edit_movie_popup.get_state();
-                }
-                crate::popups::Popups::DeleteMovie(delete_movie_popup) => {
-                    state = delete_movie_popup.get_state();
-                }
-                crate::popups::Popups::AddMovie(add_movie_popup) => {
-                    state = add_movie_popup.get_state();
-                }
-                crate::popups::Popups::TMDBInit(tmdb_init) => {
-                    state = tmdb_init.get_state();
-                }
-                crate::popups::Popups::OMDBInit(omdb_init) => {
-                    state = omdb_init.get_state();
-                }
-                crate::popups::Popups::TraktInit(trakt_init) => {
-                    state = trakt_init.get_state();
-                }
-                crate::popups::Popups::FetchArtworks(_) => {
-                    return None;
-                }
-            }
+        let state = if let Some(popup) = drawer.active_popup.as_ref() {
+            popup.get_state()
         } else if let Some(screen) = drawer.current_screen.as_ref() {
             match screen {
-                crate::screens::Screens::MainScreen(main_screen) => {
-                    state = main_screen.get_state();
-                }
+                crate::screens::Screens::MainScreen(main_screen) => main_screen.get_state(),
             }
         } else {
             return None;
-        }
+        };
 
         let position = Position {
             x: event.column,

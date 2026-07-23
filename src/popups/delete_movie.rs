@@ -10,7 +10,7 @@ use ratatui::{
 use crate::{
     helpers::{add_padding, dynamic_popup, wrap_text},
     key_event_handler::{self, KeyEventHandler},
-    popups::Popups,
+    popups::{PopupTrait, Popups},
     widgets::{self, Action, ActionTypes},
 };
 
@@ -21,18 +21,26 @@ pub struct DeleteMoviePopup {
 }
 
 impl DeleteMoviePopup {
-    pub fn get_state(&self) -> (Option<usize>, Option<usize>) {
-        (None, Some(self.item))
-    }
-
     pub fn new(name: &str) -> Self {
         Self {
             item: 0,
             name: name.to_string(),
         }
     }
+}
 
-    pub fn render(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
+impl PopupTrait for DeleteMoviePopup {
+    fn get_state(&self) -> (Option<usize>, Option<usize>) {
+        (None, Some(self.item))
+    }
+
+    fn update_next_frame(&self) -> bool {
+        false
+    }
+
+    fn update(&mut self) {}
+
+    fn render(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
         key_event_handler.clear();
         key_event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
