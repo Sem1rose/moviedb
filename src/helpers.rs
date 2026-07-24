@@ -1,3 +1,5 @@
+use std::ops::Not;
+
 use itertools::Itertools;
 use ratatui::{
     Frame,
@@ -5,7 +7,7 @@ use ratatui::{
     macros::{horizontal, vertical},
     style::{Color, Style, Stylize},
     symbols::border,
-    widgets::{Block, Clear, Padding},
+    widgets::{Block, Borders, Clear, Padding},
 };
 
 pub fn wrap_text(line: &str, width: usize) -> Vec<String> {
@@ -46,14 +48,18 @@ pub fn wrap_text(line: &str, width: usize) -> Vec<String> {
     lines
 }
 
-pub fn dynamic_area(
-    max_height: Option<u16>,
-    aspect_ratio: f64,
-    h_align: Flex,
-    v_align: Flex,
-    area: Rect,
-) -> Rect {
-    let mut height = max_height.unwrap_or(area.height).min(area.height);
+pub fn static_area(height: u16, width: u16, area: Rect) -> Rect {
+    vertical![==height.min(area.height)]
+        .flex(Flex::Center)
+        .split(
+            horizontal![==width.min(area.width)]
+                .flex(Flex::Center)
+                .split(area)[0],
+        )[0]
+}
+
+pub fn dynamic_area(max_height: u16, aspect_ratio: f64, area: Rect) -> Rect {
+    let mut height = max_height.min(area.height);
     let mut width = (height as f64 * aspect_ratio) as u16;
 
     if width > area.width {
@@ -65,28 +71,20 @@ pub fn dynamic_area(
     }
 
     vertical![==height]
-        .flex(v_align)
-        .split(horizontal![==width].flex(h_align).split(area)[0])[0]
+        .flex(Flex::Center)
+        .split(horizontal![==width].flex(Flex::Center).split(area)[0])[0]
 }
 
-pub fn dynamic_popup(
+pub fn create_popup(
     frame: &mut Frame,
-    max_height: Option<u16>,
-    aspect_ratio: f64,
-    popup_background: Color,
+    area: Rect,
     title: &str,
     title_style: Style,
     title_alignment: Alignment,
     border_style: Style,
+    background_color: Color,
+    and_a_half: bool,
 ) -> Rect {
-    let area = dynamic_area(
-        max_height.map(|x| x + 2),
-        aspect_ratio,
-        Flex::Center,
-        Flex::Center,
-        frame.area(),
-    );
-
     let popup = Block::bordered()
         .border_set(border::PROPORTIONAL_WIDE)
         .border_style(border_style)
@@ -112,11 +110,22 @@ pub fn dynamic_popup(
         Block::new().bg(top_background),
         add_padding(area, Padding::bottom(1)),
     );
-    frame.render_widget(
-        Block::new().bg(bottom_background),
-        add_padding(area, Padding::top(1)),
-    );
-    frame.render_widget(Block::new().bg(popup_background), popup_area);
+    if and_a_half {
+        frame.render_widget(
+            Block::new()
+                .borders(Borders::TOP.not())
+                .border_set(border::PROPORTIONAL_TALL)
+                .border_style(border_style)
+                .bg(background_color),
+            add_padding(area, Padding::top(1)),
+        );
+    } else {
+        frame.render_widget(
+            Block::new().bg(bottom_background),
+            add_padding(area, Padding::top(1)),
+        );
+    }
+    frame.render_widget(Block::new().bg(background_color), popup_area);
 
     popup_area
 }

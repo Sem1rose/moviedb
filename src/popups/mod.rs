@@ -26,8 +26,8 @@ pub enum Popups {
     TMDBInit(TMDBInitPopup),
     OMDBInit(OMDBInitPopup),
     FetchArtworks(FetchArtworksPopup),
-    // OutOfBox(OutOfBoxPopup),
-    // AdvancedFilter(AdvancedFilterPopup),
+    OutOfBox(OutOfBoxPopup),
+    AdvancedFilter(AdvancedFilterPopup),
 }
 
 impl Popups {
@@ -40,6 +40,8 @@ impl Popups {
             Popups::TMDBInit(tmdbinit_popup) => tmdbinit_popup,
             Popups::OMDBInit(omdbinit_popup) => omdbinit_popup,
             Popups::FetchArtworks(fetch_artworks_popup) => fetch_artworks_popup,
+            Popups::OutOfBox(out_of_box_popup) => out_of_box_popup,
+            Popups::AdvancedFilter(advanced_filter_popup) => advanced_filter_popup,
         }
     }
 
@@ -52,6 +54,8 @@ impl Popups {
             Popups::TMDBInit(tmdbinit_popup) => tmdbinit_popup,
             Popups::OMDBInit(omdbinit_popup) => omdbinit_popup,
             Popups::FetchArtworks(fetch_artworks_popup) => fetch_artworks_popup,
+            Popups::OutOfBox(out_of_box_popup) => out_of_box_popup,
+            Popups::AdvancedFilter(advanced_filter_popup) => advanced_filter_popup,
         }
     }
 

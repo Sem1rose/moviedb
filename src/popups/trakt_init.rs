@@ -20,7 +20,8 @@ use throbber_widgets_tui::{Throbber, ThrobberState};
 use trakt::{self, smo::TokenResponse};
 
 use crate::{
-    helpers::{add_padding, dynamic_popup, wrap_text},
+    app::App,
+    helpers::{add_padding, create_popup, dynamic_area, wrap_text},
     key_event_handler::{self, KeyEventHandler},
     popups::{PopupTrait, Popups},
     tokens::trakt_tokens::{TraktTokens, UserTokens},
@@ -263,16 +264,16 @@ impl PopupTrait for TraktInitPopup {
         key_event_handler.clear();
         if self.can_close {
             key_event_handler.bind_esc((None, None), "Close".into(), |app, _| {
-                app.drawer.close_popups();
+                app.drawer.close_popup();
             });
             key_event_handler.bind_key((None, None), 'q', "Close".into(), |app, _| {
-                app.drawer.close_popups();
+                app.drawer.close_popup();
             });
             key_event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,
                 frame.area(),
                 |app, _| {
-                    app.drawer.close_popups();
+                    app.drawer.close_popup();
                 },
             );
         } else {
@@ -297,15 +298,15 @@ impl PopupTrait for TraktInitPopup {
             | Phase::Done => {
                 self.throbber_visible = true;
 
-                let popup_area = dynamic_popup(
+                let popup_area = create_popup(
                     frame,
-                    Some(5),
-                    4.0,
-                    tailwind::BLUE.c950,
+                    dynamic_area(7, 4.0, frame.area()),
                     "  Trakt Authentication  ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
                     Style::new().fg(tailwind::VIOLET.c950),
+                    tailwind::BLUE.c950,
+                    false,
                 );
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
@@ -403,15 +404,15 @@ impl PopupTrait for TraktInitPopup {
                     }
                 });
 
-                let popup_area = dynamic_popup(
+                let popup_area = create_popup(
                     frame,
-                    Some(10),
-                    4.0,
-                    tailwind::BLUE.c950,
+                    dynamic_area(12, 4.0, frame.area()),
                     "  Trakt Authentication  ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
                     Style::new().fg(tailwind::VIOLET.c950),
+                    tailwind::BLUE.c950,
+                    false,
                 );
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
@@ -588,15 +589,15 @@ impl PopupTrait for TraktInitPopup {
                     }
                 });
 
-                let popup_area = dynamic_popup(
+                let popup_area = create_popup(
                     frame,
-                    Some(12),
-                    4.0,
-                    tailwind::BLUE.c950,
+                    dynamic_area(14, 4.0, frame.area()),
                     "  Trakt Authentication  ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
                     Style::new().fg(tailwind::VIOLET.c950),
+                    tailwind::BLUE.c950,
+                    false,
                 );
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
@@ -717,7 +718,7 @@ impl PopupTrait for TraktInitPopup {
                 }
             }
             Phase::Error(error) => {
-                key_event_handler.bind_esc((None, None), "Back".into(), |app, _| {
+                let back = |app: &mut App, _| {
                     if let Some(Popups::TraktInit(trakt_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -727,22 +728,13 @@ impl PopupTrait for TraktInitPopup {
                         trakt_init_popup.tx_auth_code = None;
                         trakt_init_popup.input0.clear();
                         trakt_init_popup.input1.clear();
+                        trakt_init_popup.user_tokens = None;
+                        trakt_init_popup.status = None;
                         trakt_init_popup.phase = Phase::GetSecrets;
                     }
-                });
-                key_event_handler.bind_enter((None, Some(0)), "Back".into(), |app, _| {
-                    if let Some(Popups::TraktInit(trakt_init_popup)) =
-                        app.drawer.active_popup.as_mut()
-                    {
-                        trakt_init_popup.item = 0;
-                        trakt_init_popup.rx_tokens = None;
-                        trakt_init_popup.rx_authorization_url = None;
-                        trakt_init_popup.tx_auth_code = None;
-                        trakt_init_popup.input0.clear();
-                        trakt_init_popup.input1.clear();
-                        trakt_init_popup.phase = Phase::GetSecrets;
-                    }
-                });
+                };
+                key_event_handler.bind_esc((None, None), "Back".into(), back);
+                key_event_handler.bind_enter((None, Some(0)), "Back".into(), back);
                 if self.status.is_some() {
                     key_event_handler.bind_enter((None, Some(1)), "Skip".into(), |app, _| {
                         if let Some(Popups::TraktInit(trakt_init_popup)) =
@@ -772,15 +764,15 @@ impl PopupTrait for TraktInitPopup {
                     });
                 }
 
-                let popup_area = dynamic_popup(
+                let popup_area = create_popup(
                     frame,
-                    Some(9),
-                    4.0,
-                    tailwind::BLUE.c950,
+                    dynamic_area(11, 4.0, frame.area()),
                     "  Error  ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
                     Style::new().fg(tailwind::VIOLET.c950),
+                    tailwind::BLUE.c950,
+                    false,
                 );
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
@@ -824,19 +816,7 @@ impl PopupTrait for TraktInitPopup {
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     mouse_area,
-                    |app, _| {
-                        if let Some(Popups::TraktInit(trakt_init_popup)) =
-                            app.drawer.active_popup.as_mut()
-                        {
-                            trakt_init_popup.item = 0;
-                            trakt_init_popup.rx_tokens = None;
-                            trakt_init_popup.rx_authorization_url = None;
-                            trakt_init_popup.tx_auth_code = None;
-                            trakt_init_popup.input0.clear();
-                            trakt_init_popup.input1.clear();
-                            trakt_init_popup.phase = Phase::GetSecrets;
-                        }
-                    },
+                    back,
                 );
             }
         }

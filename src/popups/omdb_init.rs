@@ -18,7 +18,7 @@ use ratatui_textarea::{TextArea, WrapMode};
 use throbber_widgets_tui::{Throbber, ThrobberState};
 
 use crate::{
-    helpers::{add_padding, dynamic_popup},
+    helpers::{add_padding, create_popup, dynamic_area},
     key_event_handler::{self, KeyEventHandler},
     popups::{PopupTrait, Popups},
     tokens::omdb_tokens::OMDBTokens,
@@ -93,23 +93,23 @@ impl PopupTrait for OMDBInitPopup {
         key_event_handler.clear();
         if self.can_close {
             key_event_handler.bind_esc((None, None), "Close".into(), |app, _| {
-                app.drawer.close_popups();
+                app.drawer.close_popup();
             });
             key_event_handler.bind_key((None, None), 'q', "Close".into(), |app, _| {
-                app.drawer.close_popups();
+                app.drawer.close_popup();
             });
             key_event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,
                 frame.area(),
                 |app, _| {
-                    app.drawer.close_popups();
+                    app.drawer.close_popup();
                 },
             );
         } else {
             // key_event_handler.bind_esc((None, None), "Close".into(), |app, _| {
             //     app.quit = true;
             // });
-            key_event_handler.bind_key((None, None), 'q', "Close".into(), |app, _| {
+            key_event_handler.bind_key((None, None), 'q', "Quit".into(), |app, _| {
                 app.quit = true;
             });
         }
@@ -166,15 +166,15 @@ impl PopupTrait for OMDBInitPopup {
                 }
             });
 
-            let popup_area = dynamic_popup(
+            let popup_area = create_popup(
                 frame,
-                Some(8),
-                4.0,
-                tailwind::BLUE.c950,
+                dynamic_area(10, 4.0, frame.area()),
                 "  OMDB Authentication  ",
                 Style::new().fg(material::YELLOW.c800),
                 Alignment::Center,
                 Style::new().fg(tailwind::VIOLET.c950),
+                tailwind::BLUE.c950,
+                false,
             );
             key_event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,
@@ -256,15 +256,15 @@ impl PopupTrait for OMDBInitPopup {
                 );
             }
         } else {
-            let popup_area = dynamic_popup(
+            let popup_area = create_popup(
                 frame,
-                Some(5),
-                4.0,
-                tailwind::BLUE.c950,
+                dynamic_area(7, 4.0, frame.area()),
                 "  OMDB Authentication  ",
                 Style::new().fg(material::YELLOW.c800),
                 Alignment::Center,
                 Style::new().fg(tailwind::VIOLET.c950),
+                tailwind::BLUE.c950,
+                false,
             );
             key_event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,

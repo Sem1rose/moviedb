@@ -1,6 +1,6 @@
-mod main_screen;
+pub mod main_screen;
 
-pub use main_screen::MainScreen;
+use main_screen::MainScreen;
 pub enum Screens {
     MainScreen(MainScreen),
 }

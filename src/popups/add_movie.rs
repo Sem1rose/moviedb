@@ -31,7 +31,7 @@ use trakt::{
 };
 
 use crate::{
-    helpers::{add_padding, dynamic_popup},
+    helpers::{add_padding, create_popup, dynamic_area},
     key_event_handler::{self, KeyEventHandler},
     omdb::{self, OMDBDetailsResponse},
     popups::{PopupTrait, Popups},
@@ -248,22 +248,6 @@ impl AddMoviePopup {
                         let client_id = trakt_client_id.clone();
                         thread::spawn(move || trakt::movie::get_movie_details(&client_id, &imdb_id))
                     };
-                    // let _trakt_result = match trakt_handle.join() {
-                    //     Err(error) => {
-                    //         Err(anyhow!("{:#?}", error))
-                    //     }
-                    //     Ok(val) => {
-                    //         match val {
-                    //             Err(error) => {
-                    //                 Err(anyhow!("{:#?}", error))
-                    //             }
-                    //             Ok(val) => {
-                    //                 Ok(val)
-                    //             }
-                    //         }
-                    //     }
-                    // };
-                    // haha one liners are always fun
                     let _trakt_result = trakt_handle
                         .join()
                         .map_err(|err| anyhow!("{:#?}", err))
@@ -457,14 +441,14 @@ impl PopupTrait for AddMoviePopup {
             ratatui::crossterm::event::MouseButton::Left,
             frame.area(),
             |app, _| {
-                app.drawer.close_popups();
+                app.drawer.close_popup();
             },
         );
         key_event_handler.bind_esc((None, None), "Close".into(), |app, _| {
-            app.drawer.close_popups();
+            app.drawer.close_popup();
         });
         key_event_handler.bind_key((None, None), 'q', "Close".into(), |app, _| {
-            app.drawer.close_popups();
+            app.drawer.close_popup();
         });
 
         let num_results = if let Some(search_results) = self.search_results.as_ref() {
@@ -535,15 +519,15 @@ impl PopupTrait for AddMoviePopup {
                     }
                 });
 
-                let popup_area = dynamic_popup(
+                let popup_area = create_popup(
                     frame,
-                    Some(26),
-                    2.4,
-                    tailwind::BLUE.c950,
+                    dynamic_area(28, 2.4, frame.area()),
                     "  Add movie  ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
                     Style::new().fg(tailwind::VIOLET.c950),
+                    tailwind::BLUE.c950,
+                    false,
                 );
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
@@ -797,7 +781,7 @@ impl PopupTrait for AddMoviePopup {
                 });
 
                 key_event_handler.bind_esc((None, Some(0)), "Close".into(), |app, _| {
-                    app.drawer.close_popups();
+                    app.drawer.close_popup();
                 });
                 key_event_handler.bind_esc((None, None), "Back".into(), |app, _| {
                     if let Some(Popups::AddMovie(add_movie_popup)) =
@@ -902,7 +886,7 @@ impl PopupTrait for AddMoviePopup {
                     }
                 }
                 key_event_handler.bind_enter((None, Some(4)), "Cancel".into(), |app, _| {
-                    app.drawer.close_popups();
+                    app.drawer.close_popup();
                 });
 
                 key_event_handler.bind_input_field((None, Some(1)), "".into(), |app, data| {
@@ -930,15 +914,15 @@ impl PopupTrait for AddMoviePopup {
                     }
                 });
 
-                let popup_area = dynamic_popup(
+                let popup_area = create_popup(
                     frame,
-                    Some(11),
-                    3.0,
-                    tailwind::BLUE.c950,
+                    dynamic_area(13, 3.0, frame.area()),
                     "  Add movie  ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
                     Style::new().fg(tailwind::VIOLET.c950),
+                    tailwind::BLUE.c950,
+                    false,
                 );
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
@@ -998,7 +982,7 @@ impl PopupTrait for AddMoviePopup {
                                         add_movie_popup.throbber_visible = true;
                                     }
                                 } else {
-                                    app.drawer.close_popups();
+                                    app.drawer.close_popup();
                                 }
                             }
                         },
@@ -1056,15 +1040,15 @@ impl PopupTrait for AddMoviePopup {
             Phase::GettingDetails | Phase::Done => {
                 self.throbber_visible = true;
 
-                let popup_area = dynamic_popup(
+                let popup_area = create_popup(
                     frame,
-                    Some(8),
-                    5.0,
-                    tailwind::BLUE.c950,
+                    dynamic_area(10, 5.0, frame.area()),
                     "  Add movie  ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
                     Style::new().fg(tailwind::VIOLET.c950),
+                    tailwind::BLUE.c950,
+                    false,
                 );
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
@@ -1094,15 +1078,15 @@ impl PopupTrait for AddMoviePopup {
                     }
                 });
 
-                let popup_area = dynamic_popup(
+                let popup_area = create_popup(
                     frame,
-                    Some(9),
-                    4.0,
-                    tailwind::BLUE.c950,
+                    dynamic_area(11, 4.0, frame.area()),
                     "  Error  ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
                     Style::new().fg(tailwind::VIOLET.c950),
+                    tailwind::BLUE.c950,
+                    false,
                 );
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,

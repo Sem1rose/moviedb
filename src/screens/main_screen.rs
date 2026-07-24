@@ -42,6 +42,7 @@ pub enum Sort {
     Relevance,
 }
 
+#[derive(Clone)]
 pub enum FilterCriterion {
     Name(String, bool /*filter*/),
     Director(u32, bool /*inverted*/),
@@ -99,15 +100,15 @@ pub struct PlaysTab {
 }
 
 pub struct MainScreen {
-    tab:                usize,
-    item:               usize,
-    pub sort:           Sort,
-    pub redraw_images:  u8,
-    pub drawing_images: bool,
-    pub sort_ascending: bool,
-    search_input:       TextArea<'static>,
-    filter_criteria:    Vec<FilterCriterion>,
-    config:             Rc<RefCell<Config>>,
+    tab:                 usize,
+    item:                usize,
+    pub sort:            Sort,
+    pub redraw_images:   u8,
+    pub drawing_images:  bool,
+    pub sort_ascending:  bool,
+    pub filter_criteria: Vec<FilterCriterion>,
+    search_input:        TextArea<'static>,
+    config:              Rc<RefCell<Config>>,
 
     movies:             Vec<Movie>,
     filtered_movies:    Vec<Movie>,
@@ -723,7 +724,8 @@ impl MainScreen {
             pop_criterion!(self.filter_criteria, FilterCriterion::Name(_, _))
         {
             if tab_selected || f {
-                self.filter_criteria.push(FilterCriterion::Name(n.clone(), f));
+                self.filter_criteria
+                    .push(FilterCriterion::Name(n.clone(), f));
             } else {
                 self.search_input = TextArea::from([""]);
             }
@@ -995,19 +997,26 @@ impl MainScreen {
                                         as isize,
                                 );
                             } else {
-                                main_screen.movies_list_selected_item = (main_screen
-                                    .movies_list_selected_item
-                                + 1)
-                                    .min(main_screen.filtered_movies.len().saturating_sub(1));
+                                main_screen.movies_list_selected_item =
+                                    (main_screen.movies_list_selected_item + 1)
+                                        .min(main_screen.filtered_movies.len().saturating_sub(1));
 
-                                if main_screen.movies_list_selected_item < main_screen.movies_list_scroll_pos {
-                                    main_screen.movies_list_scroll_pos = main_screen.movies_list_selected_item.min(main_screen.filtered_movies.len().saturating_sub(main_screen.movies_list_num_visible_items));
+                                if main_screen.movies_list_selected_item
+                                    < main_screen.movies_list_scroll_pos
+                                {
+                                    main_screen.movies_list_scroll_pos = main_screen
+                                        .movies_list_selected_item
+                                        .min(main_screen.filtered_movies.len().saturating_sub(
+                                            main_screen.movies_list_num_visible_items,
+                                        ));
                                 } else if main_screen.movies_list_selected_item
                                     - main_screen.movies_list_scroll_pos
                                     >= main_screen.movies_list_num_visible_items
                                 {
-                                    main_screen.movies_list_scroll_pos = main_screen.movies_list_selected_item
-                                        - main_screen.movies_list_num_visible_items + 1;
+                                    main_screen.movies_list_scroll_pos = main_screen
+                                        .movies_list_selected_item
+                                        - main_screen.movies_list_num_visible_items
+                                        + 1;
                                 }
                             }
                         }
@@ -1026,13 +1035,19 @@ impl MainScreen {
                                 if main_screen.movies_list_selected_item
                                     < main_screen.movies_list_scroll_pos
                                 {
-                                    main_screen.movies_list_scroll_pos = main_screen.movies_list_selected_item.min(main_screen.filtered_movies.len().saturating_sub(main_screen.movies_list_num_visible_items));
+                                    main_screen.movies_list_scroll_pos = main_screen
+                                        .movies_list_selected_item
+                                        .min(main_screen.filtered_movies.len().saturating_sub(
+                                            main_screen.movies_list_num_visible_items,
+                                        ));
                                 } else if main_screen.movies_list_selected_item
                                     - main_screen.movies_list_scroll_pos
                                     >= main_screen.movies_list_num_visible_items
                                 {
-                                    main_screen.movies_list_scroll_pos = main_screen.movies_list_selected_item
-                                        - main_screen.movies_list_num_visible_items + 1;
+                                    main_screen.movies_list_scroll_pos = main_screen
+                                        .movies_list_selected_item
+                                        - main_screen.movies_list_num_visible_items
+                                        + 1;
                                 }
                             }
                         }
@@ -1106,7 +1121,9 @@ impl MainScreen {
                 self.movies_list_alignment_bottom = false;
             } else if self.movies_list_selected_item == self.movies_list_scroll_pos {
                 self.movies_list_alignment_bottom = false;
-            } else if self.movies_list_selected_item .saturating_sub(self.movies_list_scroll_pos)
+            } else if self
+                .movies_list_selected_item
+                .saturating_sub(self.movies_list_scroll_pos)
                 == self.movies_list_num_visible_items - 1
             {
                 self.movies_list_alignment_bottom = true;
@@ -1228,10 +1245,14 @@ impl MainScreen {
                     },
                 );
             }
-            if self.movies_list_scroll_pos < self.filtered_movies.len() - self.movies_list_num_visible_items - 1 {
+            if self.movies_list_scroll_pos
+                < self.filtered_movies.len() - self.movies_list_num_visible_items - 1
+            {
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
-                    scrollbar_area.resize(Size::new(1, 1)).offset(Offset::new(0, scrollbar_area.height as i32 - 1)),
+                    scrollbar_area
+                        .resize(Size::new(1, 1))
+                        .offset(Offset::new(0, scrollbar_area.height as i32 - 1)),
                     move |app, _| {
                         if let Some(Screens::MainScreen(main_screen)) =
                             app.drawer.current_screen.as_mut()
@@ -1472,10 +1493,8 @@ impl MainScreen {
             if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 match data {
                     key_event_handler::Data::Direction(true, _) => {
-                        main_screen.movies_description_selected_tab = (main_screen
-                            .movies_description_selected_tab
-                        + 1)
-                            .min(TABS_COUNT - 1);
+                        main_screen.movies_description_selected_tab =
+                            (main_screen.movies_description_selected_tab + 1).min(TABS_COUNT - 1);
                     }
                     key_event_handler::Data::Direction(false, _) => {
                         main_screen.movies_description_selected_tab = main_screen

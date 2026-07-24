@@ -14,10 +14,10 @@ use crate::{
 };
 
 pub struct App {
-    // cache_dir:      PathBuf,
-    home_dir:   PathBuf,
-    pub quit:   bool,
-    pub movies: Vec<Movie>,
+    pub cache_dir: PathBuf,
+    pub home_dir:  PathBuf,
+    pub quit:      bool,
+    pub movies:    Vec<Movie>,
 
     terminal:              Term,
     pub drawer:            Drawer,
@@ -52,7 +52,7 @@ impl App {
             config: config,
             quit: false,
             home_dir,
-            // cache_dir,
+            cache_dir,
         }
         .fetch_movies()
     }
@@ -224,7 +224,7 @@ impl App {
 
             main_screen.set_movies(&self.movies);
             main_screen.goto_index(-1);
-            self.drawer.close_popups();
+            self.drawer.close_popup();
         }
 
         self.save_movies().unwrap();
@@ -269,7 +269,7 @@ impl App {
             if let Some(tokens) = trakt_init_popup.user_tokens.take() {
                 self.trakt_tokens.set_creds(tokens).unwrap();
             }
-            self.drawer.close_popups();
+            self.drawer.close_popup();
         }
     }
 
@@ -278,7 +278,7 @@ impl App {
             if let Some(tokens) = tmdb_init_popup.user_tokens.take() {
                 self.tmdb_tokens.set_creds(tokens).unwrap();
             }
-            self.drawer.close_popups();
+            self.drawer.close_popup();
         }
     }
 
@@ -287,7 +287,7 @@ impl App {
             if let Some(tokens) = omdb_init_popup.tokens.take() {
                 self.omdb_tokens.set_creds(tokens).unwrap();
             }
-            self.drawer.close_popups();
+            self.drawer.close_popup();
         }
     }
 

@@ -20,7 +20,7 @@ use tmdb;
 use trakt;
 
 use crate::{
-    helpers::{add_padding, dynamic_popup},
+    helpers::{add_padding, create_popup, dynamic_area},
     key_event_handler::KeyEventHandler,
     popups::PopupTrait,
     tokens::{tmdb_tokens::TMDBTokens, trakt_tokens::TraktTokens},
@@ -146,7 +146,7 @@ impl FetchArtworksPopup {
         }
     }
 
-    pub fn set_movies(
+    pub fn initialize(
         &mut self,
         movies: &[Movie],
         trakt_tokens: &TraktTokens,
@@ -201,7 +201,7 @@ impl PopupTrait for FetchArtworksPopup {
             self.done = true;
             self.started = false;
 
-            _ = self.tx_fetch_request.as_ref().unwrap().send(None);
+            _ = self.tx_fetch_request.take().unwrap().send(None);
         }
     }
 
@@ -211,15 +211,15 @@ impl PopupTrait for FetchArtworksPopup {
         let progress = self.progress;
         let num_movies = self.movies.len();
 
-        let popup_area = dynamic_popup(
+        let popup_area = create_popup(
             frame,
-            Some(8),
-            5.0,
-            tailwind::BLUE.c950,
+            dynamic_area(10, 5.0, frame.area()),
             "  Fetching posters  ",
             Style::new().fg(material::YELLOW.c800),
             Alignment::Center,
             Style::new().fg(tailwind::VIOLET.c950),
+            tailwind::BLUE.c950,
+            false,
         );
 
         let [_, throbber_area, _, progress_area, _, errored_area] =

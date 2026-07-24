@@ -8,7 +8,7 @@ use ratatui::{
 };
 
 use crate::{
-    helpers::{add_padding, dynamic_popup, wrap_text},
+    helpers::{add_padding, create_popup, dynamic_area, wrap_text},
     key_event_handler::{self, KeyEventHandler},
     popups::{PopupTrait, Popups},
     widgets::{self, Action, ActionTypes},
@@ -46,7 +46,7 @@ impl PopupTrait for DeleteMoviePopup {
             ratatui::crossterm::event::MouseButton::Left,
             frame.area(),
             |app, _| {
-                app.drawer.close_popups();
+                app.drawer.close_popup();
             },
         );
         key_event_handler.bind_horizontal((None, None), "Navigate".into(), |app, data| {
@@ -68,25 +68,25 @@ impl PopupTrait for DeleteMoviePopup {
             }
         });
         key_event_handler.bind_esc((None, None), "Cancel".into(), |app, _| {
-            app.drawer.close_popups();
+            app.drawer.close_popup();
         });
         key_event_handler.bind_enter((None, Some(0)), "Cancel".into(), |app, _| {
-            app.drawer.close_popups();
+            app.drawer.close_popup();
         });
         key_event_handler.bind_enter((None, Some(1)), "Confirm".into(), |app, _| {
             app.remove_movie();
-            app.drawer.close_popups();
+            app.drawer.close_popup();
         });
 
-        let popup_area = dynamic_popup(
+        let popup_area = create_popup(
             frame,
-            Some(7),
-            5.0,
-            tailwind::BLUE.c950,
+            dynamic_area(9, 5.0, frame.area()),
             "  Remove movie  ",
             Style::new().fg(tailwind::AMBER.c500),
             Alignment::Center,
             Style::new().fg(tailwind::VIOLET.c950),
+            tailwind::BLUE.c950,
+            false,
         );
         key_event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
@@ -121,7 +121,7 @@ impl PopupTrait for DeleteMoviePopup {
                     if i == 0 {
                         app.remove_movie();
                     }
-                    app.drawer.close_popups();
+                    app.drawer.close_popup();
                 },
             );
         }

@@ -11,7 +11,7 @@ use ratatui::{
 use ratatui_textarea::{TextArea, WrapMode};
 
 use crate::{
-    helpers::{add_padding, dynamic_popup},
+    helpers::{add_padding, create_popup, dynamic_area},
     key_event_handler::KeyEventHandler,
     popups::{PopupTrait, Popups},
     widgets::{self, Action, ActionTypes},
@@ -71,7 +71,7 @@ impl PopupTrait for EditMoviePopup {
             ratatui::crossterm::event::MouseButton::Left,
             frame.area(),
             |app, _| {
-                app.drawer.close_popups();
+                app.drawer.close_popup();
             },
         );
         let valid = self.validate_rating();
@@ -83,14 +83,14 @@ impl PopupTrait for EditMoviePopup {
                 } else {
                     app.edit_movie();
                 }
-                app.drawer.close_popups();
+                app.drawer.close_popup();
             }
         });
         key_event_handler.bind_enter((None, Some(2)), "Close".into(), |app, _| {
-            app.drawer.close_popups();
+            app.drawer.close_popup();
         });
         key_event_handler.bind_esc((None, None), "Close".into(), |app, _| {
-            app.drawer.close_popups();
+            app.drawer.close_popup();
         });
         key_event_handler.bind_tab((None, None), "".into(), |app, data| {
             if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
@@ -140,11 +140,9 @@ impl PopupTrait for EditMoviePopup {
             }
         });
 
-        let popup_area = dynamic_popup(
+        let popup_area = create_popup(
             frame,
-            Some(7),
-            5.0,
-            tailwind::BLUE.c950,
+            dynamic_area(9, 5.0, frame.area()),
             if self.new_play {
                 "  Add a new play  "
             } else {
@@ -153,6 +151,8 @@ impl PopupTrait for EditMoviePopup {
             Style::new().fg(material::YELLOW.c800),
             Alignment::Center,
             Style::new().fg(tailwind::VIOLET.c950),
+            tailwind::BLUE.c950,
+            false,
         );
         key_event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
@@ -202,7 +202,7 @@ impl PopupTrait for EditMoviePopup {
                 mouse_area,
                 move |app, _| {
                     if i == 1 {
-                        app.drawer.close_popups();
+                        app.drawer.close_popup();
                     } else {
                         if valid {
                             if add_play {
@@ -211,7 +211,7 @@ impl PopupTrait for EditMoviePopup {
                                 app.edit_movie();
                             }
 
-                            app.drawer.close_popups();
+                            app.drawer.close_popup();
                         }
                     }
                 },
