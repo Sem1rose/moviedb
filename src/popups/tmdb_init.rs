@@ -232,21 +232,21 @@ impl PopupTrait for TMDBInitPopup {
 
                 let popup_area = create_popup(
                     frame,
-                    dynamic_area(7, 4.0, frame.area()),
-                    "  TMDB Authentication  ",
+                    dynamic_area(6, 4.0, frame.area()),
+                    " TMDB Authentication ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
                     Style::new().fg(tailwind::VIOLET.c950),
                     tailwind::BLUE.c950,
-                    false,
+                    true,
                 );
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     popup_area.outer(Margin::new(1, 1)),
                     |_, _| {},
                 );
-                let [_, message_area, throbber_area, _] =
-                    vertical![>=1, ==2, ==1, >=1].areas(popup_area);
+                let [_, message_area, _, throbber_area] =
+                    vertical![>=1, ==2, >=1, ==1].areas(popup_area);
                 frame.render_widget(line!("Processing").centered(), message_area);
 
                 frame.render_stateful_widget(
@@ -310,13 +310,13 @@ impl PopupTrait for TMDBInitPopup {
 
                 let popup_area = create_popup(
                     frame,
-                    dynamic_area(11, 4.0, frame.area()),
-                    "  TMDB Authentication  ",
+                    dynamic_area(8, 5.0, frame.area()),
+                    " TMDB Authentication ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
                     Style::new().fg(tailwind::VIOLET.c950),
                     tailwind::BLUE.c950,
-                    false,
+                    true,
                 );
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
@@ -324,8 +324,8 @@ impl PopupTrait for TMDBInitPopup {
                     |_, _| {},
                 );
 
-                let [input_area, _, actions_area] = vertical![==5, >=1, ==1]
-                    .areas(add_padding(popup_area, Padding::proportional(1)));
+                let [input_area, _] =
+                    vertical![==3, ==1].areas(add_padding(popup_area, Padding::proportional(1)));
 
                 let confirm_mouse_area = widgets::action(
                     Action::new(
@@ -335,7 +335,8 @@ impl PopupTrait for TMDBInitPopup {
                         input_valid,
                     ),
                     HorizontalAlignment::Right,
-                    actions_area,
+                    true,
+                    add_padding(popup_area, Padding::right(1)),
                     frame,
                 );
                 if input_valid {
@@ -361,7 +362,6 @@ impl PopupTrait for TMDBInitPopup {
                     WrapMode::Glyph,
                     frame,
                     input_area,
-                    (0, 0),
                     " Access Token ",
                     "Enter the Access Token",
                 );
@@ -393,7 +393,7 @@ impl PopupTrait for TMDBInitPopup {
                 let popup_area = create_popup(
                     frame,
                     dynamic_area(10, 4.0, frame.area()),
-                    "  TMDB Authentication  ",
+                    " TMDB Authentication ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
                     Style::new().fg(tailwind::VIOLET.c950),
@@ -409,6 +409,7 @@ impl PopupTrait for TMDBInitPopup {
                 let back_mouse_area = widgets::action(
                     Action::new(" Back ", ActionTypes::Default, false, true),
                     HorizontalAlignment::Left,
+                    false,
                     popup_area,
                     frame,
                 );
@@ -494,20 +495,20 @@ impl PopupTrait for TMDBInitPopup {
                 let popup_area = create_popup(
                     frame,
                     dynamic_area(11, 4.0, frame.area()),
-                    "  Error  ",
+                    " Error ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
                     Style::new().fg(tailwind::VIOLET.c950),
                     tailwind::BLUE.c950,
-                    false,
+                    true,
                 );
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     popup_area.outer(Margin::new(1, 1)),
                     |_, _| {},
                 );
-                let [message_area, _, actions_area] = vertical![>=1, ==1, ==1]
-                    .areas(add_padding(popup_area, Padding::proportional(1)));
+                let [message_area, _] =
+                    vertical![>=1, ==1].areas(add_padding(popup_area, Padding::proportional(1)));
                 frame.render_widget(
                     Text::from_iter(wrap_text(error.as_str(), message_area.width as usize))
                         .centered(),
@@ -518,6 +519,7 @@ impl PopupTrait for TMDBInitPopup {
                     let skip_mouse_area = widgets::action(
                         Action::new(" Skip ", ActionTypes::Normal, self.item == 1, true),
                         HorizontalAlignment::Right,
+                        false,
                         popup_area,
                         frame,
                     );
@@ -537,7 +539,8 @@ impl PopupTrait for TMDBInitPopup {
                 let mouse_area = widgets::action(
                     Action::new(" Back ", ActionTypes::Default, true, true),
                     HorizontalAlignment::Center,
-                    actions_area,
+                    true,
+                    add_padding(popup_area, Padding::right(1)),
                     frame,
                 );
                 key_event_handler.bind_mouse_button_down(

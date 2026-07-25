@@ -48,7 +48,7 @@ impl Drawer {
 
             popups
         } else {
-            vec![Popups::OutOfBox(OutOfBoxPopup::new())]
+            vec![Popups::OutOfBox(OutOfBoxPopup::default())]
         };
 
         Drawer {
@@ -227,7 +227,7 @@ impl Drawer {
 
     pub fn open_add_play_popup(&mut self) {
         self.popup_queue
-            .push(Popups::EditMovie(EditMoviePopup::new(true, 0.0)));
+            .push(Popups::EditMovie(EditMoviePopup::new(true, 0.0, None)));
     }
 
     pub fn open_edit_movie_popup(&mut self) {
@@ -235,6 +235,7 @@ impl Drawer {
             self.popup_queue.push(Popups::EditMovie(EditMoviePopup::new(
                 false,
                 main_screen.current_movie().unwrap().get_user_rating(),
+                Some(main_screen.current_movie().unwrap().get_latest_play()),
             )));
         }
     }

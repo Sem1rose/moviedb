@@ -34,7 +34,8 @@ use crate::{
 #[derive(FromPrimitive, ToPrimitive, Default, Clone, Copy)]
 pub enum Sort {
     #[default]
-    AddedDate,
+    RecentlyWatched,
+    DateAdded,
     UserRating,
     Rating,
     Name,
@@ -57,7 +58,12 @@ pub enum FilterCriterion {
         u32,  /*upper bound*/
         bool, /*inverted*/
     ),
-    Added(
+    DateAdded(
+        u32,  /*lower bound*/
+        u32,  /*upper bound*/
+        bool, /*inverted*/
+    ),
+    RecentlyWatched(
         u32,  /*lower bound*/
         u32,  /*upper bound*/
         bool, /*inverted*/
@@ -228,6 +234,9 @@ impl MainScreen {
                 app.tmdb_tokens.clone(),
                 app.omdb_tokens.clone(),
             );
+        });
+        key_event_handler.bind_key((Some(0), None), 'F', "Advanced Filter".into(), |app, _| {
+            app.drawer.open_advanced_filter_popup();
         });
         key_event_handler.bind_key((Some(0), None), ',', "Sort by".into(), |app, _| {
             if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
@@ -717,9 +726,8 @@ impl MainScreen {
         });
 
         let [_debug_area, input_area, _, sort_area, _, direction_area, _] =
-            horizontal![>=1, <=25, ==1, <=15, ==1, ==3, ==1].areas(area);
+            horizontal![>=1, <=25, ==1, <=16, ==1, ==3, ==1].areas(area);
 
-        // frame.render_widget(Paragraph::new(format!("scroll_pos: {} selected_item: {} movies_num: {} num_visible_items: {} partially_visible: {} alignment_bottom: {}", self.movies_list_scroll_pos, self.movies_list_selected_item, self.filtered_movies.len(), self.movies_list_num_visible_items, self.movies_list_partially_visible_item, self.movies_list_alignment_bottom)).wrap(Wrap { trim: false }), debug_area);
         let filter = if let Some(FilterCriterion::Name(n, f)) =
             pop_criterion!(self.filter_criteria, FilterCriterion::Name(_, _))
         {
@@ -747,7 +755,6 @@ impl MainScreen {
             ratatui_textarea::WrapMode::None,
             frame,
             input_area,
-            (0, 0),
             match filter {
                 Some(true) => " Filter ",
                 Some(false) => " Find ",
@@ -821,11 +828,12 @@ impl MainScreen {
             .fg(get_bg(1));
         let sort = ellipsize_string(
             match self.sort {
-                Sort::AddedDate => "Added",
+                Sort::RecentlyWatched => "Most Recent",
+                Sort::DateAdded => "Date Added",
                 Sort::UserRating => "User Rating",
                 Sort::Rating => "Rating",
                 Sort::Name => "Name",
-                Sort::ReleaseDate => "Release",
+                Sort::ReleaseDate => "Release Date",
                 Sort::Relevance => "Relevance",
             },
             sort_area.width as usize - 4,
@@ -856,11 +864,12 @@ impl MainScreen {
 
         if tab_selected && self.item == 1 {
             let mut items: Vec<Line> = vec![
-                " Added ",
+                " Most Recent ",
+                " Date Added ",
                 " User Rating ",
                 " Rating ",
                 " Name ",
-                " Release ",
+                " Release Date ",
                 " Relevance ",
             ]
             .iter()
@@ -1434,7 +1443,6 @@ impl MainScreen {
             );
         }
 
-        frame.render_widget(Block::new().bg(tailwind::SLATE.c700), poster_area);
         if self.redraw_images < 1 {
             self.drawing_images |= !self.image_renderer.draw_image(
                 self.filtered_movies[movie_index].id.tmdb,
@@ -1454,6 +1462,8 @@ impl MainScreen {
                 },
                 frame,
             );
+        } else {
+            frame.render_widget(Block::new().bg(tailwind::SLATE.c700), poster_area);
         }
         // frame.render_widget(
         //     line!("1 2 3 4 5 6 7 8 9 a b c d e f "),
@@ -1761,7 +1771,7 @@ impl MainScreen {
         frame.render_widget(Clear, area);
         frame.render_widget(Block::new().bg(tailwind::EMERALD.c950), area);
 
-        // ↔↕⇆⬌⬍⮀⬅⬆⬇←↑→↓↹•↵⏎
+        // ↔⇆⬌⬍⮀⬅⬆⬇←↕→↓↹•↵⏎
         let bind_to_string = |bind: &key_event_handler::Bind| {
             match bind {
                 key_event_handler::Bind::Horizontal => {
@@ -2250,12 +2260,22 @@ impl MainScreen {
                         })
                         .collect();
                 }
-                FilterCriterion::Added(lower_bound, upper_bound, inverted) => {
+                FilterCriterion::DateAdded(lower_bound, upper_bound, inverted) => {
                     movies = movies
                         .into_iter()
                         .filter(|x| {
                             (x.get_first_play().year() as u32 >= *lower_bound
                                 && x.get_first_play().year() as u32 <= *upper_bound)
+                                ^ if *inverted { true } else { false }
+                        })
+                        .collect();
+                }
+                FilterCriterion::RecentlyWatched(lower_bound, upper_bound, inverted) => {
+                    movies = movies
+                        .into_iter()
+                        .filter(|x| {
+                            (x.get_latest_play().year() as u32 >= *lower_bound
+                                && x.get_latest_play().year() as u32 <= *upper_bound)
                                 ^ if *inverted { true } else { false }
                         })
                         .collect();
@@ -2327,19 +2347,21 @@ impl MainScreen {
                     self.filtered_movies.reverse();
                 }
             }
-            Sort::AddedDate => {
-                self.filtered_movies.sort_by_key(|x| {
-                    x.plays
-                        .last()
-                        .map(|y| y.0)
-                        .unwrap_or(chrono::DateTime::default())
-                        .clone()
-                });
+            Sort::DateAdded => {
+                self.filtered_movies
+                    .sort_by_key(|x| x.get_first_play().clone());
                 if self.sort_ascending {
                     self.filtered_movies.reverse();
                 }
             }
-            _ => (),
+            Sort::RecentlyWatched => {
+                self.filtered_movies
+                    .sort_by_key(|x| x.get_latest_play().clone());
+                if self.sort_ascending {
+                    self.filtered_movies.reverse();
+                }
+            }
+            Sort::Relevance => (),
         }
     }
 

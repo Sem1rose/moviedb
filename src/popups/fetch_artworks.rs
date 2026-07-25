@@ -52,6 +52,7 @@ impl FetchArtworksPopup {
     pub fn new(cache_dir: &PathBuf) -> Self {
         Self {
             cache_dir: cache_dir.clone(),
+            errored: Some(1),
             ..Default::default()
         }
     }
@@ -213,17 +214,20 @@ impl PopupTrait for FetchArtworksPopup {
 
         let popup_area = create_popup(
             frame,
-            dynamic_area(10, 5.0, frame.area()),
-            "  Fetching posters  ",
+            dynamic_area(
+                if self.errored.is_some() { 10 } else { 9 },
+                5.5,
+                frame.area(),
+            ),
+            " Fetching posters ",
             Style::new().fg(material::YELLOW.c800),
             Alignment::Center,
             Style::new().fg(tailwind::VIOLET.c950),
             tailwind::BLUE.c950,
-            false,
+            self.errored.is_some(),
         );
 
-        let [_, throbber_area, _, progress_area, _, errored_area] =
-            vertical![==1, ==1, ==1, ==3, >=1, ==1].areas(popup_area);
+        let [_, throbber_area, _, progress_area] = vertical![==1, ==1, ==1, ==3].areas(popup_area);
 
         let [throbber_area] = horizontal![==1].flex(Flex::Center).areas(throbber_area);
 
@@ -260,7 +264,7 @@ impl PopupTrait for FetchArtworksPopup {
 
             let [text_lay] = horizontal![==(errored_text.len() as u16)]
                 .flex(Flex::Center)
-                .areas(errored_area);
+                .areas(vertical![>=1, ==1].split(popup_area)[1]);
 
             frame.render_widget(
                 errored_text.to_span().fg(tailwind::RED.c500).bold(),

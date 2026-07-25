@@ -1,3 +1,4 @@
+use chrono::{DateTime, Local};
 use ratatui::{
     Frame,
     layout::{Alignment, HorizontalAlignment, Margin},
@@ -22,35 +23,47 @@ pub struct EditMoviePopup {
     item:     usize,
     new_play: bool,
 
-    pub user_rating_input: TextArea<'static>,
+    pub rating_input: TextArea<'static>,
+    pub date_input:   TextArea<'static>,
 }
 
 impl EditMoviePopup {
-    pub fn new(new_play: bool, user_rating: f64) -> Self {
+    pub fn new(new_play: bool, user_rating: f64, watched_at: Option<DateTime<Local>>) -> Self {
         let mut popup = Self::default();
+        popup.new_play = new_play;
 
-        popup.user_rating_input = TextArea::from([if new_play {
+        popup.rating_input = TextArea::from([if new_play {
             "".into()
         } else {
             format!("{:.1}", user_rating)
         }]);
+        popup.date_input = TextArea::from([watched_at.map(|x| x.to_string()).unwrap_or("".into())]);
         popup
-            .user_rating_input
+            .rating_input
+            .move_cursor(ratatui_textarea::CursorMove::End);
+        popup
+            .date_input
             .move_cursor(ratatui_textarea::CursorMove::End);
 
-        popup.new_play = new_play;
         popup
     }
 
     pub fn validate_rating(&mut self) -> bool {
-        if self.user_rating_input.is_empty() {
+        if self.rating_input.is_empty() {
             return false;
         }
 
-        if let Ok(x) = self.user_rating_input.lines()[0].parse::<f64>() {
+        if let Ok(x) = self.rating_input.lines()[0].parse::<f64>() {
             return (0.0..=10.0).contains(&x);
         }
         false
+    }
+
+    pub fn validate_input_date(&mut self) -> bool {
+        ["now", ""].contains(&self.date_input.lines()[0].trim().to_lowercase().as_str())
+            || self.date_input.lines()[0]
+                .parse::<DateTime<Local>>()
+                .is_ok()
     }
 }
 
@@ -74,24 +87,19 @@ impl PopupTrait for EditMoviePopup {
                 app.drawer.close_popup();
             },
         );
-        let valid = self.validate_rating();
+        let rating_valid = self.validate_rating();
+        let date_valid = self.validate_input_date();
         let add_play = self.new_play;
-        key_event_handler.bind_enter((None, None), "Confirm".into(), move |app, _| {
-            if valid {
-                if add_play {
-                    app.add_play();
-                } else {
-                    app.edit_movie();
-                }
-                app.drawer.close_popup();
-            }
-        });
-        key_event_handler.bind_enter((None, Some(2)), "Close".into(), |app, _| {
+
+        key_event_handler.bind_esc((None, Some(3)), "Close".into(), |app, _| {
             app.drawer.close_popup();
         });
         key_event_handler.bind_esc((None, None), "Close".into(), |app, _| {
-            app.drawer.close_popup();
+            if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
+                edit_movie_popup.item = 3;
+            }
         });
+
         key_event_handler.bind_tab((None, None), "".into(), |app, data| {
             if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
                 match data {
@@ -108,32 +116,94 @@ impl PopupTrait for EditMoviePopup {
                 }
             }
         });
-        key_event_handler.bind_input_field((None, Some(0)), "".into(), |app, data| {
+
+        if rating_valid {
+            key_event_handler.bind_enter((None, Some(0)), "".into(), |app, _| {
+                if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut()
+                {
+                    edit_movie_popup.item = 1;
+                }
+            });
+            if date_valid {
+                key_event_handler.bind_enter((None, Some(2)), "Confirm".into(), move |app, _| {
+                    if add_play {
+                        app.add_play();
+                    } else {
+                        app.edit_movie();
+                    }
+                    app.drawer.close_popup();
+                });
+                key_event_handler.bind_enter((None, Some(1)), "Confirm".into(), move |app, _| {
+                    if add_play {
+                        app.add_play();
+                    } else {
+                        app.edit_movie();
+                    }
+                    app.drawer.close_popup();
+                });
+            }
+        }
+        key_event_handler.bind_enter((None, Some(3)), "Close".into(), |app, _| {
+            app.drawer.close_popup();
+        });
+
+        key_event_handler.bind_vertical((None, Some(0)), "".into(), |app, data| {
             if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
                 match data {
-                    crate::key_event_handler::Data::Key(key_event) => {
-                        edit_movie_popup.user_rating_input.input(key_event);
+                    crate::key_event_handler::Data::Direction(true, _) => {
+                        edit_movie_popup.item = 1;
+                    }
+                    _ => {}
+                }
+            }
+        });
+        key_event_handler.bind_vertical((None, Some(1)), "".into(), |app, data| {
+            if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
+                match data {
+                    crate::key_event_handler::Data::Direction(false, _) => {
+                        edit_movie_popup.item = 0;
                     }
                     _ => {}
                 }
             }
         });
 
-        key_event_handler.bind_horizontal((None, Some(1)), "".into(), |app, data| {
+        key_event_handler.bind_horizontal((None, Some(2)), "".into(), |app, data| {
             if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
                 match data {
                     crate::key_event_handler::Data::Direction(true, _) => {
+                        edit_movie_popup.item = 3;
+                    }
+                    _ => {}
+                }
+            }
+        });
+        key_event_handler.bind_horizontal((None, Some(3)), "".into(), |app, data| {
+            if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
+                match data {
+                    crate::key_event_handler::Data::Direction(false, _) => {
                         edit_movie_popup.item = 2;
                     }
                     _ => {}
                 }
             }
         });
-        key_event_handler.bind_horizontal((None, Some(2)), "".into(), |app, data| {
+
+        key_event_handler.bind_input_field((None, Some(0)), "".into(), |app, data| {
             if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
                 match data {
-                    crate::key_event_handler::Data::Direction(false, _) => {
-                        edit_movie_popup.item = 1;
+                    crate::key_event_handler::Data::Key(key_event) => {
+                        edit_movie_popup.rating_input.input(key_event);
+                    }
+                    _ => {}
+                }
+            }
+        });
+        key_event_handler.bind_input_field((None, Some(1)), "".into(), |app, data| {
+            if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
+                match data {
+                    crate::key_event_handler::Data::Key(key_event) => {
+                        edit_movie_popup.date_input.input(key_event);
                     }
                     _ => {}
                 }
@@ -142,42 +212,41 @@ impl PopupTrait for EditMoviePopup {
 
         let popup_area = create_popup(
             frame,
-            dynamic_area(9, 5.0, frame.area()),
+            dynamic_area(11, 4.0, frame.area()),
             if self.new_play {
-                "  Add a new play  "
+                " Add a new play "
             } else {
-                "  Edit rating  "
+                " Edit rating "
             },
             Style::new().fg(material::YELLOW.c800),
             Alignment::Center,
             Style::new().fg(tailwind::VIOLET.c950),
             tailwind::BLUE.c950,
-            false,
+            true,
         );
         key_event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
             popup_area.outer(Margin::new(1, 1)),
             |_, _| {},
         );
-        let [input_area, _, actions_area] =
-            vertical![==3, ==1, ==1].areas(add_padding(popup_area, Padding::proportional(1)));
+        let [rating_input_area, date_input_area, _] =
+            vertical![==3, ==3, >=1].areas(add_padding(popup_area, Padding::proportional(1)));
 
-        let search_selected = self.item == 0;
+        let rating_input_selected = self.item == 0;
         widgets::input_field(
             true,
-            search_selected,
-            valid,
-            &mut self.user_rating_input,
+            rating_input_selected,
+            rating_valid,
+            &mut self.rating_input,
             WrapMode::None,
             frame,
-            input_area,
-            (0, 0),
+            rating_input_area,
             " Rating ",
             "Enter a rating",
         );
         key_event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
-            add_padding(input_area, Padding::horizontal(2)),
+            add_padding(rating_input_area, Padding::horizontal(2)),
             |app, _| {
                 if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut()
                 {
@@ -186,14 +255,43 @@ impl PopupTrait for EditMoviePopup {
             },
         );
 
+        let date_input_selected = self.item == 1;
+        widgets::input_field(
+            true,
+            date_input_selected,
+            date_valid,
+            &mut self.date_input,
+            WrapMode::None,
+            frame,
+            date_input_area,
+            " Watched At ",
+            "Now",
+        );
+        key_event_handler.bind_mouse_button_down(
+            ratatui::crossterm::event::MouseButton::Left,
+            add_padding(date_input_area, Padding::horizontal(2)),
+            |app, _| {
+                if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut()
+                {
+                    edit_movie_popup.item = 1;
+                }
+            },
+        );
+
         let actions_mouse_areas = widgets::actions(
             [
-                Action::new(" Confirm ", ActionTypes::Default, self.item == 1, valid),
-                Action::new(" Cancel ", ActionTypes::Critical, self.item == 2, true),
+                Action::new(
+                    " Confirm ",
+                    ActionTypes::Default,
+                    self.item == 2,
+                    rating_valid && date_valid,
+                ),
+                Action::new(" Cancel ", ActionTypes::Critical, self.item == 3, true),
             ],
             HorizontalAlignment::Right,
+            true,
             1,
-            actions_area,
+            add_padding(popup_area, Padding::right(1)),
             frame,
         );
         for (i, mouse_area) in actions_mouse_areas.into_iter().enumerate() {
@@ -204,7 +302,7 @@ impl PopupTrait for EditMoviePopup {
                     if i == 1 {
                         app.drawer.close_popup();
                     } else {
-                        if valid {
+                        if rating_valid && date_valid {
                             if add_play {
                                 app.add_play();
                             } else {

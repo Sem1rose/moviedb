@@ -162,18 +162,32 @@ impl App {
     pub fn add_play(&mut self) {
         if let Some(Screens::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
             if let Some(Popups::EditMovie(edit_movie_popup)) = self.drawer.active_popup.as_mut() {
+                let rating = format!(
+                    "{:.1}",
+                    edit_movie_popup.rating_input.lines()[0]
+                        .parse::<f64>()
+                        .unwrap()
+                )
+                .parse()
+                .unwrap();
+                let date = if ["now", ""].contains(
+                    &edit_movie_popup.date_input.lines()[0]
+                        .trim()
+                        .to_lowercase()
+                        .as_str(),
+                ) {
+                    chrono::Local::now()
+                } else {
+                    edit_movie_popup.rating_input.lines()[0].parse().unwrap()
+                };
+
                 let mut movie = self.movies.remove(
                     self.movies
                         .iter()
                         .position(|x| x == main_screen.current_movie().unwrap())
                         .unwrap(),
                 );
-                movie.add_play(
-                    chrono::Local::now(),
-                    edit_movie_popup.user_rating_input.lines()[0]
-                        .parse()
-                        .unwrap(),
-                );
+                movie.add_play(date, rating);
                 self.movies.push(movie);
             }
             main_screen.set_movies(&self.movies);
@@ -233,16 +247,34 @@ impl App {
     pub fn edit_movie(&mut self) {
         if let Some(Screens::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
             if let Some(Popups::EditMovie(edit_movie_popup)) = self.drawer.active_popup.as_ref() {
+                let rating = format!(
+                    "{:.1}",
+                    edit_movie_popup.rating_input.lines()[0]
+                        .parse::<f64>()
+                        .unwrap()
+                )
+                .parse()
+                .unwrap();
+                let date = if ["now", ""].contains(
+                    &edit_movie_popup.date_input.lines()[0]
+                        .trim()
+                        .to_lowercase()
+                        .as_str(),
+                ) {
+                    chrono::Local::now()
+                } else {
+                    edit_movie_popup.rating_input.lines()[0].parse().unwrap()
+                };
+
                 let index = self
                     .movies
                     .iter()
                     .position(|x| x == main_screen.current_movie().unwrap())
                     .unwrap();
-                self.movies[index].edit_user_rating(
-                    edit_movie_popup.user_rating_input.lines()[0]
-                        .parse::<f64>()
-                        .unwrap(),
-                );
+                self.movies[index].plays.last_mut().map(|x| {
+                    x.0 = date;
+                    x.1 = rating;
+                });
             }
             main_screen.set_movies(&self.movies);
         }

@@ -122,12 +122,12 @@ impl PopupTrait for OMDBInitPopup {
                     match data {
                         crate::key_event_handler::Data::Direction(true, _) => {
                             omdb_init_popup.item += 1;
-                            if omdb_init_popup.item > 2 {
+                            if omdb_init_popup.item > 1 {
                                 omdb_init_popup.item = 0;
                             }
                         }
                         crate::key_event_handler::Data::Direction(false, _) => {
-                            omdb_init_popup.item = omdb_init_popup.item.checked_sub(1).unwrap_or(2);
+                            omdb_init_popup.item = omdb_init_popup.item.checked_sub(1).unwrap_or(1);
                         }
                         _ => {}
                     }
@@ -144,15 +144,9 @@ impl PopupTrait for OMDBInitPopup {
                     }
                 });
             }
-            key_event_handler.bind_enter((None, Some(2)), "Skip".into(), |app, _| {
-                if let Some(Popups::OMDBInit(omdb_init_popup)) = app.drawer.active_popup.as_mut() {
-                    omdb_init_popup.done = true;
-                    omdb_init_popup.started = false;
-                }
-            });
             key_event_handler.bind_esc((None, Some(0)), "".into(), |app, _| {
                 if let Some(Popups::OMDBInit(omdb_init_popup)) = app.drawer.active_popup.as_mut() {
-                    omdb_init_popup.item = 2;
+                    omdb_init_popup.item = 1;
                 }
             });
             key_event_handler.bind_input_field((None, Some(0)), "".into(), |app, data| {
@@ -168,13 +162,13 @@ impl PopupTrait for OMDBInitPopup {
 
             let popup_area = create_popup(
                 frame,
-                dynamic_area(10, 4.0, frame.area()),
-                "  OMDB Authentication  ",
+                dynamic_area(8, 5.0, frame.area()),
+                " OMDB Authentication ",
                 Style::new().fg(material::YELLOW.c800),
                 Alignment::Center,
                 Style::new().fg(tailwind::VIOLET.c950),
                 tailwind::BLUE.c950,
-                false,
+                true,
             );
             key_event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,
@@ -182,27 +176,8 @@ impl PopupTrait for OMDBInitPopup {
                 |_, _| {},
             );
 
-            let skip_mouse_area = widgets::action(
-                Action::new(" Skip ", ActionTypes::Normal, self.item == 2, true),
-                HorizontalAlignment::Right,
-                popup_area,
-                frame,
-            );
-            key_event_handler.bind_mouse_button_down(
-                ratatui::crossterm::event::MouseButton::Left,
-                skip_mouse_area,
-                |app, _| {
-                    if let Some(Popups::OMDBInit(omdb_init_popup)) =
-                        app.drawer.active_popup.as_mut()
-                    {
-                        omdb_init_popup.done = true;
-                        omdb_init_popup.started = false;
-                    }
-                },
-            );
-
-            let [_, input_area, _, actions_area] = vertical![==1, ==3, >=1, ==1]
-                .areas(add_padding(popup_area, Padding::proportional(1)));
+            let [input_area, _] =
+                vertical![==3, ==1].areas(add_padding(popup_area, Padding::proportional(1)));
 
             let input_selected = self.item == 0;
             widgets::input_field(
@@ -213,7 +188,6 @@ impl PopupTrait for OMDBInitPopup {
                 WrapMode::None,
                 frame,
                 input_area,
-                (6, 6),
                 " Key ",
                 "Enter the Key",
             );
@@ -237,7 +211,8 @@ impl PopupTrait for OMDBInitPopup {
                     input_valid,
                 ),
                 HorizontalAlignment::Right,
-                actions_area,
+                true,
+                add_padding(popup_area, Padding::right(1)),
                 frame,
             );
             if input_valid {
@@ -259,7 +234,7 @@ impl PopupTrait for OMDBInitPopup {
             let popup_area = create_popup(
                 frame,
                 dynamic_area(7, 4.0, frame.area()),
-                "  OMDB Authentication  ",
+                " OMDB Authentication ",
                 Style::new().fg(material::YELLOW.c800),
                 Alignment::Center,
                 Style::new().fg(tailwind::VIOLET.c950),
@@ -271,8 +246,7 @@ impl PopupTrait for OMDBInitPopup {
                 popup_area.outer(Margin::new(1, 1)),
                 |_, _| {},
             );
-            let [_, message_area, throbber_area, _] =
-                vertical![>=1, ==2, ==1, >=1].areas(popup_area);
+            let [_, message_area, throbber_area] = vertical![>=1, ==2, ==1].areas(popup_area);
             frame.render_widget(line!("Processing").centered(), message_area);
 
             frame.render_stateful_widget(

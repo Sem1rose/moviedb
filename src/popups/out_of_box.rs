@@ -21,22 +21,11 @@ use crate::{
     widgets::{self, Action, ActionTypes},
 };
 
+#[derive(Default)]
 pub struct OutOfBoxPopup {
-    tab:              usize,
-    item:             usize,
-    throbber_visible: bool,
-    toggled_list:     [bool; 3],
-}
-
-impl OutOfBoxPopup {
-    pub fn new() -> Self {
-        Self {
-            tab:              0,
-            item:             0,
-            throbber_visible: false,
-            toggled_list:     [false; 3],
-        }
-    }
+    tab:          usize,
+    item:         usize,
+    toggled_list: [bool; 3],
 }
 
 const COLUMNS: usize = 2;
@@ -47,7 +36,7 @@ impl PopupTrait for OutOfBoxPopup {
     }
 
     fn update_next_frame(&self) -> bool {
-        self.throbber_visible
+        false
     }
 
     fn update(&mut self) {}
@@ -234,7 +223,6 @@ impl PopupTrait for OutOfBoxPopup {
             );
         };
 
-        self.throbber_visible = false;
         let popup_area = create_popup(
             frame,
             static_area(
@@ -245,7 +233,7 @@ impl PopupTrait for OutOfBoxPopup {
                 55,
                 frame.area(),
             ),
-            "  Choose Backends  ",
+            " Choose Backends ",
             Style::new().fg(material::YELLOW.c800),
             Alignment::Center,
             Style::new().fg(tailwind::VIOLET.c950),
@@ -396,7 +384,8 @@ impl PopupTrait for OutOfBoxPopup {
         let confirm_mouse_area = widgets::action(
             Action::new(" Confirm ", ActionTypes::Default, self.tab == 1, true),
             ratatui::layout::HorizontalAlignment::Right,
-            remaining_area,
+            true,
+            add_padding(popup_area, Padding::right(1)),
             frame,
         );
         key_event_handler.bind_mouse_button_down(

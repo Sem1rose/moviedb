@@ -300,21 +300,21 @@ impl PopupTrait for TraktInitPopup {
 
                 let popup_area = create_popup(
                     frame,
-                    dynamic_area(7, 4.0, frame.area()),
-                    "  Trakt Authentication  ",
+                    dynamic_area(6, 4.0, frame.area()),
+                    " Trakt Authentication ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
                     Style::new().fg(tailwind::VIOLET.c950),
                     tailwind::BLUE.c950,
-                    false,
+                    true,
                 );
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     popup_area.outer(Margin::new(1, 1)),
                     |_, _| {},
                 );
-                let [_, message_area, throbber_area, _] =
-                    vertical![>=1, ==2, ==1, >=1].areas(popup_area);
+                let [_, message_area, _, throbber_area] =
+                    vertical![>=1, ==2, >=1, ==1].areas(popup_area);
                 frame.render_widget(
                     line!(if matches!(self.phase, Phase::RefreshingTokens) {
                         "Refreshing tokens"
@@ -406,13 +406,13 @@ impl PopupTrait for TraktInitPopup {
 
                 let popup_area = create_popup(
                     frame,
-                    dynamic_area(12, 4.0, frame.area()),
-                    "  Trakt Authentication  ",
+                    dynamic_area(11, 4.0, frame.area()),
+                    " Trakt Authentication ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
                     Style::new().fg(tailwind::VIOLET.c950),
                     tailwind::BLUE.c950,
-                    false,
+                    true,
                 );
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
@@ -420,7 +420,7 @@ impl PopupTrait for TraktInitPopup {
                     |_, _| {},
                 );
 
-                let [ci_input_area, cs_input_area, _, actions_area] = vertical![==3, ==3, >=1, ==1]
+                let [ci_input_area, cs_input_area, _] = vertical![==3, ==3, >=1]
                     .areas(add_padding(popup_area, Padding::proportional(1)));
 
                 let ci_input_selected = self.item == 0;
@@ -432,7 +432,6 @@ impl PopupTrait for TraktInitPopup {
                     WrapMode::None,
                     frame,
                     ci_input_area,
-                    (0, 0),
                     " Client ID ",
                     "Enter the Client ID",
                 );
@@ -457,7 +456,6 @@ impl PopupTrait for TraktInitPopup {
                     WrapMode::None,
                     frame,
                     cs_input_area,
-                    (0, 0),
                     " Client Secret ",
                     "Enter the Client Secret",
                 );
@@ -481,7 +479,8 @@ impl PopupTrait for TraktInitPopup {
                         input_valid,
                     ),
                     HorizontalAlignment::Right,
-                    actions_area,
+                    true,
+                    add_padding(popup_area, Padding::right(1)),
                     frame,
                 );
                 if input_valid {
@@ -591,13 +590,13 @@ impl PopupTrait for TraktInitPopup {
 
                 let popup_area = create_popup(
                     frame,
-                    dynamic_area(14, 4.0, frame.area()),
-                    "  Trakt Authentication  ",
+                    dynamic_area(12, 4.0, frame.area()),
+                    " Trakt Authentication ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
                     Style::new().fg(tailwind::VIOLET.c950),
                     tailwind::BLUE.c950,
-                    false,
+                    true,
                 );
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
@@ -608,6 +607,7 @@ impl PopupTrait for TraktInitPopup {
                 let skip_mouse_area = widgets::action(
                     Action::new(" Skip ", ActionTypes::Normal, self.item == 2, true),
                     HorizontalAlignment::Right,
+                    false,
                     popup_area,
                     frame,
                 );
@@ -626,6 +626,7 @@ impl PopupTrait for TraktInitPopup {
                 let back_mouse_area = widgets::action(
                     Action::new(" Back ", ActionTypes::Normal, self.item == 3, true),
                     HorizontalAlignment::Left,
+                    false,
                     popup_area,
                     frame,
                 );
@@ -647,9 +648,8 @@ impl PopupTrait for TraktInitPopup {
                     },
                 );
 
-                let [_, message_area, _, input_area, _, actions_area] =
-                    vertical![==1, ==3, >=1, ==3, ==1, ==1]
-                        .areas(add_padding(popup_area, Padding::proportional(1)));
+                let [_, message_area, _, input_area, _] = vertical![==1, ==3, >=1, ==3, ==1]
+                    .areas(add_padding(popup_area, Padding::proportional(1)));
 
                 let hyperlink_text = "  Click to Authorize  ";
                 let [message_area] = horizontal![==(hyperlink_text.len() as u16)]
@@ -675,8 +675,7 @@ impl PopupTrait for TraktInitPopup {
                     &mut self.input0,
                     WrapMode::None,
                     frame,
-                    input_area,
-                    (8, 8),
+                    add_padding(input_area, Padding::horizontal(8)),
                     " Authorization Code ",
                     "Enter the authorization code",
                 );
@@ -700,7 +699,8 @@ impl PopupTrait for TraktInitPopup {
                         input_valid,
                     ),
                     HorizontalAlignment::Right,
-                    actions_area,
+                    true,
+                    add_padding(popup_area, Padding::right(1)),
                     frame,
                 );
                 if input_valid {
@@ -767,20 +767,20 @@ impl PopupTrait for TraktInitPopup {
                 let popup_area = create_popup(
                     frame,
                     dynamic_area(11, 4.0, frame.area()),
-                    "  Error  ",
+                    " Error ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
                     Style::new().fg(tailwind::VIOLET.c950),
                     tailwind::BLUE.c950,
-                    false,
+                    true,
                 );
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     popup_area.outer(Margin::new(1, 1)),
                     |_, _| {},
                 );
-                let [message_area, _, actions_area] = vertical![>=1, ==1, ==1]
-                    .areas(add_padding(popup_area, Padding::proportional(1)));
+                let [message_area, _] =
+                    vertical![>=1, ==1].areas(add_padding(popup_area, Padding::proportional(1)));
                 frame.render_widget(
                     Text::from_iter(wrap_text(error.as_str(), message_area.width as usize))
                         .centered(),
@@ -791,6 +791,7 @@ impl PopupTrait for TraktInitPopup {
                     let skip_mouse_area = widgets::action(
                         Action::new(" Skip ", ActionTypes::Normal, self.item == 1, true),
                         HorizontalAlignment::Right,
+                        false,
                         popup_area,
                         frame,
                     );
@@ -810,7 +811,8 @@ impl PopupTrait for TraktInitPopup {
                 let mouse_area = widgets::action(
                     Action::new(" Back ", ActionTypes::Default, self.item == 0, true),
                     HorizontalAlignment::Center,
-                    actions_area,
+                    true,
+                    add_padding(popup_area, Padding::right(1)),
                     frame,
                 );
                 key_event_handler.bind_mouse_button_down(

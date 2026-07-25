@@ -6,19 +6,18 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Options {
+    pub oob_done:      bool,
+    pub trakt_enabled: bool,
+    pub tmdb_enabled:  bool,
+    pub omdb_enabled:  bool,
+
     pub image_preload_rule: String,
-    pub oob_done:           bool,
-    pub oob_stage:          Option<u32>,
-    pub trakt_enabled:      bool,
-    pub tmdb_enabled:       bool,
-    pub omdb_enabled:       bool,
 }
-impl Options {
-    pub fn default() -> Self {
+impl Default for Options {
+    fn default() -> Self {
         Self {
-            image_preload_rule: "all".into(),
-            oob_done:           false,
-            oob_stage:          None,
+            image_preload_rule: "none".into(),
+            oob_done:           true,
             trakt_enabled:      true,
             tmdb_enabled:       true,
             omdb_enabled:       true,
@@ -26,8 +25,10 @@ impl Options {
     }
 }
 
+#[derive(Default)]
 pub struct Config {
-    pub options: Options,
+    pub options:   Options,
+    pub oob_stage: Option<u32>,
 
     home_dir: PathBuf,
 }
@@ -35,8 +36,9 @@ pub struct Config {
 impl Config {
     pub fn new(home_dir: &PathBuf) -> anyhow::Result<Self> {
         let mut s = Self {
-            options:  Options::default(),
             home_dir: home_dir.clone(),
+
+            ..Default::default()
         };
         if home_dir.join("config.toml").is_file() {
             macro_rules! read_or_return {

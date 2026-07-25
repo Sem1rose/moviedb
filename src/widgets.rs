@@ -3,7 +3,7 @@ use ratatui::{
     Frame,
     buffer::Buffer,
     layout::{HorizontalAlignment, Offset, Rect, Size},
-    macros::{line, span},
+    macros::{line, span, vertical},
     style::{
         Modifier, Style, Stylize,
         palette::{material, tailwind},
@@ -13,8 +13,6 @@ use ratatui::{
 };
 use ratatui_textarea::{TextArea, WrapMode};
 
-use crate::helpers::add_padding;
-
 pub fn input_field(
     tab_selected: bool,
     selected: bool,
@@ -23,7 +21,6 @@ pub fn input_field(
     wrap_mode: WrapMode,
     frame: &mut Frame,
     area: Rect,
-    horiz_padding: (u16, u16),
     title: &'static str,
     placeholder_text: &'static str,
 ) {
@@ -77,10 +74,7 @@ pub fn input_field(
     input.set_placeholder_style(Style::new().fg(material::GRAY.c700));
     input.set_wrap_mode(wrap_mode);
 
-    frame.render_widget(
-        &*input,
-        add_padding(area, Padding::new(horiz_padding.0, horiz_padding.1, 0, 0)),
-    );
+    frame.render_widget(&*input, area);
 }
 
 pub struct Action {
@@ -153,10 +147,17 @@ pub enum ActionTypes {
 pub fn action(
     action: Action,
     alignment: HorizontalAlignment,
+    bottom: bool,
     area: Rect,
     frame: &mut Frame,
 ) -> Rect {
     let span: Span<'_> = action.into();
+
+    let area = if bottom {
+        vertical![>=1, ==1].split(area)[1]
+    } else {
+        area
+    };
 
     let mouse_area = match alignment {
         HorizontalAlignment::Left => area,
@@ -182,6 +183,7 @@ pub fn action(
 pub fn actions<const N: usize>(
     actions: [Action; N],
     alignment: HorizontalAlignment,
+    bottom: bool,
     spacing: u16,
     area: Rect,
     frame: &mut Frame,
@@ -190,6 +192,12 @@ pub fn actions<const N: usize>(
     let actions_count = spans.len();
     let actions_width =
         spans.iter().fold(0, |a, x| a + x.width()) + spacing as usize * (actions_count - 1);
+
+    let area = if bottom {
+        vertical![>=1, ==1].split(area)[1]
+    } else {
+        area
+    };
 
     let mut mouse_areas = [Rect::default(); N];
     let mut mouse_area = match alignment {

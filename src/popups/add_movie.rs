@@ -522,7 +522,7 @@ impl PopupTrait for AddMoviePopup {
                 let popup_area = create_popup(
                     frame,
                     dynamic_area(28, 2.4, frame.area()),
-                    "  Add movie  ",
+                    " Add movie ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
                     Style::new().fg(tailwind::VIOLET.c950),
@@ -545,7 +545,6 @@ impl PopupTrait for AddMoviePopup {
                     WrapMode::None,
                     frame,
                     search_input_area,
-                    (0, 1),
                     " Name ",
                     "Search",
                 );
@@ -790,6 +789,9 @@ impl PopupTrait for AddMoviePopup {
                         add_movie_popup.item = 0;
                     }
                 });
+                key_event_handler.bind_esc((None, Some(4)), "Close".into(), |app, _| {
+                    app.drawer.close_popup();
+                });
 
                 key_event_handler.bind_horizontal((None, Some(3)), "".into(), |app, data| {
                     if let Some(Popups::AddMovie(add_movie_popup)) =
@@ -916,26 +918,26 @@ impl PopupTrait for AddMoviePopup {
 
                 let popup_area = create_popup(
                     frame,
-                    dynamic_area(13, 3.0, frame.area()),
-                    "  Add movie  ",
+                    dynamic_area(12, 3.5, frame.area()),
+                    " Add movie ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
                     Style::new().fg(tailwind::VIOLET.c950),
                     tailwind::BLUE.c950,
-                    false,
+                    true,
                 );
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     popup_area.outer(Margin::new(1, 1)),
                     |_, _| {},
                 );
-                let [_, rating_input_area, date_input_area, _, actions_area] =
-                    vertical![==1, ==3, ==3, >=1, ==1]
-                        .areas(add_padding(popup_area, Padding::proportional(1)));
+                let [_, rating_input_area, date_input_area, _] = vertical![==1, ==3, ==3, >=1]
+                    .areas(add_padding(popup_area, Padding::proportional(1)));
 
                 let mouse_area = widgets::action(
                     Action::new(" Back ", ActionTypes::Normal, self.item == 0, true),
                     HorizontalAlignment::Left,
+                    false,
                     popup_area,
                     frame,
                 );
@@ -964,8 +966,9 @@ impl PopupTrait for AddMoviePopup {
                         Action::new(" Cancel ", ActionTypes::Critical, self.item == 4, true),
                     ],
                     HorizontalAlignment::Right,
+                    true,
                     1,
-                    actions_area,
+                    add_padding(popup_area, Padding::right(1)),
                     frame,
                 );
                 for (i, mouse_area) in actions_mouse_areas.into_iter().enumerate() {
@@ -997,7 +1000,6 @@ impl PopupTrait for AddMoviePopup {
                     WrapMode::None,
                     frame,
                     rating_input_area,
-                    (0, 0),
                     " Rating ",
                     "Enter a rating",
                 );
@@ -1021,7 +1023,6 @@ impl PopupTrait for AddMoviePopup {
                     WrapMode::None,
                     frame,
                     date_input_area,
-                    (0, 0),
                     " Watched At ",
                     "Now",
                 );
@@ -1043,7 +1044,7 @@ impl PopupTrait for AddMoviePopup {
                 let popup_area = create_popup(
                     frame,
                     dynamic_area(10, 5.0, frame.area()),
-                    "  Add movie  ",
+                    " Add movie ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
                     Style::new().fg(tailwind::VIOLET.c950),
@@ -1081,26 +1082,27 @@ impl PopupTrait for AddMoviePopup {
                 let popup_area = create_popup(
                     frame,
                     dynamic_area(11, 4.0, frame.area()),
-                    "  Error  ",
+                    " Error ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
                     Style::new().fg(tailwind::VIOLET.c950),
                     tailwind::BLUE.c950,
-                    false,
+                    true,
                 );
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     popup_area.outer(Margin::new(1, 1)),
                     |_, _| {},
                 );
-                let [message_area, _, actions_area] = vertical![>=1, ==1, ==1]
-                    .areas(add_padding(popup_area, Padding::proportional(1)));
+                let [message_area, _] =
+                    vertical![>=1, ==1].areas(add_padding(popup_area, Padding::proportional(1)));
                 frame.render_widget(line!(error.as_str()).centered(), message_area);
 
                 let mouse_area = widgets::action(
                     Action::new(" Back ", ActionTypes::Default, true, true),
                     HorizontalAlignment::Center,
-                    actions_area,
+                    true,
+                    add_padding(popup_area, Padding::right(1)),
                     frame,
                 );
                 key_event_handler.bind_mouse_button_down(

@@ -3,7 +3,7 @@ use std::ops::Not;
 use itertools::Itertools;
 use ratatui::{
     Frame,
-    layout::{Alignment, Flex, Rect},
+    layout::{Alignment, Flex, Offset, Rect, Size},
     macros::{horizontal, vertical},
     style::{Color, Style, Stylize},
     symbols::border,
@@ -92,24 +92,31 @@ pub fn create_popup(
         .title_alignment(title_alignment)
         .title_style(title_style);
 
-    let top_background = frame
-        .buffer_mut()
-        .cell((area.x + area.width / 2, area.y))
-        .unwrap()
-        .bg;
-    let bottom_background = frame
-        .buffer_mut()
-        .cell((area.x + area.width / 2, area.y + area.height - 1))
-        .unwrap()
-        .bg;
+    let mut top_colors = vec![];
+    for x in 0..area.width {
+        top_colors.push(frame.buffer_mut().cell((area.x + x, area.y)).unwrap().bg);
+    }
+    let mut bottom_colors = vec![];
+    for x in 0..area.width {
+        bottom_colors.push(
+            frame
+                .buffer_mut()
+                .cell((area.x + x, area.y + area.height - 1))
+                .unwrap()
+                .bg,
+        );
+    }
 
     let popup_area = popup.inner(area);
     frame.render_widget(Clear, area);
     frame.render_widget(popup, area);
-    frame.render_widget(
-        Block::new().bg(top_background),
-        add_padding(area, Padding::bottom(1)),
-    );
+    for x in 0..area.width {
+        frame
+            .buffer_mut()
+            .cell_mut((area.x + x, area.y))
+            .unwrap()
+            .bg = top_colors[x as usize];
+    }
     if and_a_half {
         frame.render_widget(
             Block::new()
@@ -120,10 +127,13 @@ pub fn create_popup(
             add_padding(area, Padding::top(1)),
         );
     } else {
-        frame.render_widget(
-            Block::new().bg(bottom_background),
-            add_padding(area, Padding::top(1)),
-        );
+        for x in 0..area.width {
+            frame
+                .buffer_mut()
+                .cell_mut((area.x + x, area.y + area.height - 1))
+                .unwrap()
+                .bg = bottom_colors[x as usize];
+        }
     }
     frame.render_widget(Block::new().bg(background_color), popup_area);
 
@@ -132,6 +142,14 @@ pub fn create_popup(
 
 pub fn add_padding(area: Rect, padding: Padding) -> Rect {
     Block::new().padding(padding).inner(area)
+}
+
+pub fn resize_area(area: Rect, offset: Offset) -> Rect {
+    area.resize(Size::new(
+        (area.width as i32 + offset.x) as u16,
+        (area.height as i32 + offset.y) as u16,
+    ))
+    .offset(Offset::new(-offset.x / 2, -offset.y / 2))
 }
 
 pub fn ellipsize_string(string: &str, max_width: usize) -> String {

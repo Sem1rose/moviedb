@@ -237,6 +237,13 @@ impl Movie {
         self.plays.last().map(|x| x.1).unwrap_or(0.0)
     }
 
+    pub fn get_latest_play(&self) -> DateTime<Local> {
+        self.plays
+            .last()
+            .map(|x| x.0)
+            .unwrap_or(DateTime::default())
+    }
+
     pub fn get_first_play(&self) -> DateTime<Local> {
         self.plays
             .first()
@@ -244,12 +251,8 @@ impl Movie {
             .unwrap_or(DateTime::default())
     }
 
-    pub fn add_play(&mut self, datetime: DateTime<Local>, rating: f64) {
-        self.plays.push((datetime, rating));
-    }
-
-    pub fn edit_user_rating(&mut self, new_rating: f64) {
-        self.plays.last_mut().map(|x| x.1 = new_rating);
+    pub fn add_play(&mut self, date: DateTime<Local>, rating: f64) {
+        self.plays.push((date, rating));
     }
 }
 
