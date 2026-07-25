@@ -3,8 +3,8 @@ use std::ops::Not;
 use itertools::Itertools;
 use ratatui::{
     Frame,
-    layout::{Alignment, Flex, Offset, Rect, Size},
-    macros::{horizontal, vertical},
+    layout::{Alignment, Offset, Rect, Size},
+    macros::constraint,
     style::{Color, Style, Stylize},
     symbols::border,
     widgets::{Block, Borders, Clear, Padding},
@@ -49,13 +49,7 @@ pub fn wrap_text(line: &str, width: usize) -> Vec<String> {
 }
 
 pub fn static_area(height: u16, width: u16, area: Rect) -> Rect {
-    vertical![==height.min(area.height)]
-        .flex(Flex::Center)
-        .split(
-            horizontal![==width.min(area.width)]
-                .flex(Flex::Center)
-                .split(area)[0],
-        )[0]
+    area.centered(constraint!(==width), constraint!(==height))
 }
 
 pub fn dynamic_area(max_height: u16, aspect_ratio: f64, area: Rect) -> Rect {
@@ -70,9 +64,7 @@ pub fn dynamic_area(max_height: u16, aspect_ratio: f64, area: Rect) -> Rect {
         }
     }
 
-    vertical![==height]
-        .flex(Flex::Center)
-        .split(horizontal![==width].flex(Flex::Center).split(area)[0])[0]
+    area.centered(constraint!(==width), constraint!(==height))
 }
 
 pub fn create_popup(

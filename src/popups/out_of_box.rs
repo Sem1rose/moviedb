@@ -78,6 +78,7 @@ impl PopupTrait for OutOfBoxPopup {
                 )));
             }
             config.borrow_mut().options.oob_done = true;
+            config.borrow_mut().write_to_disk();
 
             app.drawer.popup_queue.extend(popups);
             app.drawer.close_popup();

@@ -5,13 +5,16 @@ use ratatui::{
     layout::{HorizontalAlignment, Offset, Rect, Size},
     macros::{line, span, vertical},
     style::{
-        Modifier, Style, Stylize,
+        Color, Modifier, Style, Stylize,
         palette::{material, tailwind},
     },
+    symbols::border,
     text::{Line, Span, Text},
     widgets::{Block, Padding, Widget},
 };
 use ratatui_textarea::{TextArea, WrapMode};
+
+use crate::helpers::ellipsize_string;
 
 pub fn input_field(
     tab_selected: bool,
@@ -22,7 +25,7 @@ pub fn input_field(
     frame: &mut Frame,
     area: Rect,
     title: &'static str,
-    placeholder_text: &'static str,
+    placeholder_text: &str,
 ) {
     input.set_style(Style::new().fg(if tab_selected {
         if selected {
@@ -75,6 +78,69 @@ pub fn input_field(
     input.set_wrap_mode(wrap_mode);
 
     frame.render_widget(&*input, area);
+}
+
+pub fn dropdown(tab_selected: bool, selected: bool, frame: &mut Frame, area: Rect, text: &str) {
+    // "▼⬇⬆⏷"
+    let sort_block = Block::bordered()
+        .border_set(border::PROPORTIONAL_WIDE)
+        .fg(if tab_selected {
+            if selected {
+                material::BLUE.c600
+            } else {
+                material::INDIGO.c800
+            }
+        } else {
+            tailwind::SLATE.c700
+        });
+    frame.render_widget(&sort_block, area);
+    frame.render_widget(
+        span!(text)
+            .bold()
+            .fg(if tab_selected {
+                if selected {
+                    material::TEAL.c100
+                } else {
+                    material::INDIGO.c200
+                }
+            } else {
+                material::GRAY.c400
+            })
+            .bg(if tab_selected {
+                if selected {
+                    material::BLUE.c600
+                } else {
+                    material::INDIGO.c800
+                }
+            } else {
+                tailwind::SLATE.c700
+            }),
+        sort_block.inner(area),
+    );
+    frame.render_widget(
+        line!(" ▼")
+            .right_aligned()
+            .bold()
+            .fg(if tab_selected {
+                if selected {
+                    material::TEAL.c100
+                } else {
+                    material::INDIGO.c200
+                }
+            } else {
+                material::GRAY.c400
+            })
+            .bg(if tab_selected {
+                if selected {
+                    material::BLUE.c600
+                } else {
+                    material::INDIGO.c800
+                }
+            } else {
+                tailwind::SLATE.c700
+            }),
+        sort_block.inner(area),
+    );
 }
 
 pub struct Action {

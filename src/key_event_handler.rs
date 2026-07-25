@@ -171,24 +171,40 @@ impl KeyEventHandler {
         None
     }
 
-    fn try_get_key_bind(&mut self, state: State, bind: Bind) -> Option<Callback> {
-        for s in [state, (state.0, None), (None, state.1), (None, None)] {
-            if let Some((_, bind)) = self.key_binds.remove(&(bind.clone(), s)) {
-                return Some(bind);
-            }
+    fn try_get_key_bind(&mut self, bind: Bind, state: State) -> Option<Callback> {
+        let Some((key, _)) = self
+            .key_binds
+            .iter()
+            .filter(|((b, s), _)| {
+                b == &bind
+                    && s.0
+                        .map(|x| state.0.is_some() && x == state.0.unwrap())
+                        .unwrap_or(true)
+                    && s.1
+                        .map(|x| state.1.is_some() && x == state.1.unwrap())
+                        .unwrap_or(true)
+            })
+            .sorted_by_key(|((_, s), _)| s.0.is_some() as usize + s.1.is_some() as usize)
+            .last()
+        else {
+            return None;
+        };
+
+        if let Some((_, callback)) = self.key_binds.remove(&key.clone()) {
+            return Some(callback);
         }
 
         None
     }
 
-    fn try_get_keys_bind(&mut self, state: State, key: char) -> Option<Callback> {
+    fn try_get_keys_bind(&mut self, key: char, state: State) -> Option<Callback> {
         let key = if let Some(semi_bind) = self.semi_bind {
             String::from_iter([semi_bind, key])
         } else {
             key.to_string()
         };
 
-        if let Some(callback) = self.try_get_key_bind(state, Bind::Key(key.clone())) {
+        if let Some(callback) = self.try_get_key_bind(Bind::Key(key.clone()), state) {
             self.semi_bind = None;
 
             return Some(callback);
@@ -197,25 +213,28 @@ impl KeyEventHandler {
             return None;
         }
 
-        for s in [state, (state.0, None), (None, state.1), (None, None)] {
-            if self
-                .key_binds
-                .iter()
-                .filter(|((bind, state), _)| {
-                    state == &s
-                        && if let Bind::Key(k) = bind {
-                            k.starts_with(&key.clone())
-                        } else {
-                            false
-                        }
-                })
-                .count()
-                > 0
-            {
-                self.semi_bind = Some(key.chars().nth(0).unwrap());
+        if self
+            .key_binds
+            .iter()
+            .filter(|((bind, s), _)| {
+                (if let Bind::Key(k) = bind {
+                    k.starts_with(&key.clone())
+                } else {
+                    false
+                }) && s
+                    .0
+                    .map(|x| state.0.is_some() && x == state.0.unwrap())
+                    .unwrap_or(true)
+                    && s.1
+                        .map(|x| state.1.is_some() && x == state.1.unwrap())
+                        .unwrap_or(true)
+            })
+            .count()
+            > 0
+        {
+            self.semi_bind = Some(key.chars().nth(0).unwrap());
 
-                return None;
-            }
+            return None;
         }
 
         None
@@ -232,13 +251,18 @@ impl KeyEventHandler {
                 )> = self
                     .key_binds
                     .iter()
-                    .filter(|((bind, state), _)| {
-                        state == &s
-                            && if let Bind::Key(k) = bind {
-                                k.starts_with(&semi_bind.to_string())
-                            } else {
-                                false
-                            }
+                    .filter(|((bind, s), _)| {
+                        (if let Bind::Key(k) = bind {
+                            k.starts_with(&semi_bind.to_string())
+                        } else {
+                            false
+                        }) && s
+                            .0
+                            .map(|x| state.0.is_some() && x == state.0.unwrap())
+                            .unwrap_or(true)
+                            && s.1
+                                .map(|x| state.1.is_some() && x == state.1.unwrap())
+                                .unwrap_or(true)
                     })
                     .collect_vec();
                 if !matches.is_empty() {
@@ -274,22 +298,24 @@ impl KeyEventHandler {
                 }
             }
             if !input {
-                for s in [state, (state.0, None), (None, state.1), (None, None)] {
-                    let matches: Vec<(
-                        &(Bind, (Option<usize>, Option<usize>)),
-                        &(String, Box<dyn FnOnce(&mut App, Data)>),
-                    )> = self
-                        .key_binds
-                        .iter()
-                        .filter(|((bind, state), _)| {
-                            state == &s && if let Bind::Key(_) = bind { true } else { false }
-                        })
-                        .collect_vec();
-                    if !matches.is_empty() {
-                        binds.extend(matches.iter().map(|&(k, v)| (k.0.clone(), v.0.clone())));
-
-                        break;
-                    }
+                let matches: Vec<(
+                    &(Bind, (Option<usize>, Option<usize>)),
+                    &(String, Box<dyn FnOnce(&mut App, Data)>),
+                )> = self
+                    .key_binds
+                    .iter()
+                    .filter(|((bind, s), _)| {
+                        matches!(bind, Bind::Key(_))
+                            && s.0
+                                .map(|x| state.0.is_some() && x == state.0.unwrap())
+                                .unwrap_or(true)
+                            && s.1
+                                .map(|x| state.1.is_some() && x == state.1.unwrap())
+                                .unwrap_or(true)
+                    })
+                    .collect_vec();
+                if !matches.is_empty() {
+                    binds.extend(matches.iter().map(|&(k, v)| (k.0.clone(), v.0.clone())));
                 }
             }
         }
@@ -325,7 +351,7 @@ impl KeyEventHandler {
                 if self.semi_bind.is_some() {
                     self.semi_bind = None;
                     None
-                } else if let Some(callback) = self.try_get_key_bind(state, Bind::Vertical) {
+                } else if let Some(callback) = self.try_get_key_bind(Bind::Vertical, state) {
                     Some((
                         callback,
                         Data::Direction(event.code == KeyCode::Down, event.modifiers),
@@ -337,7 +363,7 @@ impl KeyEventHandler {
                 if self.semi_bind.is_some() {
                     self.semi_bind = None;
                     None
-                } else if let Some(callback) = self.try_get_key_bind(state, Bind::Tab) {
+                } else if let Some(callback) = self.try_get_key_bind(Bind::Tab, state) {
                     Some((
                         callback,
                         Data::Direction(event.code == KeyCode::Tab, KeyModifiers::NONE),
@@ -349,7 +375,7 @@ impl KeyEventHandler {
                 if self.semi_bind.is_some() {
                     self.semi_bind = None;
                     None
-                } else if let Some(callback) = self.try_get_key_bind(state, Bind::Enter) {
+                } else if let Some(callback) = self.try_get_key_bind(Bind::Enter, state) {
                     Some((callback, Data::None))
                 } else {
                     None
@@ -358,7 +384,7 @@ impl KeyEventHandler {
                 if self.semi_bind.is_some() {
                     self.semi_bind = None;
                     None
-                } else if let Some(callback) = self.try_get_key_bind(state, Bind::Esc) {
+                } else if let Some(callback) = self.try_get_key_bind(Bind::Esc, state) {
                     Some((callback, Data::None))
                 } else {
                     None
@@ -367,7 +393,7 @@ impl KeyEventHandler {
                 if self.semi_bind.is_some() {
                     self.semi_bind = None;
                     None
-                } else if let Some(callback) = self.try_get_key_bind(state, Bind::Input) {
+                } else if let Some(callback) = self.try_get_key_bind(Bind::Input, state) {
                     Some((callback, Data::Key(event)))
                 } else {
                     None
@@ -376,9 +402,9 @@ impl KeyEventHandler {
                 if self.semi_bind.is_some() {
                     self.semi_bind = None;
                     None
-                } else if let Some(callback) = self.try_get_key_bind(state, Bind::Input) {
+                } else if let Some(callback) = self.try_get_key_bind(Bind::Input, state) {
                     Some((callback, Data::Key(event)))
-                } else if let Some(callback) = self.try_get_key_bind(state, Bind::Horizontal) {
+                } else if let Some(callback) = self.try_get_key_bind(Bind::Horizontal, state) {
                     Some((
                         callback,
                         Data::Direction(event.code == KeyCode::Right, event.modifiers),
@@ -387,9 +413,9 @@ impl KeyEventHandler {
                     None
                 },
             KeyCode::Char(key) =>
-                if let Some(callback) = self.try_get_key_bind(state, Bind::Input) {
+                if let Some(callback) = self.try_get_key_bind(Bind::Input, state) {
                     Some((callback, Data::Key(event)))
-                } else if let Some(callback) = self.try_get_keys_bind(state, key) {
+                } else if let Some(callback) = self.try_get_keys_bind(key, state) {
                     Some((callback, Data::Key(event)))
                 } else {
                     None
@@ -419,28 +445,28 @@ impl KeyEventHandler {
         };
         match event.kind {
             MouseEventKind::ScrollDown => {
-                if let Some(callback) = self.try_get_key_bind(state, Bind::Vertical) {
+                if let Some(callback) = self.try_get_key_bind(Bind::Vertical, state) {
                     Some((callback, Data::Direction(true, event.modifiers)))
                 } else {
                     None
                 }
             }
             MouseEventKind::ScrollUp => {
-                if let Some(callback) = self.try_get_key_bind(state, Bind::Vertical) {
+                if let Some(callback) = self.try_get_key_bind(Bind::Vertical, state) {
                     Some((callback, Data::Direction(false, event.modifiers)))
                 } else {
                     None
                 }
             }
             MouseEventKind::ScrollRight => {
-                if let Some(callback) = self.try_get_key_bind(state, Bind::Horizontal) {
+                if let Some(callback) = self.try_get_key_bind(Bind::Horizontal, state) {
                     Some((callback, Data::Direction(true, event.modifiers)))
                 } else {
                     None
                 }
             }
             MouseEventKind::ScrollLeft => {
-                if let Some(callback) = self.try_get_key_bind(state, Bind::Horizontal) {
+                if let Some(callback) = self.try_get_key_bind(Bind::Horizontal, state) {
                     Some((callback, Data::Direction(false, event.modifiers)))
                 } else {
                     None

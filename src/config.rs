@@ -1,10 +1,10 @@
 use std::{fs, path::PathBuf};
 
-use anyhow::{Context, bail};
+use anyhow::anyhow;
 use log::{error, info};
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct Options {
     pub oob_done:      bool,
     pub trakt_enabled: bool,
@@ -12,17 +12,6 @@ pub struct Options {
     pub omdb_enabled:  bool,
 
     pub image_preload_rule: String,
-}
-impl Default for Options {
-    fn default() -> Self {
-        Self {
-            image_preload_rule: "none".into(),
-            oob_done:           true,
-            trakt_enabled:      true,
-            tmdb_enabled:       true,
-            omdb_enabled:       true,
-        }
-    }
 }
 
 #[derive(Default)]
@@ -46,16 +35,19 @@ impl Config {
                     match $exp {
                         Ok(val) => val,
                         Err(err) => {
-                            // error!($err, err);
+                            error!($err, err);
 
-                            // let mut renamed = s.home_dir.join("corrupted_config.toml");
-                            // let mut i = 1;
-                            // while renamed.exists() {
-                            //     renamed = s.home_dir.join(format!("corrupted_config_{i}.toml"));
-                            //     i += 1;
-                            // }
-                            // fs::rename(&s.home_dir.join("config.toml"), renamed)?;
-                            // fs::write(&s.home_dir.join("config.toml"), toml::to_string_pretty(s.options)?)?;
+                            let mut renamed = s.home_dir.join("corrupted_config.toml");
+                            let mut i = 1;
+                            while renamed.exists() {
+                                renamed = s.home_dir.join(format!("corrupted_config_{i}.toml"));
+                                i += 1;
+                            }
+                            fs::rename(&s.home_dir.join("config.toml"), renamed)?;
+                            fs::write(
+                                &s.home_dir.join("config.toml"),
+                                toml::to_string_pretty(&s.options)?,
+                            )?;
 
                             return Ok(s);
                         }
@@ -67,18 +59,37 @@ impl Config {
                 fs::read_to_string(home_dir.join("config.toml")),
                 "Error while reading configuration: {}"
             );
-            // s.options = read_or_return!(toml::from_str(&contents), "Error while deserializing configuration: {}");
+            s.options = read_or_return!(
+                toml::from_str(&contents),
+                "Error while deserializing configuration: {}"
+            );
         } else {
             info!("Config file not found, creating a new one..");
-            // fs::write(&s.home_dir.join("config.toml"), toml::to_string_pretty(s.options)?)?;
+            fs::write(
+                &s.home_dir.join("config.toml"),
+                toml::to_string_pretty(&s.options)?,
+            )?;
         }
 
         Ok(s)
     }
 
-    pub fn write_to_disk(&self) -> anyhow::Result<()> {
-        // fs::rename(&s.home_dir.join("config.toml"), "config.toml.bak")?;
-        // fs::write(&s.home_dir.join("config.toml"), toml::to_string_pretty(s.options)?)?;
-        Ok(())
+    pub fn write_to_disk(&self) {
+        let Some(err) = (|| -> anyhow::Result<()> {
+            fs::rename(
+                &self.home_dir.join("config.toml"),
+                &self.home_dir.join("config.toml.bak"),
+            )?;
+            fs::write(
+                &self.home_dir.join("config.toml"),
+                toml::to_string_pretty(&self.options)?,
+            )
+            .map_err(|err| anyhow!("{}", err))
+        })()
+        .err() else {
+            return;
+        };
+
+        error!("Error while writing config to disk: {err}");
     }
 }

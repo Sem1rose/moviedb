@@ -261,9 +261,14 @@ impl Drawer {
     pub fn close_popup(&mut self) {
         self.active_popup = None;
 
+        self.refresh_images();
+    }
+
+    pub fn refresh_images(&mut self) {
         if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_mut() {
             main_screen.redraw_images = 1;
         }
+
         self.refresh_immediate += 2;
     }
 

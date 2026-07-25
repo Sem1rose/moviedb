@@ -1,10 +1,8 @@
-use std::{cell::RefCell, cmp::Ordering, path::PathBuf, rc::Rc};
+use std::{cell::RefCell, path::PathBuf, rc::Rc};
 
 use chrono::Datelike;
 use itertools::Itertools;
 use nucleo_matcher::{Config as MatcherConfig, Matcher, pattern::Atom};
-use num_derive::{FromPrimitive, ToPrimitive};
-use num_traits::{FromPrimitive, ToPrimitive};
 use ratatui::{
     Frame,
     crossterm::event::KeyModifiers,
@@ -20,6 +18,7 @@ use ratatui::{
 };
 use ratatui_image::sliced::SignedPosition;
 use ratatui_textarea::TextArea;
+use strum::IntoEnumIterator;
 
 use crate::{
     config::Config,
@@ -27,76 +26,9 @@ use crate::{
     image_backend::RatatuiImage,
     key_event_handler::{self, KeyEventHandler},
     screens::Screens,
-    types::{Movie, Rating},
+    types::{FilterCriterion, Movie, Rating, Sort, pop_criterion},
     widgets,
 };
-
-#[derive(FromPrimitive, ToPrimitive, Default, Clone, Copy)]
-pub enum Sort {
-    #[default]
-    RecentlyWatched,
-    DateAdded,
-    UserRating,
-    Rating,
-    Name,
-    ReleaseDate,
-    Relevance,
-}
-
-#[derive(Clone)]
-pub enum FilterCriterion {
-    Name(String, bool /*filter*/),
-    Director(u32, bool /*inverted*/),
-    Actors(Vec<u32>, bool /*contains all*/, bool /*inverted*/),
-    Genres(
-        Vec<String>,
-        bool, /*contains all*/
-        bool, /*inverted*/
-    ),
-    Released(
-        u32,  /*lower bound*/
-        u32,  /*upper bound*/
-        bool, /*inverted*/
-    ),
-    DateAdded(
-        u32,  /*lower bound*/
-        u32,  /*upper bound*/
-        bool, /*inverted*/
-    ),
-    RecentlyWatched(
-        u32,  /*lower bound*/
-        u32,  /*upper bound*/
-        bool, /*inverted*/
-    ),
-    Rating(f64, Ordering, bool /*inverted*/),
-    UserRating(f64, Ordering, bool /*inverted*/),
-    Languages(Vec<String>, bool /*inverted*/),
-    Country(String, bool /*inverted*/),
-    Certification(Vec<Option<String>>, bool /*inverted*/),
-}
-
-macro_rules! pop_criterion(
-    ($criteria:expr, $p:pat, $d:expr) => (
-        {
-            let position = $criteria.iter().position(|x| matches!(x, $p));
-            if let Some(index) = position {
-                $criteria.remove(index)
-            } else {
-                $d
-            }
-        }
-    );
-    ($criteria:expr, $p:pat) => (
-        {
-            let position = $criteria.iter().position(|x| matches!(x, $p));
-            if let Some(index) = position {
-                Some($criteria.remove(index))
-            } else {
-                None
-            }
-        }
-    );
-);
 
 #[derive(Default)]
 pub struct PlaysTab {
@@ -191,10 +123,10 @@ impl MainScreen {
                     }
 
                     main_screen.search_input = TextArea::from([""]);
-                    let FilterCriterion::Name(_, filter) = pop_criterion!(
+                    let FilterCriterion::Title(_, filter) = pop_criterion!(
                         main_screen.filter_criteria,
-                        FilterCriterion::Name(_, _),
-                        FilterCriterion::Name(String::new(), false)
+                        FilterCriterion::Title(_, _),
+                        FilterCriterion::Title(String::new(), false)
                     ) else {
                         unreachable!()
                     };
@@ -249,10 +181,10 @@ impl MainScreen {
                 main_screen.tab = 2;
                 main_screen.item = 0;
 
-                _ = pop_criterion!(main_screen.filter_criteria, FilterCriterion::Name(_, _));
+                _ = pop_criterion!(main_screen.filter_criteria, FilterCriterion::Title(_, _));
                 main_screen
                     .filter_criteria
-                    .push(FilterCriterion::Name("".into(), false));
+                    .push(FilterCriterion::Title("".into(), false));
 
                 if !main_screen.search_input.is_empty() {
                     main_screen.search_input = TextArea::from([""]);
@@ -267,10 +199,10 @@ impl MainScreen {
 
                 main_screen.sort = Sort::Relevance;
                 main_screen.search_input = TextArea::from([""]);
-                _ = pop_criterion!(main_screen.filter_criteria, FilterCriterion::Name(_, _));
+                _ = pop_criterion!(main_screen.filter_criteria, FilterCriterion::Title(_, _));
                 main_screen
                     .filter_criteria
-                    .push(FilterCriterion::Name("".into(), true));
+                    .push(FilterCriterion::Title("".into(), true));
             }
         });
 
@@ -502,10 +434,10 @@ impl MainScreen {
                 }
 
                 main_screen.search_input = TextArea::from([""]);
-                let FilterCriterion::Name(_, filter) = pop_criterion!(
+                let FilterCriterion::Title(_, filter) = pop_criterion!(
                     main_screen.filter_criteria,
-                    FilterCriterion::Name(_, _),
-                    FilterCriterion::Name(String::new(), false)
+                    FilterCriterion::Title(_, _),
+                    FilterCriterion::Title(String::new(), false)
                 ) else {
                     unreachable!()
                 };
@@ -525,10 +457,10 @@ impl MainScreen {
             if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 main_screen.item = 1;
 
-                let FilterCriterion::Name(name, filter) = pop_criterion!(
+                let FilterCriterion::Title(name, filter) = pop_criterion!(
                     main_screen.filter_criteria,
-                    FilterCriterion::Name(_, _),
-                    FilterCriterion::Name(String::new(), false)
+                    FilterCriterion::Title(_, _),
+                    FilterCriterion::Title(String::new(), false)
                 ) else {
                     unreachable!()
                 };
@@ -541,7 +473,7 @@ impl MainScreen {
                 } else if filter {
                     main_screen
                         .filter_criteria
-                        .push(FilterCriterion::Name(name, true));
+                        .push(FilterCriterion::Title(name, true));
                 }
             }
         });
@@ -551,10 +483,10 @@ impl MainScreen {
 
                 main_screen.sort = Sort::Relevance;
                 main_screen.search_input = TextArea::from([""]);
-                _ = pop_criterion!(main_screen.filter_criteria, FilterCriterion::Name(_, _));
+                _ = pop_criterion!(main_screen.filter_criteria, FilterCriterion::Title(_, _));
                 main_screen
                     .filter_criteria
-                    .push(FilterCriterion::Name("".into(), true));
+                    .push(FilterCriterion::Title("".into(), true));
                 main_screen.filter_sort_movies(Some(true));
             }
         });
@@ -564,10 +496,10 @@ impl MainScreen {
                 main_screen.tab = 0;
                 main_screen.item = 0;
 
-                let FilterCriterion::Name(name, filter) = pop_criterion!(
+                let FilterCriterion::Title(name, filter) = pop_criterion!(
                     main_screen.filter_criteria,
-                    FilterCriterion::Name(_, _),
-                    FilterCriterion::Name(String::new(), false)
+                    FilterCriterion::Title(_, _),
+                    FilterCriterion::Title(String::new(), false)
                 ) else {
                     unreachable!()
                 };
@@ -580,7 +512,7 @@ impl MainScreen {
                 } else if filter {
                     main_screen
                         .filter_criteria
-                        .push(FilterCriterion::Name(name, true));
+                        .push(FilterCriterion::Title(name, true));
                 }
             }
         });
@@ -645,27 +577,20 @@ impl MainScreen {
             if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 match data {
                     key_event_handler::Data::Direction(false, _) => {
-                        main_screen.sort = FromPrimitive::from_usize(
-                            ToPrimitive::to_usize(&main_screen.sort)
-                                .unwrap()
-                                .checked_sub(1)
-                                .unwrap_or(0),
+                        main_screen.sort = Sort::from_repr(
+                            (main_screen.sort as usize).checked_sub(1).unwrap_or(0),
                         )
                         .unwrap();
                     }
                     key_event_handler::Data::Direction(true, _) => {
-                        main_screen.sort = FromPrimitive::from_usize(
-                            ToPrimitive::to_usize(&main_screen.sort).unwrap() + 1,
-                        )
-                        .unwrap_or(main_screen.sort);
+                        main_screen.sort = Sort::from_repr(main_screen.sort as usize + 1)
+                            .unwrap_or(main_screen.sort);
 
                         if main_screen.search_input.is_empty()
                             && matches!(main_screen.sort, Sort::Relevance)
                         {
-                            main_screen.sort = FromPrimitive::from_usize(
-                                ToPrimitive::to_usize(&main_screen.sort).unwrap() - 1,
-                            )
-                            .unwrap_or(main_screen.sort);
+                            main_screen.sort = Sort::from_repr(main_screen.sort as usize - 1)
+                                .unwrap_or(main_screen.sort);
                         }
                     }
                     _ => (),
@@ -703,14 +628,14 @@ impl MainScreen {
                     key_event_handler::Data::Key(key_event) => {
                         main_screen.search_input.input(key_event);
 
-                        let FilterCriterion::Name(_, filter) = pop_criterion!(
+                        let FilterCriterion::Title(_, filter) = pop_criterion!(
                             main_screen.filter_criteria,
-                            FilterCriterion::Name(_, _),
-                            FilterCriterion::Name(String::new(), false)
+                            FilterCriterion::Title(_, _),
+                            FilterCriterion::Title(String::new(), false)
                         ) else {
                             unreachable!()
                         };
-                        main_screen.filter_criteria.push(FilterCriterion::Name(
+                        main_screen.filter_criteria.push(FilterCriterion::Title(
                             main_screen.search_input.lines()[0].clone(),
                             filter,
                         ));
@@ -728,12 +653,12 @@ impl MainScreen {
         let [_debug_area, input_area, _, sort_area, _, direction_area, _] =
             horizontal![>=1, <=25, ==1, <=16, ==1, ==3, ==1].areas(area);
 
-        let filter = if let Some(FilterCriterion::Name(n, f)) =
-            pop_criterion!(self.filter_criteria, FilterCriterion::Name(_, _))
+        let filter = if let Some(FilterCriterion::Title(n, f)) =
+            pop_criterion!(self.filter_criteria, FilterCriterion::Title(_, _))
         {
             if tab_selected || f {
                 self.filter_criteria
-                    .push(FilterCriterion::Name(n.clone(), f));
+                    .push(FilterCriterion::Title(n.clone(), f));
             } else {
                 self.search_input = TextArea::from([""]);
             }
@@ -772,11 +697,11 @@ impl MainScreen {
 
                     let filter =
                     // let name;
-                    if let Some(FilterCriterion::Name(n, f)) =
-                        pop_criterion!(main_screen.filter_criteria, FilterCriterion::Name(_, _))
+                    if let Some(FilterCriterion::Title(n, f)) =
+                        pop_criterion!(main_screen.filter_criteria, FilterCriterion::Title(_, _))
                     {
                         // name = n.clone();
-                        main_screen.filter_criteria.push(FilterCriterion::Name(n, f));
+                        main_screen.filter_criteria.push(FilterCriterion::Title(n, f));
                         true
                     } else {
                         false
@@ -784,14 +709,14 @@ impl MainScreen {
 
                     if !filter {
                         main_screen.search_input = TextArea::from([""]);
-                        let FilterCriterion::Name(_, _) = pop_criterion!(
+                        let FilterCriterion::Title(_, _) = pop_criterion!(
                             main_screen.filter_criteria,
-                            FilterCriterion::Name(_, _),
-                            FilterCriterion::Name(String::new(), false)
+                            FilterCriterion::Title(_, _),
+                            FilterCriterion::Title(String::new(), false)
                         ) else {
                             unreachable!()
                         };
-                        let criterion = FilterCriterion::Name("".into(), true);
+                        let criterion = FilterCriterion::Title("".into(), true);
                         main_screen.filter_criteria.push(criterion);
                         main_screen.filter_sort_movies(Some(true));
                     }
@@ -799,57 +724,12 @@ impl MainScreen {
             },
         );
 
-        let get_bg = |x: usize| -> Color {
-            if tab_selected {
-                if self.item == x {
-                    material::BLUE.c600
-                } else {
-                    material::INDIGO.c800
-                }
-            } else {
-                tailwind::SLATE.c700
-            }
-        };
-        let get_fg = |x: usize| -> Color {
-            if tab_selected {
-                if self.item == x {
-                    material::TEAL.c100
-                } else {
-                    material::INDIGO.c200
-                }
-            } else {
-                material::GRAY.c400
-            }
-        };
-
-        // "▼⬇⬆⏷"
-        let sort_block = Block::bordered()
-            .border_set(border::PROPORTIONAL_WIDE)
-            .fg(get_bg(1));
-        let sort = ellipsize_string(
-            match self.sort {
-                Sort::RecentlyWatched => "Most Recent",
-                Sort::DateAdded => "Date Added",
-                Sort::UserRating => "User Rating",
-                Sort::Rating => "Rating",
-                Sort::Name => "Name",
-                Sort::ReleaseDate => "Release Date",
-                Sort::Relevance => "Relevance",
-            },
-            sort_area.width as usize - 4,
-        );
-        frame.render_widget(&sort_block, sort_area);
-        frame.render_widget(
-            span!(sort).bold().fg(get_fg(1)).bg(get_bg(1)),
-            sort_block.inner(sort_area),
-        );
-        frame.render_widget(
-            line!(" ▼")
-                .right_aligned()
-                .bold()
-                .fg(get_fg(1))
-                .bg(get_bg(1)),
-            sort_block.inner(sort_area),
+        widgets::dropdown(
+            tab_selected,
+            self.item == 1,
+            frame,
+            sort_area,
+            &ellipsize_string(self.sort.as_ref(), sort_area.width as usize - 4),
         );
         key_event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
@@ -863,22 +743,17 @@ impl MainScreen {
         );
 
         if tab_selected && self.item == 1 {
-            let mut items: Vec<Line> = vec![
-                " Most Recent ",
-                " Date Added ",
-                " User Rating ",
-                " Rating ",
-                " Name ",
-                " Release Date ",
-                " Relevance ",
-            ]
-            .iter()
-            .map(|&x| {
-                line!(ellipsize_string(x, sort_area.width as usize - 2))
+            let mut items: Vec<Line> = Sort::iter()
+                .map(|x| {
+                    line!(
+                        " ".to_string()
+                            + &ellipsize_string(x.as_ref(), sort_area.width as usize - 2)
+                            + " "
+                    )
                     .fg(material::INDIGO.c200)
                     .bg(material::INDIGO.c900)
-            })
-            .collect();
+                })
+                .collect();
             if self.search_input.is_empty() {
                 _ = items.pop();
 
@@ -886,11 +761,10 @@ impl MainScreen {
                     self.sort = Sort::default();
                 }
             }
-            items[ToPrimitive::to_usize(&self.sort).unwrap()] = items
-                [ToPrimitive::to_usize(&self.sort).unwrap()]
-            .clone()
-            .fg(material::BLUE.c100)
-            .bg(material::LIGHT_BLUE.c900);
+            items[self.sort as usize] = items[self.sort as usize]
+                .clone()
+                .fg(material::BLUE.c100)
+                .bg(material::LIGHT_BLUE.c900);
 
             let sort_popup_area = sort_area.offset(Offset::new(0, 2)).resize(Size::new(
                 sort_area.width,
@@ -917,7 +791,7 @@ impl MainScreen {
                         if let Some(Screens::MainScreen(main_screen)) =
                             app.drawer.current_screen.as_mut()
                         {
-                            main_screen.sort = FromPrimitive::from_usize(i).unwrap();
+                            main_screen.sort = Sort::from_repr(i).unwrap();
                             main_screen.filter_sort_movies(Some(true));
                         }
                     },
@@ -931,17 +805,42 @@ impl MainScreen {
             );
         }
 
-        let direction_block = Block::bordered()
-            .border_set(border::PROPORTIONAL_WIDE)
-            .fg(get_bg(2));
+        let direction_block =
+            Block::bordered()
+                .border_set(border::PROPORTIONAL_WIDE)
+                .fg(if tab_selected {
+                    if self.item == 2 {
+                        material::BLUE.c600
+                    } else {
+                        material::INDIGO.c800
+                    }
+                } else {
+                    tailwind::SLATE.c700
+                });
         let direction = if self.sort_ascending { "⬆" } else { "⬇" };
         frame.render_widget(&direction_block, direction_area);
         frame.render_widget(
             line!(direction)
                 .centered()
                 .bold()
-                .fg(get_fg(2))
-                .bg(get_bg(2)),
+                .fg(if tab_selected {
+                    if self.item == 2 {
+                        material::TEAL.c100
+                    } else {
+                        material::INDIGO.c200
+                    }
+                } else {
+                    material::GRAY.c400
+                })
+                .bg(if tab_selected {
+                    if self.item == 2 {
+                        material::BLUE.c600
+                    } else {
+                        material::INDIGO.c800
+                    }
+                } else {
+                    tailwind::SLATE.c700
+                }),
             direction_block.inner(direction_area),
         );
         key_event_handler.bind_mouse_button_down(
@@ -2205,7 +2104,7 @@ impl MainScreen {
         let mut movies = self.movies.clone();
         for criterion in &self.filter_criteria {
             match criterion {
-                FilterCriterion::Name(name, _) => {
+                FilterCriterion::Title(name, _) => {
                     if name.is_empty() {
                         continue;
                     }
@@ -2354,7 +2253,7 @@ impl MainScreen {
                     self.filtered_movies.reverse();
                 }
             }
-            Sort::RecentlyWatched => {
+            Sort::MostRecent => {
                 self.filtered_movies
                     .sort_by_key(|x| x.get_latest_play().clone());
                 if self.sort_ascending {

@@ -12,10 +12,12 @@ use ratatui::{
     },
 };
 use serde::{Deserialize, Serialize};
+use strum::{AsRefStr, EnumCount, EnumDiscriminants, EnumIter, FromRepr, IntoStaticStr};
 use tmdb::smo::TMDBDetailsResponse;
 use trakt::smo::TraktDetailsResponse;
 
 use crate::omdb::OMDBDetailsResponse;
+pub use crate::pop_criterion;
 
 pub type Term = Terminal<TermBackend>;
 type TermBackend = CrosstermBackend<std::io::Stdout>;
@@ -50,6 +52,20 @@ fn set_panic_hook() {
         ratatui::restore();
         hook(info);
     }));
+}
+
+#[repr(usize)]
+#[derive(Default, Clone, Copy, FromRepr, EnumCount, AsRefStr, EnumIter)]
+#[strum(serialize_all = "title_case")]
+pub enum Sort {
+    #[default]
+    MostRecent,
+    DateAdded,
+    UserRating,
+    Rating,
+    Name,
+    ReleaseDate,
+    Relevance,
 }
 
 #[derive(Serialize, Clone, Copy, Deserialize, Debug, PartialEq)]
@@ -94,6 +110,65 @@ impl PartialOrd for Rating {
         })
     }
 }
+
+#[derive(Clone, EnumDiscriminants, Debug)]
+#[strum_discriminants(derive(EnumIter, IntoStaticStr, FromRepr, EnumCount))]
+#[strum_discriminants(repr(usize))]
+pub enum FilterCriterion {
+    #[strum_discriminants(strum(disabled))]
+    Title(String, bool /*filter*/),
+    Director(u32, bool /*inverted*/),
+    Actors(Vec<u32>, bool /*contains all*/, bool /*inverted*/),
+    Genres(
+        Vec<String>,
+        bool, /*contains all*/
+        bool, /*inverted*/
+    ),
+    Released(
+        u32,  /*lower bound*/
+        u32,  /*upper bound*/
+        bool, /*inverted*/
+    ),
+    DateAdded(
+        u32,  /*lower bound*/
+        u32,  /*upper bound*/
+        bool, /*inverted*/
+    ),
+    RecentlyWatched(
+        u32,  /*lower bound*/
+        u32,  /*upper bound*/
+        bool, /*inverted*/
+    ),
+    Rating(f64, Ordering, bool /*inverted*/),
+    UserRating(f64, Ordering, bool /*inverted*/),
+    Languages(Vec<String>, bool /*inverted*/),
+    Country(String, bool /*inverted*/),
+    Certification(Vec<Option<String>>, bool /*inverted*/),
+}
+
+#[macro_export]
+macro_rules! pop_criterion(
+    ($criteria:expr, $p:pat, $d:expr) => (
+        {
+            let position = $criteria.iter().position(|x| matches!(x, $p));
+            if let Some(index) = position {
+                $criteria.remove(index)
+            } else {
+                $d
+            }
+        }
+    );
+    ($criteria:expr, $p:pat) => (
+        {
+            let position = $criteria.iter().position(|x| matches!(x, $p));
+            if let Some(index) = position {
+                Some($criteria.remove(index))
+            } else {
+                None
+            }
+        }
+    );
+);
 
 #[derive(Serialize, Clone, Deserialize, Debug)]
 pub struct MovieID {
