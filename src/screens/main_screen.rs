@@ -18,7 +18,7 @@ use ratatui::{
 };
 use ratatui_image::sliced::SignedPosition;
 use ratatui_textarea::TextArea;
-use strum::IntoEnumIterator;
+use strum::{EnumCount, IntoEnumIterator};
 
 use crate::{
     config::Config,
@@ -45,7 +45,7 @@ pub struct MainScreen {
     pub drawing_images:  bool,
     pub sort_ascending:  bool,
     pub filter_criteria: Vec<FilterCriterion>,
-    search_input:        TextArea<'static>,
+    pub search_input:    TextArea<'static>,
     config:              Rc<RefCell<Config>>,
 
     movies:             Vec<Movie>,
@@ -198,11 +198,15 @@ impl MainScreen {
                 main_screen.item = 0;
 
                 main_screen.sort = Sort::Relevance;
-                main_screen.search_input = TextArea::from([""]);
                 _ = pop_criterion!(main_screen.filter_criteria, FilterCriterion::Title(_, _));
                 main_screen
                     .filter_criteria
                     .push(FilterCriterion::Title("".into(), true));
+
+                if !main_screen.search_input.is_empty() {
+                    main_screen.search_input = TextArea::from([""]);
+                    main_screen.filter_sort_movies(Some(true));
+                }
             }
         });
 
@@ -219,8 +223,8 @@ impl MainScreen {
         self.drawing_images = false;
         self.render_movies_list(frame, list, key_event_handler);
         self.render_movie_description(frame, description, key_event_handler);
-        self.render_footer(frame, footer, key_event_handler);
         self.render_header(frame, header, key_event_handler);
+        self.render_footer(frame, footer, key_event_handler);
         self.redraw_images = self.redraw_images.saturating_sub(1);
 
         if let Some(pos) = self.context_menu_pos {
@@ -743,7 +747,7 @@ impl MainScreen {
         );
 
         if tab_selected && self.item == 1 {
-            let mut items: Vec<Line> = Sort::iter()
+            let mut items = Sort::iter()
                 .map(|x| {
                     line!(
                         " ".to_string()
@@ -753,7 +757,7 @@ impl MainScreen {
                     .fg(material::INDIGO.c200)
                     .bg(material::INDIGO.c900)
                 })
-                .collect();
+                .collect_vec();
             if self.search_input.is_empty() {
                 _ = items.pop();
 
@@ -761,29 +765,16 @@ impl MainScreen {
                     self.sort = Sort::default();
                 }
             }
-            items[self.sort as usize] = items[self.sort as usize]
-                .clone()
-                .fg(material::BLUE.c100)
-                .bg(material::LIGHT_BLUE.c900);
 
-            let sort_popup_area = sort_area.offset(Offset::new(0, 2)).resize(Size::new(
-                sort_area.width,
-                sort_area.height + items.len() as u16 - 1,
-            ));
-            let sort_popup_block = Block::bordered()
-                .border_set(border::PROPORTIONAL_WIDE)
-                .fg(material::INDIGO.c900);
-            frame.render_widget(&sort_popup_block, sort_popup_area);
-            frame.render_widget(
-                Block::new().bg(material::BLUE.c600),
-                add_padding(sort_popup_area, Padding::bottom(2)),
+            let (mut mouse_area, len) = widgets::dropdown_popup(
+                items,
+                self.sort as usize,
+                0,
+                Sort::COUNT,
+                sort_area,
+                frame,
             );
-
-            let mut mouse_area = sort_popup_block.inner(sort_popup_area).resize(Size {
-                width:  sort_popup_block.inner(sort_popup_area).width,
-                height: 1,
-            });
-            for i in 0..items.len() {
+            for i in 0..len {
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     mouse_area,
@@ -798,11 +789,6 @@ impl MainScreen {
                 );
                 mouse_area = mouse_area.offset(Offset { x: 0, y: 1 });
             }
-            frame.render_widget(Clear, sort_popup_block.inner(sort_popup_area));
-            frame.render_widget(
-                Text::from_iter(items).left_aligned(),
-                sort_popup_block.inner(sort_popup_area),
-            );
         }
 
         let direction_block =
@@ -1154,7 +1140,10 @@ impl MainScreen {
                 );
             }
             if self.movies_list_scroll_pos
-                < self.filtered_movies.len() - self.movies_list_num_visible_items - 1
+                < self
+                    .filtered_movies
+                    .len()
+                    .saturating_sub(self.movies_list_num_visible_items - 1)
             {
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
@@ -2159,7 +2148,7 @@ impl MainScreen {
                         })
                         .collect();
                 }
-                FilterCriterion::DateAdded(lower_bound, upper_bound, inverted) => {
+                FilterCriterion::FirstWatched(lower_bound, upper_bound, inverted) => {
                     movies = movies
                         .into_iter()
                         .filter(|x| {
@@ -2169,7 +2158,7 @@ impl MainScreen {
                         })
                         .collect();
                 }
-                FilterCriterion::RecentlyWatched(lower_bound, upper_bound, inverted) => {
+                FilterCriterion::LastWatched(lower_bound, upper_bound, inverted) => {
                     movies = movies
                         .into_iter()
                         .filter(|x| {
@@ -2264,7 +2253,7 @@ impl MainScreen {
         }
     }
 
-    fn filter_sort_movies(&mut self, keep_selected: Option<bool>) {
+    pub fn filter_sort_movies(&mut self, keep_selected: Option<bool>) {
         let selected_movie_id = self
             .current_movie()
             .map(|x| x.id.imdb.clone())

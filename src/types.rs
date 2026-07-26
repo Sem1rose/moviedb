@@ -12,7 +12,9 @@ use ratatui::{
     },
 };
 use serde::{Deserialize, Serialize};
-use strum::{AsRefStr, EnumCount, EnumDiscriminants, EnumIter, FromRepr, IntoStaticStr};
+use strum::{
+    AsRefStr, EnumCount, EnumDiscriminants, EnumIter, FromRepr, IntoStaticStr,
+};
 use tmdb::smo::TMDBDetailsResponse;
 use trakt::smo::TraktDetailsResponse;
 
@@ -112,10 +114,10 @@ impl PartialOrd for Rating {
 }
 
 #[derive(Clone, EnumDiscriminants, Debug)]
-#[strum_discriminants(derive(EnumIter, IntoStaticStr, FromRepr, EnumCount))]
+#[strum_discriminants(derive(EnumIter, IntoStaticStr, EnumCount))]
 #[strum_discriminants(repr(usize))]
 pub enum FilterCriterion {
-    #[strum_discriminants(strum(disabled))]
+    // #[strum_discriminants(strum(disabled))]
     Title(String, bool /*filter*/),
     Director(u32, bool /*inverted*/),
     Actors(Vec<u32>, bool /*contains all*/, bool /*inverted*/),
@@ -129,12 +131,12 @@ pub enum FilterCriterion {
         u32,  /*upper bound*/
         bool, /*inverted*/
     ),
-    DateAdded(
+    FirstWatched(
         u32,  /*lower bound*/
         u32,  /*upper bound*/
         bool, /*inverted*/
     ),
-    RecentlyWatched(
+    LastWatched(
         u32,  /*lower bound*/
         u32,  /*upper bound*/
         bool, /*inverted*/

@@ -18,7 +18,7 @@ pub enum Data {
 type State = (Option<usize>, Option<usize>);
 type Callback = Box<dyn FnOnce(&mut App, Data)>;
 
-#[derive(PartialEq, Eq, Hash, Clone)]
+#[derive(PartialEq, Eq, Hash, Clone, Debug)]
 pub enum Bind {
     Horizontal,
     Vertical,
@@ -143,17 +143,17 @@ impl KeyEventHandler {
         );
     }
 
-    pub fn bind_mouse_button_up(
-        &mut self,
-        button: MouseButton,
-        area: Rect,
-        callback: impl FnOnce(&mut App, Data) + 'static,
-    ) {
-        _ = self.mouse_binds.insert(
-            (self.mouse_binds.len(), Bind::MouseButtonUp(button), area),
-            Box::new(callback),
-        );
-    }
+    // pub fn bind_mouse_button_up(
+    //     &mut self,
+    //     button: MouseButton,
+    //     area: Rect,
+    //     callback: impl FnOnce(&mut App, Data) + 'static,
+    // ) {
+    //     _ = self.mouse_binds.insert(
+    //         (self.mouse_binds.len(), Bind::MouseButtonUp(button), area),
+    //         Box::new(callback),
+    //     );
+    // }
 
     fn try_get_mouse_bind(&mut self, position: Position, bind: Bind) -> Option<Callback> {
         let mut matches = self
@@ -244,32 +244,30 @@ impl KeyEventHandler {
         let mut binds = vec![];
 
         if let Some(semi_bind) = self.semi_bind {
-            for s in [state, (state.0, None), (None, state.1), (None, None)] {
-                let matches: Vec<(
-                    &(Bind, (Option<usize>, Option<usize>)),
-                    &(String, Box<dyn FnOnce(&mut App, Data)>),
-                )> = self
-                    .key_binds
-                    .iter()
-                    .filter(|((bind, s), _)| {
-                        (if let Bind::Key(k) = bind {
-                            k.starts_with(&semi_bind.to_string())
-                        } else {
-                            false
-                        }) && s
-                            .0
-                            .map(|x| state.0.is_some() && x == state.0.unwrap())
+            let matches = self
+                .key_binds
+                .iter()
+                .filter(|((bind, s), _)| {
+                    (if let Bind::Key(k) = bind {
+                        k.starts_with(&semi_bind.to_string())
+                    } else {
+                        false
+                    }) && s
+                        .0
+                        .map(|x| state.0.is_some() && x == state.0.unwrap())
+                        .unwrap_or(true)
+                        && s.1
+                            .map(|x| state.1.is_some() && x == state.1.unwrap())
                             .unwrap_or(true)
-                            && s.1
-                                .map(|x| state.1.is_some() && x == state.1.unwrap())
-                                .unwrap_or(true)
-                    })
-                    .collect_vec();
-                if !matches.is_empty() {
-                    binds.extend(matches.iter().map(|&(k, v)| (k.0.clone(), v.0.clone())));
-
-                    break;
-                }
+                })
+                .sorted_by_key(|((_, s), _)| s.0.is_some() as usize + s.1.is_some() as usize)
+                .collect_vec();
+            if !matches.is_empty() {
+                binds.extend(
+                    matches
+                        .iter()
+                        .map(|&((b, _), (d, _))| (b.clone(), d.clone())),
+                );
             }
         } else {
             for bind in [
@@ -279,29 +277,41 @@ impl KeyEventHandler {
                 Bind::Esc,
                 Bind::Tab,
             ] {
-                for state in [state, (state.0, None), (None, state.1), (None, None)] {
-                    if self.key_binds.contains_key(&(bind.clone(), state)) {
-                        binds.push((
-                            bind.clone(),
-                            self.key_binds[&(bind.clone(), state)].0.clone(),
-                        ));
-                        break;
-                    }
+                let matches = self
+                    .key_binds
+                    .iter()
+                    .filter(|((b, s), _)| {
+                        b == &bind
+                            && s.0
+                                .map(|x| state.0.is_some() && x == state.0.unwrap())
+                                .unwrap_or(true)
+                            && s.1
+                                .map(|x| state.1.is_some() && x == state.1.unwrap())
+                                .unwrap_or(true)
+                    })
+                    .sorted_by_key(|((_, s), _)| s.0.is_some() as usize + s.1.is_some() as usize)
+                    .collect_vec();
+                if !matches.is_empty() {
+                    binds.extend(matches.iter().map(|&(_, (d, _))| (bind.clone(), d.clone())));
                 }
             }
 
-            let mut input = false;
-            for s in [state, (state.0, None), (None, state.1), (None, None)] {
-                if self.key_binds.contains_key(&(Bind::Input, s)) {
-                    input = true;
-                    break;
-                }
-            }
+            let input = self
+                .key_binds
+                .iter()
+                .filter(|((b, s), _)| {
+                    matches!(b, Bind::Input)
+                        && s.0
+                            .map(|x| state.0.is_some() && x == state.0.unwrap())
+                            .unwrap_or(true)
+                        && s.1
+                            .map(|x| state.1.is_some() && x == state.1.unwrap())
+                            .unwrap_or(true)
+                })
+                .count()
+                > 0;
             if !input {
-                let matches: Vec<(
-                    &(Bind, (Option<usize>, Option<usize>)),
-                    &(String, Box<dyn FnOnce(&mut App, Data)>),
-                )> = self
+                let matches = self
                     .key_binds
                     .iter()
                     .filter(|((bind, s), _)| {
@@ -313,7 +323,9 @@ impl KeyEventHandler {
                                 .map(|x| state.1.is_some() && x == state.1.unwrap())
                                 .unwrap_or(true)
                     })
+                    .sorted_by_key(|((_, s), _)| s.0.is_some() as usize + s.1.is_some() as usize)
                     .collect_vec();
+
                 if !matches.is_empty() {
                     binds.extend(matches.iter().map(|&(k, v)| (k.0.clone(), v.0.clone())));
                 }
@@ -347,18 +359,6 @@ impl KeyEventHandler {
         };
 
         match event.code {
-            KeyCode::Up | KeyCode::Down =>
-                if self.semi_bind.is_some() {
-                    self.semi_bind = None;
-                    None
-                } else if let Some(callback) = self.try_get_key_bind(Bind::Vertical, state) {
-                    Some((
-                        callback,
-                        Data::Direction(event.code == KeyCode::Down, event.modifiers),
-                    ))
-                } else {
-                    None
-                },
             KeyCode::Tab | KeyCode::BackTab =>
                 if self.semi_bind.is_some() {
                     self.semi_bind = None;
@@ -398,17 +398,29 @@ impl KeyEventHandler {
                 } else {
                     None
                 },
+            KeyCode::Up | KeyCode::Down =>
+                if self.semi_bind.is_some() {
+                    self.semi_bind = None;
+                    None
+                } else if let Some(callback) = self.try_get_key_bind(Bind::Vertical, state) {
+                    Some((
+                        callback,
+                        Data::Direction(event.code == KeyCode::Down, event.modifiers),
+                    ))
+                } else {
+                    None
+                },
             KeyCode::Left | KeyCode::Right =>
                 if self.semi_bind.is_some() {
                     self.semi_bind = None;
                     None
-                } else if let Some(callback) = self.try_get_key_bind(Bind::Input, state) {
-                    Some((callback, Data::Key(event)))
                 } else if let Some(callback) = self.try_get_key_bind(Bind::Horizontal, state) {
                     Some((
                         callback,
                         Data::Direction(event.code == KeyCode::Right, event.modifiers),
                     ))
+                } else if let Some(callback) = self.try_get_key_bind(Bind::Input, state) {
+                    Some((callback, Data::Key(event)))
                 } else {
                     None
                 },

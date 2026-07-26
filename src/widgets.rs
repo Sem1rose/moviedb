@@ -5,16 +5,16 @@ use ratatui::{
     layout::{HorizontalAlignment, Offset, Rect, Size},
     macros::{line, span, vertical},
     style::{
-        Color, Modifier, Style, Stylize,
+        Modifier, Style, Stylize,
         palette::{material, tailwind},
     },
     symbols::border,
     text::{Line, Span, Text},
-    widgets::{Block, Padding, Widget},
+    widgets::{Block, Clear, Padding, Widget},
 };
 use ratatui_textarea::{TextArea, WrapMode};
 
-use crate::helpers::ellipsize_string;
+use crate::helpers::{add_padding};
 
 pub fn input_field(
     tab_selected: bool,
@@ -141,6 +141,59 @@ pub fn dropdown(tab_selected: bool, selected: bool, frame: &mut Frame, area: Rec
             }),
         sort_block.inner(area),
     );
+}
+
+pub fn dropdown_popup(
+    items: Vec<Line>,
+    selected_index: usize,
+    scroll_pos: usize,
+    num_visible_items: usize,
+    dropdown_widget_area: Rect,
+    frame: &mut Frame,
+) -> (Rect, usize) {
+    let mut items = items
+        .into_iter()
+        .dropping(scroll_pos)
+        .take(num_visible_items)
+        .collect_vec();
+    let items_len = items.len();
+
+    let selected = items
+        .remove(selected_index - scroll_pos)
+        .fg(material::BLUE.c100)
+        .bg(material::LIGHT_BLUE.c900);
+    items.insert(selected_index - scroll_pos, selected);
+
+    let dropdown_popup_area = dropdown_widget_area
+        .offset(Offset::new(0, 2))
+        .resize(Size::new(
+            dropdown_widget_area.width,
+            dropdown_widget_area.height + items.len() as u16 - 1,
+        ));
+    frame.render_widget(
+        Clear,
+        add_padding(dropdown_popup_area, Padding::vertical(1)),
+    );
+
+    let sort_popup_block = Block::bordered()
+        .border_set(border::PROPORTIONAL_WIDE)
+        .fg(material::INDIGO.c900);
+    let inner_area = sort_popup_block.inner(dropdown_popup_area);
+    frame.render_widget(&sort_popup_block, dropdown_popup_area);
+    frame.render_widget(
+        Block::new().bg(material::BLUE.c600),
+        dropdown_popup_area.resize(Size::new(dropdown_popup_area.width, 1)),
+    );
+    frame.render_widget(Block::new().bg(material::INDIGO.c900), inner_area);
+    frame.render_widget(Text::from_iter(items).left_aligned(), inner_area);
+
+    (
+        inner_area.resize(Size {
+            width:  inner_area.width,
+            height: 1,
+        }),
+        items_len,
+    )
 }
 
 pub struct Action {

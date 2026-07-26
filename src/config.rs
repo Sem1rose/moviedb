@@ -16,9 +16,9 @@ pub struct Options {
 
 #[derive(Default)]
 pub struct Config {
-    pub options:   Options,
-    pub oob_stage: Option<u32>,
+    pub options: Options,
 
+    // pub oob_stage: Option<u32>,
     home_dir: PathBuf,
 }
 
