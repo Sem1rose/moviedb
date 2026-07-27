@@ -5,7 +5,7 @@ use ratatui::{
     Frame,
     crossterm::event::KeyCode,
     layout::{Alignment, HorizontalAlignment, Layout, Margin, Offset},
-    macros::{constraints, horizontal, line},
+    macros::{constraints, horizontal, line, vertical},
     style::{
         Style, Stylize,
         palette::{material, tailwind},
@@ -33,7 +33,7 @@ pub struct AdvancedFilterPopup {
     item:              usize,
     filter_criteria:   Vec<FilterCriterion>,
     last_popup_height: Option<u16>,
-    valid:             bool,
+    validate:          Option<Box<dyn Fn(&Self) -> bool>>,
 
     available_criteria: Vec<FilterCriterionDiscriminants>,
     active_criterion:   Option<FilterCriterionDiscriminants>,
@@ -48,72 +48,18 @@ pub struct AdvancedFilterPopup {
     // available_actors:    Vec<String>,
     // available_directors: Vec<String>,
     // available_countries: Vec<String>,
-    input0:         TextArea<'static>,
-    input1:         TextArea<'static>,
-    dropdown0:      usize,
-    dropdown0_data: Vec<String>,
-    // dropdown1:      usize,
-    // dropdown1_data: Vec<String>,
-}
-
-fn criterion_available(
-    filter_criteria: &[FilterCriterion],
-    criterion: &FilterCriterionDiscriminants,
-) -> bool {
-    !match criterion {
-        FilterCriterionDiscriminants::Title => filter_criteria
-            .iter()
-            .any(|y| matches!(y, FilterCriterion::Title(_, _))),
-        FilterCriterionDiscriminants::Director => filter_criteria
-            .iter()
-            .any(|y| matches!(y, FilterCriterion::Director(_, _))),
-        FilterCriterionDiscriminants::Actors =>
-            filter_criteria
-                .iter()
-                .any(|y| matches!(y, FilterCriterion::Actors(_, _, false)))
-                && filter_criteria
-                    .iter()
-                    .any(|y| matches!(y, FilterCriterion::Actors(_, _, true))),
-        FilterCriterionDiscriminants::Genres =>
-            filter_criteria
-                .iter()
-                .any(|y| matches!(y, FilterCriterion::Genres(_, _, false)))
-                && filter_criteria
-                    .iter()
-                    .any(|y| matches!(y, FilterCriterion::Genres(_, _, true))),
-        FilterCriterionDiscriminants::Released => filter_criteria
-            .iter()
-            .any(|y| matches!(y, FilterCriterion::Released(_, _, _))),
-        FilterCriterionDiscriminants::FirstWatched => filter_criteria
-            .iter()
-            .any(|y| matches!(y, FilterCriterion::FirstWatched(_, _, _))),
-        FilterCriterionDiscriminants::LastWatched => filter_criteria
-            .iter()
-            .any(|y| matches!(y, FilterCriterion::LastWatched(_, _, _))),
-        FilterCriterionDiscriminants::Rating => filter_criteria
-            .iter()
-            .any(|y| matches!(y, FilterCriterion::Rating(_, _, _))),
-        FilterCriterionDiscriminants::UserRating => filter_criteria
-            .iter()
-            .any(|y| matches!(y, FilterCriterion::UserRating(_, _, _))),
-        FilterCriterionDiscriminants::Languages =>
-            filter_criteria
-                .iter()
-                .any(|y| matches!(y, FilterCriterion::Languages(_, false)))
-                && filter_criteria
-                    .iter()
-                    .any(|y| matches!(y, FilterCriterion::Languages(_, true))),
-        FilterCriterionDiscriminants::Country => filter_criteria
-            .iter()
-            .any(|y| matches!(y, FilterCriterion::Country(_, _))),
-        FilterCriterionDiscriminants::Certification =>
-            filter_criteria
-                .iter()
-                .any(|y| matches!(y, FilterCriterion::Certification(_, false)))
-                && filter_criteria
-                    .iter()
-                    .any(|y| matches!(y, FilterCriterion::Certification(_, true))),
-    }
+    input0:                   TextArea<'static>,
+    input1:                   TextArea<'static>,
+    dropdown0:                usize,
+    dropdown0_data:           Vec<String>,
+    dropdown1:                usize,
+    dropdown1_data:           Vec<String>,
+    dropdown1_selected_items: Vec<usize>,
+    dropdown2:                usize,
+    dropdown2_data:           Vec<String>,
+    dropdown3:                usize,
+    dropdown3_data:           Vec<String>,
+    dropdown3_selected_items: Vec<usize>,
 }
 
 impl AdvancedFilterPopup {
@@ -122,7 +68,11 @@ impl AdvancedFilterPopup {
             tab: 1,
             item: 0,
             available_criteria: FilterCriterionDiscriminants::iter()
-                .filter(|x| criterion_available(filter_criteria, x))
+                .filter(|x| {
+                    !filter_criteria
+                        .iter()
+                        .any(|y| FilterCriterionDiscriminants::from(y) == *x)
+                })
                 .collect_vec(),
             filter_criteria: filter_criteria.to_vec(),
             dropdown_selected_item: Some(0),
@@ -136,8 +86,15 @@ impl AdvancedFilterPopup {
             .iter()
             .map(|x| x.genres.clone())
             .flatten()
+            .unique()
+            .sorted()
             .collect_vec();
-        self.available_languages = movies.iter().map(|x| x.language.clone()).collect_vec();
+        self.available_languages = movies
+            .iter()
+            .map(|x| x.language.clone())
+            .unique()
+            .sorted()
+            .collect_vec();
     }
 
     fn init_criterion_options(&mut self) {
@@ -147,11 +104,68 @@ impl AdvancedFilterPopup {
         match criterion_discriminant {
             FilterCriterionDiscriminants::Title => {
                 self.input0 = TextArea::from([""]);
+
+                self.validate = Some(Box::new(|advanced_filter_popup| {
+                    !advanced_filter_popup.input0.is_empty()
+                }));
             }
-            FilterCriterionDiscriminants::Director => {}
-            FilterCriterionDiscriminants::Actors => {}
-            FilterCriterionDiscriminants::Genres => {}
-            FilterCriterionDiscriminants::Released => {
+            FilterCriterionDiscriminants::Director => {
+                // self.dropdown0 = 0;
+                // self.dropdown1 = 0;
+                // self.dropdown_scroll_pos = 0;
+                // self.dropdown_num_visible_items = 5;
+                // self.dropdown_selected_item = Some(0);
+                // self.dropdown0_data = vec!["Directed by".into(), "Not directed by".into()];
+                // self.dropdown1_data = self.available_directors.clone();
+                // self.dropdown1_selected_items = vec![];
+                //
+                // self.validate = Some(Box::new(|advanced_filter_popup| {
+                //     !advanced_filter_popup.dropdown1_selected_items.is_empty()
+                // }));
+            }
+            FilterCriterionDiscriminants::Actors => {
+                // self.dropdown0 = 0;
+                // self.dropdown1 = 0;
+                // self.dropdown2 = 0;
+                // self.dropdown3 = 0;
+                // self.dropdown_scroll_pos = 0;
+                // self.dropdown_num_visible_items = 5;
+                // self.dropdown_selected_item = Some(0);
+                // self.dropdown0_data = vec!["any of".into(), "all of".into()];
+                // self.dropdown1_data = self.available_actors.clone();
+                // self.dropdown1_selected_items = vec![];
+                // self.dropdown2_data = vec!["any of".into(), "all of".into()];
+                // self.dropdown3_data = self.available_actors.clone();
+                // self.dropdown3_selected_items = vec![];
+                //
+                // self.validate = Some(Box::new(|advanced_filter_popup| {
+                //     !advanced_filter_popup.dropdown1_selected_items.is_empty() ||
+                //     !advanced_filter_popup.dropdown3_selected_items.is_empty()
+                // }));
+            }
+            FilterCriterionDiscriminants::Genres => {
+                self.dropdown0 = 0;
+                self.dropdown1 = 0;
+                self.dropdown2 = 0;
+                self.dropdown3 = 0;
+                self.dropdown_scroll_pos = 0;
+                self.dropdown_num_visible_items = 5;
+                self.dropdown_selected_item = Some(0);
+                self.dropdown0_data = vec!["any of".into(), "all of".into()];
+                self.dropdown1_data = self.available_genres.clone();
+                self.dropdown1_selected_items = vec![];
+                self.dropdown2_data = vec!["any of".into(), "all of".into()];
+                self.dropdown3_data = self.available_genres.clone();
+                self.dropdown3_selected_items = vec![];
+
+                self.validate = Some(Box::new(|advanced_filter_popup| {
+                    !advanced_filter_popup.dropdown1_selected_items.is_empty()
+                        || !advanced_filter_popup.dropdown3_selected_items.is_empty()
+                }));
+            }
+            FilterCriterionDiscriminants::Released
+            | FilterCriterionDiscriminants::FirstWatched
+            | FilterCriterionDiscriminants::LastWatched => {
                 self.input0 = TextArea::from([""]);
                 self.input1 = TextArea::from([""]);
                 self.dropdown0 = 0;
@@ -164,36 +178,20 @@ impl AdvancedFilterPopup {
                     "Before".into(),
                     "Between".into(),
                 ];
+
+                self.validate = Some(Box::new(|advanced_filter_popup| {
+                    advanced_filter_popup.input0.lines()[0]
+                        .parse::<usize>()
+                        .map(|x| x > 1800)
+                        .unwrap_or(false)
+                        && (advanced_filter_popup.dropdown0 != 3
+                            || advanced_filter_popup.input1.lines()[0]
+                                .parse::<usize>()
+                                .map(|x| x > 1800)
+                                .unwrap_or(false))
+                }));
             }
-            FilterCriterionDiscriminants::FirstWatched => {
-                self.input0 = TextArea::from([""]);
-                self.input1 = TextArea::from([""]);
-                self.dropdown0 = 0;
-                self.dropdown_scroll_pos = 0;
-                self.dropdown_num_visible_items = 4;
-                self.dropdown_selected_item = Some(0);
-                self.dropdown0_data = vec![
-                    "In".into(),
-                    "After".into(),
-                    "Before".into(),
-                    "Between".into(),
-                ];
-            }
-            FilterCriterionDiscriminants::LastWatched => {
-                self.input0 = TextArea::from([""]);
-                self.input1 = TextArea::from([""]);
-                self.dropdown0 = 0;
-                self.dropdown_scroll_pos = 0;
-                self.dropdown_num_visible_items = 4;
-                self.dropdown_selected_item = Some(0);
-                self.dropdown0_data = vec![
-                    "In".into(),
-                    "After".into(),
-                    "Before".into(),
-                    "Between".into(),
-                ];
-            }
-            FilterCriterionDiscriminants::Rating => {
+            FilterCriterionDiscriminants::Rating | FilterCriterionDiscriminants::UserRating => {
                 self.input0 = TextArea::from([""]);
                 self.dropdown0 = 0;
                 self.dropdown_scroll_pos = 0;
@@ -201,25 +199,66 @@ impl AdvancedFilterPopup {
                 self.dropdown_selected_item = Some(0);
                 self.dropdown0_data =
                     vec!["<".into(), "<=".into(), ">".into(), ">=".into(), "=".into()];
+
+                self.validate = Some(Box::new(|advanced_filter_popup| {
+                    advanced_filter_popup.input0.lines()[0]
+                        .parse::<f64>()
+                        .map(|x| x <= 10.0)
+                        .unwrap_or(false)
+                }));
             }
-            FilterCriterionDiscriminants::UserRating => {
-                self.input0 = TextArea::from([""]);
+            FilterCriterionDiscriminants::Language => {
                 self.dropdown0 = 0;
+                self.dropdown1 = 0;
                 self.dropdown_scroll_pos = 0;
-                self.dropdown_num_visible_items = 5;
+                self.dropdown_num_visible_items = 4;
                 self.dropdown_selected_item = Some(0);
-                self.dropdown0_data =
-                    vec!["<".into(), "<=".into(), ">".into(), ">=".into(), "=".into()];
+                self.dropdown0_data = vec!["In".into(), "Not in".into()];
+                self.dropdown1_data = self.available_languages.clone();
+
+                self.validate = Some(Box::new(|advanced_filter_popup| {
+                    !advanced_filter_popup.dropdown1_selected_items.is_empty()
+                }));
             }
-            FilterCriterionDiscriminants::Languages => {}
-            FilterCriterionDiscriminants::Country => {}
-            FilterCriterionDiscriminants::Certification => {}
+            FilterCriterionDiscriminants::Country => {
+                // self.dropdown0 = 0;
+                // self.dropdown1 = 0;
+                // self.dropdown_scroll_pos = 0;
+                // self.dropdown_num_visible_items = 5;
+                // self.dropdown_selected_item = Some(0);
+                // self.dropdown0_data = vec!["From".into(), "Not from".into()];
+                // self.dropdown1_data = self.available_countries.clone();
+                // self.dropdown1_selected_items = vec![];
+                //
+                // self.validate = Some(Box::new(|advanced_filter_popup| {
+                //     !advanced_filter_popup.dropdown1_selected_items.is_empty()
+                // }));
+            }
+            FilterCriterionDiscriminants::Certification => {
+                // self.dropdown0 = 0;
+                // self.dropdown1 = 0;
+                // self.dropdown_scroll_pos = 0;
+                // self.dropdown_num_visible_items = 5;
+                // self.dropdown_selected_item = Some(0);
+                // self.dropdown0_data = vec!["Certified".into(), "Not certified".into()];
+                // self.dropdown1_data = self.available_certifications.clone();
+                // self.dropdown1_selected_items = vec![];
+                //
+                // self.validate = Some(Box::new(|advanced_filter_popup| {
+                //     !advanced_filter_popup.dropdown1_selected_items.is_empty()
+                // }));
+            }
         }
     }
 
     fn recalculate_available_criteria(&mut self) {
         self.available_criteria = FilterCriterionDiscriminants::iter()
-            .filter(|x| criterion_available(&self.filter_criteria, x))
+            .filter(|x| {
+                !self
+                    .filter_criteria
+                    .iter()
+                    .any(|y| FilterCriterionDiscriminants::from(y) == *x)
+            })
             .collect_vec();
     }
 
@@ -288,18 +327,8 @@ impl PopupTrait for AdvancedFilterPopup {
 
         let criterion_options_lines_count =
             |criterion: &FilterCriterionDiscriminants| match criterion {
-                FilterCriterionDiscriminants::Title => 3,
-                FilterCriterionDiscriminants::Director => 3,
-                FilterCriterionDiscriminants::Actors => 3,
-                FilterCriterionDiscriminants::Genres => 3,
-                FilterCriterionDiscriminants::Released => 3,
-                FilterCriterionDiscriminants::FirstWatched => 3,
-                FilterCriterionDiscriminants::LastWatched => 3,
-                FilterCriterionDiscriminants::Rating => 3,
-                FilterCriterionDiscriminants::UserRating => 3,
-                FilterCriterionDiscriminants::Languages => 3,
-                FilterCriterionDiscriminants::Country => 3,
-                FilterCriterionDiscriminants::Certification => 3,
+                FilterCriterionDiscriminants::Actors | FilterCriterionDiscriminants::Genres => 6,
+                _ => 3,
             };
 
         // key_event_handler.bind_enter((Some(0), None), "Edit Criterion".into(), );
@@ -528,7 +557,6 @@ impl PopupTrait for AdvancedFilterPopup {
             let this_tab = 2;
             let tab_selected = self.tab == this_tab;
             let confirm_and_append_criterion: Rc<Box<dyn Fn(&mut AdvancedFilterPopup)>>;
-            self.valid = true;
 
             key_event_handler.bind_esc((Some(this_tab), None), "Back".into(), |app, _| {
                 if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
@@ -540,6 +568,25 @@ impl PopupTrait for AdvancedFilterPopup {
                 }
             });
 
+            key_event_handler.bind_horizontal((Some(this_tab), None), "".into(), |app, data| {
+                if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                    app.drawer.active_popup.as_mut()
+                {
+                    match data {
+                        crate::key_event_handler::Data::Direction(false, _) => {
+                            advanced_filter_popup.dropdown_selected_item = None;
+                            advanced_filter_popup.item =
+                                advanced_filter_popup.item.saturating_sub(1);
+                        }
+                        crate::key_event_handler::Data::Direction(true, _) => {
+                            advanced_filter_popup.dropdown_selected_item = None;
+                            advanced_filter_popup.item += 1;
+                        }
+                        _ => (),
+                    }
+                }
+            });
+
             let options_block = Block::new()
                 .borders(Borders::TOP | Borders::BOTTOM)
                 .border_set(border::PROPORTIONAL_TALL)
@@ -547,6 +594,26 @@ impl PopupTrait for AdvancedFilterPopup {
                 .bg(tailwind::SKY.c950);
             frame.render_widget(&options_block, options_area);
             let inner_area = options_block.inner(options_area);
+
+            let actions_mouse_areas = widgets::actions(
+                [
+                    Action::new(
+                        "  ",
+                        ActionTypes::Normal,
+                        true,
+                        self.validate
+                            .as_ref()
+                            .and_then(|validate| Some(validate(self)))
+                            .unwrap_or(false),
+                    ),
+                    Action::new("  ", ActionTypes::Critical, true, true),
+                ],
+                HorizontalAlignment::Right,
+                true,
+                1,
+                add_padding(inner_area, Padding::right(2)),
+                frame,
+            );
 
             match active_criterion {
                 FilterCriterionDiscriminants::Title => {
@@ -565,21 +632,23 @@ impl PopupTrait for AdvancedFilterPopup {
                         self.item = 0;
                     }
 
-                    let confirm_and_append_criterion = confirm_and_append_criterion.clone();
-                    key_event_handler.bind_enter(
-                        (Some(this_tab), Some(0)),
-                        "".into(),
-                        move |app, _| {
-                            if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
-                                app.drawer.active_popup.as_mut()
-                            {
-                                confirm_and_append_criterion(advanced_filter_popup);
+                    if self.validate.as_ref().unwrap()(self) {
+                        let confirm_and_append_criterion = confirm_and_append_criterion.clone();
+                        key_event_handler.bind_enter(
+                            (Some(this_tab), Some(0)),
+                            "".into(),
+                            move |app, _| {
+                                if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                                    app.drawer.active_popup.as_mut()
+                                {
+                                    confirm_and_append_criterion(advanced_filter_popup);
 
-                                advanced_filter_popup.tab = this_tab - 1;
-                                advanced_filter_popup.active_criterion = None;
-                            }
-                        },
-                    );
+                                    advanced_filter_popup.tab = this_tab - 1;
+                                    advanced_filter_popup.active_criterion = None;
+                                }
+                            },
+                        );
+                    }
                     key_event_handler.bind_input_field(
                         (Some(this_tab), Some(0)),
                         "".into(),
@@ -629,7 +698,548 @@ impl PopupTrait for AdvancedFilterPopup {
                     confirm_and_append_criterion = Rc::new(Box::new(|advanced_filter_popup| {}));
                 }
                 FilterCriterionDiscriminants::Genres => {
-                    confirm_and_append_criterion = Rc::new(Box::new(|advanced_filter_popup| {}));
+                    confirm_and_append_criterion =
+                        Rc::new(Box::new(move |advanced_filter_popup| {
+                            let (genres, contains_all) = (
+                                advanced_filter_popup
+                                    .dropdown1_selected_items
+                                    .iter()
+                                    .map(|x| advanced_filter_popup.available_genres[*x].clone())
+                                    .collect_vec(),
+                                advanced_filter_popup.dropdown0 == 1,
+                            );
+                            let (inv_genres, inv_contains_all) = (
+                                advanced_filter_popup
+                                    .dropdown3_selected_items
+                                    .iter()
+                                    .map(|x| advanced_filter_popup.available_genres[*x].clone())
+                                    .collect_vec(),
+                                advanced_filter_popup.dropdown2 == 1,
+                            );
+
+                            if !genres.is_empty() {
+                                advanced_filter_popup
+                                    .filter_criteria
+                                    .push(FilterCriterion::Genres(genres, contains_all, false));
+                            }
+                            if !inv_genres.is_empty() {
+                                advanced_filter_popup.filter_criteria.push(
+                                    FilterCriterion::Genres(inv_genres, inv_contains_all, true),
+                                );
+                            }
+                        }));
+
+                    key_event_handler.bind_enter(
+                        (Some(this_tab), Some(0)),
+                        "Select".into(),
+                        |app, _| {
+                            if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                                app.drawer.active_popup.as_mut()
+                            {
+                                advanced_filter_popup.dropdown0 =
+                                    advanced_filter_popup.dropdown_selected_item.take().unwrap();
+                                advanced_filter_popup.item += 1;
+                            }
+                        },
+                    );
+                    key_event_handler.bind_enter(
+                        (Some(this_tab), Some(2)),
+                        "Select".into(),
+                        |app, _| {
+                            if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                                app.drawer.active_popup.as_mut()
+                            {
+                                advanced_filter_popup.dropdown2 =
+                                    advanced_filter_popup.dropdown_selected_item.take().unwrap();
+                                advanced_filter_popup.item += 1;
+                            }
+                        },
+                    );
+
+                    if self.validate.as_ref().unwrap()(self) {
+                        let _confirm_and_append_criterion = confirm_and_append_criterion.clone();
+                        key_event_handler.bind_enter(
+                            (Some(this_tab), Some(1)),
+                            "Confirm".into(),
+                            move |app, _| {
+                                if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                                    app.drawer.active_popup.as_mut()
+                                {
+                                    _confirm_and_append_criterion(advanced_filter_popup);
+
+                                    advanced_filter_popup.tab = 1;
+                                    advanced_filter_popup.item = 0;
+                                    advanced_filter_popup.dropdown_selected_item = None;
+                                    advanced_filter_popup.active_criterion = None;
+                                }
+                            },
+                        );
+                        let _confirm_and_append_criterion = confirm_and_append_criterion.clone();
+                        key_event_handler.bind_enter(
+                            (Some(this_tab), Some(3)),
+                            "Confirm".into(),
+                            move |app, _| {
+                                if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                                    app.drawer.active_popup.as_mut()
+                                {
+                                    _confirm_and_append_criterion(advanced_filter_popup);
+
+                                    advanced_filter_popup.tab = 1;
+                                    advanced_filter_popup.item = 0;
+                                    advanced_filter_popup.dropdown_selected_item = None;
+                                    advanced_filter_popup.active_criterion = None;
+                                }
+                            },
+                        );
+                    }
+
+                    key_event_handler.bind_key(
+                        (Some(this_tab), Some(1)),
+                        ' ',
+                        "Confirm".into(),
+                        move |app, _| {
+                            if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                                app.drawer.active_popup.as_mut()
+                            {
+                                if let Some(selected) = advanced_filter_popup.dropdown_selected_item
+                                {
+                                    if let Some(index) = advanced_filter_popup
+                                        .dropdown1_selected_items
+                                        .iter()
+                                        .position(|x| *x == selected)
+                                    {
+                                        advanced_filter_popup
+                                            .dropdown1_selected_items
+                                            .remove(index);
+                                    } else {
+                                        advanced_filter_popup
+                                            .dropdown1_selected_items
+                                            .push(selected);
+                                    }
+                                }
+                            }
+                        },
+                    );
+                    key_event_handler.bind_key(
+                        (Some(this_tab), Some(3)),
+                        ' ',
+                        "Confirm".into(),
+                        move |app, _| {
+                            if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                                app.drawer.active_popup.as_mut()
+                            {
+                                if let Some(selected) = advanced_filter_popup.dropdown_selected_item
+                                {
+                                    if let Some(index) = advanced_filter_popup
+                                        .dropdown3_selected_items
+                                        .iter()
+                                        .position(|x| *x == selected)
+                                    {
+                                        advanced_filter_popup
+                                            .dropdown3_selected_items
+                                            .remove(index);
+                                    } else {
+                                        advanced_filter_popup
+                                            .dropdown3_selected_items
+                                            .push(selected);
+                                    }
+                                }
+                            }
+                        },
+                    );
+
+                    if self.item > 3 {
+                        self.item = 3;
+                    }
+
+                    let [normal_area, inverted_area] =
+                        vertical![==3; 2].areas(add_padding(inner_area, Padding::new(2, 2, 0, 1)));
+
+                    let [
+                        text_area,
+                        _,
+                        contains_all_dropdown_area,
+                        _,
+                        genres_dropdown_area,
+                    ] = horizontal![==15, ==1, ==10, ==1, >=15].areas(inverted_area);
+
+                    frame.render_widget(
+                        "Doesn't contain".fg(tailwind::WHITE),
+                        add_padding(text_area, Padding::top(1)),
+                    );
+
+                    let dropdown_selected = self.item == 2;
+                    widgets::dropdown(
+                        true,
+                        tab_selected && dropdown_selected,
+                        frame,
+                        contains_all_dropdown_area,
+                        &self.dropdown2_data[self.dropdown2],
+                    );
+                    key_event_handler.bind_mouse_button_down(
+                        ratatui::crossterm::event::MouseButton::Left,
+                        contains_all_dropdown_area,
+                        move |app, _| {
+                            if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                                app.drawer.active_popup.as_mut()
+                            {
+                                advanced_filter_popup.tab = this_tab;
+                                advanced_filter_popup.item = 2;
+                                advanced_filter_popup.dropdown_scroll_pos = 0;
+                                advanced_filter_popup.dropdown_num_visible_items = 5;
+                                advanced_filter_popup.dropdown_selected_item =
+                                    Some(advanced_filter_popup.dropdown2);
+                            }
+                        },
+                    );
+                    if tab_selected && dropdown_selected {
+                        self.dropdown_selected_item = self
+                            .dropdown_selected_item
+                            .map(|x| {
+                                if x >= self.dropdown2_data.len() {
+                                    if (self.dropdown2_data.len() - 1)
+                                        .saturating_sub(self.dropdown_scroll_pos)
+                                        < self.dropdown_num_visible_items
+                                    {
+                                        self.dropdown_scroll_pos =
+                                            self.dropdown_scroll_pos.saturating_sub(1);
+                                    }
+                                    self.dropdown2_data.len() - 1
+                                } else {
+                                    x
+                                }
+                            })
+                            .or_else(|| {
+                                self.dropdown_scroll_pos = 0;
+                                self.dropdown_num_visible_items = 5;
+                                Some(self.dropdown0)
+                            });
+
+                        if let Some(index) = self.dropdown_selected_item.as_ref() {
+                            let (mut mouse_area, len) = widgets::dropdown_popup(
+                                self.dropdown2_data
+                                    .iter()
+                                    .map(|x| {
+                                        line!(" ", x, " ")
+                                            .fg(material::INDIGO.c200)
+                                            .bg(material::INDIGO.c900)
+                                    })
+                                    .collect_vec(),
+                                *index,
+                                self.dropdown_scroll_pos,
+                                self.dropdown_num_visible_items,
+                                contains_all_dropdown_area,
+                                frame,
+                            );
+                            for i in 0..len {
+                                let index = i + self.dropdown_scroll_pos;
+                                key_event_handler.bind_mouse_button_down(
+                                    ratatui::crossterm::event::MouseButton::Left,
+                                    mouse_area,
+                                    move |app, _| {
+                                        if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                                            app.drawer.active_popup.as_mut()
+                                        {
+                                            _ = advanced_filter_popup.dropdown_selected_item.take();
+
+                                            advanced_filter_popup.dropdown2 = index;
+                                            advanced_filter_popup.item += 1;
+                                        }
+                                    },
+                                );
+                                mouse_area = mouse_area.offset(Offset { x: 0, y: 1 });
+                            }
+                        }
+                    }
+
+                    let dropdown_selected = self.item == 3;
+                    widgets::dropdown(
+                        true,
+                        tab_selected && dropdown_selected,
+                        frame,
+                        genres_dropdown_area,
+                        "--Genres--",
+                    );
+                    key_event_handler.bind_mouse_button_down(
+                        ratatui::crossterm::event::MouseButton::Left,
+                        genres_dropdown_area,
+                        move |app, _| {
+                            if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                                app.drawer.active_popup.as_mut()
+                            {
+                                advanced_filter_popup.tab = this_tab;
+                                advanced_filter_popup.item = 3;
+                                advanced_filter_popup.dropdown_scroll_pos = 0;
+                                advanced_filter_popup.dropdown_num_visible_items = 5;
+                                advanced_filter_popup.dropdown_selected_item = Some(0);
+                            }
+                        },
+                    );
+                    if tab_selected && dropdown_selected {
+                        self.dropdown_selected_item = self
+                            .dropdown_selected_item
+                            .map(|x| {
+                                if x >= self.dropdown3_data.len() {
+                                    if (self.dropdown3_data.len() - 1)
+                                        .saturating_sub(self.dropdown_scroll_pos)
+                                        < self.dropdown_num_visible_items
+                                    {
+                                        self.dropdown_scroll_pos =
+                                            self.dropdown_scroll_pos.saturating_sub(1);
+                                    }
+                                    self.dropdown3_data.len() - 1
+                                } else {
+                                    x
+                                }
+                            })
+                            .or_else(|| {
+                                self.dropdown_scroll_pos = 0;
+                                self.dropdown_num_visible_items = 5;
+                                Some(0)
+                            });
+
+                        if let Some(index) = self.dropdown_selected_item.as_ref() {
+                            let (mut mouse_area, len) = widgets::dropdown_popup(
+                                self.dropdown3_data
+                                    .iter()
+                                    .map(|x| {
+                                        line!(
+                                            " ",
+                                            ellipsize_string(
+                                                x.as_ref(),
+                                                genres_dropdown_area.width as usize - 2
+                                            ),
+                                            " "
+                                        )
+                                        .fg(material::INDIGO.c200)
+                                        .bg(material::INDIGO.c900)
+                                    })
+                                    .collect_vec(),
+                                *index,
+                                self.dropdown_scroll_pos,
+                                self.dropdown_num_visible_items,
+                                genres_dropdown_area,
+                                frame,
+                            );
+                            for i in 0..len {
+                                let index = i + self.dropdown_scroll_pos;
+                                key_event_handler.bind_mouse_button_down(
+                                    ratatui::crossterm::event::MouseButton::Left,
+                                    mouse_area,
+                                    move |app, _| {
+                                        if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                                            app.drawer.active_popup.as_mut()
+                                        {
+                                            _ = advanced_filter_popup.dropdown_selected_item.take();
+
+                                            advanced_filter_popup.dropdown0 = index;
+                                            advanced_filter_popup.item += 1;
+                                        }
+                                    },
+                                );
+                                if self.dropdown3_selected_items.contains(&index) {
+                                    frame.render_widget(
+                                        "".bg(tailwind::RED.c500).fg(tailwind::WHITE),
+                                        mouse_area.offset(Offset { x: -1, y: 0 }),
+                                    );
+                                }
+                                mouse_area = mouse_area.offset(Offset { x: 0, y: 1 });
+                            }
+                        }
+                    }
+
+                    let [
+                        text_area,
+                        _,
+                        contains_all_dropdown_area,
+                        _,
+                        genres_dropdown_area,
+                    ] = horizontal![==15, ==1, ==10, ==1, >=15].areas(normal_area);
+
+                    frame.render_widget(
+                        "Contains".fg(tailwind::WHITE).into_right_aligned_line(),
+                        add_padding(text_area, Padding::top(1)),
+                    );
+
+                    let dropdown_selected = self.item == 0;
+                    widgets::dropdown(
+                        true,
+                        tab_selected && dropdown_selected,
+                        frame,
+                        contains_all_dropdown_area,
+                        &self.dropdown0_data[self.dropdown0],
+                    );
+                    key_event_handler.bind_mouse_button_down(
+                        ratatui::crossterm::event::MouseButton::Left,
+                        contains_all_dropdown_area,
+                        move |app, _| {
+                            if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                                app.drawer.active_popup.as_mut()
+                            {
+                                advanced_filter_popup.tab = this_tab;
+                                advanced_filter_popup.item = 0;
+                                advanced_filter_popup.dropdown_scroll_pos = 0;
+                                advanced_filter_popup.dropdown_num_visible_items = 5;
+                                advanced_filter_popup.dropdown_selected_item =
+                                    Some(advanced_filter_popup.dropdown0);
+                            }
+                        },
+                    );
+                    if tab_selected && dropdown_selected {
+                        self.dropdown_selected_item = self
+                            .dropdown_selected_item
+                            .map(|x| {
+                                if x >= self.dropdown0_data.len() {
+                                    if (self.dropdown0_data.len() - 1)
+                                        .saturating_sub(self.dropdown_scroll_pos)
+                                        < self.dropdown_num_visible_items
+                                    {
+                                        self.dropdown_scroll_pos =
+                                            self.dropdown_scroll_pos.saturating_sub(1);
+                                    }
+                                    self.dropdown0_data.len() - 1
+                                } else {
+                                    x
+                                }
+                            })
+                            .or_else(|| {
+                                self.dropdown_scroll_pos = 0;
+                                self.dropdown_num_visible_items = 5;
+                                Some(self.dropdown0)
+                            });
+
+                        if let Some(index) = self.dropdown_selected_item.as_ref() {
+                            let (mut mouse_area, len) = widgets::dropdown_popup(
+                                self.dropdown0_data
+                                    .iter()
+                                    .map(|x| {
+                                        line!(" ", x, " ")
+                                            .fg(material::INDIGO.c200)
+                                            .bg(material::INDIGO.c900)
+                                    })
+                                    .collect_vec(),
+                                *index,
+                                self.dropdown_scroll_pos,
+                                self.dropdown_num_visible_items,
+                                contains_all_dropdown_area,
+                                frame,
+                            );
+                            for i in 0..len {
+                                let index = i + self.dropdown_scroll_pos;
+                                key_event_handler.bind_mouse_button_down(
+                                    ratatui::crossterm::event::MouseButton::Left,
+                                    mouse_area,
+                                    move |app, _| {
+                                        if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                                            app.drawer.active_popup.as_mut()
+                                        {
+                                            _ = advanced_filter_popup.dropdown_selected_item.take();
+
+                                            advanced_filter_popup.dropdown0 = index;
+                                            advanced_filter_popup.item += 1;
+                                        }
+                                    },
+                                );
+                                mouse_area = mouse_area.offset(Offset { x: 0, y: 1 });
+                            }
+                        }
+                    }
+
+                    let dropdown_selected = self.item == 1;
+                    widgets::dropdown(
+                        true,
+                        tab_selected && dropdown_selected,
+                        frame,
+                        genres_dropdown_area,
+                        "- Genres -",
+                    );
+                    key_event_handler.bind_mouse_button_down(
+                        ratatui::crossterm::event::MouseButton::Left,
+                        genres_dropdown_area,
+                        move |app, _| {
+                            if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                                app.drawer.active_popup.as_mut()
+                            {
+                                advanced_filter_popup.tab = this_tab;
+                                advanced_filter_popup.item = 1;
+                                advanced_filter_popup.dropdown_scroll_pos = 0;
+                                advanced_filter_popup.dropdown_num_visible_items = 5;
+                                advanced_filter_popup.dropdown_selected_item = Some(0);
+                            }
+                        },
+                    );
+                    if tab_selected && dropdown_selected {
+                        self.dropdown_selected_item = self
+                            .dropdown_selected_item
+                            .map(|x| {
+                                if x >= self.dropdown1_data.len() {
+                                    if (self.dropdown1_data.len() - 1)
+                                        .saturating_sub(self.dropdown_scroll_pos)
+                                        < self.dropdown_num_visible_items
+                                    {
+                                        self.dropdown_scroll_pos =
+                                            self.dropdown_scroll_pos.saturating_sub(1);
+                                    }
+                                    self.dropdown1_data.len() - 1
+                                } else {
+                                    x
+                                }
+                            })
+                            .or_else(|| {
+                                self.dropdown_scroll_pos = 0;
+                                self.dropdown_num_visible_items = 5;
+                                Some(0)
+                            });
+
+                        if let Some(index) = self.dropdown_selected_item.as_ref() {
+                            let (mut mouse_area, len) = widgets::dropdown_popup(
+                                self.dropdown1_data
+                                    .iter()
+                                    .map(|x| {
+                                        line!(
+                                            " ",
+                                            ellipsize_string(
+                                                x.as_ref(),
+                                                genres_dropdown_area.width as usize - 2
+                                            ),
+                                            " "
+                                        )
+                                        .fg(material::INDIGO.c200)
+                                        .bg(material::INDIGO.c900)
+                                    })
+                                    .collect_vec(),
+                                *index,
+                                self.dropdown_scroll_pos,
+                                self.dropdown_num_visible_items,
+                                genres_dropdown_area,
+                                frame,
+                            );
+                            for i in 0..len {
+                                let index = i + self.dropdown_scroll_pos;
+                                key_event_handler.bind_mouse_button_down(
+                                    ratatui::crossterm::event::MouseButton::Left,
+                                    mouse_area,
+                                    move |app, _| {
+                                        if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                                            app.drawer.active_popup.as_mut()
+                                        {
+                                            _ = advanced_filter_popup.dropdown_selected_item.take();
+
+                                            advanced_filter_popup.dropdown0 = index;
+                                            advanced_filter_popup.item += 1;
+                                        }
+                                    },
+                                );
+                                if self.dropdown1_selected_items.contains(&index) {
+                                    frame.render_widget(
+                                        "".bg(tailwind::GREEN.c500).fg(tailwind::WHITE),
+                                        mouse_area.offset(Offset { x: -1, y: 0 }),
+                                    );
+                                }
+                                mouse_area = mouse_area.offset(Offset { x: 0, y: 1 });
+                            }
+                        }
+                    }
                 }
                 FilterCriterionDiscriminants::Released
                 | FilterCriterionDiscriminants::FirstWatched
@@ -637,10 +1247,6 @@ impl PopupTrait for AdvancedFilterPopup {
                     let active_criterion = active_criterion.clone();
                     confirm_and_append_criterion =
                         Rc::new(Box::new(move |advanced_filter_popup| {
-                            if !advanced_filter_popup.valid {
-                                return;
-                            }
-
                             let ordering = advanced_filter_popup.dropdown0_data
                                 [advanced_filter_popup.dropdown0]
                                 .as_str();
@@ -718,39 +1324,18 @@ impl PopupTrait for AdvancedFilterPopup {
                         },
                     );
 
-                    key_event_handler.bind_horizontal(
-                        (Some(this_tab), None),
-                        "".into(),
-                        |app, data| {
-                            if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
-                                app.drawer.active_popup.as_mut()
-                            {
-                                match data {
-                                    crate::key_event_handler::Data::Direction(false, _) => {
-                                        advanced_filter_popup.item =
-                                            advanced_filter_popup.item.saturating_sub(1);
-                                    }
-                                    crate::key_event_handler::Data::Direction(true, _) => {
-                                        advanced_filter_popup.item += 1;
-                                    }
-                                    _ => (),
-                                }
-                            }
-                        },
-                    );
-
-                    let confirm_and_append_criterion = confirm_and_append_criterion.clone();
-                    key_event_handler.bind_enter(
-                        (
-                            Some(this_tab),
-                            Some(if self.dropdown0 == 3 { 2 } else { 1 }),
-                        ),
-                        "Confirm".into(),
-                        move |app, _| {
-                            if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
-                                app.drawer.active_popup.as_mut()
-                            {
-                                if advanced_filter_popup.valid {
+                    if self.validate.as_ref().unwrap()(self) {
+                        let confirm_and_append_criterion = confirm_and_append_criterion.clone();
+                        key_event_handler.bind_enter(
+                            (
+                                Some(this_tab),
+                                Some(if self.dropdown0 == 3 { 2 } else { 1 }),
+                            ),
+                            "Confirm".into(),
+                            move |app, _| {
+                                if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                                    app.drawer.active_popup.as_mut()
+                                {
                                     confirm_and_append_criterion(advanced_filter_popup);
 
                                     advanced_filter_popup.tab = 1;
@@ -758,9 +1343,9 @@ impl PopupTrait for AdvancedFilterPopup {
                                     advanced_filter_popup.dropdown_selected_item = None;
                                     advanced_filter_popup.active_criterion = None;
                                 }
-                            }
-                        },
-                    );
+                            },
+                        );
+                    }
 
                     let text: &str = active_criterion.into();
                     let [
@@ -874,7 +1459,6 @@ impl PopupTrait for AdvancedFilterPopup {
                             .parse::<usize>()
                             .map(|x| x > 1800)
                             .unwrap_or(false);
-                        self.valid &= valid;
                         widgets::input_field(
                             true,
                             tab_selected && self.item == 2,
@@ -941,7 +1525,6 @@ impl PopupTrait for AdvancedFilterPopup {
                         .parse::<usize>()
                         .map(|x| x > 1800)
                         .unwrap_or(false);
-                    self.valid &= valid;
                     widgets::input_field(
                         true,
                         tab_selected && self.item == 1,
@@ -1004,10 +1587,6 @@ impl PopupTrait for AdvancedFilterPopup {
                     let active_criterion = active_criterion.clone();
                     confirm_and_append_criterion =
                         Rc::new(Box::new(move |advanced_filter_popup| {
-                            if !advanced_filter_popup.valid {
-                                return;
-                            }
-
                             let ordering = advanced_filter_popup.dropdown0_data
                                 [advanced_filter_popup.dropdown0]
                                 .as_str();
@@ -1069,36 +1648,15 @@ impl PopupTrait for AdvancedFilterPopup {
                         },
                     );
 
-                    key_event_handler.bind_horizontal(
-                        (Some(this_tab), None),
-                        "".into(),
-                        |app, data| {
-                            if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
-                                app.drawer.active_popup.as_mut()
-                            {
-                                match data {
-                                    crate::key_event_handler::Data::Direction(false, _) => {
-                                        advanced_filter_popup.item =
-                                            advanced_filter_popup.item.saturating_sub(1);
-                                    }
-                                    crate::key_event_handler::Data::Direction(true, _) => {
-                                        advanced_filter_popup.item += 1;
-                                    }
-                                    _ => (),
-                                }
-                            }
-                        },
-                    );
-
-                    let confirm_and_append_criterion = confirm_and_append_criterion.clone();
-                    key_event_handler.bind_enter(
-                        (Some(this_tab), Some(1)),
-                        "Confirm".into(),
-                        move |app, _| {
-                            if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
-                                app.drawer.active_popup.as_mut()
-                            {
-                                if advanced_filter_popup.valid {
+                    if self.validate.as_ref().unwrap()(self) {
+                        let confirm_and_append_criterion = confirm_and_append_criterion.clone();
+                        key_event_handler.bind_enter(
+                            (Some(this_tab), Some(1)),
+                            "Confirm".into(),
+                            move |app, _| {
+                                if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                                    app.drawer.active_popup.as_mut()
+                                {
                                     confirm_and_append_criterion(advanced_filter_popup);
 
                                     advanced_filter_popup.tab = 1;
@@ -1106,9 +1664,9 @@ impl PopupTrait for AdvancedFilterPopup {
                                     advanced_filter_popup.dropdown_selected_item = None;
                                     advanced_filter_popup.active_criterion = None;
                                 }
-                            }
-                        },
-                    );
+                            },
+                        );
+                    }
 
                     let text: &str = active_criterion.into();
                     let [text_area, _, dropdown_area, _, input_area] =
@@ -1167,7 +1725,9 @@ impl PopupTrait for AdvancedFilterPopup {
                                     .iter()
                                     .take(self.dropdown_num_visible_items)
                                     .map(|x| {
-                                        line!(x).fg(material::INDIGO.c200).bg(material::INDIGO.c900)
+                                        line!(" ", x)
+                                            .fg(material::INDIGO.c200)
+                                            .bg(material::INDIGO.c900)
                                     })
                                     .collect_vec(),
                                 *index,
@@ -1203,7 +1763,6 @@ impl PopupTrait for AdvancedFilterPopup {
                         .parse::<f64>()
                         .map(|x| x <= 10.0)
                         .unwrap_or(false);
-                    self.valid &= valid;
                     widgets::input_field(
                         true,
                         tab_selected && self.item == 1,
@@ -1264,8 +1823,276 @@ impl PopupTrait for AdvancedFilterPopup {
                         },
                     );
                 }
-                FilterCriterionDiscriminants::Languages => {
-                    confirm_and_append_criterion = Rc::new(Box::new(|advanced_filter_popup| {}));
+                FilterCriterionDiscriminants::Language => {
+                    confirm_and_append_criterion =
+                        Rc::new(Box::new(move |advanced_filter_popup| {
+                            let (languages, inverted) = (
+                                advanced_filter_popup
+                                    .dropdown1_selected_items
+                                    .iter()
+                                    .map(|x| advanced_filter_popup.available_languages[*x].clone())
+                                    .collect_vec(),
+                                advanced_filter_popup.dropdown0 == 1,
+                            );
+
+                            if !languages.is_empty() {
+                                advanced_filter_popup
+                                    .filter_criteria
+                                    .push(FilterCriterion::Language(languages, inverted));
+                            }
+                        }));
+
+                    key_event_handler.bind_enter(
+                        (Some(this_tab), Some(0)),
+                        "Select".into(),
+                        |app, _| {
+                            if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                                app.drawer.active_popup.as_mut()
+                            {
+                                advanced_filter_popup.dropdown0 =
+                                    advanced_filter_popup.dropdown_selected_item.take().unwrap();
+                                advanced_filter_popup.item += 1;
+                            }
+                        },
+                    );
+
+                    if self.validate.as_ref().unwrap()(self) {
+                        let confirm_and_append_criterion = confirm_and_append_criterion.clone();
+                        key_event_handler.bind_enter(
+                            (Some(this_tab), Some(1)),
+                            "Confirm".into(),
+                            move |app, _| {
+                                if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                                    app.drawer.active_popup.as_mut()
+                                {
+                                    confirm_and_append_criterion(advanced_filter_popup);
+
+                                    advanced_filter_popup.tab = 1;
+                                    advanced_filter_popup.item = 0;
+                                    advanced_filter_popup.dropdown_selected_item = None;
+                                    advanced_filter_popup.active_criterion = None;
+                                }
+                            },
+                        );
+                    }
+
+                    key_event_handler.bind_key(
+                        (Some(this_tab), Some(1)),
+                        ' ',
+                        "Confirm".into(),
+                        move |app, _| {
+                            if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                                app.drawer.active_popup.as_mut()
+                            {
+                                if let Some(selected) = advanced_filter_popup.dropdown_selected_item
+                                {
+                                    if let Some(index) = advanced_filter_popup
+                                        .dropdown1_selected_items
+                                        .iter()
+                                        .position(|x| *x == selected)
+                                    {
+                                        advanced_filter_popup
+                                            .dropdown1_selected_items
+                                            .remove(index);
+                                    } else {
+                                        advanced_filter_popup
+                                            .dropdown1_selected_items
+                                            .push(selected);
+                                    }
+                                }
+                            }
+                        },
+                    );
+
+                    if self.item > 1 {
+                        self.item = 1;
+                    }
+
+                    let [inverted_dropdown_area, _, languages_dropdown_area] =
+                        horizontal![==10, ==1, <=17]
+                            .areas(add_padding(inner_area, Padding::new(2, 2, 0, 1)));
+
+                    let dropdown_selected = self.item == 0;
+                    widgets::dropdown(
+                        true,
+                        tab_selected && dropdown_selected,
+                        frame,
+                        inverted_dropdown_area,
+                        &self.dropdown0_data[self.dropdown0],
+                    );
+                    key_event_handler.bind_mouse_button_down(
+                        ratatui::crossterm::event::MouseButton::Left,
+                        inverted_dropdown_area,
+                        move |app, _| {
+                            if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                                app.drawer.active_popup.as_mut()
+                            {
+                                advanced_filter_popup.tab = this_tab;
+                                advanced_filter_popup.item = 0;
+                                advanced_filter_popup.dropdown_scroll_pos = 0;
+                                advanced_filter_popup.dropdown_num_visible_items = 4;
+                                advanced_filter_popup.dropdown_selected_item =
+                                    Some(advanced_filter_popup.dropdown0);
+                            }
+                        },
+                    );
+                    if tab_selected && dropdown_selected {
+                        self.dropdown_selected_item = self
+                            .dropdown_selected_item
+                            .map(|x| {
+                                if x >= self.dropdown0_data.len() {
+                                    if (self.dropdown0_data.len() - 1)
+                                        .saturating_sub(self.dropdown_scroll_pos)
+                                        < self.dropdown_num_visible_items
+                                    {
+                                        self.dropdown_scroll_pos =
+                                            self.dropdown_scroll_pos.saturating_sub(1);
+                                    }
+                                    self.dropdown0_data.len() - 1
+                                } else {
+                                    x
+                                }
+                            })
+                            .or_else(|| {
+                                self.dropdown_scroll_pos = 0;
+                                self.dropdown_num_visible_items = 4;
+                                Some(self.dropdown0)
+                            });
+
+                        if let Some(index) = self.dropdown_selected_item.as_ref() {
+                            let (mut mouse_area, len) = widgets::dropdown_popup(
+                                self.dropdown0_data
+                                    .iter()
+                                    .map(|x| {
+                                        line!(" ", x, " ")
+                                            .fg(material::INDIGO.c200)
+                                            .bg(material::INDIGO.c900)
+                                    })
+                                    .collect_vec(),
+                                *index,
+                                self.dropdown_scroll_pos,
+                                self.dropdown_num_visible_items,
+                                inverted_dropdown_area,
+                                frame,
+                            );
+                            for i in 0..len {
+                                let index = i + self.dropdown_scroll_pos;
+                                key_event_handler.bind_mouse_button_down(
+                                    ratatui::crossterm::event::MouseButton::Left,
+                                    mouse_area,
+                                    move |app, _| {
+                                        if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                                            app.drawer.active_popup.as_mut()
+                                        {
+                                            _ = advanced_filter_popup.dropdown_selected_item.take();
+
+                                            advanced_filter_popup.dropdown0 = index;
+                                            advanced_filter_popup.item += 1;
+                                        }
+                                    },
+                                );
+                                mouse_area = mouse_area.offset(Offset { x: 0, y: 1 });
+                            }
+                        }
+                    }
+
+                    let dropdown_selected = self.item == 1;
+                    widgets::dropdown(
+                        true,
+                        tab_selected && dropdown_selected,
+                        frame,
+                        languages_dropdown_area,
+                        "--Languages--",
+                    );
+                    key_event_handler.bind_mouse_button_down(
+                        ratatui::crossterm::event::MouseButton::Left,
+                        languages_dropdown_area,
+                        move |app, _| {
+                            if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                                app.drawer.active_popup.as_mut()
+                            {
+                                advanced_filter_popup.tab = this_tab;
+                                advanced_filter_popup.item = 1;
+                                advanced_filter_popup.dropdown_scroll_pos = 0;
+                                advanced_filter_popup.dropdown_num_visible_items = 4;
+                                advanced_filter_popup.dropdown_selected_item = Some(0);
+                            }
+                        },
+                    );
+                    if tab_selected && dropdown_selected {
+                        self.dropdown_selected_item = self
+                            .dropdown_selected_item
+                            .map(|x| {
+                                if x >= self.dropdown1_data.len() {
+                                    if (self.dropdown1_data.len() - 1)
+                                        .saturating_sub(self.dropdown_scroll_pos)
+                                        < self.dropdown_num_visible_items
+                                    {
+                                        self.dropdown_scroll_pos =
+                                            self.dropdown_scroll_pos.saturating_sub(1);
+                                    }
+                                    self.dropdown1_data.len() - 1
+                                } else {
+                                    x
+                                }
+                            })
+                            .or_else(|| {
+                                self.dropdown_scroll_pos = 0;
+                                self.dropdown_num_visible_items = 4;
+                                Some(0)
+                            });
+
+                        if let Some(index) = self.dropdown_selected_item.as_ref() {
+                            let (mut mouse_area, len) = widgets::dropdown_popup(
+                                self.dropdown1_data
+                                    .iter()
+                                    .map(|x| {
+                                        line!(ellipsize_string(
+                                            x.as_ref(),
+                                            languages_dropdown_area.width as usize - 2
+                                        ))
+                                        .centered()
+                                        .fg(material::INDIGO.c200)
+                                        .bg(material::INDIGO.c900)
+                                    })
+                                    .collect_vec(),
+                                *index,
+                                self.dropdown_scroll_pos,
+                                self.dropdown_num_visible_items,
+                                languages_dropdown_area,
+                                frame,
+                            );
+                            for i in 0..len {
+                                let index = i + self.dropdown_scroll_pos;
+                                key_event_handler.bind_mouse_button_down(
+                                    ratatui::crossterm::event::MouseButton::Left,
+                                    mouse_area,
+                                    move |app, _| {
+                                        if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                                            app.drawer.active_popup.as_mut()
+                                        {
+                                            _ = advanced_filter_popup.dropdown_selected_item.take();
+
+                                            advanced_filter_popup.dropdown0 = index;
+                                            advanced_filter_popup.item += 1;
+                                        }
+                                    },
+                                );
+                                if self.dropdown1_selected_items.contains(&index) {
+                                    frame.render_widget(
+                                        if self.dropdown0 == 0 {
+                                            "".bg(tailwind::GREEN.c500)
+                                        } else {
+                                            "".bg(tailwind::RED.c600)
+                                        }
+                                        .fg(tailwind::WHITE),
+                                        mouse_area.offset(Offset { x: -1, y: 0 }),
+                                    );
+                                }
+                                mouse_area = mouse_area.offset(Offset { x: 0, y: 1 });
+                            }
+                        }
+                    }
                 }
                 FilterCriterionDiscriminants::Country => {
                     confirm_and_append_criterion = Rc::new(Box::new(|advanced_filter_popup| {}));
@@ -1275,22 +2102,18 @@ impl PopupTrait for AdvancedFilterPopup {
                 }
             }
 
-            let actions_mouse_areas = widgets::actions(
-                [
-                    Action::new("  ", ActionTypes::Normal, true, self.valid),
-                    Action::new("  ", ActionTypes::Critical, true, true),
-                ],
-                HorizontalAlignment::Right,
-                true,
-                1,
-                add_padding(inner_area, Padding::right(2)),
-                frame,
-            );
-            for (i, mouse_area) in actions_mouse_areas
-                .into_iter()
-                .enumerate()
-                .dropping(if self.valid { 0 } else { 1 })
-            {
+            for (i, mouse_area) in actions_mouse_areas.into_iter().enumerate().dropping(
+                if self
+                    .validate
+                    .as_ref()
+                    .and_then(|validate| Some(validate(self)))
+                    .unwrap_or(false)
+                {
+                    0
+                } else {
+                    1
+                },
+            ) {
                 let confirm_and_append_criterion = confirm_and_append_criterion.clone();
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
@@ -1514,7 +2337,7 @@ impl PopupTrait for AdvancedFilterPopup {
                                         " "
                                     }
                                     .red(),
-                            FilterCriterionDiscriminants::Languages =>
+                            FilterCriterionDiscriminants::Language =>
                                 if !self
                                     .filter_criteria
                                     .iter()

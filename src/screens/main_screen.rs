@@ -214,7 +214,7 @@ impl MainScreen {
 
         // let num_movies = ((frame_area.height - 5) as f32 / 9.0).floor() as usize;
         // let footer_height = (((frame_area.height - 5) % 9) % num_movies as u16) + 2;
-        let [header, vert, footer] = vertical![==3, >=1, ==2].areas(frame_area);
+        let [header, vert, _] = vertical![==3, >=1, ==2].areas(frame_area);
 
         let [description, list] = horizontal![==(vert.width * 3 / 8).max(0), >=0].areas(vert);
 
@@ -224,7 +224,6 @@ impl MainScreen {
         self.render_movies_list(frame, list, key_event_handler);
         self.render_movie_description(frame, description, key_event_handler);
         self.render_header(frame, header, key_event_handler);
-        self.render_footer(frame, footer, key_event_handler);
         self.redraw_images = self.redraw_images.saturating_sub(1);
 
         if let Some(pos) = self.context_menu_pos {
@@ -750,9 +749,9 @@ impl MainScreen {
             let mut items = Sort::iter()
                 .map(|x| {
                     line!(
-                        " ".to_string()
-                            + &ellipsize_string(x.as_ref(), sort_area.width as usize - 2)
-                            + " "
+                        " ",
+                        ellipsize_string(x.as_ref(), sort_area.width as usize - 2),
+                        " "
                     )
                     .fg(material::INDIGO.c200)
                     .bg(material::INDIGO.c900)
@@ -782,6 +781,8 @@ impl MainScreen {
                         if let Some(Screens::MainScreen(main_screen)) =
                             app.drawer.current_screen.as_mut()
                         {
+                            main_screen.tab = 0;
+                            main_screen.item = 0;
                             main_screen.sort = Sort::from_repr(i).unwrap();
                             main_screen.filter_sort_movies(Some(true));
                         }
@@ -1650,62 +1651,6 @@ impl MainScreen {
         }
     }
 
-    fn render_footer(
-        &mut self,
-        frame: &mut Frame,
-        area: Rect,
-        key_event_handler: &mut KeyEventHandler,
-    ) {
-        frame.render_widget(Clear, area);
-        frame.render_widget(Block::new().bg(tailwind::EMERALD.c950), area);
-
-        // ↔⇆⬌⬍⮀⬅⬆⬇←↕→↓↹•↵⏎
-        let bind_to_string = |bind: &key_event_handler::Bind| {
-            match bind {
-                key_event_handler::Bind::Horizontal => {
-                    span!(" ←•→ ")
-                }
-                key_event_handler::Bind::Vertical => span!(" ↕ "),
-                key_event_handler::Bind::Enter => span!(" ↵ "),
-                key_event_handler::Bind::Esc => span!(" Esc "),
-                key_event_handler::Bind::Tab => span!(" ↹ "),
-                key_event_handler::Bind::Key(x) => {
-                    span!(format!(" {} ", if x == " " { "␣" } else { x }))
-                }
-                _ => "_".into(),
-            }
-            .bold()
-            .fg(material::ORANGE.c600)
-        };
-        let binds = key_event_handler.get_key_binds_descriptions(
-            self.get_state(),
-            ((area.width as f64 / 10.0).floor() as u16 * area.height) as usize,
-        );
-
-        let num_items_per_row = (binds.len() as f64 / area.height as f64).ceil() as usize;
-        let len_item = ((area.width - 2 * (num_items_per_row as u16 - 1)) as f32
-            / num_items_per_row as f32)
-            .floor() as u16;
-
-        let verts = Layout::vertical(vec![constraint!(==1); area.height as usize]).split(area);
-        let mut areas = verts.into_iter().flat_map(|&area| {
-            Layout::horizontal(vec![constraint!(==len_item); num_items_per_row])
-                .split(area)
-                .into_iter()
-                .map(|&x| x)
-                .collect_vec()
-        });
-
-        binds.into_iter().for_each(|x| {
-            let bind = bind_to_string(&x.0);
-            let desc = ellipsize_string(&x.1, len_item as usize - bind.width());
-            frame.render_widget(
-                line![bind, span!(desc).fg(material::BLUE_GRAY.c200)],
-                areas.next().unwrap(),
-            );
-        });
-    }
-
     fn draw_ratings(&self, movie: &Movie, frame: &mut Frame, area: Rect) {
         let imdb_bg = Color::Rgb(245, 197, 24);
         let imdb_fg = Color::Black;
@@ -2186,9 +2131,14 @@ impl MainScreen {
                         })
                         .collect();
                 }
-                FilterCriterion::Languages(languages, inverted) => {
-                    // movies = movies.into_iter().filter(|x| languages.iter().any(|y| x.languages.contains(y)) ^ if *inverted {true} else {false}).collect();
-                    todo!();
+                FilterCriterion::Language(languages, inverted) => {
+                    movies = movies
+                        .into_iter()
+                        .filter(|x| {
+                            languages.iter().any(|y| *y == x.language)
+                                ^ if *inverted { true } else { false }
+                        })
+                        .collect();
                 }
                 FilterCriterion::Country(country, inverted) => {
                     // movies = movies.into_iter().filter(|x| (x.country == country) ^ if *inverted {true} else {false}).collect();

@@ -240,7 +240,17 @@ impl KeyEventHandler {
         None
     }
 
-    pub fn get_key_binds_descriptions(&self, state: State, max: usize) -> Vec<(Bind, String)> {
+    pub fn get_key_binds_descriptions(&self, drawer: &Drawer, max: usize) -> Vec<(Bind, String)> {
+        let state = if let Some(popup) = drawer.active_popup.as_ref() {
+            popup.get_state()
+        } else if let Some(screen) = drawer.current_screen.as_ref() {
+            match screen {
+                crate::screens::Screens::MainScreen(main_screen) => main_screen.get_state(),
+            }
+        } else {
+            return vec![];
+        };
+
         let mut binds = vec![];
 
         if let Some(semi_bind) = self.semi_bind {

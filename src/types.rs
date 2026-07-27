@@ -12,9 +12,7 @@ use ratatui::{
     },
 };
 use serde::{Deserialize, Serialize};
-use strum::{
-    AsRefStr, EnumCount, EnumDiscriminants, EnumIter, FromRepr, IntoStaticStr,
-};
+use strum::{AsRefStr, EnumCount, EnumDiscriminants, EnumIter, FromRepr, IntoStaticStr};
 use tmdb::smo::TMDBDetailsResponse;
 use trakt::smo::TraktDetailsResponse;
 
@@ -143,7 +141,7 @@ pub enum FilterCriterion {
     ),
     Rating(f64, Ordering, bool /*inverted*/),
     UserRating(f64, Ordering, bool /*inverted*/),
-    Languages(Vec<String>, bool /*inverted*/),
+    Language(Vec<String>, bool /*inverted*/),
     Country(String, bool /*inverted*/),
     Certification(Vec<Option<String>>, bool /*inverted*/),
 }

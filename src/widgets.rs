@@ -14,7 +14,7 @@ use ratatui::{
 };
 use ratatui_textarea::{TextArea, WrapMode};
 
-use crate::helpers::{add_padding};
+use crate::helpers::add_padding;
 
 pub fn input_field(
     tab_selected: bool,
@@ -177,7 +177,7 @@ pub fn dropdown_popup(
 
     let sort_popup_block = Block::bordered()
         .border_set(border::PROPORTIONAL_WIDE)
-        .fg(material::INDIGO.c900);
+        .fg(tailwind::INDIGO.c900);
     let inner_area = sort_popup_block.inner(dropdown_popup_area);
     frame.render_widget(&sort_popup_block, dropdown_popup_area);
     frame.render_widget(

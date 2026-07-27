@@ -1,16 +1,19 @@
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
 
+use itertools::Itertools;
 use ratatui::{
     Frame,
+    layout::{Layout, Offset, Size},
     macros::{constraint, line, span},
     style::{Stylize, palette::tailwind},
     text::Text,
-    widgets::Block,
+    widgets::{Block, Clear},
 };
 
 use crate::{
-    KeyEventHandler,
     config::Config,
+    helpers::ellipsize_string,
+    key_event_handler::{self, KeyEventHandler},
     popups::*,
     screens::{Screens, main_screen::MainScreen},
     tokens::{OMDBTokens, TMDBTokens, TraktTokens},
@@ -79,8 +82,11 @@ impl Drawer {
 
         self.try_pop_queues(key_event_handler);
         self.check_popups(key_event_handler);
-        if !self.show_term_size_warning && self.active_popup.is_some() {
-            self.draw_popup(frame, key_event_handler);
+        if !self.show_term_size_warning {
+            if self.active_popup.is_some() {
+                self.draw_popup(frame, key_event_handler);
+            }
+            self.render_footer(frame, key_event_handler);
         }
     }
 
@@ -313,5 +319,61 @@ impl Drawer {
         let text = Text::from_iter(lines).centered();
 
         frame.render_widget(text, area);
+    }
+
+    fn render_footer(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
+        let area = frame
+            .area()
+            .resize(Size::new(frame.area().width, 2))
+            .offset(Offset::new(0, frame.area().height as i32 - 2));
+
+        frame.render_widget(Clear, area);
+        frame.render_widget(Block::new().bg(tailwind::EMERALD.c950), area);
+
+        // ↔⇆⬌⬍⮀⬅⬆⬇←↕→↓↹•↵⏎
+        let bind_to_string = |bind: &key_event_handler::Bind| {
+            match bind {
+                key_event_handler::Bind::Horizontal => {
+                    span!(" ←•→ ")
+                }
+                key_event_handler::Bind::Vertical => span!(" ↕ "),
+                key_event_handler::Bind::Enter => span!(" ↵ "),
+                key_event_handler::Bind::Esc => span!(" Esc "),
+                key_event_handler::Bind::Tab => span!(" ↹ "),
+                key_event_handler::Bind::Key(x) => {
+                    span!(format!(" {} ", if x == " " { "␣" } else { x }))
+                }
+                _ => "_".into(),
+            }
+            .bold()
+            .fg(tailwind::AMBER.c600)
+        };
+        let binds = key_event_handler.get_key_binds_descriptions(
+            self,
+            ((area.width as f64 / 10.0).floor() as u16 * area.height) as usize,
+        );
+
+        let num_items_per_row = (binds.len() as f64 / area.height as f64).ceil() as usize;
+        let len_item = ((area.width - 2 * (num_items_per_row.saturating_sub(1) as u16)) as f32
+            / num_items_per_row as f32)
+            .floor() as u16;
+
+        let verts = Layout::vertical(vec![constraint!(==1); area.height as usize]).split(area);
+        let mut areas = verts.into_iter().flat_map(|&area| {
+            Layout::horizontal(vec![constraint!(==len_item); num_items_per_row])
+                .split(area)
+                .into_iter()
+                .map(|&x| x)
+                .collect_vec()
+        });
+
+        binds.into_iter().for_each(|x| {
+            let bind = bind_to_string(&x.0);
+            let desc = ellipsize_string(&x.1, len_item as usize - bind.width());
+            frame.render_widget(
+                line![bind, span!(desc).fg(tailwind::SLATE.c500)],
+                areas.next().unwrap(),
+            );
+        });
     }
 }
