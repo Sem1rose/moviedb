@@ -3,7 +3,7 @@ use ratatui::{
     Frame,
     buffer::Buffer,
     layout::{HorizontalAlignment, Offset, Rect, Size},
-    macros::{line, span, vertical},
+    macros::{line, span, text, vertical},
     style::{
         Modifier, Style, Stylize,
         palette::{material, tailwind},
@@ -81,7 +81,7 @@ pub fn input_field(
 }
 
 pub fn dropdown(tab_selected: bool, selected: bool, frame: &mut Frame, area: Rect, text: &str) {
-    // "▼⬇⬆⏷"
+    // "▼⬇⬆⏷▲▴▼▾◥◤◣◢⥡⥝⥜⥠🡙🢓🢑"
     let sort_block = Block::bordered()
         .border_set(border::PROPORTIONAL_WIDE)
         .fg(if tab_selected {
@@ -151,24 +151,25 @@ pub fn dropdown_popup(
     dropdown_widget_area: Rect,
     frame: &mut Frame,
 ) -> (Rect, usize) {
-    let mut items = items
+    let items_len = items.len();
+    let mut visible_items = items
         .into_iter()
         .dropping(scroll_pos)
         .take(num_visible_items)
         .collect_vec();
-    let items_len = items.len();
+    let visible_items_len = visible_items.len();
 
-    let selected = items
+    let selected = visible_items
         .remove(selected_index - scroll_pos)
         .fg(material::BLUE.c100)
         .bg(material::LIGHT_BLUE.c900);
-    items.insert(selected_index - scroll_pos, selected);
+    visible_items.insert(selected_index - scroll_pos, selected);
 
     let dropdown_popup_area = dropdown_widget_area
         .offset(Offset::new(0, 2))
         .resize(Size::new(
             dropdown_widget_area.width,
-            dropdown_widget_area.height + items.len() as u16 - 1,
+            dropdown_widget_area.height + visible_items.len() as u16 - 1,
         ));
     frame.render_widget(
         Clear,
@@ -185,15 +186,109 @@ pub fn dropdown_popup(
         dropdown_popup_area.resize(Size::new(dropdown_popup_area.width, 1)),
     );
     frame.render_widget(Block::new().bg(material::INDIGO.c900), inner_area);
-    frame.render_widget(Text::from_iter(items).left_aligned(), inner_area);
+    frame.render_widget(Text::from_iter(visible_items).left_aligned(), inner_area);
+
+    if items_len > num_visible_items {
+        scroll_bar(
+            items_len,
+            scroll_pos,
+            num_visible_items,
+            1,
+            frame,
+            inner_area
+                .offset(Offset::new(inner_area.width as i32, 0))
+                .resize(Size::new(1, inner_area.height)),
+        );
+    }
 
     (
         inner_area.resize(Size {
             width:  inner_area.width,
             height: 1,
         }),
-        items_len,
+        visible_items_len,
     )
+}
+
+pub fn scroll_bar(
+    items_count: usize,
+    scroll_pos: usize,
+    num_visible_items: usize,
+    min_handle_size: usize,
+    frame: &mut Frame,
+    area: Rect,
+) {
+    const BLOCKS: [char; 9] = ['█', '▇', '▆', '▅', '▄', '▃', '▂', '▁', ' '];
+
+    frame.render_widget(
+        text!["█".repeat(area.height as usize),].fg(tailwind::INDIGO.c950),
+        area,
+    );
+    frame.render_widget("▲".bg(tailwind::INDIGO.c700).fg(material::BLUE.c300), area);
+
+    let num_pixels = (area.height as usize - 2) * 8;
+    let mut handle_size = num_pixels.saturating_sub(items_count.saturating_sub(num_visible_items));
+    if handle_size >= min_handle_size || min_handle_size > num_pixels {
+        let mut top_margin = scroll_pos;
+        let mut lines = Text::default();
+
+        while top_margin >= 8 {
+            lines.push_line(" ".bg(tailwind::INDIGO.c950));
+            top_margin -= 8;
+        }
+        if top_margin > 0 {
+            lines.push_line(
+                BLOCKS[top_margin]
+                    .bg(tailwind::INDIGO.c950)
+                    .fg(material::BLUE.c300),
+            );
+            handle_size -= 8 - top_margin;
+        }
+        while handle_size >= 8 {
+            lines.push_line(" ".bg(material::BLUE.c300));
+            handle_size -= 8;
+        }
+        if handle_size > 0 {
+            lines.push_line(
+                BLOCKS[handle_size]
+                    .fg(tailwind::INDIGO.c950)
+                    .bg(material::BLUE.c300),
+            );
+        }
+        while lines.lines.len() < area.height as usize - 2 {
+            lines.push_line(" ".bg(tailwind::INDIGO.c950));
+        }
+
+        frame.render_widget(lines, area.offset(Offset::new(0, 1)));
+    } else {
+        let solid_blocks_count = ((area.height as f32 - 4.0)
+            * (num_visible_items as f32 / items_count as f32))
+            .max(1.0) as usize;
+        let cycle_every = area.height as usize - solid_blocks_count - 3;
+        let scroll_fraction =
+            scroll_pos as f32 / items_count.saturating_sub(num_visible_items) as f32;
+        let phase = (scroll_fraction * cycle_every as f32) as usize;
+        let block = BLOCKS[(scroll_fraction * 9.0 * cycle_every as f32) as usize % 9]
+            .bg(tailwind::INDIGO.c600)
+            .fg(material::BLUE.c300);
+
+        let mut lines = Text::default();
+        lines.push_line(block.clone());
+        for _ in 0..solid_blocks_count {
+            lines.push_line("█".fg(material::BLUE.c300));
+        }
+        lines.push_line(block.reversed());
+
+        frame.render_widget(lines, area.offset(Offset::new(0, phase as i32 + 1)));
+    }
+
+    frame.render_widget(
+        "▼"
+            .bg(tailwind::INDIGO.c700)
+            .fg(material::BLUE.c300)
+            .not_reversed(),
+        area.offset(Offset::new(0, area.height as i32 - 1)),
+    );
 }
 
 pub struct Action {

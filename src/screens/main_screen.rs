@@ -9,12 +9,12 @@ use ratatui::{
     layout::{Layout, Margin, Offset, Position, Rect, Size},
     macros::{constraint, horizontal, line, span, text, vertical},
     style::{
-        Color, Modifier, Style, Styled, Stylize,
+        Color, Modifier, Styled, Stylize,
         palette::{material, tailwind},
     },
-    symbols::{block, border, scrollbar::Set},
+    symbols::border,
     text::{Line, Span, Text},
-    widgets::{Block, Clear, Padding, Scrollbar, ScrollbarState},
+    widgets::{Block, Clear, Padding},
 };
 use ratatui_image::sliced::SignedPosition;
 use ratatui_textarea::TextArea;
@@ -1094,38 +1094,14 @@ impl MainScreen {
         }
 
         if self.filtered_movies.len() > num_visible_movies {
-            let scrollbar = Scrollbar::new(ratatui::widgets::ScrollbarOrientation::VerticalRight)
-                .symbols(Set {
-                    track: block::FULL,
-                    thumb: block::FULL,
-                    begin: "▲",
-                    end:   "▼",
-                })
-                .begin_style(
-                    Style::new()
-                        .bg(material::LIGHT_BLUE.c700)
-                        .fg(tailwind::INDIGO.c900),
-                )
-                .end_style(
-                    Style::new()
-                        .bg(material::LIGHT_BLUE.c700)
-                        .fg(tailwind::INDIGO.c900),
-                )
-                .track_style(Style::new().fg(tailwind::SLATE.c900))
-                .thumb_style(
-                    Style::new()
-                        .fg(material::BLUE.c800)
-                        .bg(tailwind::SLATE.c900),
-                );
-
-            let mut scrollbar_state = ScrollbarState::new(
-                self.filtered_movies
-                    .len()
-                    .saturating_sub(num_visible_movies),
-            )
-            .position(self.movies_list_scroll_pos);
-
-            frame.render_stateful_widget(scrollbar, scrollbar_area, &mut scrollbar_state);
+            widgets::scroll_bar(
+                self.filtered_movies.len(),
+                self.movies_list_scroll_pos,
+                self.movies_list_num_visible_items,
+                8,
+                frame,
+                scrollbar_area,
+            );
 
             if self.movies_list_scroll_pos > 0 {
                 key_event_handler.bind_mouse_button_down(

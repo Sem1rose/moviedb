@@ -151,10 +151,10 @@ impl AdvancedFilterPopup {
                 self.dropdown_scroll_pos = 0;
                 self.dropdown_num_visible_items = 5;
                 self.dropdown_selected_item = Some(0);
-                self.dropdown0_data = vec!["any of".into(), "all of".into()];
+                self.dropdown0_data = vec!["Any of".into(), "All of".into()];
                 self.dropdown1_data = self.available_genres.clone();
                 self.dropdown1_selected_items = vec![];
-                self.dropdown2_data = vec!["any of".into(), "all of".into()];
+                self.dropdown2_data = vec!["Any of".into(), "All of".into()];
                 self.dropdown3_data = self.available_genres.clone();
                 self.dropdown3_selected_items = vec![];
 
@@ -195,10 +195,10 @@ impl AdvancedFilterPopup {
                 self.input0 = TextArea::from([""]);
                 self.dropdown0 = 0;
                 self.dropdown_scroll_pos = 0;
-                self.dropdown_num_visible_items = 5;
+                self.dropdown_num_visible_items = 4;
                 self.dropdown_selected_item = Some(0);
                 self.dropdown0_data =
-                    vec!["<".into(), "<=".into(), ">".into(), ">=".into(), "=".into()];
+                    vec!["=".into(), ">=".into(), ">".into(), "<=".into(), "<".into()];
 
                 self.validate = Some(Box::new(|advanced_filter_popup| {
                     advanced_filter_popup.input0.lines()[0]
@@ -861,7 +861,7 @@ impl PopupTrait for AdvancedFilterPopup {
                         contains_all_dropdown_area,
                         _,
                         genres_dropdown_area,
-                    ] = horizontal![==15, ==1, ==10, ==1, >=15].areas(inverted_area);
+                    ] = horizontal![==15, ==1, ==13, ==1, >=15].areas(inverted_area);
 
                     frame.render_widget(
                         "Doesn't contain".fg(tailwind::WHITE),
@@ -1007,9 +1007,8 @@ impl PopupTrait for AdvancedFilterPopup {
                                             " ",
                                             ellipsize_string(
                                                 x.as_ref(),
-                                                genres_dropdown_area.width as usize - 2
-                                            ),
-                                            " "
+                                                genres_dropdown_area.width as usize - 3
+                                            )
                                         )
                                         .fg(material::INDIGO.c200)
                                         .bg(material::INDIGO.c900)
@@ -1054,7 +1053,7 @@ impl PopupTrait for AdvancedFilterPopup {
                         contains_all_dropdown_area,
                         _,
                         genres_dropdown_area,
-                    ] = horizontal![==15, ==1, ==10, ==1, >=15].areas(normal_area);
+                    ] = horizontal![==15, ==1, ==13, ==1, >=15].areas(normal_area);
 
                     frame.render_widget(
                         "Contains".fg(tailwind::WHITE).into_right_aligned_line(),
@@ -1151,7 +1150,7 @@ impl PopupTrait for AdvancedFilterPopup {
                         tab_selected && dropdown_selected,
                         frame,
                         genres_dropdown_area,
-                        "- Genres -",
+                        "--Genres--",
                     );
                     key_event_handler.bind_mouse_button_down(
                         ratatui::crossterm::event::MouseButton::Left,
@@ -1200,9 +1199,8 @@ impl PopupTrait for AdvancedFilterPopup {
                                             " ",
                                             ellipsize_string(
                                                 x.as_ref(),
-                                                genres_dropdown_area.width as usize - 2
-                                            ),
-                                            " "
+                                                genres_dropdown_area.width as usize - 3
+                                            )
                                         )
                                         .fg(material::INDIGO.c200)
                                         .bg(material::INDIGO.c900)
@@ -1696,7 +1694,7 @@ impl PopupTrait for AdvancedFilterPopup {
                                 advanced_filter_popup.tab = this_tab;
                                 advanced_filter_popup.item = 0;
                                 advanced_filter_popup.dropdown_scroll_pos = 0;
-                                advanced_filter_popup.dropdown_num_visible_items = 5;
+                                advanced_filter_popup.dropdown_num_visible_items = 4;
                                 advanced_filter_popup.dropdown_selected_item =
                                     Some(advanced_filter_popup.dropdown0);
                             }
@@ -1715,7 +1713,7 @@ impl PopupTrait for AdvancedFilterPopup {
                             })
                             .or_else(|| {
                                 self.dropdown_scroll_pos = 0;
-                                self.dropdown_num_visible_items = 5;
+                                self.dropdown_num_visible_items = 4;
                                 Some(self.dropdown0)
                             });
 
@@ -1723,7 +1721,6 @@ impl PopupTrait for AdvancedFilterPopup {
                             let (mut mouse_area, len) = widgets::dropdown_popup(
                                 self.dropdown0_data
                                     .iter()
-                                    .take(self.dropdown_num_visible_items)
                                     .map(|x| {
                                         line!(" ", x)
                                             .fg(material::INDIGO.c200)
@@ -2266,135 +2263,17 @@ impl PopupTrait for AdvancedFilterPopup {
                 });
 
                 if let Some(index) = self.dropdown_selected_item.as_ref() {
-                    let criterion_to_line =
-                        |criterion: &FilterCriterionDiscriminants| match criterion {
-                            FilterCriterionDiscriminants::Title
-                            | FilterCriterionDiscriminants::Director
-                            | FilterCriterionDiscriminants::Released
-                            | FilterCriterionDiscriminants::FirstWatched
-                            | FilterCriterionDiscriminants::LastWatched
-                            | FilterCriterionDiscriminants::Rating
-                            | FilterCriterionDiscriminants::UserRating
-                            | FilterCriterionDiscriminants::Country => line!(
-                                " ",
-                                ellipsize_string(
-                                    criterion.into(),
-                                    dropdown_area.width as usize - 2,
-                                ),
-                                " "
-                            )
-                            .fg(material::INDIGO.c200),
-
-                            FilterCriterionDiscriminants::Actors =>
-                                if !self
-                                    .filter_criteria
-                                    .iter()
-                                    .any(|y| matches!(y, FilterCriterion::Genres(_, _, true)))
-                                {
-                                    "+"
-                                } else {
-                                    " "
-                                }
-                                .green()
-                                    + ellipsize_string(
-                                        criterion.into(),
-                                        dropdown_area.width as usize - 2,
-                                    )
-                                    .fg(material::INDIGO.c200)
-                                    + if !self
-                                        .filter_criteria
-                                        .iter()
-                                        .any(|y| matches!(y, FilterCriterion::Genres(_, _, false)))
-                                    {
-                                        "-"
-                                    } else {
-                                        " "
-                                    }
-                                    .red(),
-                            FilterCriterionDiscriminants::Genres =>
-                                if !self
-                                    .filter_criteria
-                                    .iter()
-                                    .any(|y| matches!(y, FilterCriterion::Genres(_, _, true)))
-                                {
-                                    "+"
-                                } else {
-                                    " "
-                                }
-                                .green()
-                                    + ellipsize_string(
-                                        criterion.into(),
-                                        dropdown_area.width as usize - 2,
-                                    )
-                                    .fg(material::INDIGO.c200)
-                                    + if !self
-                                        .filter_criteria
-                                        .iter()
-                                        .any(|y| matches!(y, FilterCriterion::Genres(_, _, false)))
-                                    {
-                                        "-"
-                                    } else {
-                                        " "
-                                    }
-                                    .red(),
-                            FilterCriterionDiscriminants::Language =>
-                                if !self
-                                    .filter_criteria
-                                    .iter()
-                                    .any(|y| matches!(y, FilterCriterion::Genres(_, _, true)))
-                                {
-                                    "+"
-                                } else {
-                                    " "
-                                }
-                                .green()
-                                    + ellipsize_string(
-                                        criterion.into(),
-                                        dropdown_area.width as usize - 2,
-                                    )
-                                    .fg(material::INDIGO.c200)
-                                    + if !self
-                                        .filter_criteria
-                                        .iter()
-                                        .any(|y| matches!(y, FilterCriterion::Genres(_, _, false)))
-                                    {
-                                        "-"
-                                    } else {
-                                        " "
-                                    }
-                                    .red(),
-                            FilterCriterionDiscriminants::Certification =>
-                                if !self
-                                    .filter_criteria
-                                    .iter()
-                                    .any(|y| matches!(y, FilterCriterion::Genres(_, _, true)))
-                                {
-                                    "+"
-                                } else {
-                                    " "
-                                }
-                                .green()
-                                    + ellipsize_string(
-                                        criterion.into(),
-                                        dropdown_area.width as usize - 2,
-                                    )
-                                    .fg(material::INDIGO.c200)
-                                    + if !self
-                                        .filter_criteria
-                                        .iter()
-                                        .any(|y| matches!(y, FilterCriterion::Genres(_, _, false)))
-                                    {
-                                        "-"
-                                    } else {
-                                        " "
-                                    }
-                                    .red(),
-                        };
-
                     let (mut mouse_area, len) = widgets::dropdown_popup(
                         self.available_criteria
                             .iter()
-                            .map(|x| criterion_to_line(x))
+                            .map(|x| {
+                                line!(
+                                    " ",
+                                    ellipsize_string(x.into(), dropdown_area.width as usize - 2,),
+                                    " "
+                                )
+                                .fg(material::INDIGO.c200)
+                            })
                             .collect_vec(),
                         *index,
                         self.dropdown_scroll_pos,

@@ -139,8 +139,8 @@ pub enum FilterCriterion {
         u32,  /*upper bound*/
         bool, /*inverted*/
     ),
-    Rating(f64, Ordering, bool /*inverted*/),
     UserRating(f64, Ordering, bool /*inverted*/),
+    Rating(f64, Ordering, bool /*inverted*/),
     Language(Vec<String>, bool /*inverted*/),
     Country(String, bool /*inverted*/),
     Certification(Vec<Option<String>>, bool /*inverted*/),
