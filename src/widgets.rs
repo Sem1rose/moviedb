@@ -1,4 +1,5 @@
 use itertools::Itertools;
+use log::info;
 use ratatui::{
     Frame,
     buffer::Buffer,
@@ -193,7 +194,6 @@ pub fn dropdown_popup(
             items_len,
             scroll_pos,
             num_visible_items,
-            1,
             frame,
             inner_area
                 .offset(Offset::new(inner_area.width as i32, 0))
@@ -214,7 +214,6 @@ pub fn scroll_bar(
     items_count: usize,
     scroll_pos: usize,
     num_visible_items: usize,
-    min_handle_size: usize,
     frame: &mut Frame,
     area: Rect,
 ) {
@@ -227,9 +226,20 @@ pub fn scroll_bar(
     frame.render_widget("▲".bg(tailwind::INDIGO.c700).fg(material::BLUE.c300), area);
 
     let num_pixels = (area.height as usize - 2) * 8;
-    let mut handle_size = num_pixels.saturating_sub(items_count.saturating_sub(num_visible_items));
-    if handle_size >= min_handle_size || min_handle_size > num_pixels {
-        let mut top_margin = scroll_pos;
+    let max_scroll_amount = items_count.saturating_sub(num_visible_items);
+
+    let mut handle_size = num_pixels.saturating_sub(max_scroll_amount);
+    let mut scroll_pixels = (handle_size.div_ceil(max_scroll_amount)
+        - if handle_size % max_scroll_amount == 0 { 1 } else { 0 })
+    .min(3);
+    handle_size -= (scroll_pixels - 1) * max_scroll_amount;
+    while handle_size < 8 && scroll_pixels > 1 {
+        handle_size += max_scroll_amount;
+        scroll_pixels -= 1;
+    }
+
+    if handle_size >= 8 {
+        let mut top_margin = scroll_pos * scroll_pixels;
         let mut lines = Text::default();
 
         while top_margin >= 8 {
@@ -261,10 +271,7 @@ pub fn scroll_bar(
 
         frame.render_widget(lines, area.offset(Offset::new(0, 1)));
     } else {
-        let solid_blocks_count = ((area.height as f32 - 4.0)
-            * (num_visible_items as f32 / items_count as f32))
-            .max(1.0) as usize;
-        let cycle_every = area.height as usize - solid_blocks_count - 3;
+        let cycle_every = area.height as usize - 3;
         let scroll_fraction =
             scroll_pos as f32 / items_count.saturating_sub(num_visible_items) as f32;
         let phase = (scroll_fraction * cycle_every as f32) as usize;
@@ -274,9 +281,6 @@ pub fn scroll_bar(
 
         let mut lines = Text::default();
         lines.push_line(block.clone());
-        for _ in 0..solid_blocks_count {
-            lines.push_line("█".fg(material::BLUE.c300));
-        }
         lines.push_line(block.reversed());
 
         frame.render_widget(lines, area.offset(Offset::new(0, phase as i32 + 1)));

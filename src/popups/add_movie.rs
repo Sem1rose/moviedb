@@ -16,8 +16,7 @@ use ratatui::{
         Modifier, Style, Stylize,
         palette::{material, tailwind},
     },
-    symbols::{block, scrollbar::Set},
-    widgets::{Block, Padding, Scrollbar, ScrollbarState},
+    widgets::{Block, Padding},
 };
 use ratatui_textarea::{TextArea, WrapMode};
 use throbber_widgets_tui::{Throbber, ThrobberState};
@@ -103,6 +102,7 @@ pub struct AddMoviePopup {
     selected_item:     usize,
     alignment_bottom:  bool,
     num_visible_items: usize,
+    partially_visible: bool,
 
     input0:         TextArea<'static>,
     input1:         TextArea<'static>,
@@ -320,7 +320,7 @@ impl AddMoviePopup {
             Phase::SelectMovie => {
                 self.item = 1;
                 self.input0 = TextArea::from([""]);
-                self.input1 = TextArea::from(["Now"]);
+                self.input1 = TextArea::from([""]);
                 Phase::GetRating
             }
             Phase::GetRating => {
@@ -394,13 +394,12 @@ impl PopupTrait for AddMoviePopup {
                         }
 
                         self.search_results = match search_result {
-                            SearchResults::TMDB(tmdbsearch_results) => {
-                                if let Ok(results) = tmdbsearch_results {
+                            SearchResults::TMDB(tmdb_results) =>
+                                if let Ok(results) = tmdb_results {
                                     Some(results.into_iter().map(|x| x.into()).collect_vec())
                                 } else {
                                     None
-                                }
-                            }
+                                },
                             SearchResults::Trakt(trakt_results) => {
                                 if let Ok(results) = trakt_results {
                                     Some(results.into_iter().map(|x| x.into()).collect_vec())
@@ -552,9 +551,9 @@ impl PopupTrait for AddMoviePopup {
                 let num_visible_results = results_list_area.height as usize / 5;
                 let partially_visible_result_height =
                     results_list_area.height as usize - num_visible_results * 5;
-                let render_partially_visible_result = partially_visible_result_height > 0;
+                self.partially_visible = partially_visible_result_height > 0;
                 self.num_visible_items =
-                    num_visible_results + if render_partially_visible_result { 1 } else { 0 };
+                    num_visible_results + if self.partially_visible { 1 } else { 0 };
 
                 if self.selected_item < self.scroll_pos {
                     self.selected_item =
@@ -581,9 +580,9 @@ impl PopupTrait for AddMoviePopup {
                 let mut remaining_area = results_list_area;
                 for i in 0..self.num_visible_items {
                     let [area, remaining] =
-                        if render_partially_visible_result && i == 0 && self.alignment_bottom {
+                        if self.partially_visible && i == 0 && self.alignment_bottom {
                             vertical![==partially_visible_result_height as u16, >= 0]
-                        } else if render_partially_visible_result
+                        } else if self.partially_visible
                             && i == self.num_visible_items - 1
                             && !self.alignment_bottom
                         {
@@ -725,35 +724,16 @@ impl PopupTrait for AddMoviePopup {
                     remaining_area = remaining;
                 }
 
-                let scrollbar =
-                    Scrollbar::new(ratatui::widgets::ScrollbarOrientation::VerticalRight)
-                        .symbols(Set {
-                            track: block::FULL,
-                            thumb: block::FULL, //"🮋",
-                            begin: "▲",
-                            end:   "▼",
-                        })
-                        .begin_style(
-                            Style::new()
-                                .bg(material::LIGHT_BLUE.c700)
-                                .fg(tailwind::INDIGO.c900),
-                        )
-                        .end_style(
-                            Style::new()
-                                .bg(material::LIGHT_BLUE.c700)
-                                .fg(tailwind::INDIGO.c900),
-                        )
-                        .track_style(Style::new().fg(tailwind::SLATE.c900))
-                        .thumb_style(
-                            Style::new()
-                                .fg(material::BLUE.c800)
-                                .bg(tailwind::SLATE.c900),
-                        );
-                let mut scrollbar_state =
-                    ScrollbarState::new(num_results.saturating_sub(self.num_visible_items - 1))
-                        .position(self.scroll_pos);
-
-                frame.render_stateful_widget(scrollbar, scrollbar_area, &mut scrollbar_state);
+                if num_results + self.partially_visible as usize > self.num_visible_items {
+                    widgets::scroll_bar(
+                        num_results + self.partially_visible as usize,
+                        self.scroll_pos
+                            + (self.partially_visible && self.alignment_bottom) as usize,
+                        self.num_visible_items,
+                        frame,
+                        scrollbar_area,
+                    );
+                }
             }
             Phase::GetRating => {
                 let rating_valid = self.validate_input_rating();

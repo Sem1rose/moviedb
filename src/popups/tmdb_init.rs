@@ -21,7 +21,7 @@ use tmdb;
 
 use crate::{
     app::App,
-    helpers::{add_padding, create_popup, dynamic_area, wrap_text},
+    helpers::{add_padding, create_popup, dynamic_area, static_area, wrap_text},
     key_event_handler::{self, KeyEventHandler},
     popups::{PopupTrait, Popups},
     tokens::tmdb_tokens::{TMDBTokens, UserTokens},
@@ -232,7 +232,7 @@ impl PopupTrait for TMDBInitPopup {
 
                 let popup_area = create_popup(
                     frame,
-                    dynamic_area(6, 4.0, frame.area()),
+                    static_area(6, 28, frame.area()),
                     " TMDB Authentication ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
@@ -327,6 +327,30 @@ impl PopupTrait for TMDBInitPopup {
                 let [input_area, _] =
                     vertical![==3, ==1].areas(add_padding(popup_area, Padding::proportional(1)));
 
+                let input_selected = self.item == 0;
+                widgets::input_field(
+                    true,
+                    input_selected,
+                    input_valid,
+                    &mut self.input,
+                    WrapMode::Glyph,
+                    frame,
+                    input_area,
+                    " Access Token ",
+                    "Enter the Access Token",
+                );
+                key_event_handler.bind_mouse_button_down(
+                    ratatui::crossterm::event::MouseButton::Left,
+                    input_area,
+                    |app, _| {
+                        if let Some(Popups::TMDBInit(tmdb_init_popup)) =
+                            app.drawer.active_popup.as_mut()
+                        {
+                            tmdb_init_popup.item = 0;
+                        }
+                    },
+                );
+
                 let confirm_mouse_area = widgets::action(
                     Action::new(
                         " Confirm ",
@@ -352,30 +376,6 @@ impl PopupTrait for TMDBInitPopup {
                         },
                     );
                 }
-
-                let input_selected = self.item == 0;
-                widgets::input_field(
-                    true,
-                    input_selected,
-                    input_valid,
-                    &mut self.input,
-                    WrapMode::Glyph,
-                    frame,
-                    input_area,
-                    " Access Token ",
-                    "Enter the Access Token",
-                );
-                key_event_handler.bind_mouse_button_down(
-                    ratatui::crossterm::event::MouseButton::Left,
-                    input_area,
-                    |app, _| {
-                        if let Some(Popups::TMDBInit(tmdb_init_popup)) =
-                            app.drawer.active_popup.as_mut()
-                        {
-                            tmdb_init_popup.item = 0;
-                        }
-                    },
-                );
             }
             Phase::Authorize(authorization_url) => {
                 key_event_handler.bind_esc((None, None), "".into(), |app, _| {
@@ -459,6 +459,15 @@ impl PopupTrait for TMDBInitPopup {
                         tmdb_init_popup.rx_session_id = None;
                         tmdb_init_popup.rx_authorization_url = None;
                         tmdb_init_popup.phase = Phase::GetAccessToken;
+                        if let Some(false) = tmdb_init_popup.status {
+                            if let Some(user_tokens) = tmdb_init_popup.user_tokens.as_ref() {
+                                tmdb_init_popup.input =
+                                    TextArea::new(vec![user_tokens.session_id.clone()]);
+                                tmdb_init_popup
+                                    .input
+                                    .move_cursor(ratatui_textarea::CursorMove::End);
+                            }
+                        }
                     }
                 };
                 key_event_handler.bind_enter((None, None), "Back".into(), back);

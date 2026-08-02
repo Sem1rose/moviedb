@@ -1,4 +1,9 @@
-use std::{cell::RefCell, fs, path::PathBuf, rc::Rc, time::Duration};
+use std::{
+    cell::RefCell,
+    fs,
+    path::PathBuf,
+    rc::Rc,
+};
 
 use log::{error, warn};
 use ratatui::crossterm::event::{self, Event, KeyEvent, KeyEventState, KeyModifiers};
@@ -127,13 +132,13 @@ impl App {
                 })
                 .map(|_| ())?;
 
-            for callback in self.key_event_handler.execute_immediates() {
+            for callback in self.key_event_handler.get_execute_immediates() {
                 callback(self, crate::key_event_handler::Data::None);
             }
 
             if !self.drawer.check_refresh_immediate() {
                 if self.drawer.check_refresh_delayed() {
-                    if event::poll(Duration::from_millis(10))? {
+                    if event::poll(Duration::from_millis(15))? {
                         if let Ok(event) = event::read() {
                             self.handle_event(event);
                         }

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use itertools::Itertools;
 use ratatui::{
@@ -29,6 +29,21 @@ pub enum Bind {
     Key(String),
     MouseButtonDown(MouseButton),
     MouseButtonUp(MouseButton),
+}
+impl Bind {
+    pub fn sort_key(&self) -> String {
+        match self {
+            Bind::Esc => (0 as char).to_string(),
+            Bind::Tab => (1 as char).to_string(),
+            Bind::Enter => (2 as char).to_string(),
+            Bind::Horizontal => (3 as char).to_string(),
+            Bind::Vertical => (4 as char).to_string(),
+            Bind::Key(key) => (5 as char).to_string() + key,
+            Bind::MouseButtonDown(_) => "~".into(),
+            Bind::MouseButtonUp(_) => "~".into(),
+            Bind::Input => "~".into(),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -240,7 +255,11 @@ impl KeyEventHandler {
         None
     }
 
-    pub fn get_key_binds_descriptions(&self, drawer: &Drawer, max: usize) -> Vec<(Bind, String)> {
+    pub fn get_key_binds_descriptions(
+        &self,
+        drawer: &Drawer,
+        max: usize,
+    ) -> HashSet<(Bind, String)> {
         let state = if let Some(popup) = drawer.active_popup.as_ref() {
             popup.get_state()
         } else if let Some(screen) = drawer.current_screen.as_ref() {
@@ -248,10 +267,10 @@ impl KeyEventHandler {
                 crate::screens::Screens::MainScreen(main_screen) => main_screen.get_state(),
             }
         } else {
-            return vec![];
+            return HashSet::default();
         };
 
-        let mut binds = vec![];
+        let mut binds = HashSet::new();
 
         if let Some(semi_bind) = self.semi_bind {
             let matches = self
@@ -349,7 +368,7 @@ impl KeyEventHandler {
             .collect()
     }
 
-    pub fn execute_immediates(&mut self) -> Vec<Callback> {
+    pub fn get_execute_immediates(&mut self) -> Vec<Callback> {
         self.execute_immediate.drain(..).collect()
     }
 

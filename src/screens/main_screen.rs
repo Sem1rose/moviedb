@@ -1095,10 +1095,11 @@ impl MainScreen {
 
         if self.filtered_movies.len() > num_visible_movies {
             widgets::scroll_bar(
-                self.filtered_movies.len(),
-                self.movies_list_scroll_pos,
+                self.filtered_movies.len() + self.movies_list_partially_visible_item as usize,
+                self.movies_list_scroll_pos
+                    + (self.movies_list_partially_visible_item && self.movies_list_alignment_bottom)
+                        as usize,
                 self.movies_list_num_visible_items,
-                8,
                 frame,
                 scrollbar_area,
             );

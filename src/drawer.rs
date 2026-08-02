@@ -4,9 +4,9 @@ use itertools::Itertools;
 use ratatui::{
     Frame,
     layout::{Layout, Offset, Size},
-    macros::{constraint, line, span},
+    macros::{constraint, line, span, text},
     style::{Stylize, palette::tailwind},
-    text::Text,
+    text::{Line, Text},
     widgets::{Block, Clear},
 };
 
@@ -88,6 +88,7 @@ impl Drawer {
             }
             self.render_footer(frame, key_event_handler);
         }
+
     }
 
     fn update_image_renderers(&mut self) {
@@ -334,7 +335,7 @@ impl Drawer {
         let bind_to_string = |bind: &key_event_handler::Bind| {
             match bind {
                 key_event_handler::Bind::Horizontal => {
-                    span!(" ←•→ ")
+                    span!(" ←→ ")
                 }
                 key_event_handler::Bind::Vertical => span!(" ↕ "),
                 key_event_handler::Bind::Enter => span!(" ↵ "),
@@ -348,10 +349,11 @@ impl Drawer {
             .bold()
             .fg(tailwind::AMBER.c600)
         };
-        let binds = key_event_handler.get_key_binds_descriptions(
-            self,
-            ((area.width as f64 / 10.0).floor() as u16 * area.height) as usize,
-        );
+        let binds = key_event_handler
+            .get_key_binds_descriptions(self, (area.width / 10 * area.height) as usize)
+            .into_iter()
+            .sorted_by_key(|(b, _)| b.sort_key())
+            .collect_vec();
 
         let num_items_per_row = (binds.len() as f64 / area.height as f64).ceil() as usize;
         let len_item = ((area.width - 2 * (num_items_per_row.saturating_sub(1) as u16)) as f32
