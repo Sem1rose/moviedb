@@ -163,6 +163,7 @@ impl MainScreen {
         key_event_handler.bind_key((Some(0), None), 'a', "Add movie".into(), |app, _| {
             app.drawer.open_add_movie_popup(
                 app.trakt_tokens.clone(),
+                app.punch_play_tokens.clone(),
                 app.tmdb_tokens.clone(),
                 app.omdb_tokens.clone(),
             );

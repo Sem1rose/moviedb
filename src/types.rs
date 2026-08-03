@@ -13,7 +13,7 @@ use ratatui::{
 };
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, EnumCount, EnumDiscriminants, EnumIter, FromRepr, IntoStaticStr};
-use tmdb::smo::TMDBDetailsResponse;
+use tmdb::smo::TMDBDetails;
 use trakt::smo::TraktDetailsResponse;
 
 use crate::omdb::OMDBDetailsResponse;
@@ -194,8 +194,8 @@ pub struct Movie {
     pub plays:         Vec<(DateTime<Local>, f64)>,
 }
 
-impl From<TMDBDetailsResponse> for Movie {
-    fn from(movie_details: TMDBDetailsResponse) -> Self {
+impl From<TMDBDetails> for Movie {
+    fn from(movie_details: TMDBDetails) -> Self {
         let mut collection = None;
         let mut collection_id = None;
         if let Some(belongs_to_collection) = movie_details.belongs_to_collection {
@@ -261,7 +261,7 @@ impl From<TraktDetailsResponse> for Movie {
 }
 
 impl Movie {
-    pub fn add_tmdb_details(&mut self, tmdb_details: TMDBDetailsResponse) {
+    pub fn add_tmdb_details(&mut self, tmdb_details: TMDBDetails) {
         let mut collection = None;
         let mut collection_id = None;
         if let Some(belongs_to_collection) = tmdb_details.belongs_to_collection {
@@ -281,9 +281,9 @@ impl Movie {
 
     pub fn add_omdb_details(&mut self, omdb_details: OMDBDetailsResponse) {
         self.ratings[0] = Rating::IMDB(
-            omdb_details.imdbRating.parse().unwrap_or(0.0),
+            omdb_details.imdb_rating.parse().unwrap_or(0.0),
             omdb_details
-                .imdbVotes
+                .imdb_votes
                 .chars()
                 .filter(|char| char.is_ascii_digit())
                 .collect::<String>()

@@ -1,5 +1,4 @@
 use itertools::Itertools;
-use log::info;
 use ratatui::{
     Frame,
     buffer::Buffer,
@@ -483,11 +482,11 @@ impl Widget for &Hyperlink<'_> {
         // works by rendering the hyperlink as a series of 2-character chunks, which is the
         // calculated width of the hyperlink text.
         for (j, line) in self.text.lines.clone().into_iter().enumerate() {
-            for (i, two_chars) in line.to_string().chars().chunks(2).into_iter().enumerate() {
-                let text = two_chars.collect::<String>();
-                let hyperlink = format!("\x1B]8;;{}\x07{}\x1B]8;;\x07", self.url, text);
-                buffer[(area.x + i as u16 * 2, area.y + j as u16)].set_symbol(hyperlink.as_str());
-            }
+            // for (i, two_chars) in line.to_string().chars().chunks(2).into_iter().enumerate() {
+            // let text = two_chars.collect::<String>();
+            let hyperlink = format!("\x1B]8;;{}\x07{}\x1B]8;;\x07", self.url, line.to_string());
+            buffer[(area.x, area.y + j as u16)].set_symbol(hyperlink.as_str());
+            // }
         }
     }
 }

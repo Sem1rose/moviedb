@@ -29,9 +29,10 @@ pub struct App {
     pub key_event_handler: KeyEventHandler,
     pub config:            Rc<RefCell<Config>>,
 
-    pub tmdb_tokens:  TMDBTokens,
-    pub omdb_tokens:  OMDBTokens,
-    pub trakt_tokens: TraktTokens,
+    pub trakt_tokens:      TraktTokens,
+    pub punch_play_tokens: PunchPlayTokens,
+    pub tmdb_tokens:       TMDBTokens,
+    pub omdb_tokens:       OMDBTokens,
 }
 
 impl App {
@@ -50,9 +51,10 @@ impl App {
             key_event_handler: KeyEventHandler::default(),
             drawer: Drawer::new(&home_dir, &cache_dir, config.clone()),
 
+            trakt_tokens: TraktTokens::new(&home_dir),
+            punch_play_tokens: PunchPlayTokens::new(&home_dir),
             tmdb_tokens: TMDBTokens::new(&home_dir),
             omdb_tokens: OMDBTokens::new(&home_dir),
-            trakt_tokens: TraktTokens::new(&home_dir),
 
             config: config,
             quit: false,
@@ -305,6 +307,17 @@ impl App {
         if let Some(Popups::TraktInit(trakt_init_popup)) = self.drawer.active_popup.as_mut() {
             if let Some(tokens) = trakt_init_popup.user_tokens.take() {
                 self.trakt_tokens.set_creds(tokens).unwrap();
+            }
+            self.drawer.close_popup();
+        }
+    }
+
+    pub fn set_punch_play_user_tokens(&mut self) {
+        if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
+            self.drawer.active_popup.as_mut()
+        {
+            if let Some(tokens) = punch_play_init_popup.user_tokens.take() {
+                self.punch_play_tokens.set_creds(tokens).unwrap();
             }
             self.drawer.close_popup();
         }

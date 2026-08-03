@@ -1,6 +1,6 @@
 use std::{path::PathBuf, thread};
 
-use anyhow::bail;
+use anyhow::{Context, anyhow, bail};
 use itertools::Itertools;
 use reqwest::{
     blocking::{Client, ClientBuilder},
@@ -9,7 +9,9 @@ use reqwest::{
 
 use crate::{
     send_trakt_request,
-    smo::{TraktDetailsResponse, TraktSearchResponse, TraktSearchResponseMovie},
+    smo::{
+        TokenResponseError, TraktDetailsResponse, TraktSearchResponse, TraktSearchResponseMovie,
+    },
 };
 
 pub(crate) mod smo;
@@ -32,8 +34,12 @@ pub fn find_movie(client_id: &str, name: &str) -> anyhow::Result<Vec<TraktSearch
         None,
         Some(&query),
     )?;
-    if search_response.status().as_u16() != 200 {
-        bail!(format!("Trakt: Error while searching for movie: {}", name));
+    if !search_response.status().is_success() {
+        return Err(match search_response.json::<TokenResponseError>() {
+            Ok(err) => err.into(),
+            Err(_) => anyhow!(""),
+        })
+        .context(format!("Trakt: Error while searching for movie: {}", name));
     }
 
     let json = search_response.json::<Vec<TraktSearchResponse>>()?;
@@ -59,8 +65,12 @@ pub fn get_movie_details(client_id: &str, imdb_id: &str) -> anyhow::Result<Trakt
         Some(&query),
     )?;
 
-    if details_response.status().as_u16() != 200 {
-        bail!("couldn't get movie details with trakt");
+    if !details_response.status().is_success() {
+        return Err(match details_response.json::<TokenResponseError>() {
+            Ok(err) => err.into(),
+            Err(_) => anyhow!(""),
+        })
+        .context(format!("Trakt: Error getting details for: {}", imdb_id));
     }
 
     Ok(details_response.json()?)
@@ -82,12 +92,12 @@ pub fn get_movie_poster_banner(
     let download_image = move |client: Client, url: &str, path: PathBuf| -> anyhow::Result<()> {
         let image_url = url.strip_suffix(".webp").unwrap_or(url);
 
-        let image_bytes: Vec<_> = client
+        let image_bytes = client
             .get(format!("https://{image_url}"))
             .send()?
             .bytes()?
             .into_iter()
-            .collect();
+            .collect_vec();
 
         if let Ok(img) = image::load_from_memory(&image_bytes) {
             img.save(path)?;

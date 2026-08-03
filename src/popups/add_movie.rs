@@ -8,6 +8,11 @@ use std::{
 use anyhow::anyhow;
 use chrono::{DateTime, Local};
 use itertools::Itertools;
+use log::error;
+use punch_play::{
+    self,
+    smo::{PunchPlayDetailsResponse, PunchPlaySearchResult},
+};
 use ratatui::{
     Frame,
     layout::{Alignment, HorizontalAlignment, Layout, Margin},
@@ -22,7 +27,7 @@ use ratatui_textarea::{TextArea, WrapMode};
 use throbber_widgets_tui::{Throbber, ThrobberState};
 use tmdb::{
     self,
-    smo::{TMDBDetailsResponse, TMDBSearchResult},
+    smo::{TMDBDetails, TMDBSearchResult},
 };
 use trakt::{
     self,
@@ -34,8 +39,7 @@ use crate::{
     key_event_handler::{self, KeyEventHandler},
     omdb::{self, OMDBDetailsResponse},
     popups::{PopupTrait, Popups},
-    tokens::{OMDBTokens, TMDBTokens, TraktTokens},
-    types::Rating,
+    tokens::{OMDBTokens, PunchPlayTokens, TMDBTokens, TraktTokens},
     widgets::{self, Action, ActionTypes},
 };
 
@@ -55,41 +59,53 @@ enum SearchResultID {
     IMDBTMDB(String, u32),
 }
 enum SearchResults {
-    TMDB(anyhow::Result<Vec<TMDBSearchResult>>),
     Trakt(anyhow::Result<Vec<TraktSearchResponseMovie>>),
+    PunchPlay(anyhow::Result<Vec<PunchPlaySearchResult>>),
+    TMDB(anyhow::Result<Vec<TMDBSearchResult>>),
 }
 
 struct SearchResultMovie {
     title:        String,
     release_year: String,
-    rating:       Rating,
+    rating:       f64,
     id:           SearchResultID,
-}
-impl From<TMDBSearchResult> for SearchResultMovie {
-    fn from(value: TMDBSearchResult) -> Self {
-        Self {
-            title:        value.title,
-            release_year: value.release_date.unwrap_or("1970".into()),
-            rating:       Rating::TMDB(value.vote_average.unwrap_or(0.0), value.vote_count),
-            id:           SearchResultID::TMDB(value.id),
-        }
-    }
 }
 impl From<TraktSearchResponseMovie> for SearchResultMovie {
     fn from(value: TraktSearchResponseMovie) -> Self {
         Self {
             title:        value.title,
             release_year: value.year.unwrap_or(1970).to_string(),
-            rating:       Rating::Trakt(value.rating, value.votes),
+            rating:       value.rating,
             id:           SearchResultID::IMDBTMDB(value.ids.imdb, value.ids.tmdb),
+        }
+    }
+}
+impl From<PunchPlaySearchResult> for SearchResultMovie {
+    fn from(value: PunchPlaySearchResult) -> Self {
+        Self {
+            title:        value.name,
+            release_year: value.year.to_string(),
+            rating:       value.community_rating,
+            id:           SearchResultID::TMDB(value.tmdb_id),
+        }
+    }
+}
+impl From<TMDBSearchResult> for SearchResultMovie {
+    fn from(value: TMDBSearchResult) -> Self {
+        Self {
+            title:        value.title,
+            release_year: value.release_date.unwrap_or("1970".into()),
+            rating:       value.vote_average.unwrap_or(0.0),
+            id:           SearchResultID::TMDB(value.id),
         }
     }
 }
 
 struct DetailsResponse {
-    pub trakt: Option<TraktDetailsResponse>,
-    pub tmdb:  Option<TMDBDetailsResponse>,
-    pub omdb:  Option<OMDBDetailsResponse>,
+    pub trakt:      Option<TraktDetailsResponse>,
+    pub punch_play: Option<PunchPlayDetailsResponse>,
+    pub tmdb:       Option<TMDBDetails>,
+    pub omdb:       Option<OMDBDetailsResponse>,
 }
 
 #[derive(Default)]
@@ -113,16 +129,18 @@ pub struct AddMoviePopup {
     search_results:   Option<Vec<SearchResultMovie>>,
     rx_search_result: Option<Receiver<(u64, SearchResults)>>,
 
-    pub user_rating:                f64,
-    pub watched_at:                 DateTime<Local>,
-    pub tmdb_movie_details_result:  Option<TMDBDetailsResponse>,
-    pub omdb_movie_details_result:  Option<OMDBDetailsResponse>,
-    pub trakt_movie_details_result: Option<TraktDetailsResponse>,
-    rx_details_response:            Option<Receiver<anyhow::Result<DetailsResponse>>>,
+    pub user_rating:                     f64,
+    pub watched_at:                      DateTime<Local>,
+    pub trakt_movie_details_result:      Option<TraktDetailsResponse>,
+    pub punch_play_movie_details_result: Option<PunchPlayDetailsResponse>,
+    pub tmdb_movie_details_result:       Option<TMDBDetails>,
+    pub omdb_movie_details_result:       Option<OMDBDetailsResponse>,
+    rx_details_response:                 Option<Receiver<anyhow::Result<DetailsResponse>>>,
 
-    tmdb_tokens:  TMDBTokens,
-    omdb_tokens:  OMDBTokens,
-    trakt_tokens: TraktTokens,
+    trakt_tokens:      TraktTokens,
+    punch_play_tokens: PunchPlayTokens,
+    tmdb_tokens:       TMDBTokens,
+    omdb_tokens:       OMDBTokens,
 
     cache_dir: PathBuf,
 }
@@ -130,12 +148,14 @@ pub struct AddMoviePopup {
 impl AddMoviePopup {
     pub fn new(
         trakt_tokens: TraktTokens,
+        punch_play_tokens: PunchPlayTokens,
         tmdb_tokens: TMDBTokens,
         omdb_tokens: OMDBTokens,
         cache_dir: &PathBuf,
     ) -> Self {
         Self {
             trakt_tokens,
+            punch_play_tokens,
             tmdb_tokens,
             omdb_tokens,
             cache_dir: cache_dir.clone(),
@@ -146,11 +166,12 @@ impl AddMoviePopup {
     pub fn request_search(&mut self) {
         let (tx_search_results, rx_search_results) = mpsc::channel();
 
-        let trakt_status = self.trakt_tokens.status;
-        let tmdb_status = self.tmdb_tokens.status;
         let search_string = self.input0.lines()[0].clone();
-        let access_token = self.tmdb_tokens.access_token_owned();
+        let trakt_status = self.trakt_tokens.status;
+        let punch_play_status = self.punch_play_tokens.status;
+        let tmdb_status = self.tmdb_tokens.status;
         let client_id = self.trakt_tokens.client_id_owned();
+        let tmdb_access_token = self.tmdb_tokens.access_token_owned();
         let ticket = rand::random();
         self.search_ticket = ticket;
 
@@ -160,10 +181,18 @@ impl AddMoviePopup {
                     ticket,
                     SearchResults::Trakt(trakt::movie::find_movie(&client_id, &search_string)),
                 ));
+            } else if punch_play_status.is_some() {
+                _ = tx_search_results.send((
+                    ticket,
+                    SearchResults::PunchPlay(punch_play::movie::find_movie(&search_string)),
+                ));
             } else if tmdb_status.is_some() {
                 _ = tx_search_results.send((
                     ticket,
-                    SearchResults::TMDB(tmdb::movie::find_movie(&access_token, &search_string)),
+                    SearchResults::TMDB(tmdb::movie::find_movie(
+                        &tmdb_access_token,
+                        &search_string,
+                    )),
                 ));
             } else {
                 // unreachable!();
@@ -181,11 +210,13 @@ impl AddMoviePopup {
         ) = mpsc::channel();
 
         let trakt_status = self.trakt_tokens.status;
+        let punch_play_status = self.punch_play_tokens.status;
         let tmdb_status = self.tmdb_tokens.status;
         let omdb_status = self.omdb_tokens.status;
         let cache_dir = self.cache_dir.clone();
         let omdb_api_key = self.omdb_tokens.key_owned();
         let trakt_client_id = self.trakt_tokens.client_id_owned();
+        let punch_play_access_token = self.punch_play_tokens.access_token_owned();
         let tmdb_access_token = self.tmdb_tokens.access_token_owned();
         let movie_id = self.search_results.as_ref().unwrap()[self.selected_item]
             .id
@@ -194,6 +225,7 @@ impl AddMoviePopup {
         thread::spawn(move || {
             let tmdb_result;
             let mut trakt_result = None;
+            let mut punch_play_result = None;
             let mut omdb_result = None;
 
             let tmdb_id;
@@ -206,6 +238,16 @@ impl AddMoviePopup {
                         thread::spawn(move || {
                             tmdb::movie::get_movie_details(&access_token, tmdb_id)
                         })
+                    };
+                    let punch_play_handle = if punch_play_status.unwrap_or(false) {
+                        Some({
+                            let access_token = punch_play_access_token.clone();
+                            thread::spawn(move || {
+                                punch_play::movie::get_movie_details(&access_token, tmdb_id)
+                            })
+                        })
+                    } else {
+                        None
                     };
                     tmdb_result = match tmdb_handle.join() {
                         Err(e) => {
@@ -222,22 +264,61 @@ impl AddMoviePopup {
                     };
 
                     imdb_id = tmdb_result.as_ref().unwrap().imdb_id.clone();
-                    if trakt_status.is_some() {
-                        let trakt_handle = {
+                    let trakt_handle = if trakt_status.is_some() {
+                        Some({
                             let imdb_id = imdb_id.clone();
                             let client_id = trakt_client_id.clone();
                             thread::spawn(move || {
                                 trakt::movie::get_movie_details(&client_id, &imdb_id)
                             })
-                        };
-                        trakt_result = trakt_handle.join().map(|x| x.ok()).ok().flatten();
-                    }
-                    if omdb_status {
-                        let omdb_handle = {
+                        })
+                    } else {
+                        None
+                    };
+                    let omdb_handle = if omdb_status {
+                        Some({
                             let imdb_id = imdb_id.clone();
                             thread::spawn(move || omdb::get_movie_details(&omdb_api_key, &imdb_id))
-                        };
-                        omdb_result = omdb_handle.join().map(|x| x.ok()).ok().flatten();
+                        })
+                    } else {
+                        None
+                    };
+
+                    if let Some(handle) = trakt_handle {
+                        trakt_result = handle
+                            .join()
+                            .map(|x| {
+                                x.inspect_err(|err| {
+                                    error!("Trakt error while fetching movie details: {err:?}")
+                                })
+                                .ok()
+                            })
+                            .ok()
+                            .flatten();
+                    }
+                    if let Some(handle) = punch_play_handle {
+                        punch_play_result = handle
+                            .join()
+                            .map(|x| {
+                                x.inspect_err(|err| {
+                                    error!("PunchPlay error while fetching movie details: {err:?}")
+                                })
+                                .ok()
+                            })
+                            .ok()
+                            .flatten();
+                    }
+                    if let Some(handle) = omdb_handle {
+                        omdb_result = handle
+                            .join()
+                            .map(|x| {
+                                x.inspect_err(|err| {
+                                    error!("OMDB error while fetching movie details: {err:?}")
+                                })
+                                .ok()
+                            })
+                            .ok()
+                            .flatten();
                     }
                 }
                 SearchResultID::IMDBTMDB(id_imdb, id_tmdb) => {
@@ -248,20 +329,36 @@ impl AddMoviePopup {
                         let client_id = trakt_client_id.clone();
                         thread::spawn(move || trakt::movie::get_movie_details(&client_id, &imdb_id))
                     };
-                    let _trakt_result = trakt_handle
-                        .join()
-                        .map_err(|err| anyhow!("{:#?}", err))
-                        .flatten();
-
                     let tmdb_handle = {
                         let access_token = tmdb_access_token.clone();
                         thread::spawn(move || {
                             tmdb::movie::get_movie_details(&access_token, tmdb_id)
                         })
                     };
+                    let punch_play_handle = if punch_play_status.unwrap_or(false) {
+                        Some({
+                            let access_token = punch_play_access_token.clone();
+                            thread::spawn(move || {
+                                punch_play::movie::get_movie_details(&access_token, tmdb_id)
+                            })
+                        })
+                    } else {
+                        None
+                    };
+
+                    let _trakt_result = trakt_handle
+                        .join()
+                        .map_err(|err| anyhow!("{:#?}", err))
+                        .inspect_err(|err| {
+                            error!("Trakt error while fetching movie details: {err:?}")
+                        })
+                        .flatten();
                     let _tmdb_result = tmdb_handle
                         .join()
                         .map_err(|err| anyhow!("{:#?}", err))
+                        .inspect_err(|err| {
+                            error!("TMDB error while fetching movie details: {err:?}")
+                        })
                         .flatten();
 
                     if let Err(error_trakt) = _trakt_result.as_ref() {
@@ -277,12 +374,38 @@ impl AddMoviePopup {
                     trakt_result = _trakt_result.ok();
                     tmdb_result = _tmdb_result.ok();
 
-                    if omdb_status {
-                        let omdb_handle = {
+                    let omdb_handle = if omdb_status {
+                        Some({
                             let imdb_id = imdb_id.clone();
                             thread::spawn(move || omdb::get_movie_details(&omdb_api_key, &imdb_id))
-                        };
-                        omdb_result = omdb_handle.join().map(|x| x.ok()).ok().flatten();
+                        })
+                    } else {
+                        None
+                    };
+
+                    if let Some(handle) = punch_play_handle {
+                        punch_play_result = handle
+                            .join()
+                            .map(|x| {
+                                x.inspect_err(|err| {
+                                    error!("PunchPlay error while fetching movie details: {err:?}")
+                                })
+                                .ok()
+                            })
+                            .ok()
+                            .flatten();
+                    }
+                    if let Some(handle) = omdb_handle {
+                        omdb_result = handle
+                            .join()
+                            .map(|x| {
+                                x.inspect_err(|err| {
+                                    error!("OMDB error while fetching movie details: {err:?}")
+                                })
+                                .ok()
+                            })
+                            .ok()
+                            .flatten();
                     }
                 }
             }
@@ -306,9 +429,10 @@ impl AddMoviePopup {
             }
 
             _ = tx_details_request.send(Ok(DetailsResponse {
-                trakt: trakt_result,
-                tmdb:  tmdb_result,
-                omdb:  omdb_result,
+                trakt:      trakt_result,
+                punch_play: punch_play_result,
+                tmdb:       tmdb_result,
+                omdb:       omdb_result,
             }));
         });
 
@@ -394,27 +518,40 @@ impl PopupTrait for AddMoviePopup {
                         }
 
                         self.search_results = match search_result {
-                            SearchResults::TMDB(tmdb_results) =>
-                                if let Ok(results) = tmdb_results {
-                                    Some(results.into_iter().map(|x| x.into()).collect_vec())
-                                } else {
-                                    None
-                                },
-                            SearchResults::Trakt(trakt_results) => {
-                                if let Ok(results) = trakt_results {
-                                    Some(results.into_iter().map(|x| x.into()).collect_vec())
-                                } else {
+                            SearchResults::Trakt(trakt_results) => match trakt_results {
+                                Ok(results) =>
+                                    Some(results.into_iter().map(|x| x.into()).collect_vec()),
+                                Err(error) => {
+                                    error!("Trakt error while searching: {error:#?}");
                                     None
                                 }
-                            }
+                            },
+                            SearchResults::PunchPlay(punch_play_results) =>
+                                match punch_play_results {
+                                    Ok(results) =>
+                                        Some(results.into_iter().map(|x| x.into()).collect_vec()),
+                                    Err(error) => {
+                                        error!("PunchPlay error while searching: {error:#?}");
+                                        None
+                                    }
+                                },
+                            SearchResults::TMDB(tmdb_results) => match tmdb_results {
+                                Ok(results) =>
+                                    Some(results.into_iter().map(|x| x.into()).collect_vec()),
+                                Err(error) => {
+                                    error!("TMDB error while searching with: {error:#?}");
+                                    None
+                                }
+                            },
                         };
                     }
                 },
             Phase::GettingDetails => match self.rx_details_response.as_ref().unwrap().try_recv() {
                 Ok(details_response) =>
                     if let Ok(details_response) = details_response {
-                        self.tmdb_movie_details_result = details_response.tmdb;
                         self.trakt_movie_details_result = details_response.trakt;
+                        self.punch_play_movie_details_result = details_response.punch_play;
+                        self.tmdb_movie_details_result = details_response.tmdb;
                         self.omdb_movie_details_result = details_response.omdb;
 
                         self.advance_phase();

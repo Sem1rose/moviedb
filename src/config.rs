@@ -6,10 +6,11 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct Options {
-    pub oob_done:      bool,
-    pub trakt_enabled: bool,
-    pub tmdb_enabled:  bool,
-    pub omdb_enabled:  bool,
+    pub oob_done:           bool,
+    pub trakt_enabled:      bool,
+    pub punch_play_enabled: bool,
+    pub tmdb_enabled:       bool,
+    pub omdb_enabled:       bool,
 
     pub image_preload_rule: String,
 }

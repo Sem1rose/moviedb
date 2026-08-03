@@ -3,7 +3,7 @@ use std::{
     sync::mpsc::{Receiver, Sender},
 };
 
-use anyhow::{Context, bail};
+use anyhow::{Context, anyhow, bail};
 use reqwest::{
     blocking::ClientBuilder,
     header::{CONTENT_TYPE, HeaderMap, USER_AGENT},
@@ -50,8 +50,12 @@ pub fn get_tokens(
         None,
         None,
     )?;
-    if validate_response.status().as_u16() >= 400 {
-        bail!("Trakt: Unable to validate user credentials");
+    if !validate_response.status().is_success() {
+        return Err(match validate_response.json::<TokenResponseError>() {
+            Ok(err) => err.into(),
+            Err(_) => anyhow!(""),
+        })
+        .context("Trakt: Unable to validate user credentials");
     }
 
     _ = tx_auth_url.send(authorization_url);
@@ -79,15 +83,15 @@ pub fn get_tokens(
         None,
     )?;
 
-    if token_response.status().as_u16() >= 400 {
-        return Err::<_, anyhow::Error>(match token_response.json::<TokenResponseError>() {
+    if !token_response.status().is_success() {
+        return Err(match token_response.json::<TokenResponseError>() {
             Ok(err) => err.into(),
-            Err(err) => err.into(),
+            Err(_) => anyhow!(""),
         })
         .context("Trakt: Error while exchanging auth code for an access token");
     }
 
-    Ok(token_response.json::<TokenResponse>()?)
+    Ok(token_response.json()?)
 }
 
 pub fn refresh_tokens(
@@ -117,10 +121,10 @@ pub fn refresh_tokens(
         None,
     )?;
 
-    if token_response.status().as_u16() >= 400 {
-        return Err::<_, anyhow::Error>(match token_response.json::<TokenResponseError>() {
+    if !token_response.status().is_success() {
+        return Err(match token_response.json::<TokenResponseError>() {
             Ok(err) => err.into(),
-            Err(err) => err.into(),
+            Err(_) => anyhow!(""),
         })
         .context("Trakt: Error while while refreshing access token");
     }

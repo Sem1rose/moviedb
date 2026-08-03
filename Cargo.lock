@@ -1904,6 +1904,7 @@ dependencies = [
  "itertools",
  "log",
  "nucleo-matcher",
+ "punch_play",
  "rand 0.10.1",
  "ratatui",
  "ratatui-image",
@@ -2377,6 +2378,19 @@ checksum = "4488a4a36b9a4ba6b9334a32a39971f77c1436ec82c38707bce707699cc3bbcb"
 dependencies = [
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "punch_play"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "image",
+ "itertools",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "unix-ts",
 ]
 
 [[package]]

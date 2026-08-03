@@ -1,6 +1,6 @@
 use std::{error::Error, fmt::Display};
 
-use anyhow::Context;
+use anyhow::{Context, anyhow};
 use reqwest::blocking::{ClientBuilder, RequestBuilder};
 use serde::Deserialize;
 
@@ -17,28 +17,29 @@ impl Display for DetailsResponseError {
     }
 }
 
-#[allow(non_snake_case)]
 #[derive(Deserialize, Debug, Default, Clone)]
+#[serde(rename_all = "PascalCase")]
 pub struct OMDBDetailsResponse {
-    // pub Title: String,
-    // pub Year: String,
-    // pub Rated: String,
-    // pub Released: String,
-    // pub Runtime: String,
-    // pub Genre: String,
-    // pub Director: String,
-    // pub Writer: String,
-    // pub Actors: String,
-    // pub Plot: String,
-    // pub Language: String,
-    // pub Country: String,
-    // pub Awards: String,
-    // pub Metascore: String,
-    pub imdbRating: String,
-    pub imdbVotes:  String,
-    // pub imdbID: String,
-    // pub Type: String,
-    // pub Result: String,
+    pub title:       String,
+    pub year:        String,
+    pub rated:       String,
+    pub released:    String,
+    pub runtime:     String,
+    pub genre:       String,
+    pub director:    String,
+    pub writer:      String,
+    pub actors:      String,
+    pub plot:        String,
+    pub language:    String,
+    pub country:     String,
+    pub awards:      String,
+    // pub metascore: String,
+    #[serde(rename = "imdbRating")]
+    pub imdb_rating: String,
+    #[serde(rename = "imdbVotes")]
+    pub imdb_votes:  String,
+    // pub imdb_iD: String,
+    // pub type: String,
 }
 
 pub fn get_movie_details(omdb_key: &str, imdb_id: &str) -> anyhow::Result<OMDBDetailsResponse> {
@@ -50,10 +51,10 @@ pub fn get_movie_details(omdb_key: &str, imdb_id: &str) -> anyhow::Result<OMDBDe
     request = request.query(&query);
 
     let response = request.send()?;
-    if response.status().as_u16() != 200 {
-        return Err::<_, anyhow::Error>(match response.json::<DetailsResponseError>() {
+    if !response.status().is_success() {
+        return Err(match response.json::<DetailsResponseError>() {
             Ok(err) => err.into(),
-            Err(err) => err.into(),
+            Err(_) => anyhow!(""),
         })
         .context("Error while requesting from the omdb API");
     }

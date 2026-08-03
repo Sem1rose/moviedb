@@ -4,9 +4,9 @@ use itertools::Itertools;
 use ratatui::{
     Frame,
     layout::{Layout, Offset, Size},
-    macros::{constraint, line, span, text},
+    macros::{constraint, line, span},
     style::{Stylize, palette::tailwind},
-    text::{Line, Text},
+    text::Text,
     widgets::{Block, Clear},
 };
 
@@ -16,7 +16,7 @@ use crate::{
     key_event_handler::{self, KeyEventHandler},
     popups::*,
     screens::{Screens, main_screen::MainScreen},
-    tokens::{OMDBTokens, TMDBTokens, TraktTokens},
+    tokens::{OMDBTokens, PunchPlayTokens, TMDBTokens, TraktTokens},
 };
 
 pub struct Drawer {
@@ -39,6 +39,11 @@ impl Drawer {
             let mut popups = vec![];
             if config.borrow_mut().options.trakt_enabled {
                 popups.push(Popups::TraktInit(TraktInitPopup::new(home_dir, false)));
+            }
+            if config.borrow_mut().options.punch_play_enabled {
+                popups.push(Popups::PunchPlayInit(PunchPlayInitPopup::new(
+                    home_dir, false,
+                )));
             }
             if config.borrow_mut().options.tmdb_enabled {
                 popups.push(Popups::TMDBInit(TMDBInitPopup::new(home_dir, false)));
@@ -125,6 +130,19 @@ impl Drawer {
                         });
                     }
                 }
+                Popups::TraktInit(trakt_init_popup) => {
+                    if let TraktInitPopupPhase::Done = trakt_init_popup.phase {
+                        key_event_handler.bind_immediate(|app, _| {
+                            app.set_trakt_user_tokens();
+                        });
+                    }
+                }
+                Popups::PunchPlayInit(punch_play_init_popup) =>
+                    if let PunchPlayInitPopupPhase::Done = punch_play_init_popup.phase {
+                        key_event_handler.bind_immediate(|app, _| {
+                            app.set_punch_play_user_tokens();
+                        });
+                    },
                 Popups::TMDBInit(tmdb_init_popup) => {
                     if let TMDBInitPopupPhase::Done = tmdb_init_popup.phase {
                         key_event_handler.bind_immediate(|app, _| {
@@ -138,13 +156,6 @@ impl Drawer {
                             app.set_omdb_user_tokens();
                         });
                     },
-                Popups::TraktInit(trakt_init_popup) => {
-                    if let TraktInitPopupPhase::Done = trakt_init_popup.phase {
-                        key_event_handler.bind_immediate(|app, _| {
-                            app.set_trakt_user_tokens();
-                        });
-                    }
-                }
                 Popups::FetchArtworks(fetch_artworks_popup) =>
                     if fetch_artworks_popup.done {
                         self.close_popup();
@@ -221,11 +232,13 @@ impl Drawer {
     pub fn open_add_movie_popup(
         &mut self,
         trakt_tokens: TraktTokens,
+        punch_play_tokens: PunchPlayTokens,
         tmdb_tokens: TMDBTokens,
         omdb_tokens: OMDBTokens,
     ) {
         self.popup_queue.push(Popups::AddMovie(AddMoviePopup::new(
             trakt_tokens,
+            punch_play_tokens,
             tmdb_tokens,
             omdb_tokens,
             &self.cache_dir,

@@ -16,7 +16,8 @@ use crate::{
     helpers::{add_padding, create_popup, static_area},
     key_event_handler::{self, Data, KeyEventHandler},
     popups::{
-        FetchArtworksPopup, OMDBInitPopup, PopupTrait, Popups, TMDBInitPopup, TraktInitPopup,
+        FetchArtworksPopup, OMDBInitPopup, PopupTrait, Popups, PunchPlayInitPopup, TMDBInitPopup,
+        TraktInitPopup,
     },
     widgets::{self, Action, ActionTypes},
 };
@@ -25,7 +26,7 @@ use crate::{
 pub struct OutOfBoxPopup {
     tab:          usize,
     item:         usize,
-    toggled_list: [bool; 3],
+    toggled_list: [bool; 4],
 }
 
 const COLUMNS: usize = 2;
@@ -49,9 +50,9 @@ impl PopupTrait for OutOfBoxPopup {
         key_event_handler.bind_key((Some(0), None), 'a', "Toggle all".into(), |app, _| {
             if let Some(Popups::OutOfBox(out_of_box_popup)) = app.drawer.active_popup.as_mut() {
                 if out_of_box_popup.toggled_list.contains(&false) {
-                    out_of_box_popup.toggled_list = [true; 3];
+                    out_of_box_popup.toggled_list = [true; 4];
                 } else {
-                    out_of_box_popup.toggled_list = [false; 3];
+                    out_of_box_popup.toggled_list = [false; 4];
                 }
             }
         });
@@ -69,6 +70,13 @@ impl PopupTrait for OutOfBoxPopup {
                     config.borrow_mut().options.tmdb_enabled = true;
                 }
                 if out_of_box_popup.toggled_list[2] {
+                    popups.push(Popups::PunchPlayInit(PunchPlayInitPopup::new(
+                        &app.home_dir,
+                        false,
+                    )));
+                    config.borrow_mut().options.punch_play_enabled = true;
+                }
+                if out_of_box_popup.toggled_list[3] {
                     popups.push(Popups::OMDBInit(OMDBInitPopup::new(&app.home_dir, false)));
                     config.borrow_mut().options.omdb_enabled = true;
                 }
@@ -250,7 +258,7 @@ impl PopupTrait for OutOfBoxPopup {
             vertical![==1, >=1].areas(add_padding(popup_area, Padding::horizontal(2)));
 
         let mut table_indices = vec![];
-        let labels = ["Trakt", "TMDB", "OMDB"];
+        let labels = ["Trakt", "TMDB", "PunchPlay", "OMDB"];
         let mut required_header = false;
         let mut optional_header = false;
         let mut i = 0;

@@ -5,6 +5,7 @@ mod edit_movie;
 mod fetch_artworks;
 mod omdb_init;
 mod out_of_box;
+mod punch_play_init;
 mod tmdb_init;
 mod trakt_init;
 
@@ -15,6 +16,7 @@ pub use edit_movie::EditMoviePopup;
 pub use fetch_artworks::FetchArtworksPopup;
 pub use omdb_init::OMDBInitPopup;
 pub use out_of_box::OutOfBoxPopup;
+pub use punch_play_init::{Phase as PunchPlayInitPopupPhase, PunchPlayInitPopup};
 pub use tmdb_init::{Phase as TMDBInitPopupPhase, TMDBInitPopup};
 pub use trakt_init::{Phase as TraktInitPopupPhase, TraktInitPopup};
 
@@ -23,6 +25,7 @@ pub enum Popups {
     EditMovie(EditMoviePopup),
     DeleteMovie(DeleteMoviePopup),
     TraktInit(TraktInitPopup),
+    PunchPlayInit(PunchPlayInitPopup),
     TMDBInit(TMDBInitPopup),
     OMDBInit(OMDBInitPopup),
     FetchArtworks(FetchArtworksPopup),
@@ -37,6 +40,7 @@ impl Popups {
             Popups::EditMovie(edit_movie_popup) => edit_movie_popup,
             Popups::DeleteMovie(delete_movie_popup) => delete_movie_popup,
             Popups::TraktInit(trakt_init_popup) => trakt_init_popup,
+            Popups::PunchPlayInit(punch_play_init_popup) => punch_play_init_popup,
             Popups::TMDBInit(tmdbinit_popup) => tmdbinit_popup,
             Popups::OMDBInit(omdbinit_popup) => omdbinit_popup,
             Popups::FetchArtworks(fetch_artworks_popup) => fetch_artworks_popup,
@@ -51,6 +55,7 @@ impl Popups {
             Popups::EditMovie(edit_movie_popup) => edit_movie_popup,
             Popups::DeleteMovie(delete_movie_popup) => delete_movie_popup,
             Popups::TraktInit(trakt_init_popup) => trakt_init_popup,
+            Popups::PunchPlayInit(punch_play_init_popup) => punch_play_init_popup,
             Popups::TMDBInit(tmdbinit_popup) => tmdbinit_popup,
             Popups::OMDBInit(omdbinit_popup) => omdbinit_popup,
             Popups::FetchArtworks(fetch_artworks_popup) => fetch_artworks_popup,

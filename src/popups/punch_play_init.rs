@@ -1,9 +1,10 @@
 use std::{
     path::PathBuf,
-    sync::mpsc::{Receiver, Sender, channel},
+    sync::mpsc::{Receiver, channel},
     thread,
 };
 
+use punch_play::{self, smo::AccessTokenResponse};
 use ratatui::{
     Frame,
     layout::{Alignment, Flex, HorizontalAlignment, Margin},
@@ -17,14 +18,13 @@ use ratatui::{
 };
 use ratatui_textarea::{TextArea, WrapMode};
 use throbber_widgets_tui::{Throbber, ThrobberState};
-use trakt::{self, smo::TokenResponse};
 
 use crate::{
     app::App,
     helpers::{add_padding, create_popup, dynamic_area, static_area, wrap_text},
     key_event_handler::{self, KeyEventHandler},
     popups::{PopupTrait, Popups},
-    tokens::trakt_tokens::{TraktTokens, UserTokens},
+    tokens::punch_play_tokens::{PunchPlayTokens, UserTokens},
     widgets::{self, Action, ActionTypes},
 };
 
@@ -42,33 +42,32 @@ pub enum Phase {
 }
 
 #[derive(Default)]
-pub struct TraktInitPopup {
-    item:             usize,
+pub struct PunchPlayInitPopup {
     pub tick:         u64,
     pub phase:        Phase,
     throbber_visible: bool,
-    can_close:        bool,
+    item:             usize,
     status:           Option<bool>,
+    can_close:        bool,
 
     input0:         TextArea<'static>,
     input1:         TextArea<'static>,
     throbber_state: ThrobberState,
 
     rx_init:              Option<Receiver<anyhow::Result<UserTokens>>>,
-    tx_auth_code:         Option<Sender<String>>,
     rx_authorization_url: Option<Receiver<String>>,
-    rx_tokens:            Option<Receiver<anyhow::Result<TokenResponse>>>,
+    rx_tokens:            Option<Receiver<anyhow::Result<AccessTokenResponse>>>,
 
     pub user_tokens: Option<UserTokens>,
 }
 
-impl TraktInitPopup {
+impl PunchPlayInitPopup {
     pub fn new(home_dir: &PathBuf, can_close: bool) -> Self {
         let (tx_init, rx_init) = channel();
         let home_dir_cloned = home_dir.clone();
 
         thread::spawn(move || {
-            _ = tx_init.send(TraktTokens::init(&home_dir_cloned));
+            _ = tx_init.send(PunchPlayTokens::init(&home_dir_cloned));
         });
 
         Self {
@@ -79,8 +78,6 @@ impl TraktInitPopup {
     }
 
     pub fn advance_phase(&mut self) {
-        self.item = 0;
-
         self.phase = match self.phase {
             Phase::Initializing => Phase::GetSecrets,
             Phase::GetSecrets => {
@@ -96,46 +93,35 @@ impl TraktInitPopup {
                     expires_on:    i64::MAX,
                 });
 
-                let (tx_auth_url, rx_auth_url) = channel();
-                let (tx_auth_code, rx_auth_code) = channel();
+                let (tx_authorization_url, rx_authorization_url) = channel();
                 let (tx_tokens, rx_tokens) = channel();
                 thread::spawn(move || {
-                    _ = tx_tokens.send(trakt::tokens::get_tokens(
+                    _ = tx_tokens.send(punch_play::tokens::get_tokens(
                         &client_id,
                         &client_secret,
-                        tx_auth_url,
-                        rx_auth_code,
+                        tx_authorization_url,
                     ));
                 });
 
-                self.tx_auth_code = Some(tx_auth_code);
-                self.rx_authorization_url = Some(rx_auth_url);
+                self.rx_authorization_url = Some(rx_authorization_url);
                 self.rx_tokens = Some(rx_tokens);
 
                 Phase::GettingAuthorizationUrl
             }
-            Phase::Authorize(_) => {
-                if let Some(tx_auth_code) = self.tx_auth_code.take() {
-                    let auth_code = self.input0.lines()[0].clone();
-
-                    _ = tx_auth_code.send(auth_code);
-                }
-
-                Phase::Finalize
-            }
-            Phase::Finalize | Phase::RefreshingTokens => Phase::Done,
+            Phase::Authorize(_) => Phase::Finalize,
+            Phase::Finalize => Phase::Done,
             _ => Phase::Initializing,
         };
     }
 }
 
-impl PopupTrait for TraktInitPopup {
+impl PopupTrait for PunchPlayInitPopup {
     fn get_state(&self) -> (Option<usize>, Option<usize>) {
         (None, Some(self.item))
     }
 
     fn update_next_frame(&self) -> bool {
-        self.throbber_visible // || matches!(self.phase, Phase::Authorize(_))
+        self.throbber_visible || matches!(self.phase, Phase::Authorize(_))
     }
 
     fn update(&mut self) {
@@ -165,7 +151,7 @@ impl PopupTrait for TraktInitPopup {
                                     let (tx_tokens, rx_tokens) = channel();
 
                                     thread::spawn(move || {
-                                        _ = tx_tokens.send(trakt::tokens::refresh_tokens(
+                                        _ = tx_tokens.send(punch_play::tokens::refresh_tokens(
                                             &client_id,
                                             &client_secret,
                                             &refresh_token,
@@ -191,7 +177,6 @@ impl PopupTrait for TraktInitPopup {
             Phase::GettingAuthorizationUrl => {
                 if let Some(rx_authorization_url) = self.rx_authorization_url.as_ref() {
                     if let Ok(authorization_url) = rx_authorization_url.try_recv() {
-                        self.input0.clear();
                         self.status = Some(false);
                         self.phase = Phase::Authorize(authorization_url);
                     }
@@ -205,13 +190,22 @@ impl PopupTrait for TraktInitPopup {
                     }
                 }
             }
-            Phase::Authorize(_) =>
+            Phase::Authorize(_) => 'label: {
+                if let Some(rx_authorization_url) = self.rx_authorization_url.as_ref() {
+                    if let Err(std::sync::mpsc::TryRecvError::Disconnected) =
+                        rx_authorization_url.try_recv()
+                    {
+                        self.advance_phase();
+                        break 'label;
+                    }
+                }
                 if let Some(rx_tokens) = self.rx_tokens.as_ref() {
                     if let Ok(Err(error)) = rx_tokens.try_recv() {
                         self.item = 0;
                         self.phase = Phase::Error(format!("{:#}", error));
                     }
-                },
+                }
+            }
             Phase::Finalize | Phase::RefreshingTokens =>
                 if let Some(rx_tokens) = self.rx_tokens.as_ref() {
                     if let Ok(result) = rx_tokens.try_recv() {
@@ -220,8 +214,8 @@ impl PopupTrait for TraktInitPopup {
                                 if let Some(user_tokens) = self.user_tokens.as_mut() {
                                     user_tokens.access_token = token_response.access_token;
                                     user_tokens.refresh_token = token_response.refresh_token;
-                                    user_tokens.expires_on =
-                                        token_response.created_at + token_response.expires_in;
+                                    user_tokens.expires_on = unix_ts::Timestamp::now().seconds()
+                                        + token_response.expires_in;
                                 }
                                 self.status = Some(true);
 
@@ -275,7 +269,7 @@ impl PopupTrait for TraktInitPopup {
                 let popup_area = create_popup(
                     frame,
                     static_area(6, 28, frame.area()),
-                    " Trakt Authentication ",
+                    " PunchPlay Authentication ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
                     Style::new().fg(tailwind::VIOLET.c950),
@@ -312,36 +306,37 @@ impl PopupTrait for TraktInitPopup {
                     !(self.input0.lines()[0].is_empty() || self.input1.lines()[0].is_empty());
 
                 key_event_handler.bind_tab((None, None), "".into(), |app, data| {
-                    if let Some(Popups::TraktInit(trakt_init_popup)) =
+                    if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
                         match data {
                             crate::key_event_handler::Data::Direction(true, _) => {
-                                trakt_init_popup.item += 1;
-                                if trakt_init_popup.item > 2 {
-                                    trakt_init_popup.item = 0;
+                                punch_play_init_popup.item += 1;
+                                if punch_play_init_popup.item > 2 {
+                                    punch_play_init_popup.item = 0;
                                 }
                             }
                             crate::key_event_handler::Data::Direction(false, _) => {
-                                trakt_init_popup.item =
-                                    trakt_init_popup.item.checked_sub(1).unwrap_or(2);
+                                punch_play_init_popup.item =
+                                    punch_play_init_popup.item.checked_sub(1).unwrap_or(2);
                             }
                             _ => {}
                         }
                     }
                 });
                 key_event_handler.bind_esc((None, None), "".into(), |app, _| {
-                    if let Some(Popups::TraktInit(trakt_init_popup)) =
+                    if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
-                        trakt_init_popup.item = 2;
+                        punch_play_init_popup.item = 2;
                     }
                 });
+
                 key_event_handler.bind_enter((None, None), "".into(), |app, _| {
-                    if let Some(Popups::TraktInit(trakt_init_popup)) =
+                    if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
-                        trakt_init_popup.item += 1;
+                        punch_play_init_popup.item += 1;
                     }
                 });
                 if input_valid {
@@ -349,10 +344,10 @@ impl PopupTrait for TraktInitPopup {
                         (None, Some(1)),
                         "Confirm".into(),
                         move |app, _| {
-                            if let Some(Popups::TraktInit(trakt_init_popup)) =
+                            if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
                                 app.drawer.active_popup.as_mut()
                             {
-                                trakt_init_popup.advance_phase();
+                                punch_play_init_popup.advance_phase();
                             }
                         },
                     );
@@ -360,10 +355,10 @@ impl PopupTrait for TraktInitPopup {
                         (None, Some(2)),
                         "Confirm".into(),
                         move |app, _| {
-                            if let Some(Popups::TraktInit(trakt_init_popup)) =
+                            if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
                                 app.drawer.active_popup.as_mut()
                             {
-                                trakt_init_popup.advance_phase();
+                                punch_play_init_popup.advance_phase();
                             }
                         },
                     );
@@ -372,24 +367,24 @@ impl PopupTrait for TraktInitPopup {
                 }
 
                 key_event_handler.bind_input_field((None, Some(0)), "".into(), |app, data| {
-                    if let Some(Popups::TraktInit(trakt_init_popup)) =
+                    if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
                         match data {
                             key_event_handler::Data::Key(key_event) => {
-                                trakt_init_popup.input0.input(key_event);
+                                punch_play_init_popup.input0.input(key_event);
                             }
                             _ => (),
                         }
                     }
                 });
                 key_event_handler.bind_input_field((None, Some(1)), "".into(), |app, data| {
-                    if let Some(Popups::TraktInit(trakt_init_popup)) =
+                    if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
                         match data {
                             key_event_handler::Data::Key(key_event) => {
-                                trakt_init_popup.input1.input(key_event);
+                                punch_play_init_popup.input1.input(key_event);
                             }
                             _ => (),
                         }
@@ -399,7 +394,7 @@ impl PopupTrait for TraktInitPopup {
                 let popup_area = create_popup(
                     frame,
                     dynamic_area(11, 4.0, frame.area()),
-                    " Trakt Authentication ",
+                    " PunchPlay Authentication ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
                     Style::new().fg(tailwind::VIOLET.c950),
@@ -431,10 +426,10 @@ impl PopupTrait for TraktInitPopup {
                     ratatui::crossterm::event::MouseButton::Left,
                     ci_input_area,
                     |app, _| {
-                        if let Some(Popups::TraktInit(trakt_init_popup)) =
+                        if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
-                            trakt_init_popup.item = 0;
+                            punch_play_init_popup.item = 0;
                         }
                     },
                 );
@@ -455,10 +450,10 @@ impl PopupTrait for TraktInitPopup {
                     ratatui::crossterm::event::MouseButton::Left,
                     cs_input_area,
                     |app, _| {
-                        if let Some(Popups::TraktInit(trakt_init_popup)) =
+                        if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
-                            trakt_init_popup.item = 1;
+                            punch_play_init_popup.item = 1;
                         }
                     },
                 );
@@ -480,115 +475,38 @@ impl PopupTrait for TraktInitPopup {
                         ratatui::crossterm::event::MouseButton::Left,
                         mouse_area,
                         |app, _| {
-                            if let Some(Popups::TraktInit(trakt_init_popup)) =
+                            if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
                                 app.drawer.active_popup.as_mut()
                             {
-                                trakt_init_popup.advance_phase();
+                                punch_play_init_popup.advance_phase();
                             }
                         },
                     );
                 }
             }
             Phase::Authorize(authorization_url) => {
-                let input_valid = !self.input0.is_empty();
-
-                key_event_handler.bind_tab((None, None), "".into(), |app, data| {
-                    if let Some(Popups::TraktInit(trakt_init_popup)) =
-                        app.drawer.active_popup.as_mut()
-                    {
-                        match data {
-                            crate::key_event_handler::Data::Direction(true, _) => {
-                                trakt_init_popup.item += 1;
-                                if trakt_init_popup.item > 3 {
-                                    trakt_init_popup.item = 0;
-                                }
-                            }
-                            crate::key_event_handler::Data::Direction(false, _) => {
-                                trakt_init_popup.item =
-                                    trakt_init_popup.item.checked_sub(1).unwrap_or(3);
-                            }
-                            _ => {}
-                        }
-                    }
-                });
                 key_event_handler.bind_esc((None, None), "".into(), |app, _| {
-                    if let Some(Popups::TraktInit(trakt_init_popup)) =
+                    if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
-                        trakt_init_popup.item = 3;
-                    }
-                });
-                key_event_handler.bind_esc((None, Some(3)), "".into(), |app, _| {
-                    if let Some(Popups::TraktInit(trakt_init_popup)) =
-                        app.drawer.active_popup.as_mut()
-                    {
-                        trakt_init_popup.item = 0;
-                        trakt_init_popup.rx_tokens = None;
-                        trakt_init_popup.rx_authorization_url = None;
-                        trakt_init_popup.tx_auth_code = None;
-                        trakt_init_popup.input0.clear();
-                        trakt_init_popup.input1.clear();
-                        trakt_init_popup.phase = Phase::GetSecrets;
-                    }
-                });
-                key_event_handler.bind_enter((None, Some(0)), "".into(), |app, _| {
-                    if let Some(Popups::TraktInit(trakt_init_popup)) =
-                        app.drawer.active_popup.as_mut()
-                    {
-                        trakt_init_popup.item = 1;
-                    }
-                });
-                if input_valid {
-                    key_event_handler.bind_enter((None, Some(1)), "Confirm".into(), |app, _| {
-                        if let Some(Popups::TraktInit(trakt_init_popup)) =
-                            app.drawer.active_popup.as_mut()
-                        {
-                            trakt_init_popup.advance_phase();
-                        }
-                    });
-                }
-                key_event_handler.bind_enter((None, Some(2)), "Skip".into(), |app, _| {
-                    if let Some(Popups::TraktInit(trakt_init_popup)) =
-                        app.drawer.active_popup.as_mut()
-                    {
-                        trakt_init_popup.phase = Phase::Done;
-                    }
-                });
-                key_event_handler.bind_enter((None, Some(3)), "Back".into(), |app, _| {
-                    if let Some(Popups::TraktInit(trakt_init_popup)) =
-                        app.drawer.active_popup.as_mut()
-                    {
-                        trakt_init_popup.item = 0;
-                        trakt_init_popup.rx_tokens = None;
-                        trakt_init_popup.rx_authorization_url = None;
-                        trakt_init_popup.tx_auth_code = None;
-                        trakt_init_popup.input0.clear();
-                        trakt_init_popup.input1.clear();
-                        trakt_init_popup.phase = Phase::GetSecrets;
-                    }
-                });
-                key_event_handler.bind_input_field((None, Some(0)), "".into(), |app, data| {
-                    if let Some(Popups::TraktInit(trakt_init_popup)) =
-                        app.drawer.active_popup.as_mut()
-                    {
-                        match data {
-                            key_event_handler::Data::Key(key_event) => {
-                                trakt_init_popup.input0.input(key_event);
-                            }
-                            _ => (),
-                        }
+                        punch_play_init_popup.item = 0;
+                        punch_play_init_popup.input0.clear();
+                        punch_play_init_popup.input1.clear();
+                        punch_play_init_popup.rx_tokens = None;
+                        punch_play_init_popup.rx_authorization_url = None;
+                        punch_play_init_popup.phase = Phase::GetSecrets;
                     }
                 });
 
                 let popup_area = create_popup(
                     frame,
-                    dynamic_area(12, 4.0, frame.area()),
-                    " Trakt Authentication ",
+                    dynamic_area(10, 4.0, frame.area()),
+                    " PunchPlay Authentication ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
                     Style::new().fg(tailwind::VIOLET.c950),
                     tailwind::BLUE.c950,
-                    true,
+                    false,
                 );
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
@@ -596,27 +514,8 @@ impl PopupTrait for TraktInitPopup {
                     |_, _| {},
                 );
 
-                let skip_mouse_area = widgets::action(
-                    Action::new(" Skip ", ActionTypes::Normal, self.item == 2, true),
-                    HorizontalAlignment::Right,
-                    false,
-                    popup_area,
-                    frame,
-                );
-                key_event_handler.bind_mouse_button_down(
-                    ratatui::crossterm::event::MouseButton::Left,
-                    skip_mouse_area,
-                    |app, _| {
-                        if let Some(Popups::TraktInit(trakt_init_popup)) =
-                            app.drawer.active_popup.as_mut()
-                        {
-                            trakt_init_popup.phase = Phase::Done;
-                        }
-                    },
-                );
-
                 let back_mouse_area = widgets::action(
-                    Action::new(" Back ", ActionTypes::Normal, self.item == 3, true),
+                    Action::new(" Back ", ActionTypes::Default, false, true),
                     HorizontalAlignment::Left,
                     false,
                     popup_area,
@@ -626,27 +525,26 @@ impl PopupTrait for TraktInitPopup {
                     ratatui::crossterm::event::MouseButton::Left,
                     back_mouse_area,
                     |app, _| {
-                        if let Some(Popups::TraktInit(trakt_init_popup)) =
+                        if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
-                            trakt_init_popup.item = 0;
-                            trakt_init_popup.rx_tokens = None;
-                            trakt_init_popup.rx_authorization_url = None;
-                            trakt_init_popup.tx_auth_code = None;
-                            trakt_init_popup.input0.clear();
-                            trakt_init_popup.input1.clear();
-                            trakt_init_popup.phase = Phase::GetSecrets;
+                            punch_play_init_popup.item = 0;
+                            punch_play_init_popup.input0.clear();
+                            punch_play_init_popup.input1.clear();
+                            punch_play_init_popup.rx_tokens = None;
+                            punch_play_init_popup.rx_authorization_url = None;
+                            punch_play_init_popup.phase = Phase::GetSecrets;
                         }
                     },
                 );
 
-                let [_, message_area, _, input_area, _] = vertical![==1, ==3, >=1, ==3, ==1]
+                let [_, hyperlink_area, _] = vertical![>=1, ==3, >=1]
                     .areas(add_padding(popup_area, Padding::proportional(1)));
 
                 let hyperlink_text = "  Click to Authorize  ";
-                let [message_area] = horizontal![==(hyperlink_text.len() as u16)]
+                let [hyperlink_area] = horizontal![==(hyperlink_text.len() as u16)]
                     .flex(Flex::Center)
-                    .areas(message_area);
+                    .areas(hyperlink_area);
                 widgets::hyperlink(
                     text![
                         " ".repeat(hyperlink_text.len()),
@@ -656,99 +554,62 @@ impl PopupTrait for TraktInitPopup {
                     .fg(material::GREEN.c100)
                     .bg(material::BLUE.c800),
                     authorization_url,
-                    message_area,
+                    hyperlink_area,
                     frame,
                 );
-
-                widgets::input_field(
-                    true,
-                    self.item == 0,
-                    input_valid,
-                    &mut self.input0,
-                    WrapMode::None,
-                    frame,
-                    add_padding(input_area, Padding::horizontal(8)),
-                    " Authorization Code ",
-                    "Enter the authorization code",
-                );
-                key_event_handler.bind_mouse_button_down(
-                    ratatui::crossterm::event::MouseButton::Left,
-                    input_area,
-                    |app, _| {
-                        if let Some(Popups::TraktInit(trakt_init_popup)) =
-                            app.drawer.active_popup.as_mut()
-                        {
-                            trakt_init_popup.item = 0;
-                        }
-                    },
-                );
-
-                let confirm_mouse_area = widgets::action(
-                    Action::new(
-                        " Confirm ",
-                        ActionTypes::Normal,
-                        self.item == 1,
-                        input_valid,
-                    ),
-                    HorizontalAlignment::Right,
-                    true,
-                    add_padding(popup_area, Padding::right(1)),
-                    frame,
-                );
-                if input_valid {
-                    key_event_handler.bind_mouse_button_down(
-                        ratatui::crossterm::event::MouseButton::Left,
-                        confirm_mouse_area,
-                        |app, _| {
-                            if let Some(Popups::TraktInit(trakt_init_popup)) =
-                                app.drawer.active_popup.as_mut()
-                            {
-                                trakt_init_popup.advance_phase();
-                            }
-                        },
-                    );
-                }
             }
             Phase::Error(error) => {
                 let back = |app: &mut App, _| {
-                    if let Some(Popups::TraktInit(trakt_init_popup)) =
+                    if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
-                        trakt_init_popup.item = 0;
-                        trakt_init_popup.rx_tokens = None;
-                        trakt_init_popup.rx_authorization_url = None;
-                        trakt_init_popup.tx_auth_code = None;
-                        trakt_init_popup.input0.clear();
-                        trakt_init_popup.input1.clear();
-                        trakt_init_popup.user_tokens = None;
-                        trakt_init_popup.status = None;
-                        trakt_init_popup.phase = Phase::GetSecrets;
+                        punch_play_init_popup.item = 1;
+                        punch_play_init_popup.rx_tokens = None;
+                        punch_play_init_popup.rx_authorization_url = None;
+                        punch_play_init_popup.input0.clear();
+                        punch_play_init_popup.input1.clear();
+                        punch_play_init_popup.phase = Phase::GetSecrets;
+                        if let Some(false) = punch_play_init_popup.status {
+                            if let Some(user_tokens) = punch_play_init_popup.user_tokens.as_ref() {
+                                punch_play_init_popup.input0 =
+                                    TextArea::new(vec![user_tokens.client_id.clone()]);
+                                punch_play_init_popup
+                                    .input0
+                                    .move_cursor(ratatui_textarea::CursorMove::End);
+
+                                punch_play_init_popup.input1 =
+                                    TextArea::new(vec![user_tokens.client_secret.clone()]);
+                                punch_play_init_popup
+                                    .input1
+                                    .move_cursor(ratatui_textarea::CursorMove::End);
+                            }
+                        }
                     }
                 };
-                key_event_handler.bind_esc((None, None), "Back".into(), back);
-                key_event_handler.bind_enter((None, Some(0)), "Back".into(), back);
+                key_event_handler.bind_enter((None, None), "Back".into(), back);
+                key_event_handler.bind_esc((None, Some(0)), "Back".into(), back);
                 if self.status.is_some() {
                     key_event_handler.bind_enter((None, Some(1)), "Skip".into(), |app, _| {
-                        if let Some(Popups::TraktInit(trakt_init_popup)) =
+                        if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
-                            trakt_init_popup.phase = Phase::Done;
+                            punch_play_init_popup.phase = Phase::Done;
                         }
                     });
                     key_event_handler.bind_tab((None, None), "".into(), |app, data| {
-                        if let Some(Popups::TraktInit(trakt_init_popup)) =
+                        if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             match data {
                                 crate::key_event_handler::Data::Direction(true, _) => {
-                                    trakt_init_popup.item += 1;
-                                    if trakt_init_popup.item > 1 {
-                                        trakt_init_popup.item = 0;
+                                    punch_play_init_popup.item += 1;
+                                    if punch_play_init_popup.item > 1 {
+                                        punch_play_init_popup.item = 0;
                                     }
                                 }
                                 crate::key_event_handler::Data::Direction(false, _) => {
-                                    trakt_init_popup.item =
-                                        trakt_init_popup.item.checked_sub(1).unwrap_or(1);
+                                    punch_play_init_popup.item =
+                                        punch_play_init_popup.item.checked_sub(1).unwrap_or(1);
                                 }
                                 _ => {}
                             }
@@ -791,10 +652,10 @@ impl PopupTrait for TraktInitPopup {
                         ratatui::crossterm::event::MouseButton::Left,
                         skip_mouse_area,
                         |app, _| {
-                            if let Some(Popups::TraktInit(trakt_init_popup)) =
+                            if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
                                 app.drawer.active_popup.as_mut()
                             {
-                                trakt_init_popup.phase = Phase::Done;
+                                punch_play_init_popup.phase = Phase::Done;
                             }
                         },
                     );

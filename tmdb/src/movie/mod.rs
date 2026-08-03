@@ -1,13 +1,13 @@
 use std::{path::PathBuf, thread};
 
-use anyhow::Context;
+use anyhow::{Context, anyhow};
 use itertools::Itertools;
 use reqwest::{blocking::ClientBuilder, header::HeaderMap};
 
 use crate::{
     send_tmdb_request,
     smo::{
-        ConfigurationResponse, ImagesConfiguration, RequestResponseError, TMDBDetailsResponse,
+        ConfigurationResponse, ImagesConfiguration, RequestResponseError, TMDBCredits, TMDBDetails,
         TMDBMovieImagesResponse, TMDBSearchResponse, TMDBSearchResult,
     },
 };
@@ -32,10 +32,10 @@ pub fn find_movie(access_token: &str, name: &str) -> anyhow::Result<Vec<TMDBSear
         None,
         Some(&query),
     )?;
-    if search_response.status().as_u16() != 200 {
-        return Err::<_, anyhow::Error>(match search_response.json::<RequestResponseError>() {
+    if !search_response.status().is_success() {
+        return Err(match search_response.json::<RequestResponseError>() {
             Ok(err) => err.into(),
-            Err(err) => err.into(),
+            Err(_) => anyhow!(""),
         })
         .context(format!("TMDB: Error while searching for movie {}", name));
     }
@@ -44,7 +44,7 @@ pub fn find_movie(access_token: &str, name: &str) -> anyhow::Result<Vec<TMDBSear
     Ok(json.results)
 }
 
-pub fn get_movie_details(access_token: &str, tmdb_id: u32) -> anyhow::Result<TMDBDetailsResponse> {
+pub fn get_movie_details(access_token: &str, tmdb_id: u32) -> anyhow::Result<TMDBDetails> {
     let client = ClientBuilder::new().build()?;
 
     let mut headers = HeaderMap::new();
@@ -62,15 +62,52 @@ pub fn get_movie_details(access_token: &str, tmdb_id: u32) -> anyhow::Result<TMD
         None,
         None,
     )?;
-    if details_response.status().as_u16() != 200 {
-        return Err::<_, anyhow::Error>(match details_response.json::<RequestResponseError>() {
+    if !details_response.status().is_success() {
+        return Err(match details_response.json::<RequestResponseError>() {
             Ok(err) => err.into(),
-            Err(err) => err.into(),
+            Err(_) => anyhow!(""),
         })
         .context("TMDB: Error while getting movie details");
     }
 
-    Ok(details_response.json::<TMDBDetailsResponse>()?)
+    details_response
+        .json()
+        .map(|mut x: TMDBDetails| {
+            x.credits = get_movie_credits(access_token, tmdb_id)
+                .inspect_err(|x| panic!("{x:#}"))
+                .ok();
+            x
+        })
+        .map_err(Into::into)
+}
+
+pub fn get_movie_credits(access_token: &str, tmdb_id: u32) -> anyhow::Result<TMDBCredits> {
+    let client = ClientBuilder::new().build()?;
+
+    let mut headers = HeaderMap::new();
+    headers.insert("accept", "application/json".parse().unwrap());
+    headers.insert("content-type", "application/json".parse().unwrap());
+    headers.insert(
+        "Authorization",
+        format!("Bearer {}", access_token).parse().unwrap(),
+    );
+
+    let details_response = send_tmdb_request(
+        &client,
+        &format!("https://api.themoviedb.org/3/movie/{tmdb_id}/credits"),
+        &headers,
+        None,
+        None,
+    )?;
+    if !details_response.status().is_success() {
+        return Err(match details_response.json::<RequestResponseError>() {
+            Ok(err) => err.into(),
+            Err(_) => anyhow!(""),
+        })
+        .context("TMDB: Error while getting credits");
+    }
+
+    details_response.json().map_err(Into::into)
 }
 
 pub(crate) fn get_movie_images(
@@ -87,49 +124,41 @@ pub(crate) fn get_movie_images(
         format!("Bearer {}", access_token).parse().unwrap(),
     );
 
-    let query = [("include_image_language", "en")];
+    let mut movie_images: TMDBMovieImagesResponse = get_movie_details(access_token, tmdb_id)
+        .unwrap_or(TMDBDetails::default())
+        .into();
 
-    let images_response = send_tmdb_request(
-        &client,
-        &format!("https://api.themoviedb.org/3/movie/{tmdb_id}/images"),
-        &headers,
-        None,
-        Some(&query),
-    )?;
-    if images_response.status().as_u16() != 200 {
-        return Err::<_, anyhow::Error>(match images_response.json::<RequestResponseError>() {
-            Ok(err) => err.into(),
-            Err(err) => err.into(),
-        })
-        .context("TMDB: Error while while querying for movie images");
-    }
-
-    let mut movie_images = images_response.json::<TMDBMovieImagesResponse>()?;
     if movie_images.backdrops.is_empty() || movie_images.posters.is_empty() {
-        let response = send_tmdb_request(
-            &client,
-            &format!("https://api.themoviedb.org/3/movie/{tmdb_id}/images"),
-            &headers,
-            None,
-            None,
-        );
-        if response.is_err() {
-            return Ok(movie_images);
-        }
-
-        let images_response = response.unwrap();
-        if images_response.status().as_u16() != 200 {
-            return Ok(movie_images);
-        }
-
-        let result = images_response.json::<TMDBMovieImagesResponse>();
-
-        if let Ok(unfiltered_images) = result {
-            if movie_images.backdrops.is_empty() && !unfiltered_images.backdrops.is_empty() {
-                movie_images.backdrops = unfiltered_images.backdrops;
+        for query in [vec![("include_image_language", "en")], vec![]] {
+            let response = send_tmdb_request(
+                &client,
+                &format!("https://api.themoviedb.org/3/movie/{tmdb_id}/images"),
+                &headers,
+                None,
+                Some(&query),
+            );
+            if response.is_err() {
+                continue;
             }
-            if movie_images.posters.is_empty() && !unfiltered_images.posters.is_empty() {
-                movie_images.posters = unfiltered_images.posters;
+
+            let images_response = response.unwrap();
+            if !images_response.status().is_success() {
+                continue;
+            }
+
+            let result = images_response.json::<TMDBMovieImagesResponse>();
+
+            if let Ok(images) = result {
+                if movie_images.backdrops.is_empty() && !images.backdrops.is_empty() {
+                    movie_images.backdrops = images.backdrops;
+                }
+                if movie_images.posters.is_empty() && !images.posters.is_empty() {
+                    movie_images.posters = images.posters;
+                }
+            }
+
+            if !(movie_images.backdrops.is_empty() || movie_images.posters.is_empty()) {
+                break;
             }
         }
     }
@@ -160,11 +189,11 @@ pub fn get_movie_poster_banner(
         None,
         None,
     )?;
-    if configuration_response.status().as_u16() != 200 {
-        return Err::<_, anyhow::Error>(
+    if !configuration_response.status().is_success() {
+        return Err(
             match configuration_response.json::<RequestResponseError>() {
                 Ok(err) => err.into(),
-                Err(err) => err.into(),
+                Err(_) => anyhow!(""),
             },
         )
         .context("TMDB: Error while while querying for configurations");

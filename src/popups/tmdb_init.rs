@@ -159,12 +159,13 @@ impl PopupTrait for TMDBInitPopup {
                     }
                 }
             }
-            Phase::Authorize(_) => {
+            Phase::Authorize(_) => 'label: {
                 if let Some(rx_authorization_url) = self.rx_authorization_url.as_ref() {
                     if let Err(std::sync::mpsc::TryRecvError::Disconnected) =
                         rx_authorization_url.try_recv()
                     {
                         self.advance_phase();
+                        break 'label;
                     }
                 }
                 if let Some(rx_session_id) = self.rx_session_id.as_ref() {
@@ -462,7 +463,7 @@ impl PopupTrait for TMDBInitPopup {
                         if let Some(false) = tmdb_init_popup.status {
                             if let Some(user_tokens) = tmdb_init_popup.user_tokens.as_ref() {
                                 tmdb_init_popup.input =
-                                    TextArea::new(vec![user_tokens.session_id.clone()]);
+                                    TextArea::new(vec![user_tokens.access_token.clone()]);
                                 tmdb_init_popup
                                     .input
                                     .move_cursor(ratatui_textarea::CursorMove::End);
@@ -546,7 +547,7 @@ impl PopupTrait for TMDBInitPopup {
                 }
 
                 let mouse_area = widgets::action(
-                    Action::new(" Back ", ActionTypes::Default, true, true),
+                    Action::new(" Back ", ActionTypes::Default, self.item == 0, true),
                     HorizontalAlignment::Center,
                     true,
                     add_padding(popup_area, Padding::right(1)),

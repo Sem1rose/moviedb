@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::mpsc::Sender};
 
-use anyhow::{Context, bail};
+use anyhow::{Context, anyhow, bail};
 use reqwest::{blocking::ClientBuilder, header::HeaderMap};
 
 use crate::{
@@ -32,11 +32,11 @@ pub fn get_session_id(
         None,
     )?;
 
-    if request_token_response.status().as_u16() != 200 {
-        return Err::<_, anyhow::Error>(
+    if !request_token_response.status().is_success() {
+        return Err(
             match request_token_response.json::<RequestResponseError>() {
                 Ok(err) => err.into(),
-                Err(err) => err.into(),
+                Err(_) => anyhow!(""),
             },
         )
         .context("TMDB: Error while getting a request token");
@@ -62,7 +62,7 @@ pub fn get_session_id(
         None,
     )?;
     let mut retries = 0;
-    while request_token_response.status().as_u16() >= 400 {
+    while !request_token_response.status().is_success() {
         retries += 1;
         if retries > 50 {
             bail!("TMDB: couldn't authenticate request token, max retries reached");
@@ -94,11 +94,11 @@ pub fn get_session_id(
         None,
     )?;
 
-    if create_session_response.status().as_u16() != 200 {
-        return Err::<_, anyhow::Error>(
+    if !create_session_response.status().is_success() {
+        return Err(
             match create_session_response.json::<RequestResponseError>() {
                 Ok(err) => err.into(),
-                Err(err) => err.into(),
+                Err(_) => anyhow!(""),
             },
         )
         .context("TMDB: Error while creating a new session ID");
