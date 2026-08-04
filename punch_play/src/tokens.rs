@@ -88,7 +88,7 @@ pub fn refresh_tokens(
 ) -> anyhow::Result<AccessTokenResponse> {
     let client = ClientBuilder::new().build()?;
     let mut headers = HeaderMap::new();
-    headers.insert("Content-Type", "application/json".parse().unwrap());
+    headers.insert("content-type", "application/x-www-form-urlencoded".parse().unwrap());
 
     let mut body = HashMap::new();
     body.insert("client_id", client_id);

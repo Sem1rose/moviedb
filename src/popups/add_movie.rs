@@ -1,6 +1,5 @@
 use std::{
     ops::Add,
-    path::PathBuf,
     sync::mpsc::{self, Receiver},
     thread,
 };
@@ -8,7 +7,7 @@ use std::{
 use anyhow::anyhow;
 use chrono::{DateTime, Local};
 use itertools::Itertools;
-use log::error;
+use log::{error, info};
 use punch_play::{
     self,
     smo::{PunchPlayDetailsResponse, PunchPlaySearchResult},
@@ -21,13 +20,14 @@ use ratatui::{
         Modifier, Style, Stylize,
         palette::{material, tailwind},
     },
+    text::Text,
     widgets::{Block, Padding},
 };
 use ratatui_textarea::{TextArea, WrapMode};
 use throbber_widgets_tui::{Throbber, ThrobberState};
 use tmdb::{
     self,
-    smo::{TMDBDetails, TMDBSearchResult},
+    smo::{TMDBMovieDetails, TMDBSearchResult},
 };
 use trakt::{
     self,
@@ -35,7 +35,7 @@ use trakt::{
 };
 
 use crate::{
-    helpers::{add_padding, create_popup, dynamic_area},
+    helpers::{add_padding, create_popup, dynamic_area, wrap_text},
     key_event_handler::{self, KeyEventHandler},
     omdb::{self, OMDBDetailsResponse},
     popups::{PopupTrait, Popups},
@@ -104,7 +104,7 @@ impl From<TMDBSearchResult> for SearchResultMovie {
 struct DetailsResponse {
     pub trakt:      Option<TraktDetailsResponse>,
     pub punch_play: Option<PunchPlayDetailsResponse>,
-    pub tmdb:       Option<TMDBDetails>,
+    pub tmdb:       Option<TMDBMovieDetails>,
     pub omdb:       Option<OMDBDetailsResponse>,
 }
 
@@ -133,7 +133,7 @@ pub struct AddMoviePopup {
     pub watched_at:                      DateTime<Local>,
     pub trakt_movie_details_result:      Option<TraktDetailsResponse>,
     pub punch_play_movie_details_result: Option<PunchPlayDetailsResponse>,
-    pub tmdb_movie_details_result:       Option<TMDBDetails>,
+    pub tmdb_movie_details_result:       Option<TMDBMovieDetails>,
     pub omdb_movie_details_result:       Option<OMDBDetailsResponse>,
     rx_details_response:                 Option<Receiver<anyhow::Result<DetailsResponse>>>,
 
@@ -141,8 +141,6 @@ pub struct AddMoviePopup {
     punch_play_tokens: PunchPlayTokens,
     tmdb_tokens:       TMDBTokens,
     omdb_tokens:       OMDBTokens,
-
-    cache_dir: PathBuf,
 }
 
 impl AddMoviePopup {
@@ -151,14 +149,12 @@ impl AddMoviePopup {
         punch_play_tokens: PunchPlayTokens,
         tmdb_tokens: TMDBTokens,
         omdb_tokens: OMDBTokens,
-        cache_dir: &PathBuf,
     ) -> Self {
         Self {
             trakt_tokens,
             punch_play_tokens,
             tmdb_tokens,
             omdb_tokens,
-            cache_dir: cache_dir.clone(),
             ..Default::default()
         }
     }
@@ -211,9 +207,7 @@ impl AddMoviePopup {
 
         let trakt_status = self.trakt_tokens.status;
         let punch_play_status = self.punch_play_tokens.status;
-        let tmdb_status = self.tmdb_tokens.status;
         let omdb_status = self.omdb_tokens.status;
-        let cache_dir = self.cache_dir.clone();
         let omdb_api_key = self.omdb_tokens.key_owned();
         let trakt_client_id = self.trakt_tokens.client_id_owned();
         let punch_play_access_token = self.punch_play_tokens.access_token_owned();
@@ -410,30 +404,32 @@ impl AddMoviePopup {
                 }
             }
 
-            let result = if trakt_status.is_some() {
-                trakt::movie::get_movie_poster_banner(&cache_dir, &trakt_client_id, &imdb_id)
-            } else if tmdb_status.is_some() {
-                tmdb::movie::get_movie_poster_banner(&cache_dir, &tmdb_access_token, tmdb_id)
-            } else {
-                // unreachable!();
-                panic!();
-            };
-            if result.is_err() {
-                if trakt_status.is_some() && tmdb_status.is_some() {
-                    _ = tmdb::movie::get_movie_poster_banner(
-                        &cache_dir,
-                        &tmdb_access_token,
-                        tmdb_id,
-                    );
-                }
-            }
+            // let get_poster_banner_result = if trakt_status.is_some() {
+            //     trakt::movie::get_movie_poster_banner(&cache_dir, &trakt_client_id, &imdb_id)
+            // } else if tmdb_status.is_some() {
+            //     tmdb::movie::get_movie_poster_banner(&cache_dir, &tmdb_access_token, tmdb_id)
+            // } else {
+            //     // unreachable!();
+            //     panic!();
+            // };
+            // if get_poster_banner_result.is_err() {
+            //     if trakt_status.is_some() && tmdb_status.is_some() {
+            //         _ = tmdb::movie::get_movie_poster_banner(
+            //             &cache_dir,
+            //             &tmdb_access_token,
+            //             tmdb_id,
+            //         );
+            //     }
+            // }
 
-            _ = tx_details_request.send(Ok(DetailsResponse {
-                trakt:      trakt_result,
-                punch_play: punch_play_result,
-                tmdb:       tmdb_result,
-                omdb:       omdb_result,
-            }));
+            info!("{trakt_result:#?}\n{tmdb_result:#?}\n{punch_play_result:#?}\n{omdb_result:#?}");
+
+            // _ = tx_details_request.send(Ok(DetailsResponse {
+            //     trakt:      trakt_result,
+            //     punch_play: punch_play_result,
+            //     tmdb:       tmdb_result,
+            //     omdb:       omdb_result,
+            // }));
         });
 
         self.rx_details_response = Some(rx_details_response);
@@ -1213,7 +1209,14 @@ impl PopupTrait for AddMoviePopup {
                 );
                 let [message_area, _] =
                     vertical![>=1, ==1].areas(add_padding(popup_area, Padding::proportional(1)));
-                frame.render_widget(line!(error.as_str()).centered(), message_area);
+                frame.render_widget(
+                    Text::from_iter(wrap_text(
+                        &format!("{error:#?}"),
+                        message_area.width as usize,
+                    ))
+                    .centered(),
+                    message_area,
+                );
 
                 let mouse_area = widgets::action(
                     Action::new(" Back ", ActionTypes::Default, true, true),

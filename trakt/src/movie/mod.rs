@@ -1,6 +1,6 @@
 use std::{path::PathBuf, thread};
 
-use anyhow::{Context, anyhow, bail};
+use anyhow::{Context, anyhow};
 use itertools::Itertools;
 use reqwest::{
     blocking::{Client, ClientBuilder},
@@ -8,8 +8,7 @@ use reqwest::{
 };
 
 use crate::{
-    send_trakt_request,
-    smo::{
+    download_image, send_trakt_request, smo::{
         TokenResponseError, TraktDetailsResponse, TraktSearchResponse, TraktSearchResponseMovie,
     },
 };
@@ -89,22 +88,6 @@ pub fn get_movie_poster_banner(
     let client = Client::builder().default_headers(headers).build()?;
 
     let movie_details = get_movie_details(client_id, &imdb_id)?;
-    let download_image = move |client: Client, url: &str, path: PathBuf| -> anyhow::Result<()> {
-        let image_url = url.strip_suffix(".webp").unwrap_or(url);
-
-        let image_bytes = client
-            .get(format!("https://{image_url}"))
-            .send()?
-            .bytes()?
-            .into_iter()
-            .collect_vec();
-
-        if let Ok(img) = image::load_from_memory(&image_bytes) {
-            img.save(path)?;
-        }
-
-        Ok(())
-    };
 
     let path = cache_dir
         .join("posters")

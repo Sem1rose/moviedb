@@ -7,7 +7,7 @@ use std::{
 use ratatui::{
     Frame,
     layout::{Alignment, Flex, HorizontalAlignment, Margin},
-    macros::{constraint, horizontal, line, text, vertical},
+    macros::{constraint, horizontal, span, text, vertical},
     style::{
         Style, Stylize,
         palette::{material, tailwind},
@@ -16,6 +16,7 @@ use ratatui::{
     widgets::Padding,
 };
 use ratatui_textarea::{TextArea, WrapMode};
+use strum::AsRefStr;
 use throbber_widgets_tui::{Throbber, ThrobberState};
 use tmdb;
 
@@ -28,14 +29,15 @@ use crate::{
     widgets::{self, Action, ActionTypes},
 };
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, AsRefStr)]
+#[strum(serialize_all = "title_case")]
 pub enum Phase {
     #[default]
     Initializing,
     GetAccessToken,
     GettingAuthorizationUrl,
     Authorize(String),
-    Finalize,
+    Finalizing,
     Error(String),
     Done,
 }
@@ -100,8 +102,8 @@ impl TMDBInitPopup {
 
                 Phase::GettingAuthorizationUrl
             }
-            Phase::Authorize(_) => Phase::Finalize,
-            Phase::Finalize => Phase::Done,
+            Phase::Authorize(_) => Phase::Finalizing,
+            Phase::Finalizing => Phase::Done,
             _ => Phase::Initializing,
         };
     }
@@ -175,7 +177,7 @@ impl PopupTrait for TMDBInitPopup {
                     }
                 }
             }
-            Phase::Finalize =>
+            Phase::Finalizing =>
                 if let Some(rx_session_id) = self.rx_session_id.as_ref() {
                     if let Ok(result) = rx_session_id.try_recv() {
                         match result {
@@ -227,7 +229,7 @@ impl PopupTrait for TMDBInitPopup {
         match &self.phase {
             Phase::Initializing
             | Phase::GettingAuthorizationUrl
-            | Phase::Finalize
+            | Phase::Finalizing
             | Phase::Done => {
                 self.throbber_visible = true;
 
@@ -248,7 +250,10 @@ impl PopupTrait for TMDBInitPopup {
                 );
                 let [_, message_area, _, throbber_area] =
                     vertical![>=1, ==2, >=1, ==1].areas(popup_area);
-                frame.render_widget(line!("Processing").centered(), message_area);
+                frame.render_widget(
+                    span!(self.phase.as_ref()).into_centered_line(),
+                    message_area,
+                );
 
                 frame.render_stateful_widget(
                     Throbber::default()

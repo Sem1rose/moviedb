@@ -4,35 +4,35 @@ use anyhow::{Context, anyhow};
 use reqwest::blocking::{ClientBuilder, RequestBuilder};
 use serde::Deserialize;
 
-#[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
+#[serde(rename_all = "PascalCase")]
 pub struct DetailsResponseError {
-    // Result: String,
-    Error: String,
+    // result: String,
+    error: String,
 }
 impl Error for DetailsResponseError {}
 impl Display for DetailsResponseError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", self.Error)
+        write!(f, "{}", self.error)
     }
 }
 
 #[derive(Deserialize, Debug, Default, Clone)]
 #[serde(rename_all = "PascalCase")]
 pub struct OMDBDetailsResponse {
-    pub title:       String,
-    pub year:        String,
-    pub rated:       String,
-    pub released:    String,
-    pub runtime:     String,
-    pub genre:       String,
-    pub director:    String,
-    pub writer:      String,
-    pub actors:      String,
-    pub plot:        String,
-    pub language:    String,
-    pub country:     String,
-    pub awards:      String,
+    // pub title:       String,
+    // pub year:        String,
+    // pub rated:       String,
+    // pub released:    String,
+    // pub runtime:     String,
+    // pub genre:       String,
+    // pub director:    String,
+    // pub writer:      String,
+    // pub actors:      String,
+    // pub plot:        String,
+    // pub language:    String,
+    // pub country:     String,
+    // pub awards:      String,
     // pub metascore: String,
     #[serde(rename = "imdbRating")]
     pub imdb_rating: String,

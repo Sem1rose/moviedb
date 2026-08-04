@@ -37,6 +37,6 @@ pub(crate) struct ConfigurationResponse {
 #[derive(Deserialize, Debug, Clone)]
 pub(crate) struct ImagesConfiguration {
     pub base_url:       String,
-    pub backdrop_sizes: Vec<String>, // w92 w154 w185 w342 w500 w780 original
     pub poster_sizes:   Vec<String>, // w92 w154 w185 w342 w500 w780 original
+    pub backdrop_sizes: Vec<String>, // w92 w154 w185 w342 w500 w780 original
 }

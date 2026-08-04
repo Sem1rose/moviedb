@@ -1,7 +1,7 @@
 use std::{cmp::Ordering, io::stdout};
 
 use chrono::{DateTime, Local};
-use itertools::Itertools;
+use punch_play::smo::PunchPlayDetailsResponse;
 use ratatui::{
     Terminal,
     backend::CrosstermBackend,
@@ -13,8 +13,7 @@ use ratatui::{
 };
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, EnumCount, EnumDiscriminants, EnumIter, FromRepr, IntoStaticStr};
-use tmdb::smo::TMDBDetails;
-use trakt::smo::TraktDetailsResponse;
+use tmdb::smo::TMDBMovieDetails;
 
 use crate::omdb::OMDBDetailsResponse;
 pub use crate::pop_criterion;
@@ -68,47 +67,14 @@ pub enum Sort {
     Relevance,
 }
 
-#[derive(Serialize, Clone, Copy, Deserialize, Debug, PartialEq)]
-pub enum Rating {
-    Trakt(f64, u32),
-    TMDB(f64, u32),
-    IMDB(f64, u32),
-}
-
-impl From<Rating> for f64 {
-    fn from(value: Rating) -> Self {
-        match value {
-            Rating::Trakt(rating, _) => rating,
-            Rating::TMDB(rating, _) => rating,
-            Rating::IMDB(rating, _) => rating,
-        }
-    }
-}
-
-impl PartialOrd for Rating {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(if matches!(self, Rating::IMDB(_, _)) {
-            if matches!(other, Rating::IMDB(_, _)) {
-                Ordering::Equal
-            } else {
-                Ordering::Less
-            }
-        } else if matches!(self, Rating::Trakt(_, _)) {
-            if matches!(other, Rating::IMDB(_, _)) {
-                Ordering::Greater
-            } else if matches!(other, Rating::Trakt(_, _)) {
-                Ordering::Equal
-            } else {
-                Ordering::Less
-            }
-        } else {
-            if matches!(other, Rating::TMDB(_, _)) {
-                Ordering::Equal
-            } else {
-                Ordering::Greater
-            }
-        })
-    }
+#[derive(Serialize, Clone, Copy, Deserialize, Debug, Default)]
+pub struct ExternalRatings {
+    pub imdb:       (f64, u32),
+    pub trakt:      (f64, u32),
+    pub letterboxd: (f64, u32),
+    pub tmdb:       (f64, u32),
+    pub popcorn:    (u32, u32),
+    pub tomatoes:   (u32, u32),
 }
 
 #[derive(Clone, EnumDiscriminants, Debug)]
@@ -171,116 +137,294 @@ macro_rules! pop_criterion(
 );
 
 #[derive(Serialize, Clone, Deserialize, Debug)]
+pub struct HistoryEntry {
+    pub date:   DateTime<Local>,
+    pub rating: f64,
+    pub note:   Option<String>,
+}
+#[derive(Serialize, Clone, Deserialize, Debug)]
+pub struct Entry {
+    pub movie_id: MovieID,
+    pub history:  Vec<HistoryEntry>,
+}
+impl Entry {
+    pub fn get_user_rating(&self) -> f64 {
+        self.history.last().map(|x| x.rating).unwrap_or(0.0)
+    }
+
+    pub fn get_latest_play(&self) -> DateTime<Local> {
+        self.history
+            .last()
+            .map(|x| x.date)
+            .unwrap_or(DateTime::default())
+    }
+
+    pub fn get_first_play(&self) -> DateTime<Local> {
+        self.history
+            .first()
+            .map(|x| x.date)
+            .unwrap_or(DateTime::default())
+    }
+
+    pub fn add_play(&mut self, date: DateTime<Local>, rating: f64, note: Option<String>) {
+        self.history.push(HistoryEntry { date, rating, note });
+    }
+}
+
+#[derive(Serialize, Clone, Deserialize, Debug)]
+pub struct Role {
+    pub id:               u32,
+    pub job_or_character: String,
+}
+#[derive(Serialize, Clone, Deserialize, Debug)]
+pub struct Person {
+    pub id:     u32,
+    pub gender: usize,
+    pub name:   String,
+}
+#[derive(Serialize, Clone, Deserialize, Debug)]
+pub struct Collection {
+    pub id:       u32,
+    pub name:     String,
+    pub overview: String,
+    pub parts:    Vec<u32>,
+}
+#[derive(Serialize, Clone, Deserialize, Debug)]
+pub struct OldCollection {
+    pub id:       u32,
+    pub name:     String,
+    pub overview: String,
+}
+#[derive(Serialize, Clone, Deserialize, Debug)]
+pub struct Credits {
+    pub cast: Vec<Role>,
+    pub crew: Vec<Role>,
+}
+#[derive(Serialize, Clone, Deserialize, Debug)]
 pub struct MovieID {
     pub tmdb: u32,
     pub imdb: String,
 }
-
 #[derive(Serialize, Clone, Deserialize, Debug)]
 pub struct Movie {
-    pub id:            MovieID,
-    pub name:          String,
-    pub year:          String,
-    pub language:      String,
-    pub ratings:       [Rating; 3],
-    pub genres:        Vec<String>,
-    pub collection:    Option<String>,
-    pub collection_id: Option<u32>,
-    pub overview:      String,
-    pub runtime:       u32,
-    pub released:      bool,
-    pub tagline:       String,
-    pub trailer:       Option<String>,
-    pub plays:         Vec<(DateTime<Local>, f64)>,
+    pub id:               MovieID,
+    pub title:            String,
+    pub release_date:     DateTime<Local>,
+    pub language:         String,
+    pub external_ratings: ExternalRatings,
+    pub genres:           Vec<String>,
+    pub tmdb_collection:  Option<u32>,
+    pub overview:         String,
+    pub runtime:          u32,
+    pub released:         bool,
+    pub tagline:          String,
+    pub certification:    String,
+    pub origin_country:   String,
+    pub credits:          Credits,
+    pub recommendations:  Vec<u32>,
 }
-
-impl From<TMDBDetails> for Movie {
-    fn from(movie_details: TMDBDetails) -> Self {
-        let mut collection = None;
-        let mut collection_id = None;
-        if let Some(belongs_to_collection) = movie_details.belongs_to_collection {
-            collection = Some(belongs_to_collection.name);
-            collection_id = Some(belongs_to_collection.id);
-        }
-
+impl From<&TMDBMovieDetails> for Movie {
+    fn from(tmdb_details: &TMDBMovieDetails) -> Self {
+        let (cast, crew) = if let Some(credits) = tmdb_details.credits.as_ref() {
+            (
+                credits
+                    .cast
+                    .iter()
+                    .take(20)
+                    .map(|x| Role {
+                        id:               x.id,
+                        job_or_character: x.character.clone().unwrap_or("Unknown".into()),
+                    })
+                    .collect(),
+                credits
+                    .crew
+                    .iter()
+                    .filter(|x| {
+                        ["Director", "Original Music Composer", "Additional Music"]
+                            .contains(&x.job.as_ref().unwrap().as_str())
+                    })
+                    .map(|x| Role {
+                        id:               x.id,
+                        job_or_character: x.job.clone().unwrap_or("Unknown".into()),
+                    })
+                    .collect(),
+            )
+        } else {
+            (vec![], vec![])
+        };
         Self {
-            name: movie_details.title,
-            ratings: [
-                Rating::TMDB(movie_details.vote_average, movie_details.vote_count),
-                Rating::Trakt(0.0, 0),
-                Rating::IMDB(0.0, 0),
-            ],
-            year: movie_details.release_date.split('-').collect_vec()[0].to_string(),
-            language: movie_details.original_language,
-            id: MovieID {
-                tmdb: movie_details.id,
-                imdb: movie_details.imdb_id,
+            title:            tmdb_details.title.clone(),
+            external_ratings: ExternalRatings {
+                tmdb: (tmdb_details.vote_average, tmdb_details.vote_count),
+                ..Default::default()
             },
-            genres: movie_details
+            release_date:     DateTime::from_timestamp_millis(0)
+                .unwrap()
+                .with_timezone(&Local), //movie_details.release_date.split('-').collect_vec()[0].to_string(),
+            language:         tmdb_details.original_language.clone(),
+            id:               MovieID {
+                tmdb: tmdb_details.id,
+                imdb: tmdb_details.imdb_id.clone(),
+            },
+            genres:           tmdb_details
                 .genres
                 .iter()
                 .map(|x| x.name.to_string())
                 .collect(),
-            overview: movie_details.overview,
-            collection,
-            collection_id,
-            runtime: movie_details.runtime,
-            released: movie_details.status == "Released",
-            tagline: movie_details.tagline,
-            trailer: None,
-            plays: vec![],
+            overview:         tmdb_details.overview.clone(),
+            tmdb_collection:  tmdb_details.belongs_to_collection.clone().map(|x| x.id),
+            runtime:          tmdb_details.runtime,
+            released:         tmdb_details.status == "Released",
+            tagline:          tmdb_details.tagline.clone(),
+            certification:    tmdb_details.certificate.clone().unwrap(),
+            origin_country:   tmdb_details
+                .origin_country
+                .clone()
+                .map(|x| x.get(0).unwrap_or(&"Unknown".into()).clone())
+                .unwrap_or("Unknown".into()),
+            credits:          Credits { cast, crew },
+            recommendations:  tmdb_details.recommendations.clone().unwrap_or_default(),
         }
     }
 }
-impl From<TraktDetailsResponse> for Movie {
-    fn from(movie_details: TraktDetailsResponse) -> Self {
-        Self {
-            name:          movie_details.title,
-            ratings:       [
-                Rating::TMDB(0.0, 0),
-                Rating::Trakt(movie_details.rating, movie_details.votes),
-                Rating::IMDB(0.0, 0),
-            ],
-            year:          movie_details.year.unwrap_or(1970).to_string(),
-            language:      movie_details.language,
-            id:            MovieID {
-                tmdb: movie_details.ids.tmdb,
-                imdb: movie_details.ids.imdb,
-            },
-            genres:        movie_details.genres,
-            overview:      movie_details.overview,
-            collection:    None,
-            collection_id: None,
-            runtime:       movie_details.runtime,
-            released:      movie_details.status == "released",
-            tagline:       movie_details.tagline,
-            trailer:       movie_details.trailer,
-            plays:         vec![],
-        }
-    }
-}
+
+// #[derive(Serialize, Clone, Deserialize, Debug)]
+// pub struct Movie {
+//     pub id:               MovieID,
+//     pub name:             String,
+//     pub year:             String,
+//     pub language:         String,
+//     pub external_ratings: ExternalRatings,
+//     pub genres:           Vec<String>,
+//     pub collection:       Option<String>,
+//     pub collection_id:    Option<u32>,
+//     pub overview:         String,
+//     pub runtime:          u32,
+//     pub released:         bool,
+//     pub tagline:          String,
+//     pub trailer:          Option<String>,
+//     pub plays:            Vec<(DateTime<Local>, f64)>,
+// }
+
+// impl From<TMDBMovieDetails> for Movie {
+//     fn from(movie_details: TMDBMovieDetails) -> Self {
+//         let mut collection = None;
+//         let mut collection_id = None;
+//         if let Some(belongs_to_collection) = movie_details.belongs_to_collection {
+//             collection = Some(belongs_to_collection.name);
+//             collection_id = Some(belongs_to_collection.id);
+//         }
+
+//         Self {
+//             name: movie_details.title,
+//             external_ratings: ExternalRatings {
+//                 tmdb: (movie_details.vote_average, movie_details.vote_count),
+//                 ..Default::default()
+//             },
+//             year: movie_details.release_date.split('-').collect_vec()[0].to_string(),
+//             language: movie_details.original_language,
+//             id: MovieID {
+//                 tmdb: movie_details.id,
+//                 imdb: movie_details.imdb_id,
+//             },
+//             genres: movie_details
+//                 .genres
+//                 .iter()
+//                 .map(|x| x.name.to_string())
+//                 .collect(),
+//             overview: movie_details.overview,
+//             collection,
+//             collection_id,
+//             runtime: movie_details.runtime,
+//             released: movie_details.status == "Released",
+//             tagline: movie_details.tagline,
+//             trailer: None,
+//             plays: vec![],
+//         }
+//     }
+// }
+// impl From<TraktDetailsResponse> for Movie {
+//     fn from(movie_details: TraktDetailsResponse) -> Self {
+//         Self {
+//             name:             movie_details.title,
+//             external_ratings: ExternalRatings {
+//                 trakt: (movie_details.rating, movie_details.votes),
+//                 ..Default::default()
+//             },
+//             year:             movie_details.year.unwrap_or(1970).to_string(),
+//             language:         movie_details.language,
+//             id:               MovieID {
+//                 tmdb: movie_details.ids.tmdb,
+//                 imdb: movie_details.ids.imdb,
+//             },
+//             genres:           movie_details.genres,
+//             overview:         movie_details.overview,
+//             collection:       None,
+//             collection_id:    None,
+//             runtime:          movie_details.runtime,
+//             released:         movie_details.status == "released",
+//             tagline:          movie_details.tagline,
+//             trailer:          movie_details.trailer,
+//             plays:            vec![],
+//         }
+//     }
+// }
 
 impl Movie {
-    pub fn add_tmdb_details(&mut self, tmdb_details: TMDBDetails) {
-        let mut collection = None;
-        let mut collection_id = None;
-        if let Some(belongs_to_collection) = tmdb_details.belongs_to_collection {
-            collection = Some(belongs_to_collection.name);
-            collection_id = Some(belongs_to_collection.id);
+    // pub fn add_tmdb_details(&mut self, tmdb_details: TMDBMovieDetails) {
+    //     let mut collection = None;
+    //     let mut collection_id = None;
+    //     if let Some(belongs_to_collection) = tmdb_details.belongs_to_collection {
+    //         collection = Some(belongs_to_collection.name);
+    //         collection_id = Some(belongs_to_collection.id);
+    //     }
+
+    //     self.collection = collection;
+    //     self.collection_id = collection_id;
+    //     self.external_ratings.tmdb = (tmdb_details.vote_average, tmdb_details.vote_count);
+    // }
+
+    // pub fn add_trakt_details(&mut self, trakt_details: TraktDetailsResponse) {
+    //     self.external_ratings.trakt = (trakt_details.rating, trakt_details.votes);
+    // }
+
+    pub fn add_punch_play_details(&mut self, punch_play_details: PunchPlayDetailsResponse) {
+        if let Some(external_ratings) = punch_play_details.external_ratings {
+            for external_rating in external_ratings.ratings {
+                if let Some(source) = external_rating.source.as_ref() {
+                    if source == "imdb" {
+                        self.external_ratings.imdb = (
+                            external_rating.value.unwrap_or(0.0),
+                            external_rating.votes.unwrap_or(0),
+                        );
+                    } else if source == "trakt" {
+                        self.external_ratings.trakt = (
+                            external_rating.value.unwrap_or(0.0),
+                            external_rating.votes.unwrap_or(0),
+                        );
+                    } else if source == "letterboxd" {
+                        self.external_ratings.letterboxd = (
+                            external_rating.value.unwrap_or(0.0),
+                            external_rating.votes.unwrap_or(0),
+                        );
+                    } else if source == "popcorn" {
+                        self.external_ratings.popcorn = (
+                            external_rating.value.unwrap_or(0.0) as u32,
+                            external_rating.votes.unwrap_or(0),
+                        );
+                    } else if source == "tomatoes" {
+                        self.external_ratings.tomatoes = (
+                            external_rating.value.unwrap_or(0.0) as u32,
+                            external_rating.votes.unwrap_or(0),
+                        );
+                    }
+                }
+            }
         }
-
-        self.collection = collection;
-        self.collection_id = collection_id;
-        self.ratings[2] = Rating::TMDB(tmdb_details.vote_average, tmdb_details.vote_count);
-    }
-
-    pub fn add_trakt_details(&mut self, trakt_details: TraktDetailsResponse) {
-        self.ratings[1] = Rating::Trakt(trakt_details.rating, trakt_details.votes);
-        self.trailer = trakt_details.trailer;
     }
 
     pub fn add_omdb_details(&mut self, omdb_details: OMDBDetailsResponse) {
-        self.ratings[0] = Rating::IMDB(
+        self.external_ratings.imdb = (
             omdb_details.imdb_rating.parse().unwrap_or(0.0),
             omdb_details
                 .imdb_votes
@@ -293,41 +437,21 @@ impl Movie {
     }
 
     pub fn get_external_rating(&self) -> f64 {
-        for _r in self
-            .ratings
-            .iter()
-            .sorted_by(|&&a, &b| a.partial_cmp(b).unwrap())
-        {
-            match _r {
-                Rating::IMDB(r, _) | Rating::Trakt(r, _) | Rating::TMDB(r, _) if *r > 0.0 => {
-                    return *r;
-                }
-                _ => (),
-            }
+        if self.external_ratings.imdb.0 > 0.0 {
+            self.external_ratings.imdb.0
+        } else if self.external_ratings.trakt.0 > 0.0 {
+            self.external_ratings.trakt.0
+        } else if self.external_ratings.letterboxd.0 > 0.0 {
+            self.external_ratings.letterboxd.0 * 2.0
+        } else if self.external_ratings.tmdb.0 > 0.0 {
+            self.external_ratings.tmdb.0
+        } else if self.external_ratings.popcorn.0 > 0 {
+            self.external_ratings.popcorn.0 as f64 / 10.0
+        } else if self.external_ratings.tomatoes.0 > 0 {
+            self.external_ratings.tomatoes.0 as f64 / 10.0
+        } else {
+            f64::NAN
         }
-        f64::NAN
-    }
-
-    pub fn get_user_rating(&self) -> f64 {
-        self.plays.last().map(|x| x.1).unwrap_or(0.0)
-    }
-
-    pub fn get_latest_play(&self) -> DateTime<Local> {
-        self.plays
-            .last()
-            .map(|x| x.0)
-            .unwrap_or(DateTime::default())
-    }
-
-    pub fn get_first_play(&self) -> DateTime<Local> {
-        self.plays
-            .first()
-            .map(|x| x.0)
-            .unwrap_or(DateTime::default())
-    }
-
-    pub fn add_play(&mut self, date: DateTime<Local>, rating: f64) {
-        self.plays.push((date, rating));
     }
 }
 
@@ -339,102 +463,74 @@ impl std::cmp::PartialEq<Movie> for Movie {
 
 impl std::cmp::PartialOrd<Movie> for Movie {
     fn partial_cmp(&self, other: &Movie) -> Option<Ordering> {
-        let mut rating_a: f64 = f64::NAN;
-        let mut rating_b: f64 = f64::NAN;
-
-        for i in (0..self.ratings.len()).rev() {
-            if let Rating::IMDB(r_a, c_a) = self.ratings[i] {
-                if let Rating::IMDB(r_b, c_b) = other.ratings[i] {
-                    if r_a == 0.0 || r_b == 0.0 {
-                        continue;
-                    }
-
-                    if r_a != r_b {
-                        rating_a = r_a;
-                        rating_b = r_b;
+        macro_rules! cmp_rating {
+            ($field:ident) => {
+                if self.external_ratings.$field.0 as f64 != 0.0
+                    && other.external_ratings.$field.0 as f64 == 0.0
+                {
+                    if self.external_ratings.$field.0 != other.external_ratings.$field.0 {
+                        return self
+                            .external_ratings
+                            .$field
+                            .0
+                            .partial_cmp(&other.external_ratings.$field.0);
                     } else {
-                        rating_a = c_a as f64;
-                        rating_b = c_b as f64;
+                        return self
+                            .external_ratings
+                            .$field
+                            .1
+                            .partial_cmp(&other.external_ratings.$field.1);
                     }
-
-                    break;
                 }
-            }
-            if let Rating::Trakt(r_a, c_a) = self.ratings[i] {
-                if let Rating::Trakt(r_b, c_b) = other.ratings[i] {
-                    if r_a == 0.0 || r_b == 0.0 {
-                        continue;
-                    }
-
-                    if r_a != r_b {
-                        rating_a = r_a;
-                        rating_b = r_b;
-                    } else {
-                        rating_a = c_a as f64;
-                        rating_b = c_b as f64;
-                    }
-
-                    break;
-                }
-            }
-            if let Rating::TMDB(r_a, c_a) = self.ratings[i] {
-                if let Rating::TMDB(r_b, c_b) = other.ratings[i] {
-                    if r_a == 0.0 || r_b == 0.0 {
-                        continue;
-                    }
-
-                    if r_a != r_b {
-                        rating_a = r_a;
-                        rating_b = r_b;
-                    } else {
-                        rating_a = c_a as f64;
-                        rating_b = c_b as f64;
-                    }
-
-                    break;
-                }
-            }
+            };
         }
 
-        rating_a.partial_cmp(&rating_b)
+        cmp_rating!(imdb);
+        cmp_rating!(trakt);
+        cmp_rating!(letterboxd);
+        cmp_rating!(tmdb);
+        cmp_rating!(popcorn);
+        cmp_rating!(tomatoes);
+
+        unreachable!()
     }
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct OldMovie {
-    pub id:            MovieID,
-    pub name:          String,
-    pub year:          String,
-    pub language:      String,
-    pub ratings:       [Rating; 3],
-    pub genres:        Vec<String>,
-    pub collection:    Option<String>,
-    pub collection_id: Option<u32>,
-    pub overview:      String,
-    pub runtime:       u32,
-    pub released:      bool,
-    pub tagline:       String,
-    pub trailer:       Option<String>,
-    pub plays:         Vec<(DateTime<Local>, f64)>,
-}
+// #[derive(Serialize, Deserialize)]
+// pub struct OldMovie {
+//     pub id:            MovieID,
+//     pub name:          String,
+//     pub year:          String,
+//     pub language:      String,
+//     // pub ratings:       ExternalRatings,
+//     pub genres:        Vec<String>,
+//     pub collection:    Option<String>,
+//     pub collection_id: Option<u32>,
+//     pub overview:      String,
+//     pub runtime:       u32,
+//     pub released:      bool,
+//     pub tagline:       String,
+//     pub trailer:       Option<String>,
+//     pub plays:         Vec<(DateTime<Local>, f64)>,
+// }
 
-impl From<OldMovie> for Movie {
-    fn from(value: OldMovie) -> Self {
-        Self {
-            name:          value.name,
-            ratings:       value.ratings,
-            year:          value.year,
-            language:      value.language,
-            id:            value.id,
-            genres:        value.genres,
-            overview:      value.overview,
-            collection:    value.collection,
-            collection_id: value.collection_id,
-            runtime:       value.runtime,
-            released:      value.released,
-            tagline:       value.tagline,
-            trailer:       value.trailer,
-            plays:         value.plays,
-        }
-    }
-}
+// impl From<OldMovie> for Movie {
+//     fn from(value: OldMovie) -> Self {
+//         Self {
+//             name:             value.name,
+//             external_ratings: Default::default(),
+//             year:             value.year,
+//             language:         value.language,
+//             id:               value.id,
+//             genres:           value.genres,
+//             overview:         value.overview,
+//             collection:       value.collection,
+//             collection_id:    value.collection_id,
+//             runtime:          value.runtime,
+//             released:         value.released,
+//             tagline:          value.tagline,
+//             trailer:          value.trailer,
+//             plays:            value.plays,
+//         }
+//     }
+// }

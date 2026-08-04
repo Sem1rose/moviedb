@@ -13,7 +13,7 @@ pub use add_movie::{AddMoviePopup, Phase as AddMoviePopupPhase};
 pub use advanced_filter::AdvancedFilterPopup;
 pub use delete_movie::DeleteMoviePopup;
 pub use edit_movie::EditMoviePopup;
-pub use fetch_artworks::FetchArtworksPopup;
+pub use fetch_artworks::{FetchArtworksPopup, Phase as FetchArtworksPopupPhase};
 pub use omdb_init::OMDBInitPopup;
 pub use out_of_box::OutOfBoxPopup;
 pub use punch_play_init::{Phase as PunchPlayInitPopupPhase, PunchPlayInitPopup};

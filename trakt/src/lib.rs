@@ -1,5 +1,6 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, path::PathBuf};
 
+use itertools::Itertools;
 use reqwest::{
     blocking::{Client, RequestBuilder, Response},
     header::HeaderMap,
@@ -32,4 +33,21 @@ pub(crate) fn send_trakt_request(
     // error while sending the request????
     let response = request.send()?;
     Ok(response)
+}
+
+pub(crate) fn download_image(client: Client, url: &str, path: PathBuf) -> anyhow::Result<()> {
+    let image_url = url.strip_suffix(".webp").unwrap_or(url);
+
+    let image_bytes = client
+        .get(format!("https://{image_url}"))
+        .send()?
+        .bytes()?
+        .into_iter()
+        .collect_vec();
+
+    if let Ok(img) = image::load_from_memory(&image_bytes) {
+        img.save(path)?;
+    }
+
+    Ok(())
 }

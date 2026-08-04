@@ -1,11 +1,6 @@
-use std::{
-    cell::RefCell,
-    fs,
-    path::PathBuf,
-    rc::Rc,
-};
+use std::{cell::RefCell, fs, path::PathBuf, rc::Rc, time::Duration};
 
-use log::{error, warn};
+use log::error;
 use ratatui::crossterm::event::{self, Event, KeyEvent, KeyEventState, KeyModifiers};
 
 use crate::{
@@ -15,7 +10,7 @@ use crate::{
     popups::Popups,
     screens::Screens,
     tokens::*,
-    types::{Movie, OldMovie, Term, initialize_terminal, reset_terminal},
+    types::{Movie, Term, initialize_terminal, reset_terminal},
 };
 
 pub struct App {
@@ -61,11 +56,11 @@ impl App {
             home_dir,
             cache_dir,
         }
-        .fetch_movies()
+        .load_data()
     }
 
-    pub fn fetch_movies(mut self) -> anyhow::Result<Self> {
-        let file_path = &self.home_dir.join("ratings.json");
+    pub fn load_data(mut self) -> anyhow::Result<Self> {
+        let file_path = &self.home_dir.join("movies.json");
 
         let read_result = fs::read_to_string(file_path);
         if let Err(error) = read_result {
@@ -90,35 +85,24 @@ impl App {
 
         let result = serde_json::from_str(&contents);
         if let Err(error) = result {
-            warn!(
-                "Error deserializing ratings file: {}.\nRetrying with the old format...",
+            error!(
+                "Error deserializing ratings file: {}.\nRenaming corrupted file and creating a new database.",
                 error
             );
 
-            let result = serde_json::from_str::<Vec<OldMovie>>(&contents);
-            if let Err(error) = result {
-                error!(
-                    "Error deserializing ratings file: {}.\nRenaming corrupted file and creating a new database.",
-                    error
-                );
-
-                let mut renamed = self.home_dir.join("corrupted_ratings.json");
-                let mut i = 1;
-                while renamed.exists() {
-                    renamed = self.home_dir.join(format!("corrupted_ratings_{i}.json"));
-                    i += 1;
-                }
-
-                fs::rename(file_path, renamed)?;
-
-                fs::write(&self.home_dir.join("ratings.json"), "[]")?;
-            } else {
-                let movies: Vec<Movie> = result.unwrap().into_iter().map(|x| x.into()).collect();
-                self.set_movies(Self::remove_duplicates(movies));
+            let mut renamed = self.home_dir.join("corrupted_ratings.json");
+            let mut i = 1;
+            while renamed.exists() {
+                renamed = self.home_dir.join(format!("corrupted_ratings_{i}.json"));
+                i += 1;
             }
+
+            fs::rename(file_path, renamed)?;
+
+            fs::write(&self.home_dir.join("ratings.json"), "[]")?;
         } else {
             let movies: Vec<Movie> = result.unwrap();
-            self.set_movies(Self::remove_duplicates(movies));
+            self.movies = Self::remove_duplicates(movies);
         }
 
         Ok(self)
@@ -160,10 +144,6 @@ impl App {
         reset_terminal(&mut self.terminal)?;
 
         Ok(())
-    }
-
-    pub fn set_movies(&mut self, _movies: Vec<Movie>) {
-        self.movies = _movies;
     }
 
     pub fn add_play(&mut self) {

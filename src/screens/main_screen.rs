@@ -26,7 +26,7 @@ use crate::{
     image_backend::RatatuiImage,
     key_event_handler::{self, KeyEventHandler},
     screens::Screens,
-    types::{FilterCriterion, Movie, Rating, Sort, pop_criterion},
+    types::{FilterCriterion, Movie, Sort, pop_criterion},
     widgets,
 };
 
@@ -1630,25 +1630,68 @@ impl MainScreen {
     }
 
     fn draw_ratings(&self, movie: &Movie, frame: &mut Frame, area: Rect) {
-        let imdb_bg = Color::Rgb(245, 197, 24);
-        let imdb_fg = Color::Black;
-        let imdb_label_fg = Color::Rgb(250, 225, 120);
-        let trakt_bg = Color::Rgb(165, 61, 185);
-        let trakt_fg = Color::White;
-        let trakt_label_fg = Color::Rgb(230, 140, 245);
-        let tmdb_bg = Color::Rgb(42, 187, 209);
-        let tmdb_fg = Color::Black;
-        let tmdb_label_fg = Color::Rgb(140, 205, 215);
+        let imdb_colors = (
+            Color::Rgb(245, 197, 24),
+            Color::Black,
+            Color::Rgb(250, 225, 120),
+        );
+        let trakt_colors = (
+            Color::Rgb(165, 61, 185),
+            Color::White,
+            Color::Rgb(230, 140, 245),
+        );
+        let letterboxd_colors = (
+            Color::Rgb(0, 192, 48),
+            Color::White,
+            Color::Rgb(115, 226, 122),
+        );
+        let tmdb_colors = (
+            Color::Rgb(42, 187, 209),
+            Color::Black,
+            Color::Rgb(140, 205, 215),
+        );
+        let popcorn_colors = (
+            Color::Rgb(216, 44, 60),
+            Color::White,
+            Color::Rgb(247, 100, 103),
+        );
+        let tomatoes_colors = (
+            Color::Rgb(216, 44, 60),
+            Color::White,
+            Color::Rgb(247, 100, 103),
+        );
 
-        let ratings = movie
-            .ratings
-            .iter()
-            .filter(|&x| {
-                matches!(x, Rating::IMDB(r, _)
-        | Rating::Trakt(r, _)
-        | Rating::TMDB(r, _) if *r > 0.0)
-            })
-            .collect_vec();
+        let mut ratings = vec![];
+        if movie.external_ratings.imdb.0 > 0.0 {
+            ratings.push((
+                "imdb",
+                format!("{:.1}", movie.external_ratings.imdb.0.to_string()),
+            ));
+        }
+        if movie.external_ratings.trakt.0 > 0.0 {
+            ratings.push((
+                "trakt",
+                format!("{:.1}", movie.external_ratings.trakt.0.to_string()),
+            ));
+        }
+        if movie.external_ratings.letterboxd.0 > 0.0 {
+            ratings.push((
+                "letterboxd",
+                format!("{:.1}", movie.external_ratings.letterboxd.0.to_string()),
+            ));
+        }
+        if movie.external_ratings.tmdb.0 > 0.0 {
+            ratings.push((
+                "tmdb",
+                format!("{:.1}", movie.external_ratings.tmdb.0.to_string()),
+            ));
+        }
+        if movie.external_ratings.popcorn.0 > 0 {
+            ratings.push(("popcorn", movie.external_ratings.popcorn.0.to_string()));
+        }
+        if movie.external_ratings.tomatoes.0 > 0 {
+            ratings.push(("tomatoes", movie.external_ratings.tomatoes.0.to_string()));
+        }
 
         if ratings.is_empty() {
             frame.render_widget(line!("NA").centered(), area);
@@ -1656,38 +1699,43 @@ impl MainScreen {
             return;
         }
 
+        let widget_areas = Layout::horizontal(vec![constraint!(==5); ratings.len()])
+            .flex(ratatui::layout::Flex::SpaceEvenly)
+            .split(add_padding(area, Padding::top(1)));
         let mut widgets = vec![];
         let mut labels = line!();
-        for rating in ratings
-            .iter()
-            .sorted_by(|&&a, &b| a.partial_cmp(b).unwrap())
-        {
-            let (bg, fg, r) = if let Rating::IMDB(a, _) = rating {
-                labels.push_span(span!("IMDB").fg(imdb_label_fg));
+        for (name, rating) in ratings {
+            let (bg, fg) = if name == "imdb" {
+                labels.push_span(span!("IMDB").fg(imdb_colors.2));
 
-                (imdb_bg, imdb_fg, a)
-            } else if let Rating::Trakt(a, _) = rating {
-                labels.push_span(span!("Trakt").fg(trakt_label_fg));
+                (imdb_colors.0, imdb_colors.1)
+            } else if name == "trakt" {
+                labels.push_span(span!("Trakt").fg(trakt_colors.2));
 
-                (trakt_bg, trakt_fg, a)
-            } else if let Rating::TMDB(a, _) = rating {
-                labels.push_span(span!("TMDB").fg(tmdb_label_fg));
+                (trakt_colors.0, trakt_colors.1)
+            } else if name == "letterboxd" {
+                labels.push_span(span!("Letterboxd").fg(letterboxd_colors.2));
 
-                (tmdb_bg, tmdb_fg, a)
+                (letterboxd_colors.0, letterboxd_colors.1)
+            } else if name == "tmdb" {
+                labels.push_span(span!("TMDB").fg(tmdb_colors.2));
+
+                (tmdb_colors.0, tmdb_colors.1)
+            } else if name == "popcorn" {
+                labels.push_span(span!("Popcorn").fg(popcorn_colors.2));
+
+                (popcorn_colors.0, popcorn_colors.1)
+            } else if name == "tomatoes" {
+                labels.push_span(span!("Tomatoes").fg(tomatoes_colors.2));
+
+                (tomatoes_colors.0, tomatoes_colors.1)
             } else {
                 continue;
             };
 
-            widgets.push(vec![
-                "".fg(bg),
-                format!("{:.1}", r).bg(bg).fg(fg).bold(),
-                "".fg(bg),
-            ]);
+            widgets.push(vec!["".fg(bg), rating.bg(bg).fg(fg).bold(), "".fg(bg)]);
         }
 
-        let widget_areas = Layout::horizontal(vec![constraint!(==5); ratings.len()])
-            .flex(ratatui::layout::Flex::SpaceEvenly)
-            .split(add_padding(area, Padding::top(1)));
         for ((widget, label), &area) in widgets
             .into_iter()
             .zip(labels.into_iter())

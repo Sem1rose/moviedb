@@ -8,7 +8,7 @@ use punch_play::{self, smo::AccessTokenResponse};
 use ratatui::{
     Frame,
     layout::{Alignment, Flex, HorizontalAlignment, Margin},
-    macros::{constraint, horizontal, line, text, vertical},
+    macros::{constraint, horizontal, span, text, vertical},
     style::{
         Style, Stylize,
         palette::{material, tailwind},
@@ -17,6 +17,7 @@ use ratatui::{
     widgets::Padding,
 };
 use ratatui_textarea::{TextArea, WrapMode};
+use strum::AsRefStr;
 use throbber_widgets_tui::{Throbber, ThrobberState};
 
 use crate::{
@@ -28,14 +29,15 @@ use crate::{
     widgets::{self, Action, ActionTypes},
 };
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, AsRefStr)]
+#[strum(serialize_all = "title_case")]
 pub enum Phase {
     #[default]
     Initializing,
     GetSecrets,
     GettingAuthorizationUrl,
     Authorize(String),
-    Finalize,
+    Finalizing,
     Error(String),
     RefreshingTokens,
     Done,
@@ -108,8 +110,8 @@ impl PunchPlayInitPopup {
 
                 Phase::GettingAuthorizationUrl
             }
-            Phase::Authorize(_) => Phase::Finalize,
-            Phase::Finalize => Phase::Done,
+            Phase::Authorize(_) => Phase::Finalizing,
+            Phase::Finalizing | Phase::RefreshingTokens => Phase::Done,
             _ => Phase::Initializing,
         };
     }
@@ -206,7 +208,7 @@ impl PopupTrait for PunchPlayInitPopup {
                     }
                 }
             }
-            Phase::Finalize | Phase::RefreshingTokens =>
+            Phase::Finalizing | Phase::RefreshingTokens =>
                 if let Some(rx_tokens) = self.rx_tokens.as_ref() {
                     if let Ok(result) = rx_tokens.try_recv() {
                         match result {
@@ -261,7 +263,7 @@ impl PopupTrait for PunchPlayInitPopup {
         match &self.phase {
             Phase::Initializing
             | Phase::GettingAuthorizationUrl
-            | Phase::Finalize
+            | Phase::Finalizing
             | Phase::RefreshingTokens
             | Phase::Done => {
                 self.throbber_visible = true;
@@ -284,12 +286,7 @@ impl PopupTrait for PunchPlayInitPopup {
                 let [_, message_area, _, throbber_area] =
                     vertical![>=1, ==2, >=1, ==1].areas(popup_area);
                 frame.render_widget(
-                    line!(if matches!(self.phase, Phase::RefreshingTokens) {
-                        "Refreshing tokens"
-                    } else {
-                        "Processing"
-                    })
-                    .centered(),
+                    span!(self.phase.as_ref()).into_centered_line(),
                     message_area,
                 );
 

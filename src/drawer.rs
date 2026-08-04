@@ -93,7 +93,6 @@ impl Drawer {
             }
             self.render_footer(frame, key_event_handler);
         }
-
     }
 
     fn update_image_renderers(&mut self) {
@@ -157,7 +156,7 @@ impl Drawer {
                         });
                     },
                 Popups::FetchArtworks(fetch_artworks_popup) =>
-                    if fetch_artworks_popup.done {
+                    if let FetchArtworksPopupPhase::Done = fetch_artworks_popup.phase {
                         self.close_popup();
                     },
                 Popups::OutOfBox(_) => {}
@@ -219,6 +218,14 @@ impl Drawer {
             .push(Popups::TraktInit(TraktInitPopup::new(&self.home_dir, true)));
     }
 
+    pub fn open_punch_play_init_popup(&mut self) {
+        self.popup_queue
+            .push(Popups::PunchPlayInit(PunchPlayInitPopup::new(
+                &self.home_dir,
+                true,
+            )));
+    }
+
     pub fn open_tmdb_init_popup(&mut self) {
         self.popup_queue
             .push(Popups::TMDBInit(TMDBInitPopup::new(&self.home_dir, true)));
@@ -241,7 +248,6 @@ impl Drawer {
             punch_play_tokens,
             tmdb_tokens,
             omdb_tokens,
-            &self.cache_dir,
         )));
     }
 

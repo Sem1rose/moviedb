@@ -12,36 +12,53 @@ use ratatui::{
         Style, Stylize,
         palette::{material, tailwind},
     },
-    text::ToSpan,
+    text::Text,
     widgets::{Gauge, Padding},
 };
+use strum::AsRefStr;
 use throbber_widgets_tui::{Throbber, ThrobberState};
 use tmdb;
 use trakt;
 
 use crate::{
-    helpers::{add_padding, create_popup, dynamic_area},
+    helpers::{add_padding, create_popup, dynamic_area, wrap_text},
     key_event_handler::KeyEventHandler,
     popups::PopupTrait,
     tokens::{tmdb_tokens::TMDBTokens, trakt_tokens::TraktTokens},
     types::{Movie, MovieID},
 };
 
+#[derive(Default, AsRefStr)]
+#[strum(serialize_all = "title_case")]
+pub enum Phase {
+    #[default]
+    Initializing,
+    MovieArtworks,
+    PersonArtworks,
+    CollectionArtworks,
+    Done,
+}
+
+pub enum ItemID {
+    Movie(MovieID),
+    Person(u32),
+    Collection(u32),
+}
+
 #[derive(Default)]
 pub struct FetchArtworksPopup {
-    pub done:     bool,
-    pub started:  bool,
+    pub phase:    Phase,
     pub progress: usize,
-    errored:      Option<u32>,
+    errored:      Option<(u32, String)>,
     movies:       Vec<MovieID>,
+    persons:      Vec<u32>,
+    collections:  Vec<u32>,
 
-    trakt_status:      Option<bool>,
-    trakt_client_id:   String,
-    tmdb_status:       Option<bool>,
-    tmdb_access_token: String,
+    trakt_client_id:   Option<String>,
+    tmdb_access_token: Option<String>,
 
-    tx_fetch_request:  Option<Sender<Option<MovieID>>>,
-    rx_fetch_response: Option<Receiver<(MovieID, anyhow::Result<()>)>>,
+    tx_fetch_request:  Option<Sender<ItemID>>,
+    rx_fetch_response: Option<Receiver<(ItemID, anyhow::Result<()>)>>,
 
     tick:           u64,
     cache_dir:      PathBuf,
@@ -52,65 +69,56 @@ impl FetchArtworksPopup {
     pub fn new(cache_dir: &PathBuf) -> Self {
         Self {
             cache_dir: cache_dir.clone(),
-            errored: Some(1),
+            errored: None,
             ..Default::default()
         }
     }
 
     fn start_thread(&mut self) {
-        let (tx_fetch_request, rx_fetch_request) = channel::<Option<MovieID>>();
-        let (tx_fetch_response, rx_fetch_response) = channel::<(MovieID, anyhow::Result<()>)>();
+        let (tx_fetch_request, rx_fetch_request) = channel::<ItemID>();
+        let (tx_fetch_response, rx_fetch_response) = channel::<(ItemID, anyhow::Result<()>)>();
         let cache_dir = self.cache_dir.clone();
-        let trakt_status = self.trakt_status;
         let trakt_client_id = self.trakt_client_id.clone();
-        let tmdb_status = self.tmdb_status;
         let tmdb_access_token = self.tmdb_access_token.clone();
 
         thread::spawn(move || {
-            for fetch_request in rx_fetch_request.iter() {
-                if fetch_request.is_none() {
-                    break;
-                }
-
-                let request = fetch_request.unwrap();
+            for request in rx_fetch_request.iter() {
                 let tx_response = tx_fetch_response.clone();
 
                 let cache_dir = cache_dir.clone();
-                let trakt_status = trakt_status.clone();
                 let trakt_client_id = trakt_client_id.clone();
-                let tmdb_status = tmdb_status.clone();
                 let tmdb_access_token = tmdb_access_token.clone();
                 thread::spawn(move || {
-                    let result = if trakt_status.is_some() {
-                        trakt::movie::get_movie_poster_banner(
-                            &cache_dir,
-                            &trakt_client_id,
-                            &request.imdb.clone(),
-                        )
-                    } else if tmdb_status.is_some() {
-                        tmdb::movie::get_movie_poster_banner(
-                            &cache_dir,
-                            &tmdb_access_token,
-                            request.tmdb,
-                        )
+                    let result = if let Some(trakt_client_id) = trakt_client_id.as_ref() {
+                        match &request {
+                            ItemID::Movie(movie_id) => trakt::movie::get_movie_poster_banner(
+                                &cache_dir,
+                                trakt_client_id,
+                                &movie_id.imdb.clone(),
+                            ),
+                            ItemID::Person(_) => todo!(),
+                            ItemID::Collection(_) => todo!(),
+                        }
+                    } else if let Some(tmdb_access_token) = tmdb_access_token.as_ref() {
+                        match &request {
+                            ItemID::Movie(movie_id) => tmdb::movie::get_movie_poster_banner(
+                                &cache_dir,
+                                tmdb_access_token,
+                                movie_id.tmdb,
+                            ),
+                            ItemID::Person(id) =>
+                                tmdb::movie::get_person_artwork(&cache_dir, tmdb_access_token, *id),
+                            ItemID::Collection(id) => tmdb::movie::get_collection_artwork(
+                                &cache_dir,
+                                tmdb_access_token,
+                                *id,
+                            ),
+                        }
                     } else {
-                        // unreachable!();
-                        panic!();
+                        unreachable!();
                     };
 
-                    _ = if result.is_ok() {
-                        tx_response.send((request, result))
-                    } else if trakt_status.is_some() && tmdb_status.is_some() {
-                        let result = tmdb::movie::get_movie_poster_banner(
-                            &cache_dir,
-                            &tmdb_access_token,
-                            request.tmdb,
-                        );
-
-                        tx_response.send((request, result))
-                    } else {
-                        tx_response.send((request, result))
-                    };
+                    tx_response.send((request, result))
                 });
             }
         });
@@ -119,32 +127,88 @@ impl FetchArtworksPopup {
         self.rx_fetch_response = Some(rx_fetch_response);
     }
 
-    fn check_artwork_fetched(&self, id: u32) -> bool {
-        self.cache_dir
-            .join("posters")
-            .join(format!("{}.jpg", id))
-            .is_file()
-            && self
-                .cache_dir
-                .join("backdrops")
-                .join(format!("{}.jpg", id))
-                .is_file()
-    }
+    pub fn advance_phase(&mut self) {
+        self.progress = 0;
+        self.errored = None;
+        self.phase = match self.phase {
+            Phase::Initializing => {
+                let check_artwork_fetched = |id: u32| -> bool {
+                    self.cache_dir
+                        .join("posters")
+                        .join(format!("{id}.jpg"))
+                        .is_file()
+                        && self
+                            .cache_dir
+                            .join("backdrops")
+                            .join(format!("{id}.jpg"))
+                            .is_file()
+                };
 
-    fn fetch_artworks(&mut self) {
-        self.start_thread();
+                for movie_id in &self.movies {
+                    if !check_artwork_fetched(movie_id.tmdb) {
+                        _ = self
+                            .tx_fetch_request
+                            .as_ref()
+                            .unwrap()
+                            .send(ItemID::Movie(movie_id.clone()));
+                    } else {
+                        self.progress += 1;
+                    }
+                }
 
-        for movie_id in &self.movies {
-            if !self.check_artwork_fetched(movie_id.tmdb) {
-                _ = self
-                    .tx_fetch_request
-                    .as_ref()
-                    .unwrap()
-                    .send(Some(movie_id.clone()));
-            } else {
-                self.progress += 1;
+                Phase::MovieArtworks
             }
-        }
+            Phase::MovieArtworks => {
+                let check_artwork_fetched = |id: &u32| -> bool {
+                    self.cache_dir
+                        .join("persons")
+                        .join(format!("{id}.jpg"))
+                        .is_file()
+                };
+
+                for id in &self.persons {
+                    if !check_artwork_fetched(id) {
+                        _ = self
+                            .tx_fetch_request
+                            .as_ref()
+                            .unwrap()
+                            .send(ItemID::Person(*id));
+                    } else {
+                        self.progress += 1;
+                    }
+                }
+
+                Phase::PersonArtworks
+            }
+            Phase::PersonArtworks => {
+                let check_artwork_fetched = |id: &u32| -> bool {
+                    self.cache_dir
+                        .join("collections")
+                        .join(format!("{id}.jpg"))
+                        .is_file()
+                };
+
+                for id in &self.collections {
+                    if !check_artwork_fetched(id) {
+                        _ = self
+                            .tx_fetch_request
+                            .as_ref()
+                            .unwrap()
+                            .send(ItemID::Collection(*id));
+                    } else {
+                        self.progress += 1;
+                    }
+                }
+
+                Phase::CollectionArtworks
+            }
+            Phase::CollectionArtworks => {
+                drop(self.tx_fetch_request.take().unwrap());
+
+                Phase::Done
+            }
+            _ => Phase::Initializing,
+        };
     }
 
     pub fn initialize(
@@ -153,15 +217,20 @@ impl FetchArtworksPopup {
         trakt_tokens: &TraktTokens,
         tmdb_tokens: &TMDBTokens,
     ) {
-        self.trakt_status = trakt_tokens.status;
-        self.trakt_client_id = trakt_tokens.client_id_owned();
-        self.tmdb_status = tmdb_tokens.status;
-        self.tmdb_access_token = tmdb_tokens.access_token_owned();
+        self.trakt_client_id = if trakt_tokens.status.is_some() {
+            Some(trakt_tokens.client_id_owned())
+        } else {
+            None
+        };
+        self.tmdb_access_token = if tmdb_tokens.status.is_some() {
+            Some(tmdb_tokens.access_token_owned())
+        } else {
+            None
+        };
         self.movies = movies.iter().map(|x| x.id.clone()).collect();
 
-        self.done = false;
-        self.started = true;
-        self.fetch_artworks();
+        self.start_thread();
+        self.advance_phase();
     }
 }
 
@@ -171,38 +240,101 @@ impl PopupTrait for FetchArtworksPopup {
     }
 
     fn update_next_frame(&self) -> bool {
-        self.started
+        !matches!(self.phase, Phase::Done)
     }
 
     fn update(&mut self) {
-        if !self.started {
-            return;
-        }
-
         self.tick += 1;
         if self.tick & 7 == 0 {
             self.throbber_state.calc_next();
         }
 
-        for (id, fetch_result) in self.rx_fetch_response.as_ref().unwrap().try_iter() {
-            if fetch_result.is_err() {
-                self.errored = Some(id.tmdb);
-                _ = self.tx_fetch_request.as_ref().unwrap().send(Some(id));
-            } else {
-                if let Some(i) = self.errored {
-                    if i == id.tmdb {
-                        self.errored = None;
+        match self.phase {
+            Phase::MovieArtworks => {
+                for (item_id, fetch_result) in self.rx_fetch_response.as_ref().unwrap().try_iter() {
+                    let ItemID::Movie(id) = item_id else {
+                        unreachable!()
+                    };
+
+                    if let Err(error) = fetch_result {
+                        self.errored = Some((id.tmdb, format!("{error:#}")));
+                        _ = self
+                            .tx_fetch_request
+                            .as_ref()
+                            .unwrap()
+                            .send(ItemID::Movie(id));
+                    } else {
+                        if let Some((i, _)) = self.errored {
+                            if i == id.tmdb {
+                                self.errored = None;
+                            }
+                        }
+
+                        self.progress += 1;
                     }
                 }
-                self.progress += 1;
+
+                if self.progress == self.movies.len() {
+                    self.advance_phase();
+                }
             }
-        }
+            Phase::PersonArtworks => {
+                for (item_id, fetch_result) in self.rx_fetch_response.as_ref().unwrap().try_iter() {
+                    let ItemID::Person(id) = item_id else {
+                        unreachable!()
+                    };
 
-        if self.progress == self.movies.len() && !self.done {
-            self.done = true;
-            self.started = false;
+                    if let Err(error) = fetch_result {
+                        self.errored = Some((id, format!("{error:#}")));
+                        _ = self
+                            .tx_fetch_request
+                            .as_ref()
+                            .unwrap()
+                            .send(ItemID::Person(id));
+                    } else {
+                        if let Some((i, _)) = self.errored {
+                            if i == id {
+                                self.errored = None;
+                            }
+                        }
 
-            _ = self.tx_fetch_request.take().unwrap().send(None);
+                        self.progress += 1;
+                    }
+                }
+
+                if self.progress == self.persons.len() {
+                    self.advance_phase();
+                }
+            }
+            Phase::CollectionArtworks => {
+                for (item_id, fetch_result) in self.rx_fetch_response.as_ref().unwrap().try_iter() {
+                    let ItemID::Collection(id) = item_id else {
+                        unreachable!()
+                    };
+
+                    if let Err(error) = fetch_result {
+                        self.errored = Some((id, format!("{error:#}")));
+                        _ = self
+                            .tx_fetch_request
+                            .as_ref()
+                            .unwrap()
+                            .send(ItemID::Collection(id));
+                    } else {
+                        if let Some((i, _)) = self.errored {
+                            if i == id {
+                                self.errored = None;
+                            }
+                        }
+
+                        self.progress += 1;
+                    }
+                }
+
+                if self.progress == self.collections.len() {
+                    self.advance_phase();
+                }
+            }
+            _ => (),
         }
     }
 
@@ -215,7 +347,7 @@ impl PopupTrait for FetchArtworksPopup {
         let popup_area = create_popup(
             frame,
             dynamic_area(
-                if self.errored.is_some() { 10 } else { 9 },
+                if self.errored.is_some() { 11 } else { 9 },
                 5.5,
                 frame.area(),
             ),
@@ -259,16 +391,19 @@ impl PopupTrait for FetchArtworksPopup {
 
         frame.render_widget(progress_gauge, progress_area);
 
-        if let Some(id) = self.errored {
-            let errored_text = format!("movie {id} errored");
+        if let Some((id, error)) = self.errored.as_ref() {
+            let errored_text = format!("{id} errored: {error}");
 
-            let [text_lay] = horizontal![==(errored_text.len() as u16)]
-                .flex(Flex::Center)
-                .areas(vertical![>=1, ==1].split(popup_area)[1]);
-
+            let text_area = add_padding(
+                vertical![>=1, ==2].split(popup_area)[1],
+                Padding::horizontal(2),
+            );
             frame.render_widget(
-                errored_text.to_span().fg(tailwind::RED.c500).bold(),
-                text_lay,
+                Text::from_iter(wrap_text(&errored_text, text_area.width as usize))
+                    .fg(tailwind::RED.c500)
+                    .bold()
+                    .centered(),
+                text_area,
             );
         }
     }

@@ -1,12 +1,4 @@
-use serde::{Deserialize, Serialize};
-
-#[derive(PartialEq, Deserialize, Debug, Default)]
-pub(crate) struct TMDBSearchResponse {
-    // page: u64,
-    pub results: Vec<TMDBSearchResult>,
-    // total_pages: u64,
-    // total_results: u64,
-}
+use serde::{self, Deserialize, Serialize};
 
 #[derive(Deserialize, Debug, PartialEq)]
 pub struct TMDBSearchResult {
@@ -26,12 +18,12 @@ pub struct TMDBSearchResult {
     pub vote_count:        u32,
 }
 
-#[derive(Deserialize, Debug, Default, Clone)]
+#[derive(Deserialize, Clone)]
 pub(crate) struct TMDBMovieImagesResponse {
     pub backdrops: Vec<TMDBMovieImage>,
     pub posters:   Vec<TMDBMovieImage>,
 }
-impl Into<TMDBMovieImagesResponse> for TMDBDetails {
+impl Into<TMDBMovieImagesResponse> for TMDBMovieDetails {
     fn into(self) -> TMDBMovieImagesResponse {
         TMDBMovieImagesResponse {
             posters:   self
@@ -48,7 +40,7 @@ impl Into<TMDBMovieImagesResponse> for TMDBDetails {
     }
 }
 
-#[derive(Deserialize, Debug, Default, Clone)]
+#[derive(Deserialize, Clone)]
 pub(crate) struct TMDBMovieImage {
     // aspect_ratio: f32,
     // height: u32,
@@ -59,10 +51,20 @@ pub(crate) struct TMDBMovieImage {
     // width: u32,
 }
 
-pub struct TMDBMovieDetails {}
+#[derive(Deserialize)]
+pub struct TMDBCollectionDetails {
+    pub id: u32,
+    pub name: String,
+    // pub original_language: String,
+    // pub original_name: String,
+    pub overview: String,
+    pub poster_path: Option<String>,
+    pub backdrop_path: Option<String>,
+    pub parts: Vec<TMDBSearchResult>
+}
 
-#[derive(Deserialize, Debug, Default, Clone)]
-pub struct TMDBDetails {
+#[derive(Deserialize, Default, Debug)]
+pub struct TMDBMovieDetails {
     pub id:                    u32,
     pub imdb_id:               String,
     pub release_date:          String,
@@ -87,6 +89,8 @@ pub struct TMDBDetails {
     pub poster_path:           Option<String>,
     pub backdrop_path:         Option<String>,
     pub credits:               Option<TMDBCredits>,
+    pub certificate:           Option<String>,
+    pub recommendations:       Option<Vec<u32>>,
 }
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct TMDBCollection {
@@ -101,38 +105,30 @@ pub struct TMDBGenre {
     pub name: String,
 }
 
-#[derive(Deserialize, Debug, Default, Clone)]
+#[derive(Deserialize, Debug)]
 pub struct TMDBCredits {
     // pub id:                    u32,
-    pub cast: Vec<Actor>,
-    pub crew: Vec<Crew>,
+    pub cast: Vec<Person>,
+    pub crew: Vec<Person>,
 }
-#[derive(Deserialize, Debug, Default, Clone)]
-pub struct Actor {
-    pub adult:                bool,
-    pub gender:               usize,
-    pub id:                   usize,
-    pub known_for_department: String,
-    pub name:                 String,
-    pub original_name:        String,
-    pub popularity:           f64,
-    pub profile_path:         Option<String>,
-    pub cast_id:              usize,
-    pub character:            String,
-    pub credit_id:            String,
-    pub order:                usize,
-}
-#[derive(Deserialize, Debug, Default, Clone)]
-pub struct Crew {
-    pub adult:                bool,
-    pub gender:               usize,
-    pub id:                   usize,
-    pub known_for_department: String,
-    pub name:                 String,
-    pub original_name:        String,
-    pub popularity:           f64,
-    pub profile_path:         Option<String>,
-    pub credit_id:            String,
-    pub department:           String,
-    pub job:                  String,
+#[derive(Deserialize, Debug)]
+pub struct Person {
+    pub id:           u32,
+    // pub adult:        bool,
+    pub gender:       usize,
+    // pub known_for_department: String,
+    pub name:         String,
+    // pub original_name:        String,
+    // pub popularity:           f64,
+    pub profile_path: Option<String>,
+
+    // pub credit_id:            String,
+
+    // actors
+    pub cast_id:    Option<usize>,
+    pub character:  Option<String>,
+    pub order:      Option<usize>,
+    // crew
+    pub job:        Option<String>,
+    pub department: Option<String>,
 }
