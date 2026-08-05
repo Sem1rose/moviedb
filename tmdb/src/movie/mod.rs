@@ -1,13 +1,14 @@
 use std::{path::PathBuf, thread};
 
 use anyhow::{Context, anyhow};
-use itertools::Itertools;
 use reqwest::{blocking::ClientBuilder, header::HeaderMap};
 use serde::Deserialize;
 
 use crate::{
-    download_image, send_tmdb_request, smo::{
-        ConfigurationResponse, ImagesConfiguration, RequestResponseError, TMDBCollectionDetails, TMDBCredits, TMDBMovieDetails, TMDBMovieImagesResponse, TMDBSearchResult,
+    download_image, send_tmdb_request,
+    smo::{
+        ConfigurationResponse, ImagesConfiguration, RequestResponseError, TMDBCollectionDetails,
+        TMDBCredits, TMDBMovieDetails, TMDBMovieImagesResponse, TMDBSearchResult,
     },
 };
 
@@ -288,11 +289,11 @@ pub(crate) fn get_movie_images(
     Ok(movie_images)
 }
 
-pub fn get_movie_poster_banner(
+pub fn get_movie_artworks(
     cache_dir: &PathBuf,
     access_token: &str,
     tmdb_id: u32,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<bool> {
     let client = ClientBuilder::new().build()?;
     let mut headers = HeaderMap::new();
 
@@ -334,13 +335,34 @@ pub fn get_movie_poster_banner(
             return Ok(2);
         }
 
-        let image_bytes = reqwest::blocking::get(format!(
+        // let image_bytes = reqwest::blocking::get(format!(
+        //     "{}{}{}",
+        //     images_configurations.base_url,
+        //     if backdrop {
+        //         images_configurations.backdrop_sizes[1].clone()
+        //     } else {
+        //         images_configurations.poster_sizes[3].clone()
+        //     },
+        //     if backdrop {
+        //         movie_images.backdrops[id].file_path.clone()
+        //     } else {
+        //         movie_images.posters[id].file_path.clone()
+        //     }
+        // ))?
+        // .bytes()?
+        // .into_iter()
+        // .collect_vec();
+
+        // if let Ok(img) = image::load_from_memory(&image_bytes) {
+        //     img.save(path)?;
+        // } else {
+        let image_bytes: Vec<_> = reqwest::blocking::get(format!(
             "{}{}{}",
             images_configurations.base_url,
             if backdrop {
-                images_configurations.backdrop_sizes[1].clone()
+                images_configurations.backdrop_sizes.last().unwrap().clone()
             } else {
-                images_configurations.poster_sizes[3].clone()
+                images_configurations.poster_sizes.last().unwrap().clone()
             },
             if backdrop {
                 movie_images.backdrops[id].file_path.clone()
@@ -350,52 +372,30 @@ pub fn get_movie_poster_banner(
         ))?
         .bytes()?
         .into_iter()
-        .collect_vec();
+        .collect();
 
-        let img = image::load_from_memory(&image_bytes);
-        if img.is_ok() {
-            img.unwrap().save(path)?;
-        } else if img.is_err() {
-            let image_bytes: Vec<_> = reqwest::blocking::get(format!(
-                "{}{}{}",
-                images_configurations.base_url,
-                if backdrop {
-                    images_configurations.backdrop_sizes.last().unwrap().clone()
-                } else {
-                    images_configurations.poster_sizes.last().unwrap().clone()
-                },
-                if backdrop {
-                    movie_images.backdrops[id].file_path.clone()
-                } else {
-                    movie_images.posters[id].file_path.clone()
-                }
-            ))?
-            .bytes()?
-            .into_iter()
-            .collect();
-
-            if image::load_from_memory(&image_bytes).is_ok() {
-                img.unwrap()
-                    .resize(
-                        if backdrop { 780 } else { 342 },
-                        10000,
-                        image::imageops::FilterType::CatmullRom,
-                    )
-                    .save(path)?;
-            } else {
-                return Ok(1);
-            }
+        if let Ok(img) = image::load_from_memory(&image_bytes) {
+            img.resize(
+                if backdrop { 10000 } else { 600 },
+                if backdrop { 720 } else { 10000 },
+                image::imageops::FilterType::CatmullRom,
+            )
+            .save(path)?;
+        } else {
+            return Ok(1);
         }
+        // }
 
         Ok(0)
     };
 
+    let mut status = false;
     let poster_path = cache_dir.join("posters").join(format!("{}.jpg", tmdb_id));
     let poster_handle = {
         let images_configurations = images_configurations.clone();
         let movie_images = movie_images.clone();
 
-        thread::spawn(move || -> anyhow::Result<()> {
+        thread::spawn(move || -> anyhow::Result<bool> {
             if !movie_images.posters.is_empty() {
                 for i in 0..5 {
                     let result = try_get_artwork(
@@ -406,21 +406,19 @@ pub fn get_movie_poster_banner(
                         i,
                     )?;
                     match result {
-                        0 | 2 => {
-                            break;
-                        }
+                        0 => return Ok(true),
+                        2 => return Ok(false),
                         _ => (),
                     }
                 }
             }
-
-            Ok(())
+            Ok(false)
         })
     };
 
     let backdrop_path = cache_dir.join("backdrops").join(format!("{}.jpg", tmdb_id));
     let backdrop_handle = {
-        thread::spawn(move || -> anyhow::Result<()> {
+        thread::spawn(move || -> anyhow::Result<bool> {
             if !movie_images.backdrops.is_empty() {
                 for i in 0..5 {
                     let result = try_get_artwork(
@@ -431,25 +429,27 @@ pub fn get_movie_poster_banner(
                         i,
                     )?;
                     match result {
-                        0 | 2 => {
-                            break;
-                        }
+                        0 => return Ok(true),
+                        2 => return Ok(false),
                         _ => (),
                     }
                 }
             }
-
-            Ok(())
+            Ok(false)
         })
     };
 
-    poster_handle.join().unwrap()?;
-    backdrop_handle.join().unwrap()?;
+    status |= poster_handle.join().unwrap()?;
+    status |= backdrop_handle.join().unwrap()?;
 
-    Ok(())
+    Ok(status)
 }
 
-pub fn get_person_artwork(cache_dir: &PathBuf, access_token: &str, id: u32) -> anyhow::Result<()> {
+pub fn get_person_artwork(
+    cache_dir: &PathBuf,
+    access_token: &str,
+    id: u32,
+) -> anyhow::Result<bool> {
     let client = ClientBuilder::new().build()?;
 
     let mut headers = HeaderMap::new();
@@ -506,24 +506,28 @@ pub fn get_person_artwork(cache_dir: &PathBuf, access_token: &str, id: u32) -> a
             .json::<ConfigurationResponse>()?
             .images;
 
-        let path = cache_dir.join("people").join(format!("{}.jpg", id));
-
+        let path = cache_dir.join("persons").join(format!("{}.jpg", id));
         download_image(
             client,
             &format!(
                 "{}{}{}",
                 images_configurations.base_url,
-                images_configurations.poster_sizes[2].clone(),
+                images_configurations.poster_sizes[3].clone(),
                 profile_path
             ),
             path,
         )?;
+
+        return Ok(true);
     }
 
-    Ok(())
+    Ok(false)
 }
 
-pub fn get_collection_details(access_token: &str, id: u32) -> anyhow::Result<TMDBCollectionDetails> {
+pub fn get_collection_details(
+    access_token: &str,
+    id: u32,
+) -> anyhow::Result<TMDBCollectionDetails> {
     let client = ClientBuilder::new().build()?;
 
     let mut headers = HeaderMap::new();
@@ -549,16 +553,14 @@ pub fn get_collection_details(access_token: &str, id: u32) -> anyhow::Result<TMD
         .context("TMDB: Error while getting collection details");
     }
 
-    details_response
-        .json()
-        .map_err(Into::into)
+    details_response.json().map_err(Into::into)
 }
 
 pub fn get_collection_artwork(
     cache_dir: &PathBuf,
     access_token: &str,
     id: u32,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<bool> {
     let collection_details = get_collection_details(access_token, id)?;
 
     let client = ClientBuilder::new().build()?;
@@ -592,19 +594,20 @@ pub fn get_collection_artwork(
             .json::<ConfigurationResponse>()?
             .images;
 
-        let path = cache_dir.join("people").join(format!("{}.jpg", id));
-
+        let path = cache_dir.join("collections").join(format!("{}.jpg", id));
         download_image(
             client,
             &format!(
                 "{}{}{}",
                 images_configurations.base_url,
-                images_configurations.poster_sizes[2].clone(),
+                images_configurations.poster_sizes[4].clone(),
                 profile_path
             ),
             path,
         )?;
+
+        return Ok(false);
     }
 
-    Ok(())
+    Ok(false)
 }

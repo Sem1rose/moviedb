@@ -1,4 +1,4 @@
-use std::ops::Not;
+use std::{cell::RefCell, rc::Rc};
 
 use itertools::Itertools;
 use ratatui::{
@@ -9,6 +9,8 @@ use ratatui::{
     symbols::border,
     widgets::{Block, Borders, Clear, Padding},
 };
+
+use crate::types::{Entry, Movie};
 
 pub fn wrap_text(line: &str, width: usize) -> Vec<String> {
     if line.chars().count() <= width {
@@ -112,7 +114,7 @@ pub fn create_popup(
     if and_a_half {
         frame.render_widget(
             Block::new()
-                .borders(Borders::TOP.not())
+                .borders(!Borders::TOP)
                 .border_set(border::PROPORTIONAL_TALL)
                 .border_style(border_style)
                 .bg(background_color),
@@ -152,4 +154,73 @@ pub fn ellipsize_string(string: &str, max_width: usize) -> String {
     }
 
     new_string
+}
+
+pub fn ids_to_movies(movies: &[Movie], ids: &[u32]) -> Vec<Movie> {
+    ids.iter()
+        .map(|id| movies.iter().find(|x| x.id == *id).unwrap().clone())
+        .collect()
+}
+
+pub fn is_between<T: PartialOrd>(v: T, lb: T, ub: T) -> bool {
+    v >= lb && v <= ub
+}
+
+pub fn history_from_movie(watched: &[Entry], id: u32) -> Option<Entry> {
+    watched.iter().find(|x| x.movie_id == id).cloned()
+}
+
+pub fn default_rc<T: Default>() -> Rc<RefCell<T>> {
+    Rc::new(RefCell::new(T::default()))
+}
+pub fn new_rc<T>(value: T) -> Rc<RefCell<T>> {
+    Rc::new(RefCell::new(value))
+}
+
+#[macro_export]
+macro_rules! load_file {
+    ($name:expr, $home_dir:expr) => {
+        {
+            let path = &$home_dir.join(format!("{}.json", $name));
+            match fs::read_to_string(path) {
+                Err(error) => {
+                    error!("Error reading {} file: {error}.\nRenaming corrupted file and creating a new database.", $name);
+
+                    let mut renamed = $home_dir.join(format!("corrupted_{}.json", $name));
+                    let mut i = 1;
+                    while renamed.exists() {
+                        renamed = $home_dir.join(format!("corrupted_{}_{i}.json", $name));
+                        i += 1;
+                    }
+
+                    _ = fs::rename(path, renamed);
+                    _ = fs::write(path, "[]");
+
+                    None
+                }
+                Ok(read_result) => {
+                    match serde_json::from_str(&read_result) {
+                        Err(error) => {
+                            error!("Error deserializing {} file: {error}.\nRenaming corrupted file and creating a new database.", $name);
+
+                            let mut renamed = $home_dir.join(format!("corrupted_{}.json", $name));
+                            let mut i = 1;
+                            while renamed.exists() {
+                                renamed = $home_dir.join(format!("corrupted_{}_{i}.json", $name));
+                                i += 1;
+                            }
+
+                            _ = fs::rename(path, renamed);
+                            _ = fs::write(path, "[]");
+
+                            None
+                        }
+                        Ok(deserialize_result) => {
+                            Some(deserialize_result)
+                        }
+                    }
+                }
+            }
+        }
+    };
 }

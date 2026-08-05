@@ -13,10 +13,7 @@ mod widgets;
 
 use std::time::SystemTime;
 
-use app::App;
 use chrono::{DateTime, Utc};
-use drawer::Drawer;
-use key_event_handler::KeyEventHandler;
 
 fn main() -> anyhow::Result<()> {
     fern::Dispatch::new()
@@ -39,5 +36,5 @@ fn main() -> anyhow::Result<()> {
         )
         .apply()?;
 
-    App::new()?.run()
+    app::App::new().run()
 }

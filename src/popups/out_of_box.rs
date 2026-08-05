@@ -30,7 +30,7 @@ pub struct OutOfBoxPopup {
 }
 
 const COLUMNS: usize = 2;
-const NUM_REQUIRED_CHOICES: usize = 2;
+const NUM_REQUIRED_CHOICES: usize = 1;
 impl PopupTrait for OutOfBoxPopup {
     fn get_state(&self) -> (Option<usize>, Option<usize>) {
         (Some(self.tab), Some(self.item))
@@ -62,19 +62,19 @@ impl PopupTrait for OutOfBoxPopup {
             let config = app.config.clone();
             if let Some(Popups::OutOfBox(out_of_box_popup)) = app.drawer.active_popup.as_mut() {
                 if out_of_box_popup.toggled_list[0] {
-                    popups.push(Popups::TraktInit(TraktInitPopup::new(&app.home_dir, false)));
-                    config.borrow_mut().options.trakt_enabled = true;
-                }
-                if out_of_box_popup.toggled_list[1] {
                     popups.push(Popups::TMDBInit(TMDBInitPopup::new(&app.home_dir, false)));
                     config.borrow_mut().options.tmdb_enabled = true;
                 }
-                if out_of_box_popup.toggled_list[2] {
+                if out_of_box_popup.toggled_list[1] {
                     popups.push(Popups::PunchPlayInit(PunchPlayInitPopup::new(
                         &app.home_dir,
                         false,
                     )));
                     config.borrow_mut().options.punch_play_enabled = true;
+                }
+                if out_of_box_popup.toggled_list[2] {
+                    popups.push(Popups::TraktInit(TraktInitPopup::new(&app.home_dir, false)));
+                    config.borrow_mut().options.trakt_enabled = true;
                 }
                 if out_of_box_popup.toggled_list[3] {
                     popups.push(Popups::OMDBInit(OMDBInitPopup::new(&app.home_dir, false)));
@@ -83,6 +83,8 @@ impl PopupTrait for OutOfBoxPopup {
 
                 popups.push(Popups::FetchArtworks(FetchArtworksPopup::new(
                     &app.cache_dir,
+                    false,
+                    false,
                 )));
             }
             config.borrow_mut().options.oob_done = true;
@@ -258,7 +260,7 @@ impl PopupTrait for OutOfBoxPopup {
             vertical![==1, >=1].areas(add_padding(popup_area, Padding::horizontal(2)));
 
         let mut table_indices = vec![];
-        let labels = ["Trakt", "TMDB", "PunchPlay", "OMDB"];
+        let labels = ["TMDB", "PunchPlay", "Trakt", "OMDB"];
         let mut required_header = false;
         let mut optional_header = false;
         let mut i = 0;

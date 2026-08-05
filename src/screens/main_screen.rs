@@ -1,7 +1,8 @@
-use std::{cell::RefCell, path::PathBuf, rc::Rc};
+use std::{cell::RefCell, fs, path::PathBuf, rc::Rc};
 
 use chrono::Datelike;
 use itertools::Itertools;
+use log::error;
 use nucleo_matcher::{Config as MatcherConfig, Matcher, pattern::Atom};
 use ratatui::{
     Frame,
@@ -18,17 +19,49 @@ use ratatui::{
 };
 use ratatui_image::sliced::SignedPosition;
 use ratatui_textarea::TextArea;
+use serde::{Deserialize, Serialize};
 use strum::{EnumCount, IntoEnumIterator};
 
 use crate::{
     config::Config,
-    helpers::{add_padding, ellipsize_string, wrap_text},
+    helpers::{
+        add_padding, default_rc, ellipsize_string, history_from_movie, ids_to_movies, is_between,
+        wrap_text,
+    },
     image_backend::RatatuiImage,
     key_event_handler::{self, KeyEventHandler},
+    load_file,
     screens::Screens,
-    types::{FilterCriterion, Movie, Sort, pop_criterion},
+    types::{Entry, FilterCriterion, Movie, Sort, pop_criterion},
     widgets,
 };
+
+#[derive(Serialize, Deserialize, PartialEq, Clone)]
+pub enum ListID {
+    TMDB(u32),
+    Collection(u32),
+    Custom(u32),
+}
+impl Default for ListID {
+    fn default() -> Self {
+        Self::Custom(0)
+    }
+}
+#[derive(Serialize, Deserialize, Clone)]
+pub struct List {
+    pub id:     ListID,
+    pub name:   String,
+    pub movies: Vec<u32>,
+}
+impl From<&[Entry]> for List {
+    fn from(value: &[Entry]) -> Self {
+        Self {
+            id:     Default::default(),
+            name:   "Watched Movies".into(),
+            movies: value.iter().map(|x| x.movie_id).collect(),
+        }
+    }
+}
 
 #[derive(Default)]
 pub struct PlaysTab {
@@ -46,11 +79,15 @@ pub struct MainScreen {
     pub sort_ascending:  bool,
     pub filter_criteria: Vec<FilterCriterion>,
     pub search_input:    TextArea<'static>,
-    config:              Rc<RefCell<Config>>,
 
-    movies:             Vec<Movie>,
-    filtered_movies:    Vec<Movie>,
-    pub image_renderer: RatatuiImage,
+    selected_list: ListID,
+    lists:         Vec<List>,
+
+    pub config:          Rc<RefCell<Config>>,
+    pub movies:          Rc<RefCell<Vec<Movie>>>,
+    pub watched:         Rc<RefCell<Vec<Entry>>>,
+    pub filtered_movies: Vec<Movie>,
+    pub image_renderer:  RatatuiImage,
 
     movies_list_scroll_pos:             usize,
     movies_list_selected_item:          usize,
@@ -83,7 +120,7 @@ impl MainScreen {
         )
     }
 
-    pub fn new(cache_dir: &PathBuf, config: Rc<RefCell<Config>>) -> Self {
+    pub fn new(home_dir: &PathBuf, cache_dir: &PathBuf, config: Rc<RefCell<Config>>) -> Self {
         Self {
             tab: 0,
             item: 0,
@@ -95,7 +132,11 @@ impl MainScreen {
             filter_criteria: vec![],
             config,
 
-            movies: vec![],
+            selected_list: Default::default(),
+            lists: load_file!("lists", home_dir).unwrap_or(vec![]),
+
+            movies: default_rc(),
+            watched: default_rc(),
             filtered_movies: vec![],
             image_renderer: RatatuiImage::new(cache_dir),
 
@@ -111,6 +152,383 @@ impl MainScreen {
 
             movies_description_plays_tab: PlaysTab::default(),
             movies_description_overview_scroll: 0,
+        }
+    }
+
+    pub fn set_movies(
+        &mut self,
+        movies: Rc<RefCell<Vec<Movie>>>,
+        watched: Rc<RefCell<Vec<Entry>>>,
+    ) {
+        self.movies = movies;
+        self.watched = watched;
+
+        self.image_renderer.preload_images(
+            self.movies.borrow().iter().map(|x| x.id).collect(),
+            &self.config.borrow().options.image_preload_rule,
+        );
+        self.filter_sort_movies(None);
+    }
+
+    fn get_list_movies(&self) -> Vec<Movie> {
+        let movie_ids = if matches!(&self.selected_list, ListID::Custom(0)) {
+            Some(
+                self.watched
+                    .borrow()
+                    .iter()
+                    .map(|x| x.movie_id)
+                    .collect_vec(),
+            )
+        } else {
+            self.lists
+                .iter()
+                .find(|x| x.id == *&self.selected_list)
+                .map(|x| &x.movies)
+                .cloned()
+        };
+
+        if let Some(movie_ids) = movie_ids {
+            ids_to_movies(&self.movies.borrow(), &movie_ids)
+        } else {
+            vec![]
+        }
+    }
+
+    pub fn current_movie(&self) -> Option<&Movie> {
+        self.filtered_movies.get(self.movies_list_selected_item)
+    }
+
+    pub fn goto_index(&mut self, index: isize) {
+        let index = if index.is_negative() {
+            (self.filtered_movies.len() as isize + index) as usize
+        } else {
+            (index as usize).min(self.filtered_movies.len() - 1)
+        };
+
+        self.movies_list_selected_item = index;
+        self.movies_list_scroll_pos = self
+            .movies_list_scroll_pos
+            .min(self.movies_list_selected_item);
+        if self.movies_list_selected_item - self.movies_list_scroll_pos
+            >= self.movies_list_num_visible_items
+        {
+            self.movies_list_scroll_pos =
+                self.movies_list_selected_item - self.movies_list_num_visible_items + 1;
+        }
+    }
+
+    fn find_and_goto_movie(&mut self) {
+        let search_text = &self.search_input.lines()[0];
+        if search_text.is_empty() {
+            return;
+        }
+
+        let mut conf = MatcherConfig::DEFAULT;
+        conf.prefer_prefix = true;
+        let mut matcher = Matcher::new(conf);
+        let pattern = Atom::parse(
+            search_text,
+            nucleo_matcher::pattern::CaseMatching::Ignore,
+            nucleo_matcher::pattern::Normalization::Never,
+        );
+        let mut scores = vec![];
+        for movie in &self.filtered_movies {
+            if let Some(score) = pattern.score(
+                nucleo_matcher::Utf32Str::Ascii(
+                    (movie.title.clone() + " " + &movie.release_date.year().to_string())
+                        .to_string()
+                        .as_bytes(),
+                ),
+                &mut matcher,
+            ) {
+                scores.push((score, movie));
+            }
+        }
+
+        scores.sort_by_key(|x| x.0);
+        scores.reverse();
+
+        if let Some(&(_, movie)) = scores.first() {
+            let index = self
+                .filtered_movies
+                .iter()
+                .position(|x| x == movie)
+                .unwrap();
+
+            self.movies_list_selected_item = index;
+            self.movies_list_scroll_pos = index
+                .saturating_sub(self.movies_list_num_visible_items / 2)
+                .min(
+                    self.filtered_movies
+                        .len()
+                        .saturating_sub(self.movies_list_num_visible_items),
+                );
+            self.movies_list_alignment_bottom = false;
+        }
+    }
+
+    fn filter_movies(&mut self) {
+        let mut movies = self.get_list_movies();
+        for criterion in &self.filter_criteria {
+            match criterion {
+                FilterCriterion::Title(name, _) => {
+                    if name.is_empty() {
+                        continue;
+                    }
+                    let mut conf = MatcherConfig::DEFAULT;
+                    conf.prefer_prefix = true;
+                    let mut matcher = Matcher::new(conf);
+                    let pattern = Atom::parse(
+                        name,
+                        nucleo_matcher::pattern::CaseMatching::Ignore,
+                        nucleo_matcher::pattern::Normalization::Never,
+                    );
+                    let mut scores = vec![];
+                    for movie in &movies {
+                        if let Some(score) = pattern.score(
+                            nucleo_matcher::Utf32Str::Ascii(
+                                (movie.title.clone()
+                                    + " "
+                                    + &movie.release_date.year().to_string())
+                                    .to_string()
+                                    .as_bytes(),
+                            ),
+                            &mut matcher,
+                        ) {
+                            scores.push((score, movie));
+                        }
+                    }
+
+                    if let Sort::Relevance = self.sort {
+                        scores.sort_by_key(|x| x.0);
+                        if !self.sort_ascending {
+                            scores.reverse();
+                        }
+                    }
+                    movies = scores.iter().map(|&(_, movie)| movie.clone()).collect();
+                }
+                FilterCriterion::Actors(actors, contains_all, inverted) => {
+                    movies = movies.into_iter().filter(|x| if *contains_all {actors.iter().all(|y| x.credits.cast.iter().map(|x| x.id).contains(y))} else {actors.iter().any(|y| x.credits.cast.iter().map(|x| x.id).contains(y))} ^ if *inverted {true} else {false}).collect();
+                }
+                FilterCriterion::Director(director, inverted) => {
+                    movies = movies
+                        .into_iter()
+                        .filter(|x| {
+                            x.credits
+                                .crew
+                                .iter()
+                                .filter_map(|x| (x.job_or_character == "Director").then(|| x.id))
+                                .contains(director)
+                                ^ if *inverted { true } else { false }
+                        })
+                        .collect();
+                }
+                FilterCriterion::Genres(genres, contains_all, inverted) => {
+                    movies = movies.into_iter().filter(|x| if *contains_all {genres.iter().all(|y| x.genres.contains(y))} else {genres.iter().any(|y| x.genres.contains(y))} ^ if *inverted {true} else {false}).collect();
+                }
+                FilterCriterion::Released(lower_bound, upper_bound, inverted) => {
+                    movies = movies
+                        .into_iter()
+                        .filter(|x| {
+                            is_between(x.release_date.year() as u32, *lower_bound, *upper_bound)
+                                ^ if *inverted { true } else { false }
+                        })
+                        .collect();
+                }
+                FilterCriterion::FirstWatched(lower_bound, upper_bound, inverted) => {
+                    let watched_borrowed = self.watched.borrow();
+                    movies = movies
+                        .into_iter()
+                        .filter(|x| {
+                            history_from_movie(&watched_borrowed, x.id)
+                                .map(|y| {
+                                    is_between(
+                                        y.get_first_play().year() as u32,
+                                        *lower_bound,
+                                        *upper_bound,
+                                    ) ^ if *inverted { true } else { false }
+                                })
+                                .unwrap_or(false)
+                        })
+                        .collect();
+                }
+                FilterCriterion::LastWatched(lower_bound, upper_bound, inverted) => {
+                    let watched_borrowed = self.watched.borrow();
+                    movies = movies
+                        .into_iter()
+                        .filter(|x| {
+                            history_from_movie(&watched_borrowed, x.id)
+                                .map(|y| {
+                                    is_between(
+                                        y.get_latest_play().year() as u32,
+                                        *lower_bound,
+                                        *upper_bound,
+                                    ) ^ if *inverted { true } else { false }
+                                })
+                                .unwrap_or(false)
+                        })
+                        .collect();
+                }
+                FilterCriterion::Rating(rating, ordering, inverted) => {
+                    movies = movies
+                        .into_iter()
+                        .filter(|x| {
+                            (x.get_external_rating().partial_cmp(rating).unwrap() == *ordering)
+                                ^ if *inverted { true } else { false }
+                        })
+                        .collect();
+                }
+                FilterCriterion::UserRating(rating, ordering, inverted) => {
+                    let watched_borrowed = self.watched.borrow();
+                    movies = movies
+                        .into_iter()
+                        .filter(|x| {
+                            history_from_movie(&watched_borrowed, x.id)
+                                .map(|y| {
+                                    (y.get_user_rating().partial_cmp(rating).unwrap() == *ordering)
+                                        ^ if *inverted { true } else { false }
+                                })
+                                .unwrap_or(false)
+                        })
+                        .collect();
+                }
+                FilterCriterion::Language(languages, inverted) => {
+                    movies = movies
+                        .into_iter()
+                        .filter(|x| {
+                            languages.iter().any(|y| *y == x.language)
+                                ^ if *inverted { true } else { false }
+                        })
+                        .collect();
+                }
+                FilterCriterion::Country(country, inverted) => {
+                    movies = movies
+                        .into_iter()
+                        .filter(|x| {
+                            (x.origin_country == *country) ^ if *inverted { true } else { false }
+                        })
+                        .collect();
+                }
+                FilterCriterion::Certification(certifications, inverted) => {
+                    movies = movies
+                        .into_iter()
+                        .filter(|x| {
+                            certifications.contains(&x.certification)
+                                ^ if *inverted { true } else { false }
+                        })
+                        .collect();
+                }
+            }
+        }
+
+        self.filtered_movies = movies;
+    }
+
+    fn sort_movies(&mut self) {
+        match self.sort {
+            Sort::UserRating => {
+                self.filtered_movies.sort_by(|x, y| {
+                    history_from_movie(&self.watched.borrow(), x.id)
+                        .unwrap()
+                        .get_user_rating()
+                        .partial_cmp(
+                            &history_from_movie(&self.watched.borrow(), y.id)
+                                .unwrap()
+                                .get_user_rating(),
+                        )
+                        .unwrap()
+                });
+                if !self.sort_ascending {
+                    self.filtered_movies.reverse();
+                }
+            }
+            Sort::Rating => {
+                self.filtered_movies
+                    .sort_by(|a, b| a.partial_cmp(b).unwrap());
+                if !self.sort_ascending {
+                    self.filtered_movies.reverse();
+                }
+            }
+            Sort::Name => {
+                self.filtered_movies.sort_by_key(|x| x.title.clone());
+                if self.sort_ascending {
+                    self.filtered_movies.reverse();
+                }
+            }
+            Sort::ReleaseDate => {
+                self.filtered_movies
+                    .sort_by_key(|x| x.release_date.year().to_string());
+                if self.sort_ascending {
+                    self.filtered_movies.reverse();
+                }
+            }
+            Sort::DateAdded => {
+                self.filtered_movies.sort_by_key(|x| {
+                    history_from_movie(&self.watched.borrow(), x.id)
+                        .unwrap()
+                        .get_first_play()
+                        .clone()
+                });
+                if self.sort_ascending {
+                    self.filtered_movies.reverse();
+                }
+            }
+            Sort::MostRecent => {
+                self.filtered_movies.sort_by_key(|x| {
+                    history_from_movie(&self.watched.borrow(), x.id)
+                        .unwrap()
+                        .get_latest_play()
+                        .clone()
+                });
+                if self.sort_ascending {
+                    self.filtered_movies.reverse();
+                }
+            }
+            Sort::Relevance => (),
+        }
+    }
+
+    pub fn filter_sort_movies(&mut self, keep_selected: Option<bool>) {
+        let selected_movie_id = self.current_movie().map(|x| x.id).unwrap_or(u32::MAX);
+
+        self.filter_movies();
+
+        match self.sort {
+            Sort::Relevance => {}
+            _ => {
+                self.sort_movies();
+            }
+        }
+
+        if let Some(keep_selected) = keep_selected {
+            if keep_selected {
+                let pos = self
+                    .filtered_movies
+                    .iter()
+                    .position(|x| x.id == selected_movie_id);
+                if let Some(index) = pos {
+                    self.movies_list_selected_item = index;
+
+                    if self.movies_list_scroll_pos > index
+                        || index >= self.movies_list_scroll_pos + self.movies_list_num_visible_items
+                    {
+                        self.movies_list_scroll_pos = index
+                            .saturating_sub(self.movies_list_num_visible_items / 2)
+                            .min(
+                                self.filtered_movies
+                                    .len()
+                                    .saturating_sub(self.movies_list_num_visible_items),
+                            );
+                        self.movies_list_alignment_bottom = false;
+                    }
+                } else {
+                    self.movies_list_selected_item = 0;
+                    self.movies_list_scroll_pos = 0;
+                }
+            } else {
+                self.movies_list_selected_item = 0;
+                self.movies_list_scroll_pos = 0;
+            }
         }
     }
 
@@ -137,7 +555,7 @@ impl MainScreen {
             });
         }
 
-        if !self.movies.is_empty() {
+        if !self.filtered_movies.is_empty() {
             for tab in 0..=1 {
                 key_event_handler.bind_key((Some(tab), None), 'A', "Add play".into(), |app, _| {
                     app.drawer.open_add_play_popup();
@@ -699,13 +1117,12 @@ impl MainScreen {
                     main_screen.tab = 2;
                     main_screen.item = 0;
 
-                    let filter =
-                    // let name;
-                    if let Some(FilterCriterion::Title(n, f)) =
+                    let filter = if let Some(FilterCriterion::Title(n, f)) =
                         pop_criterion!(main_screen.filter_criteria, FilterCriterion::Title(_, _))
                     {
-                        // name = n.clone();
-                        main_screen.filter_criteria.push(FilterCriterion::Title(n, f));
+                        main_screen
+                            .filter_criteria
+                            .push(FilterCriterion::Title(n, f));
                         true
                     } else {
                         false
@@ -1183,7 +1600,9 @@ impl MainScreen {
             .resize(Size::new(2, area.height.saturating_sub(2)))
             .offset(Offset::new(0, 1));
 
-        let rating = movie.get_user_rating();
+        let rating = history_from_movie(&self.watched.borrow(), movie.id)
+            .unwrap()
+            .get_user_rating();
         let rating_color = if rating >= 9.0 {
             tailwind::SKY.c400
         } else if rating >= 8.0 {
@@ -1201,7 +1620,7 @@ impl MainScreen {
         let mut description_lines: Vec<Line<'_>> = vec![];
 
         const TITLE_LINES: usize = 2;
-        let mut title_lines = wrap_text(&movie.name, description_area.width as usize - 4);
+        let mut title_lines = wrap_text(&movie.title, description_area.width as usize - 4);
         for _ in 0..(TITLE_LINES.saturating_sub(title_lines.len())) {
             description_lines.push("".into());
         }
@@ -1216,7 +1635,7 @@ impl MainScreen {
             )
             .bold()
                 + " ".into()
-                + movie.year.clone().italic())
+                + movie.release_date.year().to_string().italic())
             .into(),
         );
 
@@ -1312,7 +1731,7 @@ impl MainScreen {
 
         if self.redraw_images < 1 {
             self.drawing_images |= !self.image_renderer.draw_image(
-                self.filtered_movies[movie_index].id.tmdb,
+                self.filtered_movies[movie_index].id,
                 false,
                 poster_area,
                 if is_partially_visible {
@@ -1411,10 +1830,12 @@ impl MainScreen {
             let [title_area, ratings_area, _, tabs_area] =
                 vertical![==3, ==2, ==1, ==2].areas(title_area);
 
-            let mut name = movie.name.clone();
+            let mut name = movie.title.clone();
             name = ellipsize_string(&name, title_area.width as usize);
 
-            let rating = movie.get_user_rating();
+            let rating = history_from_movie(&self.watched.borrow(), movie.id)
+                .unwrap()
+                .get_user_rating();
             let user_rating_widget_bg = if rating >= 9.0 {
                 tailwind::SKY.c400
             } else if rating >= 8.0 {
@@ -1447,7 +1868,7 @@ impl MainScreen {
                     span!("     "),
                     name.clone().bold(),
                     span!(" "),
-                    movie.year.as_str().italic()
+                    movie.release_date.year().to_string().italic()
                 ],
                 title_area
                     .resize(Size::new(title_area.width, 1))
@@ -1618,7 +2039,7 @@ impl MainScreen {
         // frame.render_widget(Block::new().bg(tailwind::SLATE.c700), backdrop_area);
         if self.redraw_images < 1 && movie.is_some() {
             self.drawing_images |= !self.image_renderer.draw_image(
-                self.current_movie().unwrap().id.tmdb,
+                self.current_movie().unwrap().id,
                 true,
                 backdrop_area,
                 None,
@@ -1642,7 +2063,7 @@ impl MainScreen {
         );
         let letterboxd_colors = (
             Color::Rgb(0, 192, 48),
-            Color::White,
+            Color::Black,
             Color::Rgb(115, 226, 122),
         );
         let tmdb_colors = (
@@ -1651,9 +2072,9 @@ impl MainScreen {
             Color::Rgb(140, 205, 215),
         );
         let popcorn_colors = (
-            Color::Rgb(216, 44, 60),
+            Color::Rgb(255, 114, 33),
             Color::White,
-            Color::Rgb(247, 100, 103),
+            Color::Rgb(242, 165, 121),
         );
         let tomatoes_colors = (
             Color::Rgb(216, 44, 60),
@@ -1663,28 +2084,19 @@ impl MainScreen {
 
         let mut ratings = vec![];
         if movie.external_ratings.imdb.0 > 0.0 {
-            ratings.push((
-                "imdb",
-                format!("{:.1}", movie.external_ratings.imdb.0.to_string()),
-            ));
+            ratings.push(("imdb", format!("{:.1}", movie.external_ratings.imdb.0)));
         }
-        if movie.external_ratings.trakt.0 > 0.0 {
-            ratings.push((
-                "trakt",
-                format!("{:.1}", movie.external_ratings.trakt.0.to_string()),
-            ));
+        if movie.external_ratings.trakt.0 > 0 {
+            ratings.push(("trakt", movie.external_ratings.trakt.0.to_string()));
         }
         if movie.external_ratings.letterboxd.0 > 0.0 {
             ratings.push((
                 "letterboxd",
-                format!("{:.1}", movie.external_ratings.letterboxd.0.to_string()),
+                format!("{:.1}", movie.external_ratings.letterboxd.0),
             ));
         }
         if movie.external_ratings.tmdb.0 > 0.0 {
-            ratings.push((
-                "tmdb",
-                format!("{:.1}", movie.external_ratings.tmdb.0.to_string()),
-            ));
+            ratings.push(("tmdb", format!("{:.1}", movie.external_ratings.tmdb.0)));
         }
         if movie.external_ratings.popcorn.0 > 0 {
             ratings.push(("popcorn", movie.external_ratings.popcorn.0.to_string()));
@@ -1753,8 +2165,11 @@ impl MainScreen {
         frame: &mut Frame,
         area: Rect,
     ) {
+        let movie_plays = history_from_movie(&self.watched.borrow(), movie.id)
+            .unwrap()
+            .history;
         let tab_selected = self.tab == 1;
-        let num_plays = movie.plays.len();
+        let num_plays = movie_plays.len();
         let num_visible_plays = area.height as usize / 3;
         let partially_visible_play_height = area.height as usize - num_visible_plays * 3;
         let render_partially_visible_play = partially_visible_play_height > 0;
@@ -1833,12 +2248,11 @@ impl MainScreen {
             if self.movies_description_plays_tab.scroll_pos + i < num_plays {
                 let partially_visible = area.height < 3;
                 let play =
-                    &movie.plays[num_plays - self.movies_description_plays_tab.scroll_pos - i - 1];
+                    &movie_plays[num_plays - self.movies_description_plays_tab.scroll_pos - i - 1];
 
                 let alternate = i & 1 == 1;
                 let latest = self.movies_description_plays_tab.scroll_pos + i == 0;
-                let last =
-                    self.movies_description_plays_tab.scroll_pos + i == movie.plays.len() - 1;
+                let last = self.movies_description_plays_tab.scroll_pos + i == num_plays - 1;
 
                 frame.render_widget(
                     Block::new().bg(if latest {
@@ -1866,15 +2280,15 @@ impl MainScreen {
                 let areas =
                     Layout::vertical(vec![constraint!(==1); area.height as usize]).split(area);
 
-                let rating_color = if play.1 >= 9.0 {
+                let rating_color = if play.rating >= 9.0 {
                     tailwind::SKY.c400
-                } else if play.1 >= 8.0 {
+                } else if play.rating >= 8.0 {
                     tailwind::GREEN.c500
-                } else if play.1 >= 7.5 {
+                } else if play.rating >= 7.5 {
                     tailwind::LIME.c400
-                } else if play.1 >= 7.0 {
+                } else if play.rating >= 7.0 {
                     material::AMBER.c400
-                } else if play.1 >= 6.0 {
+                } else if play.rating >= 6.0 {
                     material::DEEP_ORANGE.c300
                 } else {
                     material::RED.c400
@@ -1926,23 +2340,26 @@ impl MainScreen {
                             );
                             frame.render_widget(
                                 line![
-                                    format!("{:.1}", play.1).fg(rating_color).add_modifier(
+                                    format!("{:.1}", play.rating).fg(rating_color).add_modifier(
                                         if latest { Modifier::BOLD } else { Modifier::empty() }
                                     ),
                                     span!(" @ "),
-                                    play.0.format("%d/%m/%Y %H:%M").to_string().fg(if latest {
-                                        if tab_selected {
-                                            material::YELLOW.c700
+                                    play.date
+                                        .format("%d/%m/%Y %H:%M")
+                                        .to_string()
+                                        .fg(if latest {
+                                            if tab_selected {
+                                                material::YELLOW.c700
+                                            } else {
+                                                material::CYAN.c600
+                                            }
                                         } else {
-                                            material::CYAN.c600
-                                        }
-                                    } else {
-                                        if tab_selected {
-                                            material::CYAN.c500
-                                        } else {
-                                            material::CYAN.c700
-                                        }
-                                    }),
+                                            if tab_selected {
+                                                material::CYAN.c500
+                                            } else {
+                                                material::CYAN.c700
+                                            }
+                                        }),
                                 ],
                                 add_padding(areas[i as usize], Padding::left(4)),
                             );
@@ -1971,310 +2388,6 @@ impl MainScreen {
             }
 
             remaining_area = remaining;
-        }
-    }
-
-    pub fn goto_index(&mut self, index: isize) {
-        let index = if index.is_negative() {
-            self.filtered_movies.len() - 1
-        } else {
-            (index as usize).min(self.filtered_movies.len() - 1)
-        };
-
-        self.movies_list_selected_item = index;
-        self.movies_list_scroll_pos = self
-            .movies_list_scroll_pos
-            .min(self.movies_list_selected_item);
-        if self.movies_list_selected_item - self.movies_list_scroll_pos
-            >= self.movies_list_num_visible_items
-        {
-            self.movies_list_scroll_pos =
-                self.movies_list_selected_item - self.movies_list_num_visible_items + 1;
-        }
-    }
-
-    pub fn current_movie(&self) -> Option<&Movie> {
-        self.filtered_movies.get(self.movies_list_selected_item)
-    }
-
-    pub fn set_movies(&mut self, movies: &[Movie]) {
-        self.movies = movies.to_vec();
-        self.image_renderer.preload_images(
-            movies.into_iter().map(|x| x.id.tmdb).collect_vec(),
-            &self.config.borrow().options.image_preload_rule,
-        );
-        self.filter_sort_movies(None);
-    }
-
-    fn find_and_goto_movie(&mut self) {
-        let search_text = &self.search_input.lines()[0];
-        if search_text.is_empty() {
-            return;
-        }
-
-        let mut conf = MatcherConfig::DEFAULT;
-        conf.prefer_prefix = true;
-        let mut matcher = Matcher::new(conf);
-        let pattern = Atom::parse(
-            search_text,
-            nucleo_matcher::pattern::CaseMatching::Ignore,
-            nucleo_matcher::pattern::Normalization::Never,
-        );
-        let mut scores = vec![];
-        for movie in &self.filtered_movies {
-            if let Some(score) = pattern.score(
-                nucleo_matcher::Utf32Str::Ascii(
-                    (movie.name.clone() + " " + &movie.year)
-                        .to_string()
-                        .as_bytes(),
-                ),
-                &mut matcher,
-            ) {
-                scores.push((score, movie));
-            }
-        }
-
-        scores.sort_by_key(|x| x.0);
-        scores.reverse();
-
-        if let Some(&(_, movie)) = scores.first() {
-            let index = self
-                .filtered_movies
-                .iter()
-                .position(|x| x == movie)
-                .unwrap();
-
-            self.movies_list_selected_item = index;
-            // if self.movies_list_scroll_pos > index
-            //     || index >= self.movies_list_scroll_pos + self.movies_list_num_visible_items
-            // {
-            self.movies_list_scroll_pos = index
-                .saturating_sub(self.movies_list_num_visible_items / 2)
-                .min(
-                    self.filtered_movies
-                        .len()
-                        .saturating_sub(self.movies_list_num_visible_items),
-                );
-            self.movies_list_alignment_bottom = false;
-            // }
-        }
-    }
-
-    fn filter_movies(&mut self) {
-        let mut movies = self.movies.clone();
-        for criterion in &self.filter_criteria {
-            match criterion {
-                FilterCriterion::Title(name, _) => {
-                    if name.is_empty() {
-                        continue;
-                    }
-                    let mut conf = MatcherConfig::DEFAULT;
-                    conf.prefer_prefix = true;
-                    let mut matcher = Matcher::new(conf);
-                    let pattern = Atom::parse(
-                        name,
-                        nucleo_matcher::pattern::CaseMatching::Ignore,
-                        nucleo_matcher::pattern::Normalization::Never,
-                    );
-                    let mut scores = vec![];
-                    for movie in &movies {
-                        if let Some(score) = pattern.score(
-                            nucleo_matcher::Utf32Str::Ascii(
-                                (movie.name.clone() + " " + &movie.year)
-                                    .to_string()
-                                    .as_bytes(),
-                            ),
-                            &mut matcher,
-                        ) {
-                            scores.push((score, movie));
-                        }
-                    }
-
-                    if let Sort::Relevance = self.sort {
-                        scores.sort_by_key(|x| x.0);
-                        if !self.sort_ascending {
-                            scores.reverse();
-                        }
-                    }
-                    movies = scores.iter().map(|&(_, movie)| movie.clone()).collect();
-                }
-                FilterCriterion::Actors(actors, contains_all, inverted) => {
-                    // movies = movies.into_iter().filter(|x| if *contains_all {actors.iter().all(|y| x.actors.contains(y))} else {actors.iter().any(|y| x.actors.contains(y))} ^ if *inverted {true} else {false}).collect();
-                    todo!()
-                }
-                FilterCriterion::Director(director, inverted) => {
-                    // movies = movies.into_iter().filter(|x| (x.director == director) ^ if *inverted {true} else {false}).collect();
-                    todo!()
-                }
-                FilterCriterion::Genres(genres, contains_all, inverted) => {
-                    movies = movies.into_iter().filter(|x| if *contains_all {genres.iter().all(|y| x.genres.contains(y))} else {genres.iter().any(|y| x.genres.contains(y))} ^ if *inverted {true} else {false}).collect();
-                }
-                FilterCriterion::Released(lower_bound, upper_bound, inverted) => {
-                    movies = movies
-                        .into_iter()
-                        .filter(|x| {
-                            (x.year.parse::<u32>().unwrap() >= *lower_bound
-                                && x.year.parse::<u32>().unwrap() <= *upper_bound)
-                                ^ if *inverted { true } else { false }
-                        })
-                        .collect();
-                }
-                FilterCriterion::FirstWatched(lower_bound, upper_bound, inverted) => {
-                    movies = movies
-                        .into_iter()
-                        .filter(|x| {
-                            (x.get_first_play().year() as u32 >= *lower_bound
-                                && x.get_first_play().year() as u32 <= *upper_bound)
-                                ^ if *inverted { true } else { false }
-                        })
-                        .collect();
-                }
-                FilterCriterion::LastWatched(lower_bound, upper_bound, inverted) => {
-                    movies = movies
-                        .into_iter()
-                        .filter(|x| {
-                            (x.get_latest_play().year() as u32 >= *lower_bound
-                                && x.get_latest_play().year() as u32 <= *upper_bound)
-                                ^ if *inverted { true } else { false }
-                        })
-                        .collect();
-                }
-                FilterCriterion::Rating(rating, ordering, inverted) => {
-                    movies = movies
-                        .into_iter()
-                        .filter(|x| {
-                            (x.get_external_rating().partial_cmp(rating).unwrap() == *ordering)
-                                ^ if *inverted { true } else { false }
-                        })
-                        .collect();
-                }
-                FilterCriterion::UserRating(rating, ordering, inverted) => {
-                    movies = movies
-                        .into_iter()
-                        .filter(|x| {
-                            (x.get_user_rating().partial_cmp(rating).unwrap() == *ordering)
-                                ^ if *inverted { true } else { false }
-                        })
-                        .collect();
-                }
-                FilterCriterion::Language(languages, inverted) => {
-                    movies = movies
-                        .into_iter()
-                        .filter(|x| {
-                            languages.iter().any(|y| *y == x.language)
-                                ^ if *inverted { true } else { false }
-                        })
-                        .collect();
-                }
-                FilterCriterion::Country(country, inverted) => {
-                    // movies = movies.into_iter().filter(|x| (x.country == country) ^ if *inverted {true} else {false}).collect();
-                    todo!()
-                }
-                FilterCriterion::Certification(certifications, inverted) => {
-                    // movies = movies.into_iter().filter(|x| certifications.contains(x.certification) ^ if *inverted {true} else {false}).collect();
-                    todo!()
-                }
-            }
-        }
-
-        self.filtered_movies = movies;
-    }
-
-    fn sort_movies(&mut self) {
-        match self.sort {
-            Sort::UserRating => {
-                self.filtered_movies.sort_by(|x, y| {
-                    x.get_user_rating()
-                        .partial_cmp(&y.get_user_rating())
-                        .unwrap()
-                });
-                if !self.sort_ascending {
-                    self.filtered_movies.reverse();
-                }
-            }
-            Sort::Rating => {
-                self.filtered_movies
-                    .sort_by(|a, b| a.partial_cmp(b).unwrap());
-                if !self.sort_ascending {
-                    self.filtered_movies.reverse();
-                }
-            }
-            Sort::Name => {
-                self.filtered_movies.sort_by_key(|x| x.name.clone());
-                if self.sort_ascending {
-                    self.filtered_movies.reverse();
-                }
-            }
-            Sort::ReleaseDate => {
-                self.filtered_movies.sort_by_key(|x| x.year.clone());
-                if self.sort_ascending {
-                    self.filtered_movies.reverse();
-                }
-            }
-            Sort::DateAdded => {
-                self.filtered_movies
-                    .sort_by_key(|x| x.get_first_play().clone());
-                if self.sort_ascending {
-                    self.filtered_movies.reverse();
-                }
-            }
-            Sort::MostRecent => {
-                self.filtered_movies
-                    .sort_by_key(|x| x.get_latest_play().clone());
-                if self.sort_ascending {
-                    self.filtered_movies.reverse();
-                }
-            }
-            Sort::Relevance => (),
-        }
-    }
-
-    pub fn filter_sort_movies(&mut self, keep_selected: Option<bool>) {
-        let selected_movie_id = self
-            .current_movie()
-            .map(|x| x.id.imdb.clone())
-            .unwrap_or("".into());
-
-        self.filter_movies();
-
-        match self.sort {
-            Sort::Relevance => {}
-            _ => {
-                self.sort_movies();
-            }
-        }
-
-        match keep_selected {
-            Some(true) => {
-                let pos = self
-                    .filtered_movies
-                    .iter()
-                    .position(|x| x.id.imdb == selected_movie_id);
-                if let Some(index) = pos {
-                    self.movies_list_selected_item = index;
-
-                    if self.movies_list_scroll_pos > index
-                        || index >= self.movies_list_scroll_pos + self.movies_list_num_visible_items
-                    {
-                        self.movies_list_scroll_pos = index
-                            .saturating_sub(self.movies_list_num_visible_items / 2)
-                            .min(
-                                self.filtered_movies
-                                    .len()
-                                    .saturating_sub(self.movies_list_num_visible_items),
-                            );
-                        self.movies_list_alignment_bottom = false;
-                    }
-                } else {
-                    self.movies_list_selected_item = 0;
-                    self.movies_list_scroll_pos = 0;
-                }
-            }
-            Some(false) => {
-                self.movies_list_selected_item = 0;
-                self.movies_list_scroll_pos = 0;
-            }
-            None => (),
         }
     }
 }

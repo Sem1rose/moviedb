@@ -8,7 +8,8 @@ use reqwest::{
 };
 
 use crate::{
-    download_image, send_trakt_request, smo::{
+    download_image, send_trakt_request,
+    smo::{
         TokenResponseError, TraktDetailsResponse, TraktSearchResponse, TraktSearchResponseMovie,
     },
 };
@@ -75,7 +76,7 @@ pub fn get_movie_details(client_id: &str, imdb_id: &str) -> anyhow::Result<Trakt
     Ok(details_response.json()?)
 }
 
-pub fn get_movie_poster_banner(
+pub fn get_movie_artworks(
     cache_dir: &PathBuf,
     client_id: &str,
     imdb_id: &str,

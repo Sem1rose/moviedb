@@ -1,6 +1,7 @@
 use chrono::{DateTime, Local};
 use ratatui::{
     Frame,
+    crossterm::event::KeyCode,
     layout::{Alignment, HorizontalAlignment, Margin},
     macros::vertical,
     style::{
@@ -193,6 +194,20 @@ impl PopupTrait for EditMoviePopup {
             if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
                 match data {
                     crate::key_event_handler::Data::Key(key_event) => {
+                        let parsed = edit_movie_popup.rating_input.lines()[0]
+                            .parse::<f64>()
+                            .unwrap_or(0.0);
+                        if let KeyCode::Char(x) = &key_event.code {
+                            if edit_movie_popup.rating_input.lines()[0].len() >= 3 || parsed >= 10.0
+                            {
+                                return;
+                            }
+
+                            if !x.is_ascii_digit() && *x != '.' {
+                                return;
+                            }
+                        }
+
                         edit_movie_popup.rating_input.input(key_event);
                     }
                     _ => {}

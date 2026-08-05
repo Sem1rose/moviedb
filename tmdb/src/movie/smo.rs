@@ -53,14 +53,14 @@ pub(crate) struct TMDBMovieImage {
 
 #[derive(Deserialize)]
 pub struct TMDBCollectionDetails {
-    pub id: u32,
-    pub name: String,
+    pub id:            u32,
+    pub name:          String,
     // pub original_language: String,
     // pub original_name: String,
-    pub overview: String,
-    pub poster_path: Option<String>,
+    pub overview:      String,
+    pub poster_path:   Option<String>,
     pub backdrop_path: Option<String>,
-    pub parts: Vec<TMDBSearchResult>
+    pub parts:         Vec<TMDBSearchResult>,
 }
 
 #[derive(Deserialize, Default, Debug)]

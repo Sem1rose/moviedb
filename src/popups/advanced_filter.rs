@@ -23,7 +23,7 @@ use crate::{
     pop_criterion,
     popups::{PopupTrait, Popups},
     screens::Screens,
-    types::{FilterCriterion, FilterCriterionDiscriminants, Movie},
+    types::{FilterCriterion, FilterCriterionDiscriminants, Movie, Person},
     widgets::{self, Action, ActionTypes},
 };
 
@@ -44,10 +44,10 @@ pub struct AdvancedFilterPopup {
 
     available_genres:    Vec<String>,
     available_languages: Vec<String>,
+    available_countries: Vec<String>,
+    available_actors:    Vec<String>,
+    available_directors: Vec<String>,
 
-    // available_actors:    Vec<String>,
-    // available_directors: Vec<String>,
-    // available_countries: Vec<String>,
     input0:                   TextArea<'static>,
     input1:                   TextArea<'static>,
     dropdown0:                usize,
@@ -81,7 +81,7 @@ impl AdvancedFilterPopup {
         }
     }
 
-    pub fn initialize(&mut self, movies: &[Movie]) {
+    pub fn initialize(&mut self, movies: &[Movie], persons: &[Person]) {
         self.available_genres = movies
             .iter()
             .map(|x| x.genres.clone())
@@ -95,6 +95,24 @@ impl AdvancedFilterPopup {
             .unique()
             .sorted()
             .collect_vec();
+        self.available_actors = movies
+            .iter()
+            .map(|x| x.credits.cast.iter())
+            .flatten()
+            .map(|y| persons.iter().find(|z| z.id == y.id).unwrap().name.clone())
+            .collect();
+        self.available_directors = movies
+            .iter()
+            .map(|x| {
+                x.credits
+                    .crew
+                    .iter()
+                    .filter(|x| x.job_or_character == "Director")
+            })
+            .flatten()
+            .map(|y| persons.iter().find(|z| z.id == y.id).unwrap().name.clone())
+            .collect();
+        self.available_countries = movies.iter().map(|x| x.origin_country.clone()).collect();
     }
 
     fn init_criterion_options(&mut self) {
@@ -110,38 +128,38 @@ impl AdvancedFilterPopup {
                 }));
             }
             FilterCriterionDiscriminants::Director => {
-                // self.dropdown0 = 0;
-                // self.dropdown1 = 0;
-                // self.dropdown_scroll_pos = 0;
-                // self.dropdown_num_visible_items = 5;
-                // self.dropdown_selected_item = Some(0);
-                // self.dropdown0_data = vec!["Directed by".into(), "Not directed by".into()];
-                // self.dropdown1_data = self.available_directors.clone();
-                // self.dropdown1_selected_items = vec![];
-                //
-                // self.validate = Some(Box::new(|advanced_filter_popup| {
-                //     !advanced_filter_popup.dropdown1_selected_items.is_empty()
-                // }));
+                self.dropdown0 = 0;
+                self.dropdown1 = 0;
+                self.dropdown_scroll_pos = 0;
+                self.dropdown_num_visible_items = 5;
+                self.dropdown_selected_item = Some(0);
+                self.dropdown0_data = vec!["Directed by".into(), "Not directed by".into()];
+                self.dropdown1_data = self.available_directors.clone();
+                self.dropdown1_selected_items = vec![];
+
+                self.validate = Some(Box::new(|advanced_filter_popup| {
+                    !advanced_filter_popup.dropdown1_selected_items.is_empty()
+                }));
             }
             FilterCriterionDiscriminants::Actors => {
-                // self.dropdown0 = 0;
-                // self.dropdown1 = 0;
-                // self.dropdown2 = 0;
-                // self.dropdown3 = 0;
-                // self.dropdown_scroll_pos = 0;
-                // self.dropdown_num_visible_items = 5;
-                // self.dropdown_selected_item = Some(0);
-                // self.dropdown0_data = vec!["any of".into(), "all of".into()];
-                // self.dropdown1_data = self.available_actors.clone();
-                // self.dropdown1_selected_items = vec![];
-                // self.dropdown2_data = vec!["any of".into(), "all of".into()];
-                // self.dropdown3_data = self.available_actors.clone();
-                // self.dropdown3_selected_items = vec![];
-                //
-                // self.validate = Some(Box::new(|advanced_filter_popup| {
-                //     !advanced_filter_popup.dropdown1_selected_items.is_empty() ||
-                //     !advanced_filter_popup.dropdown3_selected_items.is_empty()
-                // }));
+                self.dropdown0 = 0;
+                self.dropdown1 = 0;
+                self.dropdown2 = 0;
+                self.dropdown3 = 0;
+                self.dropdown_scroll_pos = 0;
+                self.dropdown_num_visible_items = 5;
+                self.dropdown_selected_item = Some(0);
+                self.dropdown0_data = vec!["any of".into(), "all of".into()];
+                self.dropdown1_data = self.available_actors.clone();
+                self.dropdown1_selected_items = vec![];
+                self.dropdown2_data = vec!["any of".into(), "all of".into()];
+                self.dropdown3_data = self.available_actors.clone();
+                self.dropdown3_selected_items = vec![];
+
+                self.validate = Some(Box::new(|advanced_filter_popup| {
+                    !advanced_filter_popup.dropdown1_selected_items.is_empty()
+                        || !advanced_filter_popup.dropdown3_selected_items.is_empty()
+                }));
             }
             FilterCriterionDiscriminants::Genres => {
                 self.dropdown0 = 0;
@@ -221,32 +239,39 @@ impl AdvancedFilterPopup {
                 }));
             }
             FilterCriterionDiscriminants::Country => {
-                // self.dropdown0 = 0;
-                // self.dropdown1 = 0;
-                // self.dropdown_scroll_pos = 0;
-                // self.dropdown_num_visible_items = 5;
-                // self.dropdown_selected_item = Some(0);
-                // self.dropdown0_data = vec!["From".into(), "Not from".into()];
-                // self.dropdown1_data = self.available_countries.clone();
-                // self.dropdown1_selected_items = vec![];
-                //
-                // self.validate = Some(Box::new(|advanced_filter_popup| {
-                //     !advanced_filter_popup.dropdown1_selected_items.is_empty()
-                // }));
+                self.dropdown0 = 0;
+                self.dropdown1 = 0;
+                self.dropdown_scroll_pos = 0;
+                self.dropdown_num_visible_items = 5;
+                self.dropdown_selected_item = Some(0);
+                self.dropdown0_data = vec!["From".into(), "Not from".into()];
+                self.dropdown1_data = self.available_countries.clone();
+                self.dropdown1_selected_items = vec![];
+
+                self.validate = Some(Box::new(|advanced_filter_popup| {
+                    !advanced_filter_popup.dropdown1_selected_items.is_empty()
+                }));
             }
             FilterCriterionDiscriminants::Certification => {
-                // self.dropdown0 = 0;
-                // self.dropdown1 = 0;
-                // self.dropdown_scroll_pos = 0;
-                // self.dropdown_num_visible_items = 5;
-                // self.dropdown_selected_item = Some(0);
-                // self.dropdown0_data = vec!["Certified".into(), "Not certified".into()];
-                // self.dropdown1_data = self.available_certifications.clone();
-                // self.dropdown1_selected_items = vec![];
-                //
-                // self.validate = Some(Box::new(|advanced_filter_popup| {
-                //     !advanced_filter_popup.dropdown1_selected_items.is_empty()
-                // }));
+                self.dropdown0 = 0;
+                self.dropdown1 = 0;
+                self.dropdown_scroll_pos = 0;
+                self.dropdown_num_visible_items = 5;
+                self.dropdown_selected_item = Some(0);
+                self.dropdown0_data = vec!["Certified".into(), "Not certified".into()];
+                self.dropdown1_data = vec![
+                    "NR".into(),
+                    "G".into(),
+                    "PG".into(),
+                    "PG-13".into(),
+                    "NC-17".into(),
+                    "R".into(),
+                ];
+                self.dropdown1_selected_items = vec![];
+
+                self.validate = Some(Box::new(|advanced_filter_popup| {
+                    !advanced_filter_popup.dropdown1_selected_items.is_empty()
+                }));
             }
         }
     }
@@ -1253,31 +1278,30 @@ impl PopupTrait for AdvancedFilterPopup {
                                     let input0 = advanced_filter_popup.input0.lines()[0]
                                         .parse()
                                         .unwrap_or(u32::MIN);
-                                    // let input1 = advanced_filter_popup.input0.lines()[0].parse().unwrap_or(u32::MAX);
+
                                     (input0, input0, false)
                                 }
                                 "After" => {
                                     let input0 = advanced_filter_popup.input0.lines()[0]
                                         .parse()
                                         .unwrap_or(u32::MIN);
-                                    // let input1 = advanced_filter_popup.input0.lines()[0].parse().unwrap_or(u32::MAX);
-                                    (input0, u32::MAX, false)
+
+                                    (input0, u32::MAX - 1, false)
                                 }
                                 "Before" => {
                                     let input0 = advanced_filter_popup.input0.lines()[0]
                                         .parse()
                                         .unwrap_or(u32::MIN);
-                                    // let input1 = advanced_filter_popup.input0.lines()[0].parse().unwrap_or(u32::MAX);
 
-                                    (input0, u32::MAX, true)
+                                    (input0, u32::MAX - 1, true)
                                 }
                                 "Between" => {
                                     let input0 = advanced_filter_popup.input0.lines()[0]
                                         .parse()
-                                        .unwrap_or(u32::MIN);
+                                        .unwrap_or(u32::MIN + 1);
                                     let input1 = advanced_filter_popup.input0.lines()[0]
                                         .parse()
-                                        .unwrap_or(u32::MAX);
+                                        .unwrap_or(u32::MAX - 1);
 
                                     (input0, input1, false)
                                 }

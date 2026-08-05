@@ -114,8 +114,8 @@ pub struct ExternalRatings {
 #[derive(Deserialize, Debug, Default, Clone)]
 pub struct ExternalRating {
     // pub url: Option<String|usize>,
-    // pub score:  Option<usize>,
-    pub value:  Option<f64>,
+    pub score:  Option<u32>,
+    // pub value:  Option<f64>,
     pub votes:  Option<u32>,
     pub source: Option<String>,
 }

@@ -12,7 +12,7 @@ use ratatui::{
 
 use crate::{
     config::Config,
-    helpers::ellipsize_string,
+    helpers::{ellipsize_string, history_from_movie},
     key_event_handler::{self, KeyEventHandler},
     popups::*,
     screens::{Screens, main_screen::MainScreen},
@@ -52,7 +52,9 @@ impl Drawer {
                 popups.push(Popups::OMDBInit(OMDBInitPopup::new(home_dir, false)));
             }
 
-            popups.push(Popups::FetchArtworks(FetchArtworksPopup::new(cache_dir)));
+            popups.push(Popups::FetchArtworks(FetchArtworksPopup::new(
+                cache_dir, false, false,
+            )));
 
             popups
         } else {
@@ -68,6 +70,7 @@ impl Drawer {
             active_popup: None,
             current_screen: None,
             screen_queue: vec![Screens::MainScreen(MainScreen::new(
+                home_dir,
                 cache_dir,
                 config.clone(),
             ))],
@@ -182,7 +185,9 @@ impl Drawer {
                             app.drawer.active_popup.as_mut()
                         {
                             fetch_artworks_popup.initialize(
-                                &app.movies,
+                                &app.movies.borrow(),
+                                &app.watched.borrow(),
+                                &app.collections.borrow(),
                                 &app.trakt_tokens,
                                 &app.tmdb_tokens,
                             );
@@ -193,7 +198,8 @@ impl Drawer {
                         if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
-                            advanced_filter_popup.initialize(&app.movies);
+                            advanced_filter_popup
+                                .initialize(&app.movies.borrow(), &app.persons.borrow());
                         }
                     });
                 }
@@ -205,7 +211,7 @@ impl Drawer {
                         if let Some(Screens::MainScreen(main_screen)) =
                             app.drawer.current_screen.as_mut()
                         {
-                            main_screen.set_movies(&app.movies);
+                            main_screen.set_movies(app.movies.clone(), app.watched.clone());
                         }
                     });
                 }
@@ -258,20 +264,32 @@ impl Drawer {
 
     pub fn open_edit_movie_popup(&mut self) {
         if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_mut() {
+            let entry = history_from_movie(
+                &main_screen.watched.borrow(),
+                main_screen.current_movie().unwrap().id,
+            )
+            .unwrap();
             self.popup_queue.push(Popups::EditMovie(EditMoviePopup::new(
                 false,
-                main_screen.current_movie().unwrap().get_user_rating(),
-                Some(main_screen.current_movie().unwrap().get_latest_play()),
+                entry.get_user_rating(),
+                Some(entry.get_latest_play()),
             )));
         }
     }
 
     pub fn open_delete_movie_popup(&mut self) {
         if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_mut() {
-            self.popup_queue
-                .push(Popups::DeleteMovie(DeleteMoviePopup::new(
-                    &main_screen.current_movie().unwrap().name,
-                )));
+            if let Some(name) = main_screen
+                .movies
+                .borrow()
+                .iter()
+                .filter(|x| x.id == main_screen.current_movie().unwrap().id)
+                .map(|x| &x.title)
+                .nth(0)
+            {
+                self.popup_queue
+                    .push(Popups::DeleteMovie(DeleteMoviePopup::new(name)));
+            }
         }
     }
 
@@ -282,6 +300,15 @@ impl Drawer {
                     &main_screen.filter_criteria,
                 )));
         }
+    }
+
+    pub fn open_fetch_artworks_popup(&mut self) {
+        self.popup_queue
+            .push(Popups::FetchArtworks(FetchArtworksPopup::new(
+                &self.cache_dir,
+                false,
+                false,
+            )));
     }
 
     pub fn close_popup(&mut self) {

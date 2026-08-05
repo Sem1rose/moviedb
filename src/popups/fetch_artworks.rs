@@ -4,6 +4,8 @@ use std::{
     thread,
 };
 
+use itertools::Itertools;
+use log::error;
 use ratatui::{
     Frame,
     layout::{Alignment, Flex},
@@ -25,7 +27,7 @@ use crate::{
     key_event_handler::KeyEventHandler,
     popups::PopupTrait,
     tokens::{tmdb_tokens::TMDBTokens, trakt_tokens::TraktTokens},
-    types::{Movie, MovieID},
+    types::{Collection, Entry, Movie},
 };
 
 #[derive(Default, AsRefStr)]
@@ -40,25 +42,31 @@ pub enum Phase {
 }
 
 pub enum ItemID {
-    Movie(MovieID),
+    Movie(u32),
     Person(u32),
     Collection(u32),
 }
 
+const BATCH_SIZE: usize = 24;
 #[derive(Default)]
 pub struct FetchArtworksPopup {
-    pub phase:    Phase,
-    pub progress: usize,
-    errored:      Option<(u32, String)>,
-    movies:       Vec<MovieID>,
-    persons:      Vec<u32>,
-    collections:  Vec<u32>,
+    pub phase: Phase,
+    count:     usize,
+    progress:  usize,
+    num_sent:  usize,
+    errored:   Option<(u32, String)>,
+
+    movies:            Vec<u32>,
+    fetch_persons:     bool,
+    persons:           Vec<u32>,
+    fetch_collections: bool,
+    collections:       Vec<u32>,
 
     trakt_client_id:   Option<String>,
     tmdb_access_token: Option<String>,
 
     tx_fetch_request:  Option<Sender<ItemID>>,
-    rx_fetch_response: Option<Receiver<(ItemID, anyhow::Result<()>)>>,
+    rx_fetch_response: Option<Receiver<(ItemID, anyhow::Result<bool>)>>,
 
     tick:           u64,
     cache_dir:      PathBuf,
@@ -66,17 +74,19 @@ pub struct FetchArtworksPopup {
 }
 
 impl FetchArtworksPopup {
-    pub fn new(cache_dir: &PathBuf) -> Self {
+    pub fn new(cache_dir: &PathBuf, fetch_persons: bool, fetch_collections: bool) -> Self {
         Self {
             cache_dir: cache_dir.clone(),
             errored: None,
+            fetch_persons,
+            fetch_collections,
             ..Default::default()
         }
     }
 
     fn start_thread(&mut self) {
         let (tx_fetch_request, rx_fetch_request) = channel::<ItemID>();
-        let (tx_fetch_response, rx_fetch_response) = channel::<(ItemID, anyhow::Result<()>)>();
+        let (tx_fetch_response, rx_fetch_response) = channel::<(ItemID, anyhow::Result<bool>)>();
         let cache_dir = self.cache_dir.clone();
         let trakt_client_id = self.trakt_client_id.clone();
         let tmdb_access_token = self.tmdb_access_token.clone();
@@ -89,22 +99,12 @@ impl FetchArtworksPopup {
                 let trakt_client_id = trakt_client_id.clone();
                 let tmdb_access_token = tmdb_access_token.clone();
                 thread::spawn(move || {
-                    let result = if let Some(trakt_client_id) = trakt_client_id.as_ref() {
+                    let result = if let Some(tmdb_access_token) = tmdb_access_token.as_ref() {
                         match &request {
-                            ItemID::Movie(movie_id) => trakt::movie::get_movie_poster_banner(
-                                &cache_dir,
-                                trakt_client_id,
-                                &movie_id.imdb.clone(),
-                            ),
-                            ItemID::Person(_) => todo!(),
-                            ItemID::Collection(_) => todo!(),
-                        }
-                    } else if let Some(tmdb_access_token) = tmdb_access_token.as_ref() {
-                        match &request {
-                            ItemID::Movie(movie_id) => tmdb::movie::get_movie_poster_banner(
+                            ItemID::Movie(tmdb_id) => tmdb::movie::get_movie_artworks(
                                 &cache_dir,
                                 tmdb_access_token,
-                                movie_id.tmdb,
+                                *tmdb_id,
                             ),
                             ItemID::Person(id) =>
                                 tmdb::movie::get_person_artwork(&cache_dir, tmdb_access_token, *id),
@@ -113,6 +113,12 @@ impl FetchArtworksPopup {
                                 tmdb_access_token,
                                 *id,
                             ),
+                        }
+                    } else if let Some(_trakt_client_id) = trakt_client_id.as_ref() {
+                        match &request {
+                            ItemID::Movie(_) => todo!(),
+                            ItemID::Person(_) => todo!(),
+                            ItemID::Collection(_) => todo!(),
                         }
                     } else {
                         unreachable!();
@@ -129,10 +135,13 @@ impl FetchArtworksPopup {
 
     pub fn advance_phase(&mut self) {
         self.progress = 0;
+        self.num_sent = 0;
         self.errored = None;
         self.phase = match self.phase {
             Phase::Initializing => {
-                let check_artwork_fetched = |id: u32| -> bool {
+                self.count = self.movies.len();
+
+                let check_artwork_fetched = |id: &u32| -> bool {
                     self.cache_dir
                         .join("posters")
                         .join(format!("{id}.jpg"))
@@ -143,64 +152,68 @@ impl FetchArtworksPopup {
                             .join(format!("{id}.jpg"))
                             .is_file()
                 };
-
-                for movie_id in &self.movies {
-                    if !check_artwork_fetched(movie_id.tmdb) {
-                        _ = self
-                            .tx_fetch_request
-                            .as_ref()
-                            .unwrap()
-                            .send(ItemID::Movie(movie_id.clone()));
-                    } else {
-                        self.progress += 1;
-                    }
+                let x = self.movies.iter().fold(vec![], |mut a, b| {if check_artwork_fetched(b) {a.push(*b)} a});
+                self.progress += x.len();
+                for x in x {
+                    self.movies.remove(self.movies.iter().position(|y| *y == x).unwrap());
                 }
 
                 Phase::MovieArtworks
             }
-            Phase::MovieArtworks => {
-                let check_artwork_fetched = |id: &u32| -> bool {
-                    self.cache_dir
-                        .join("persons")
-                        .join(format!("{id}.jpg"))
-                        .is_file()
-                };
+            Phase::MovieArtworks =>
+                if self.fetch_persons {
+                    self.count = self.persons.len();
 
-                for id in &self.persons {
-                    if !check_artwork_fetched(id) {
-                        _ = self
-                            .tx_fetch_request
-                            .as_ref()
-                            .unwrap()
-                            .send(ItemID::Person(*id));
-                    } else {
-                        self.progress += 1;
+                    let check_artwork_fetched = |id: &u32| -> bool {
+                        self.cache_dir
+                            .join("persons")
+                            .join(format!("{id}.jpg"))
+                            .is_file()
+                    };
+                    let x = self.persons.iter().fold(vec![], |mut a, b| {if check_artwork_fetched(b) {a.push(*b)} a});
+                    self.progress += x.len();
+                    for x in x {
+                        self.persons.remove(self.persons.iter().position(|y| *y == x).unwrap());
                     }
-                }
 
-                Phase::PersonArtworks
-            }
+                    Phase::PersonArtworks
+                } else if self.fetch_collections {
+                    self.count = self.collections.len();
+
+                    let check_artwork_fetched = |id: &u32| -> bool {
+                        self.cache_dir
+                            .join("collections")
+                            .join(format!("{id}.jpg"))
+                            .is_file()
+                    };
+                    let x = self.collections.iter().fold(vec![], |mut a, b| {if check_artwork_fetched(b) {a.push(*b)} a});
+                    self.progress += x.len();
+                    for x in x {
+                        self.collections.remove(self.collections.iter().position(|y| *y == x).unwrap());
+                    }
+                    Phase::CollectionArtworks
+                } else {
+                    Phase::Done
+                },
             Phase::PersonArtworks => {
-                let check_artwork_fetched = |id: &u32| -> bool {
-                    self.cache_dir
-                        .join("collections")
-                        .join(format!("{id}.jpg"))
-                        .is_file()
-                };
+                if self.fetch_collections {
+                    self.count = self.collections.len();
 
-                for id in &self.collections {
-                    if !check_artwork_fetched(id) {
-                        _ = self
-                            .tx_fetch_request
-                            .as_ref()
-                            .unwrap()
-                            .send(ItemID::Collection(*id));
-                    } else {
-                        self.progress += 1;
+                    let check_artwork_fetched = |id: &u32| -> bool {
+                        self.cache_dir
+                            .join("collections")
+                            .join(format!("{id}.jpg"))
+                            .is_file()
+                    };
+                    let x = self.collections.iter().fold(vec![], |mut a, b| {if check_artwork_fetched(b) {a.push(*b)} a});
+                    self.progress += x.len();
+                    for x in x {
+                        self.collections.remove(self.collections.iter().position(|y| *y == x).unwrap());
                     }
+                    Phase::CollectionArtworks
+                } else {
+                    Phase::Done
                 }
-
-                Phase::CollectionArtworks
             }
             Phase::CollectionArtworks => {
                 drop(self.tx_fetch_request.take().unwrap());
@@ -214,6 +227,8 @@ impl FetchArtworksPopup {
     pub fn initialize(
         &mut self,
         movies: &[Movie],
+        watched: &[Entry],
+        collections: &[Collection],
         trakt_tokens: &TraktTokens,
         tmdb_tokens: &TMDBTokens,
     ) {
@@ -227,7 +242,17 @@ impl FetchArtworksPopup {
         } else {
             None
         };
-        self.movies = movies.iter().map(|x| x.id.clone()).collect();
+
+        self.movies = watched.iter().map(|x| x.movie_id).collect();
+        self.persons = movies
+            .iter()
+            .map(|x| x.credits.crew.iter().chain(x.credits.cast.iter().take(7)))
+            .flatten()
+            .map(|x| x.id)
+            .sorted()
+            .dedup()
+            .collect();
+        self.collections = collections.iter().map(|x| x.id).collect();
 
         self.start_thread();
         self.advance_phase();
@@ -257,7 +282,7 @@ impl PopupTrait for FetchArtworksPopup {
                     };
 
                     if let Err(error) = fetch_result {
-                        self.errored = Some((id.tmdb, format!("{error:#}")));
+                        self.errored = Some((id, format!("{error:#}")));
                         _ = self
                             .tx_fetch_request
                             .as_ref()
@@ -265,7 +290,7 @@ impl PopupTrait for FetchArtworksPopup {
                             .send(ItemID::Movie(id));
                     } else {
                         if let Some((i, _)) = self.errored {
-                            if i == id.tmdb {
+                            if i == id {
                                 self.errored = None;
                             }
                         }
@@ -274,7 +299,21 @@ impl PopupTrait for FetchArtworksPopup {
                     }
                 }
 
-                if self.progress == self.movies.len() {
+                if self.num_sent.saturating_sub(self.progress) < BATCH_SIZE {
+                    for tmdb_id in self.movies.drain(
+                        ..(BATCH_SIZE - (self.num_sent.saturating_sub(self.progress)))
+                            .min(self.movies.len()),
+                    ) {
+                        _ = self
+                            .tx_fetch_request
+                            .as_ref()
+                            .unwrap()
+                            .send(ItemID::Movie(tmdb_id));
+                        self.num_sent += 1;
+                    }
+                }
+
+                if self.progress == self.count {
                     self.advance_phase();
                 }
             }
@@ -285,6 +324,7 @@ impl PopupTrait for FetchArtworksPopup {
                     };
 
                     if let Err(error) = fetch_result {
+                        error!("{id}");
                         self.errored = Some((id, format!("{error:#}")));
                         _ = self
                             .tx_fetch_request
@@ -302,7 +342,21 @@ impl PopupTrait for FetchArtworksPopup {
                     }
                 }
 
-                if self.progress == self.persons.len() {
+                if self.num_sent.saturating_sub(self.progress) < BATCH_SIZE {
+                    for id in self.persons.drain(
+                        ..(BATCH_SIZE - (self.num_sent.saturating_sub(self.progress)))
+                            .min(self.persons.len()),
+                    ) {
+                        _ = self
+                            .tx_fetch_request
+                            .as_ref()
+                            .unwrap()
+                            .send(ItemID::Person(id));
+                        self.num_sent += 1;
+                    }
+                }
+
+                if self.progress == self.count {
                     self.advance_phase();
                 }
             }
@@ -330,7 +384,22 @@ impl PopupTrait for FetchArtworksPopup {
                     }
                 }
 
-                if self.progress == self.collections.len() {
+
+                if self.num_sent.saturating_sub(self.progress) < BATCH_SIZE {
+                    for id in self.collections.drain(
+                        ..(BATCH_SIZE - (self.num_sent.saturating_sub(self.progress)))
+                            .min(self.collections.len()),
+                    ) {
+                        _ = self
+                            .tx_fetch_request
+                            .as_ref()
+                            .unwrap()
+                            .send(ItemID::Collection(id));
+                        self.num_sent += 1;
+                    }
+                }
+
+                if self.progress == self.count {
                     self.advance_phase();
                 }
             }
@@ -341,9 +410,6 @@ impl PopupTrait for FetchArtworksPopup {
     fn render(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
         key_event_handler.clear();
 
-        let progress = self.progress;
-        let num_movies = self.movies.len();
-
         let popup_area = create_popup(
             frame,
             dynamic_area(
@@ -351,7 +417,7 @@ impl PopupTrait for FetchArtworksPopup {
                 5.5,
                 frame.area(),
             ),
-            " Fetching posters ",
+            &format!(" Fetching {} ", self.phase.as_ref()),
             Style::new().fg(material::YELLOW.c800),
             Alignment::Center,
             Style::new().fg(tailwind::VIOLET.c950),
@@ -371,10 +437,10 @@ impl PopupTrait for FetchArtworksPopup {
         let progress_area = add_padding(progress_area, Padding::horizontal(2));
 
         let progress_gauge = Gauge::default()
-            .ratio(if num_movies == 0 {
+            .ratio(if self.count == 0 {
                 0.0
             } else {
-                progress as f64 / num_movies as f64
+                self.progress as f64 / self.count as f64
             })
             .gauge_style(
                 Style::new()
@@ -383,7 +449,7 @@ impl PopupTrait for FetchArtworksPopup {
                     .italic(),
             )
             .label(
-                format!("{}/{}", progress, num_movies)
+                format!("{}/{}", self.progress, self.count)
                     .fg(tailwind::PINK.c500)
                     .bold(),
             )

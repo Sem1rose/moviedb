@@ -4,20 +4,28 @@ use log::error;
 use ratatui::crossterm::event::{self, Event, KeyEvent, KeyEventState, KeyModifiers};
 
 use crate::{
-    KeyEventHandler,
     config::Config,
     drawer::Drawer,
+    helpers::{default_rc, new_rc},
+    key_event_handler::KeyEventHandler,
+    load_file,
     popups::Popups,
     screens::Screens,
     tokens::*,
-    types::{Movie, Term, initialize_terminal, reset_terminal},
+    types::{
+        Collection, Entry, HistoryEntry, Movie, Person, Term, initialize_terminal, reset_terminal,
+    },
 };
 
 pub struct App {
     pub cache_dir: PathBuf,
     pub home_dir:  PathBuf,
     pub quit:      bool,
-    pub movies:    Vec<Movie>,
+
+    pub movies:      Rc<RefCell<Vec<Movie>>>,
+    pub watched:     Rc<RefCell<Vec<Entry>>>,
+    pub persons:     Rc<RefCell<Vec<Person>>>,
+    pub collections: Rc<RefCell<Vec<Collection>>>,
 
     terminal:              Term,
     pub drawer:            Drawer,
@@ -31,27 +39,31 @@ pub struct App {
 }
 
 impl App {
-    pub fn new() -> anyhow::Result<Self> {
+    pub fn new() -> Self {
         let home_dir = dirs::config_dir()
             .expect("Couldn't get user's config dir")
             .join("moviedb");
         let cache_dir = dirs::cache_dir()
             .expect("Couldn't get user's cache dir")
             .join("moviedb");
-        let config = Rc::new(RefCell::new(Config::new(&home_dir)?));
+        let config = new_rc(Config::new(&home_dir));
 
         Self {
-            movies: vec![],
-            terminal: initialize_terminal()?,
+            terminal: initialize_terminal().expect("Unable to initialize terminal"),
             key_event_handler: KeyEventHandler::default(),
             drawer: Drawer::new(&home_dir, &cache_dir, config.clone()),
+
+            config: config,
+            movies: default_rc(),
+            watched: default_rc(),
+            persons: default_rc(),
+            collections: default_rc(),
 
             trakt_tokens: TraktTokens::new(&home_dir),
             punch_play_tokens: PunchPlayTokens::new(&home_dir),
             tmdb_tokens: TMDBTokens::new(&home_dir),
             omdb_tokens: OMDBTokens::new(&home_dir),
 
-            config: config,
             quit: false,
             home_dir,
             cache_dir,
@@ -59,53 +71,21 @@ impl App {
         .load_data()
     }
 
-    pub fn load_data(mut self) -> anyhow::Result<Self> {
-        let file_path = &self.home_dir.join("movies.json");
-
-        let read_result = fs::read_to_string(file_path);
-        if let Err(error) = read_result {
-            error!(
-                "Error reading ratings file: {}.\nRenaming corrupted file and creating a new database.",
-                error
-            );
-
-            let mut renamed = self.home_dir.join("corrupted_ratings.json");
-            let mut i = 1;
-            while renamed.exists() {
-                renamed = self.home_dir.join(format!("corrupted_ratings_{i}.json"));
-                i += 1;
-            }
-
-            fs::rename(file_path, renamed)?;
-
-            fs::write(&self.home_dir.join("ratings.json"), "[]")?;
-            return Ok(self);
+    pub fn load_data(self) -> Self {
+        if let Some(x) = load_file!("movies", self.home_dir) {
+            *self.movies.borrow_mut() = x;
         }
-        let contents = fs::read_to_string(file_path)?;
-
-        let result = serde_json::from_str(&contents);
-        if let Err(error) = result {
-            error!(
-                "Error deserializing ratings file: {}.\nRenaming corrupted file and creating a new database.",
-                error
-            );
-
-            let mut renamed = self.home_dir.join("corrupted_ratings.json");
-            let mut i = 1;
-            while renamed.exists() {
-                renamed = self.home_dir.join(format!("corrupted_ratings_{i}.json"));
-                i += 1;
-            }
-
-            fs::rename(file_path, renamed)?;
-
-            fs::write(&self.home_dir.join("ratings.json"), "[]")?;
-        } else {
-            let movies: Vec<Movie> = result.unwrap();
-            self.movies = Self::remove_duplicates(movies);
+        if let Some(x) = load_file!("watched", self.home_dir) {
+            *self.watched.borrow_mut() = x;
+        }
+        if let Some(x) = load_file!("persons", self.home_dir) {
+            *self.persons.borrow_mut() = x;
+        }
+        if let Some(x) = load_file!("collections", &self.home_dir) {
+            *self.collections.borrow_mut() = x;
         }
 
-        Ok(self)
+        self
     }
 
     pub fn run(&mut self) -> anyhow::Result<()> {
@@ -148,6 +128,7 @@ impl App {
 
     pub fn add_play(&mut self) {
         if let Some(Screens::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
+            let selected_movie_id = main_screen.current_movie().unwrap().id;
             if let Some(Popups::EditMovie(edit_movie_popup)) = self.drawer.active_popup.as_mut() {
                 let rating = format!(
                     "{:.1}",
@@ -168,42 +149,57 @@ impl App {
                     edit_movie_popup.rating_input.lines()[0].parse().unwrap()
                 };
 
-                let mut movie = self.movies.remove(
-                    self.movies
-                        .iter()
-                        .position(|x| x == main_screen.current_movie().unwrap())
-                        .unwrap(),
-                );
-                movie.add_play(date, rating);
-                self.movies.push(movie);
+                let pos = self
+                    .watched
+                    .borrow()
+                    .iter()
+                    .position(|x| x.movie_id == selected_movie_id);
+                if let Some(position) = pos {
+                    let mut entry = self.watched.borrow_mut().remove(position);
+                    entry.add_play(date, rating, None);
+
+                    self.watched.borrow_mut().push(entry);
+                } else {
+                    self.watched.borrow_mut().push(Entry {
+                        movie_id: selected_movie_id,
+                        history:  vec![HistoryEntry {
+                            date,
+                            rating,
+                            note: None,
+                        }],
+                    });
+                }
             }
-            main_screen.set_movies(&self.movies);
-            main_screen.goto_index(-1);
+            main_screen.filter_sort_movies(None);
+            main_screen.goto_index(
+                main_screen
+                    .filtered_movies
+                    .iter()
+                    .position(|x| x.id == selected_movie_id)
+                    .unwrap() as isize,
+            );
         }
-        self.save_movies().unwrap();
+
+        self.save_data(false, true, false, false);
     }
 
     pub fn add_movie(&mut self) {
-        if let Some(Screens::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
-            if let Some(Popups::AddMovie(add_movie_popup)) = self.drawer.active_popup.as_mut() {
-                let tmdb_movie_details = add_movie_popup.tmdb_movie_details_result.take();
-                let trakt_movie_details = add_movie_popup.trakt_movie_details_result.take();
-                let omdb_movie_details = add_movie_popup.omdb_movie_details_result.take();
+        let (movie, date, rating) = if let Some(Popups::AddMovie(add_movie_popup)) =
+            self.drawer.active_popup.as_mut()
+        {
+            let trakt_movie_details = add_movie_popup.trakt_movie_details_result.take();
+            let punch_play_movie_details = add_movie_popup.punch_play_movie_details_result.take();
+            let tmdb_movie_details = add_movie_popup.tmdb_movie_details_result.take();
+            let omdb_movie_details = add_movie_popup.omdb_movie_details_result.take();
 
-                let mut movie = if let Some(tmdb_details) = tmdb_movie_details {
+            (
+                if let Some(tmdb_details) = tmdb_movie_details {
                     let mut movie = Movie::from(tmdb_details);
                     if let Some(trakt_details) = trakt_movie_details {
                         movie.add_trakt_details(trakt_details);
                     }
-                    if let Some(omdb) = omdb_movie_details {
-                        movie.add_omdb_details(omdb);
-                    }
-
-                    movie
-                } else if let Some(trakt_details) = trakt_movie_details {
-                    let mut movie = Movie::from(trakt_details);
-                    if let Some(tmdb_details) = tmdb_movie_details {
-                        movie.add_tmdb_details(tmdb_details);
+                    if let Some(punch_play_details) = punch_play_movie_details {
+                        movie.add_punch_play_details(punch_play_details);
                     }
                     if let Some(omdb) = omdb_movie_details {
                         movie.add_omdb_details(omdb);
@@ -212,23 +208,57 @@ impl App {
                     movie
                 } else {
                     unreachable!()
-                };
+                },
+                add_movie_popup.date,
+                add_movie_popup.user_rating,
+            )
+        } else {
+            unreachable!()
+        };
+        let movie_id = movie.id;
 
-                let x = self.movies.iter().position(|x| movie == *x);
-                if let Some(index) = x {
-                    movie = self.movies.remove(index);
-                }
+        let pos = self
+            .watched
+            .borrow()
+            .iter()
+            .position(|x| x.movie_id == movie_id);
+        if let Some(position) = pos {
+            let mut entry = self.watched.borrow_mut().remove(position);
+            entry.add_play(date, rating, None);
 
-                movie.add_play(add_movie_popup.watched_at, add_movie_popup.user_rating);
-                self.movies.push(movie);
-            }
-
-            main_screen.set_movies(&self.movies);
-            main_screen.goto_index(-1);
-            self.drawer.close_popup();
+            self.watched.borrow_mut().push(entry);
+        } else {
+            self.watched.borrow_mut().push(Entry {
+                movie_id: movie_id,
+                history:  vec![HistoryEntry {
+                    date,
+                    rating,
+                    note: None,
+                }],
+            });
         }
 
-        self.save_movies().unwrap();
+        // if the movie is already cached, remove it because the info is probably outdated.
+        let pos = self.movies.borrow().iter().position(|x| x.id == movie_id);
+        if let Some(position) = pos {
+            _ = self.movies.borrow_mut().remove(position);
+        }
+        self.movies.borrow_mut().push(movie);
+
+        if let Some(Screens::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
+            main_screen.filter_sort_movies(None);
+            main_screen.goto_index(
+                main_screen
+                    .filtered_movies
+                    .iter()
+                    .position(|x| x.id == movie_id)
+                    .unwrap() as isize,
+            );
+        }
+
+        self.drawer.open_fetch_artworks_popup();
+        self.drawer.close_popup();
+        self.save_data(true, true, false, false);
     }
 
     pub fn edit_movie(&mut self) {
@@ -250,37 +280,74 @@ impl App {
                 ) {
                     chrono::Local::now()
                 } else {
-                    edit_movie_popup.rating_input.lines()[0].parse().unwrap()
+                    edit_movie_popup.date_input.lines()[0].parse().unwrap()
                 };
 
-                let index = self
-                    .movies
+                let movie_id = main_screen.current_movie().unwrap().id;
+                let pos = self
+                    .watched
+                    .borrow()
                     .iter()
-                    .position(|x| x == main_screen.current_movie().unwrap())
-                    .unwrap();
-                self.movies[index].plays.last_mut().map(|x| {
-                    x.0 = date;
-                    x.1 = rating;
-                });
+                    .position(|x| x.movie_id == movie_id);
+                if let Some(position) = pos {
+                    _ = self
+                        .watched
+                        .borrow_mut()
+                        .get_mut(position)
+                        .unwrap()
+                        .history
+                        .last_mut()
+                        .map(|x| {
+                            x.date = date;
+                            x.rating = rating;
+                        });
+                    self.watched
+                        .borrow_mut()
+                        .get_mut(position)
+                        .unwrap()
+                        .history
+                        .sort_by(|a, b| a.date.partial_cmp(&b.date).unwrap());
+                }
             }
-            main_screen.set_movies(&self.movies);
+            main_screen.filter_sort_movies(Some(true));
         }
 
-        self.save_movies().unwrap();
+        self.save_data(false, true, false, false);
     }
 
     pub fn remove_movie(&mut self) {
         if let Some(Screens::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
-            let index = self
-                .movies
+            let movie_id = main_screen.current_movie().unwrap().id;
+            let pos = self
+                .watched
+                .borrow()
                 .iter()
-                .position(|x| x == main_screen.current_movie().unwrap())
-                .unwrap();
-            self.movies.remove(index);
-            main_screen.set_movies(&self.movies);
+                .position(|x| x.movie_id == movie_id);
+            if let Some(position) = pos {
+                _ = self.watched.borrow_mut().remove(position);
+            }
+
+            let pos = main_screen.filtered_movies.iter().position(|x| {
+                x.id == main_screen
+                    .current_movie()
+                    .map(|x| x.id)
+                    .unwrap_or(u32::MAX)
+            });
+            let new_selected_index = if let Some(pos) = pos {
+                if pos == main_screen.filtered_movies.len() - 1 {
+                    pos as isize - 1
+                } else {
+                    pos as isize
+                }
+            } else {
+                -1
+            };
+
+            main_screen.filter_sort_movies(None);
+            main_screen.goto_index(new_selected_index);
         }
 
-        self.save_movies().unwrap();
+        self.save_data(false, true, false, false);
     }
 
     pub fn set_trakt_user_tokens(&mut self) {
@@ -321,43 +388,42 @@ impl App {
         }
     }
 
-    fn save_movies(&self) -> anyhow::Result<()> {
-        let string = serde_json::to_string_pretty(self.movies.as_slice()).unwrap();
-
-        fs::rename(
-            &self.home_dir.join("ratings.json"),
-            self.home_dir
-                .join("ratings.json")
-                .with_extension("json.bak"),
-        )?;
-        fs::write(&self.home_dir.join("ratings.json"), string)?;
-
-        Ok(())
-    }
-
-    fn remove_duplicates(mut movies: Vec<Movie>) -> Vec<Movie> {
-        let mut new_movies = vec![];
-
-        let mut i = movies.len().saturating_sub(1);
-        while i < movies.len() {
-            let mut new_movie = movies[i].clone();
-            let mut id = movies.iter().position(|x| movies[i] == *x).unwrap();
-            while id != i {
-                new_movie.add_play(movies[id].plays[0].0.clone(), movies[id].get_user_rating());
-
-                movies.remove(id);
-                i -= 1;
-                id = movies.iter().position(|x| movies[i] == *x).unwrap();
-            }
-
-            movies.remove(i);
-            new_movies.insert(0, new_movie);
-            _ = i == 0 && break; // points for epic bash syntax
-
-            i -= 1;
+    fn save_data(
+        &self,
+        save_movies: bool,
+        save_watched: bool,
+        save_persons: bool,
+        save_collections: bool,
+    ) {
+        macro_rules! save {
+            ($name:expr, $obj:expr) => {{
+                let path = &self.home_dir.join(format!("{}.json", $name));
+                match serde_json::to_string_pretty(&$obj.as_slice()) {
+                    Err(error) => {
+                        error!("Error while trying to serialize {}: {error}", $name)
+                    }
+                    Ok(serialized) => {
+                        _ = fs::rename(path, self.home_dir.join($name).with_extension("json.bak"));
+                        if let Err(error) = fs::write(path, serialized) {
+                            error!("Error while trying to save {}: {error}", $name)
+                        }
+                    }
+                }
+            }};
         }
 
-        new_movies
+        if save_movies {
+            save!("movies", self.movies.borrow());
+        }
+        if save_watched {
+            save!("watched", self.watched.borrow());
+        }
+        if save_persons {
+            save!("persons", self.persons.borrow());
+        }
+        if save_collections {
+            save!("collections", &self.collections.borrow());
+        }
     }
 
     fn handle_event(&mut self, event: Event) {

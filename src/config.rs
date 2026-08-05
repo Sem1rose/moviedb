@@ -24,7 +24,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn new(home_dir: &PathBuf) -> anyhow::Result<Self> {
+    pub fn new(home_dir: &PathBuf) -> Self {
         let mut s = Self {
             home_dir: home_dir.clone(),
 
@@ -44,13 +44,13 @@ impl Config {
                                 renamed = s.home_dir.join(format!("corrupted_config_{i}.toml"));
                                 i += 1;
                             }
-                            fs::rename(&s.home_dir.join("config.toml"), renamed)?;
-                            fs::write(
+                            _ = fs::rename(&s.home_dir.join("config.toml"), renamed);
+                            _ = fs::write(
                                 &s.home_dir.join("config.toml"),
-                                toml::to_string_pretty(&s.options)?,
-                            )?;
+                                toml::to_string_pretty(&s.options).unwrap(),
+                            );
 
-                            return Ok(s);
+                            return s;
                         }
                     }
                 };
@@ -66,13 +66,13 @@ impl Config {
             );
         } else {
             info!("Config file not found, creating a new one..");
-            fs::write(
+            _ = fs::write(
                 &s.home_dir.join("config.toml"),
-                toml::to_string_pretty(&s.options)?,
-            )?;
+                toml::to_string_pretty(&s.options).unwrap(),
+            );
         }
 
-        Ok(s)
+        s
     }
 
     pub fn write_to_disk(&self) {

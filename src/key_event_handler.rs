@@ -6,7 +6,7 @@ use ratatui::{
     layout::{Position, Rect},
 };
 
-use crate::{App, Drawer};
+use crate::{app::App, drawer::Drawer};
 
 pub enum Data {
     None,

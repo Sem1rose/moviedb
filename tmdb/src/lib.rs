@@ -35,14 +35,7 @@ pub(crate) fn send_tmdb_request(
 }
 
 pub(crate) fn download_image(client: Client, url: &str, path: PathBuf) -> anyhow::Result<()> {
-    let image_url = url.strip_suffix(".webp").unwrap_or(url);
-
-    let image_bytes = client
-        .get(format!("https://{image_url}"))
-        .send()?
-        .bytes()?
-        .into_iter()
-        .collect_vec();
+    let image_bytes = client.get(url).send()?.bytes()?.into_iter().collect_vec();
 
     if let Ok(img) = image::load_from_memory(&image_bytes) {
         img.save(path)?;
