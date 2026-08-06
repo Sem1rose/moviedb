@@ -12,57 +12,73 @@ use ratatui::{
     Frame,
     layout::{Rect, Size},
     macros::constraint,
-    style::{Stylize, palette::tailwind},
+    style::{Style, Stylize, palette::tailwind},
     widgets::Block,
 };
 use ratatui_image::{Resize, picker::Picker, sliced::*};
+use strum::EnumDiscriminants;
+use throbber_widgets_tui::{BRAILLE_SIX_DOUBLE, Throbber, ThrobberState};
 
-#[derive(Eq, Hash, PartialEq, Clone, Copy, Debug)]
-pub struct ArtworkID {
-    pub tmdb_id:  u32,
-    pub backdrop: bool,
+#[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, EnumDiscriminants)]
+#[strum_discriminants(derive(Hash))]
+pub enum ImageID {
+    Movie(u32, bool),
+    Collection(u32, bool),
+    Person(u32),
 }
 
-type LoadResult = (ArtworkID, anyhow::Result<SlicedProtocol>);
+type LoadResult = (ImageID, anyhow::Result<Result<SlicedProtocol, bool>>);
 
 enum Actions {
-    Load(ArtworkID, String),
-    ResizeArtwork(Size),
-    ResizeBackdrop(Size),
+    Load(ImageID),
+    Resize(ImageIDDiscriminants, [Size; 2]),
+    UpdateTokens(String),
+}
+
+fn default_sizes() -> HashMap<ImageIDDiscriminants, [Size; 2]> {
+    HashMap::from_iter([
+        (
+            ImageIDDiscriminants::Movie,
+            [Default::default(), Default::default()],
+        ),
+        (
+            ImageIDDiscriminants::Collection,
+            [Default::default(), Default::default()],
+        ),
+        (
+            ImageIDDiscriminants::Person,
+            [Default::default(), Default::default()],
+        ),
+    ])
 }
 
 pub struct RatatuiImage {
-    hashed_images:  HashMap<ArtworkID, Option<SlicedProtocol>>,
-    preload_images: Vec<ArtworkID>,
+    preload_images: Vec<ImageID>,
+
+    sizes:         HashMap<ImageIDDiscriminants, [Size; 2]>,
+    hashed_images: HashMap<ImageID, Option<SlicedProtocol>>,
 
     tx_load: Sender<Actions>,
     rx_main: Receiver<LoadResult>,
-
-    artwork_size:  Option<Size>,
-    backdrop_size: Option<Size>,
-    cache_dir:     PathBuf,
-
-    pub loading: u32,
 }
 impl RatatuiImage {
     pub fn new(cache_dir: &PathBuf) -> Self {
         let (tx_main, rx_main) = mpsc::channel();
 
-        let tx_load = Self::start_load_thread(&tx_main);
+        let tx_load = Self::start_load_thread(&tx_main, cache_dir);
 
         Self {
-            hashed_images: HashMap::new(),
             preload_images: vec![],
+
+            hashed_images: HashMap::new(),
+            sizes: default_sizes(),
+
             rx_main,
             tx_load,
-            artwork_size: None,
-            backdrop_size: None,
-            loading: 0,
-            cache_dir: cache_dir.clone(),
         }
     }
 
-    fn start_load_thread(tx_main: &Sender<LoadResult>) -> Sender<Actions> {
+    fn start_load_thread(tx_main: &Sender<LoadResult>, cache_dir: &PathBuf) -> Sender<Actions> {
         let (tx_load, rx_load) = mpsc::channel::<Actions>();
 
         let tx_main = tx_main.clone();
@@ -71,56 +87,113 @@ impl RatatuiImage {
             Picker::halfblocks()
         });
 
+        let cache_dir = cache_dir.clone();
+        let mut tmdb_access_token: Option<String> = None;
+        let mut sizes = default_sizes();
         thread::spawn(move || {
-            let mut artwork_size: Size = Size::default();
-            let mut backdrop_size: Size = Size::default();
-
             for action in rx_load.iter() {
                 match action {
-                    Actions::Load(artwork_id, path) => {
+                    Actions::Load(image_id) => {
                         let tx_main = tx_main.clone();
 
-                        let _picker = picker.clone();
-                        thread::spawn(move || {
-                            let result = (|| -> anyhow::Result<_> {
-                                let decoded;
-                                let reader;
-                                let result = image::ImageReader::open(&path);
-                                if let Err(err) = result {
-                                    bail!("Failed to open {:?}: {}", artwork_id, err);
-                                } else {
-                                    reader = result.unwrap();
-                                }
+                        let path = match image_id {
+                            ImageID::Movie(id, backdrop) => if backdrop {
+                                cache_dir.join("backdrops")
+                            } else {
+                                cache_dir.join("posters")
+                            }
+                            .join(id.to_string())
+                            .with_extension("jpg"),
+                            ImageID::Collection(id, _backdrop) => cache_dir
+                                .join("collections")
+                                .join(id.to_string())
+                                .with_extension("jpg"),
+                            ImageID::Person(id) => cache_dir
+                                .join("persons")
+                                .join(id.to_string())
+                                .with_extension("jpg"),
+                        };
 
-                                let result = reader.decode();
-                                if let Err(err) = result {
-                                    bail!("Failed to decode {:?}: {}", artwork_id, err);
-                                } else {
-                                    decoded = result.unwrap();
-                                }
-
-                                let protocol = SlicedProtocol::new_with_resize(
-                                    &_picker,
-                                    decoded,
-                                    if artwork_id.backdrop {
-                                        backdrop_size
+                        if path.is_file() {
+                            let size = sizes[&image_id.into()]
+                                [matches!(image_id, ImageID::Movie(_, true)) as usize]
+                                .clone();
+                            // let size = match image_id {
+                            //     ImageID::Movie(_, backdrop) => sizes[&image_id.into()][backdrop as usize].clone(),
+                            //     ImageID::Collection(_, backdrop) => sizes[&image_id.into()][backdrop as usize].clone(),
+                            //     ImageID::Person(_) => sizes[&image_id.into()][0].clone(),
+                            // };
+                            let _picker = picker.clone();
+                            thread::spawn(move || {
+                                let result = (|| -> anyhow::Result<_> {
+                                    let decoded;
+                                    let reader;
+                                    let result = image::ImageReader::open(&path);
+                                    if let Err(err) = result {
+                                        bail!("Failed to open {:?}: {}", image_id, err);
                                     } else {
-                                        artwork_size
-                                    },
-                                    Resize::Scale(Some(ratatui_image::FilterType::Triangle)),
-                                )?;
+                                        reader = result.unwrap();
+                                    }
 
-                                Ok(protocol)
-                            })();
+                                    let result = reader.decode();
+                                    if let Err(err) = result {
+                                        bail!("Failed to decode {:?}: {}", image_id, err);
+                                    } else {
+                                        decoded = result.unwrap();
+                                    }
 
-                            tx_main.send((artwork_id, result))
-                        });
+                                    let protocol = SlicedProtocol::new_with_resize(
+                                        &_picker,
+                                        decoded,
+                                        size,
+                                        Resize::Scale(Some(ratatui_image::FilterType::Triangle)),
+                                    )?;
+
+                                    Ok(Ok(protocol))
+                                })();
+
+                                tx_main.send((image_id, result))
+                            });
+                        } else {
+                            let cache_dir = cache_dir.clone();
+                            let tmdb_access_token = tmdb_access_token.as_ref().unwrap().clone();
+                            thread::spawn(move || {
+                                let result = (|| -> anyhow::Result<_> {
+                                    let result = match image_id {
+                                        ImageID::Movie(id, false) =>
+                                            tmdb::movie::get_movie_artworks(
+                                                &cache_dir,
+                                                tmdb_access_token.as_str(),
+                                                id,
+                                            ),
+                                        ImageID::Collection(id, false) =>
+                                            tmdb::movie::get_collection_artwork(
+                                                &cache_dir,
+                                                tmdb_access_token.as_str(),
+                                                id,
+                                            ),
+                                        ImageID::Person(id) => tmdb::movie::get_person_artwork(
+                                            &cache_dir,
+                                            tmdb_access_token.as_str(),
+                                            id,
+                                        ),
+                                        _ => Ok(false),
+                                    }
+                                    .ok()
+                                    .unwrap_or(false);
+
+                                    Ok(Err(result))
+                                })();
+
+                                tx_main.send((image_id, result))
+                            });
+                        }
                     }
-                    Actions::ResizeArtwork(_size) => {
-                        artwork_size = _size;
+                    Actions::Resize(id, new_sizes) => {
+                        *sizes.get_mut(&id).unwrap() = new_sizes;
                     }
-                    Actions::ResizeBackdrop(_size) => {
-                        backdrop_size = _size;
+                    Actions::UpdateTokens(access_token) => {
+                        tmdb_access_token = Some(access_token);
                     }
                 }
             }
@@ -129,112 +202,132 @@ impl RatatuiImage {
         tx_load
     }
 
-    fn hash_image(&mut self, artwork_id: ArtworkID) {
-        self.hashed_images.insert(artwork_id, None);
+    fn hash_image(&mut self, image_id: ImageID) {
+        self.hashed_images.insert(image_id, None);
 
-        let path = format!(
-            "{}",
-            if artwork_id.backdrop {
-                self.cache_dir.join("backdrops")
-            } else {
-                self.cache_dir.join("posters")
-            }
-            .join(format!("{}.jpg", artwork_id.tmdb_id))
-            .display()
-        );
-
-        if PathBuf::from(&path).is_file() {
-            _ = self.tx_load.send(Actions::Load(artwork_id, path));
-            self.loading += 1;
-        }
+        _ = self.tx_load.send(Actions::Load(image_id));
     }
 
     pub fn update(&mut self) {
-        for (artwork_id, result) in self.rx_main.try_iter() {
+        for (image_id, result) in self.rx_main.try_iter() {
             if let Ok(protocol) = result {
-                if self.hashed_images.contains_key(&artwork_id) {
-                    _ = self
-                        .hashed_images
-                        .get_mut(&artwork_id)
-                        .unwrap()
-                        .insert(protocol);
-                    self.loading -= 1;
-                }
-            } else if let Err(_) = result {
-                _ = self.tx_load.send(Actions::Load(
-                    artwork_id,
-                    format!(
-                        "{}",
-                        if artwork_id.backdrop {
-                            self.cache_dir.join("backdrops")
-                        } else {
-                            self.cache_dir.join("posters")
+                if self.hashed_images.contains_key(&image_id) {
+                    if let Ok(protocol) = protocol {
+                        _ = self
+                            .hashed_images
+                            .get_mut(&image_id)
+                            .unwrap()
+                            .insert(protocol);
+                    } else if let Err(true) = protocol {
+                        // downloaded successfully
+                        match image_id {
+                            ImageID::Movie(id, _) => {
+                                _ = self.tx_load.send(Actions::Load(ImageID::Movie(id, true)));
+                                _ = self.tx_load.send(Actions::Load(ImageID::Movie(id, false)));
+                            }
+                            ImageID::Collection(id, _) => {
+                                // _ = self.tx_load.send(Actions::Load(ImageID::Collection(id, true)));
+                                _ = self
+                                    .tx_load
+                                    .send(Actions::Load(ImageID::Collection(id, false)));
+                            }
+                            ImageID::Person(id) => {
+                                _ = self.tx_load.send(Actions::Load(ImageID::Person(id)));
+                            }
                         }
-                        .join(format!("{}.jpg", artwork_id.tmdb_id))
-                        .display()
-                    ),
-                ));
+                    }
+                }
+            } else if let Err(error) = result {
+                error!("error loading image {image_id:?}: {error:#?}");
+                _ = self.tx_load.send(Actions::Load(image_id));
             }
         }
     }
 
     pub fn draw_image(
         &mut self,
-        tmdb_id: u32,
-        backdrop: bool,
+        image_id: ImageID,
         area: Rect,
         sliced_pos: Option<SignedPosition>,
+        throbber_state: &mut ThrobberState,
         frame: &mut Frame,
     ) -> bool {
-        let artwork_id = ArtworkID { tmdb_id, backdrop };
+        macro_rules! pop_then_hash {
+            ($collection:expr, $filter_map:expr, $retain:expr) => {
+                let hash = $collection.iter().filter_map($filter_map).collect_vec();
+                $collection.retain($retain);
+                for artwork_id in hash {
+                    if self.hashed_images.get(&artwork_id).is_none() {
+                        self.hash_image(artwork_id);
+                    }
+                }
+            };
+        }
+
+        let index = match image_id {
+            ImageID::Movie(_, backdrop) | ImageID::Collection(_, backdrop) => backdrop as usize,
+            ImageID::Person(_) => 0,
+        };
         if sliced_pos.is_none() {
-            if backdrop {
-                if self.backdrop_size.is_none() {
-                    self.backdrop_size = Some(area.as_size());
-                    _ = self.tx_load.send(Actions::ResizeBackdrop(area.as_size()));
-                } else if self.backdrop_size.unwrap() != area.as_size() {
-                    self.backdrop_size = Some(area.as_size());
-                    _ = self.tx_load.send(Actions::ResizeBackdrop(area.as_size()));
+            let size = self.sizes.get_mut(&image_id.into()).unwrap();
+            if size[index] != area.as_size() {
+                size[index] = area.as_size();
+                _ = self
+                    .tx_load
+                    .send(Actions::Resize(image_id.into(), size.clone()));
 
-                    let rehash = self
-                        .hashed_images
-                        .iter()
-                        .filter_map(|(k, _)| if k.backdrop { Some(k.clone()) } else { None })
-                        .collect_vec();
-                    self.hashed_images.retain(|k, _| !k.backdrop);
-
-                    for artwork_id in rehash {
-                        self.hash_image(artwork_id);
+                pop_then_hash!(
+                    self.hashed_images,
+                    |(k, _)| {
+                        (ImageIDDiscriminants::from(*k) == image_id.into())
+                            .then_some(match k {
+                                ImageID::Movie(_, backdrop) =>
+                                    (*backdrop as usize == index).then_some(k.clone()),
+                                ImageID::Collection(_, backdrop) =>
+                                    (*backdrop as usize == index).then_some(k.clone()),
+                                ImageID::Person(_) => Some(k.clone()),
+                            })
+                            .flatten()
+                    },
+                    |k, _| {
+                        ImageIDDiscriminants::from(k) != image_id.into()
+                            || match k {
+                                ImageID::Movie(_, backdrop) => *backdrop as usize != index,
+                                ImageID::Collection(_, backdrop) => *backdrop as usize != index,
+                                ImageID::Person(_) => false,
+                            }
                     }
+                );
 
-                    return false;
-                }
-            } else {
-                if self.artwork_size.is_none() {
-                    _ = self.tx_load.send(Actions::ResizeArtwork(area.as_size()));
-                    self.artwork_size = Some(area.as_size());
-                } else if self.artwork_size.unwrap() != area.as_size() {
-                    _ = self.tx_load.send(Actions::ResizeArtwork(area.as_size()));
-                    self.artwork_size = Some(area.as_size());
-
-                    let rehash = self
-                        .hashed_images
-                        .iter()
-                        .filter_map(|(k, _)| if !k.backdrop { Some(k.clone()) } else { None })
-                        .collect_vec();
-                    self.hashed_images.retain(|k, _| k.backdrop);
-
-                    for artwork_id in rehash.into_iter() {
-                        self.hash_image(artwork_id);
+                pop_then_hash!(
+                    self.preload_images,
+                    |k| {
+                        (ImageIDDiscriminants::from(*k) == image_id.into())
+                            .then_some(match k {
+                                ImageID::Movie(_, backdrop) =>
+                                    (*backdrop as usize == index).then_some(k.clone()),
+                                ImageID::Collection(_, backdrop) =>
+                                    (*backdrop as usize == index).then_some(k.clone()),
+                                ImageID::Person(_) => Some(k.clone()),
+                            })
+                            .flatten()
+                    },
+                    |k| {
+                        ImageIDDiscriminants::from(k) != image_id.into()
+                            || match k {
+                                ImageID::Movie(_, backdrop) => *backdrop as usize != index,
+                                ImageID::Collection(_, backdrop) => *backdrop as usize != index,
+                                ImageID::Person(_) => false,
+                            }
                     }
+                );
 
-                    return false;
-                }
+                return false;
             }
         }
 
         let mut drawn = false;
-        if let Some(value) = self.hashed_images.get(&artwork_id) {
+        if let Some(value) = self.hashed_images.get(&image_id) {
             if let Some(protocol) = value {
                 let Size { width, height } = protocol.size();
 
@@ -248,48 +341,61 @@ impl RatatuiImage {
                 drawn = true;
             } else {
                 frame.render_widget(Block::new().bg(tailwind::GRAY.c950), area);
+                frame.render_stateful_widget(
+                    Throbber::default()
+                        .throbber_set(BRAILLE_SIX_DOUBLE)
+                        .style(Style::new().fg(tailwind::CYAN.c600).bold()),
+                    area.centered(constraint!(==1), constraint!(==1)),
+                    throbber_state,
+                );
             }
         } else {
-            self.hash_image(artwork_id);
+            self.hash_image(image_id);
         }
 
-        let preload_images = self.preload_images.clone();
-        self.preload_images.retain(|x| x.backdrop != backdrop);
-        for artwork_id in preload_images.iter().filter(|x| x.backdrop == backdrop) {
-            if let None = self.hashed_images.get(artwork_id) {
-                self.hash_image(*artwork_id);
+        pop_then_hash!(
+            self.preload_images,
+            |k| {
+                (ImageIDDiscriminants::from(*k) == image_id.into())
+                    .then_some(match k {
+                        ImageID::Movie(_, backdrop) =>
+                            (*backdrop as usize == index).then_some(k.clone()),
+                        ImageID::Collection(_, backdrop) =>
+                            (*backdrop as usize == index).then_some(k.clone()),
+                        ImageID::Person(_) => Some(k.clone()),
+                    })
+                    .flatten()
+            },
+            |k| {
+                ImageIDDiscriminants::from(k) != image_id.into()
+                    || match k {
+                        ImageID::Movie(_, backdrop) => *backdrop as usize != index,
+                        ImageID::Collection(_, backdrop) => *backdrop as usize != index,
+                        ImageID::Person(_) => false,
+                    }
             }
-        }
+        );
 
         return drawn;
     }
 
-    pub fn preload_images(&mut self, items: Vec<u32>, rule: &str) {
+    pub fn preload_movies(&mut self, movies: Vec<u32>, rule: &str) {
         match rule {
             "all" => {
-                self.preload_images = items
-                    .iter()
-                    .map(|&id| ArtworkID {
-                        tmdb_id:  id,
-                        backdrop: false,
-                    })
-                    .collect();
+                self.preload_images = movies.iter().map(|&id| ImageID::Movie(id, false)).collect();
                 self.preload_images
-                    .extend(items.into_iter().map(|id| ArtworkID {
-                        tmdb_id:  id,
-                        backdrop: true,
-                    }));
+                    .extend(movies.into_iter().map(|id| ImageID::Movie(id, true)));
             }
             "posters" => {
-                self.preload_images = items
-                    .iter()
-                    .map(|&id| ArtworkID {
-                        tmdb_id:  id,
-                        backdrop: false,
-                    })
-                    .collect();
+                self.preload_images = movies.iter().map(|&id| ImageID::Movie(id, false)).collect();
             }
             _ => (),
         }
+    }
+
+    pub fn update_access_token(&self, access_token: &str) {
+        _ = self
+            .tx_load
+            .send(Actions::UpdateTokens(access_token.to_string()))
     }
 }

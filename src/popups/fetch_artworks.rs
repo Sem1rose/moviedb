@@ -20,13 +20,12 @@ use ratatui::{
 use strum::AsRefStr;
 use throbber_widgets_tui::{Throbber, ThrobberState};
 use tmdb;
-use trakt;
 
 use crate::{
     helpers::{add_padding, create_popup, dynamic_area, wrap_text},
     key_event_handler::KeyEventHandler,
     popups::PopupTrait,
-    tokens::{tmdb_tokens::TMDBTokens, trakt_tokens::TraktTokens},
+    tokens::tmdb_tokens::TMDBTokens,
     types::{Collection, Entry, Movie},
 };
 
@@ -88,7 +87,6 @@ impl FetchArtworksPopup {
         let (tx_fetch_request, rx_fetch_request) = channel::<ItemID>();
         let (tx_fetch_response, rx_fetch_response) = channel::<(ItemID, anyhow::Result<bool>)>();
         let cache_dir = self.cache_dir.clone();
-        let trakt_client_id = self.trakt_client_id.clone();
         let tmdb_access_token = self.tmdb_access_token.clone();
 
         thread::spawn(move || {
@@ -96,7 +94,6 @@ impl FetchArtworksPopup {
                 let tx_response = tx_fetch_response.clone();
 
                 let cache_dir = cache_dir.clone();
-                let trakt_client_id = trakt_client_id.clone();
                 let tmdb_access_token = tmdb_access_token.clone();
                 thread::spawn(move || {
                     let result = if let Some(tmdb_access_token) = tmdb_access_token.as_ref() {
@@ -113,12 +110,6 @@ impl FetchArtworksPopup {
                                 tmdb_access_token,
                                 *id,
                             ),
-                        }
-                    } else if let Some(_trakt_client_id) = trakt_client_id.as_ref() {
-                        match &request {
-                            ItemID::Movie(_) => todo!(),
-                            ItemID::Person(_) => todo!(),
-                            ItemID::Collection(_) => todo!(),
                         }
                     } else {
                         unreachable!();
@@ -152,10 +143,16 @@ impl FetchArtworksPopup {
                             .join(format!("{id}.jpg"))
                             .is_file()
                 };
-                let x = self.movies.iter().fold(vec![], |mut a, b| {if check_artwork_fetched(b) {a.push(*b)} a});
+                let x = self.movies.iter().fold(vec![], |mut a, b| {
+                    if check_artwork_fetched(b) {
+                        a.push(*b)
+                    }
+                    a
+                });
                 self.progress += x.len();
                 for x in x {
-                    self.movies.remove(self.movies.iter().position(|y| *y == x).unwrap());
+                    self.movies
+                        .remove(self.movies.iter().position(|y| *y == x).unwrap());
                 }
 
                 Phase::MovieArtworks
@@ -170,10 +167,16 @@ impl FetchArtworksPopup {
                             .join(format!("{id}.jpg"))
                             .is_file()
                     };
-                    let x = self.persons.iter().fold(vec![], |mut a, b| {if check_artwork_fetched(b) {a.push(*b)} a});
+                    let x = self.persons.iter().fold(vec![], |mut a, b| {
+                        if check_artwork_fetched(b) {
+                            a.push(*b)
+                        }
+                        a
+                    });
                     self.progress += x.len();
                     for x in x {
-                        self.persons.remove(self.persons.iter().position(|y| *y == x).unwrap());
+                        self.persons
+                            .remove(self.persons.iter().position(|y| *y == x).unwrap());
                     }
 
                     Phase::PersonArtworks
@@ -186,16 +189,22 @@ impl FetchArtworksPopup {
                             .join(format!("{id}.jpg"))
                             .is_file()
                     };
-                    let x = self.collections.iter().fold(vec![], |mut a, b| {if check_artwork_fetched(b) {a.push(*b)} a});
+                    let x = self.collections.iter().fold(vec![], |mut a, b| {
+                        if check_artwork_fetched(b) {
+                            a.push(*b)
+                        }
+                        a
+                    });
                     self.progress += x.len();
                     for x in x {
-                        self.collections.remove(self.collections.iter().position(|y| *y == x).unwrap());
+                        self.collections
+                            .remove(self.collections.iter().position(|y| *y == x).unwrap());
                     }
                     Phase::CollectionArtworks
                 } else {
                     Phase::Done
                 },
-            Phase::PersonArtworks => {
+            Phase::PersonArtworks =>
                 if self.fetch_collections {
                     self.count = self.collections.len();
 
@@ -205,16 +214,21 @@ impl FetchArtworksPopup {
                             .join(format!("{id}.jpg"))
                             .is_file()
                     };
-                    let x = self.collections.iter().fold(vec![], |mut a, b| {if check_artwork_fetched(b) {a.push(*b)} a});
+                    let x = self.collections.iter().fold(vec![], |mut a, b| {
+                        if check_artwork_fetched(b) {
+                            a.push(*b)
+                        }
+                        a
+                    });
                     self.progress += x.len();
                     for x in x {
-                        self.collections.remove(self.collections.iter().position(|y| *y == x).unwrap());
+                        self.collections
+                            .remove(self.collections.iter().position(|y| *y == x).unwrap());
                     }
                     Phase::CollectionArtworks
                 } else {
                     Phase::Done
-                }
-            }
+                },
             Phase::CollectionArtworks => {
                 drop(self.tx_fetch_request.take().unwrap());
 
@@ -229,14 +243,8 @@ impl FetchArtworksPopup {
         movies: &[Movie],
         watched: &[Entry],
         collections: &[Collection],
-        trakt_tokens: &TraktTokens,
         tmdb_tokens: &TMDBTokens,
     ) {
-        self.trakt_client_id = if trakt_tokens.status.is_some() {
-            Some(trakt_tokens.client_id_owned())
-        } else {
-            None
-        };
         self.tmdb_access_token = if tmdb_tokens.status.is_some() {
             Some(tmdb_tokens.access_token_owned())
         } else {
@@ -383,7 +391,6 @@ impl PopupTrait for FetchArtworksPopup {
                         self.progress += 1;
                     }
                 }
-
 
                 if self.num_sent.saturating_sub(self.progress) < BATCH_SIZE {
                     for id in self.collections.drain(

@@ -156,7 +156,7 @@ pub fn ellipsize_string(string: &str, max_width: usize) -> String {
     new_string
 }
 
-pub fn ids_to_movies(movies: &[Movie], ids: &[u32]) -> Vec<Movie> {
+pub fn ids_to_movies(ids: &[u32], movies: &[Movie]) -> Vec<Movie> {
     ids.iter()
         .map(|id| movies.iter().find(|x| x.id == *id).unwrap().clone())
         .collect()
@@ -166,7 +166,7 @@ pub fn is_between<T: PartialOrd>(v: T, lb: T, ub: T) -> bool {
     v >= lb && v <= ub
 }
 
-pub fn history_from_movie(watched: &[Entry], id: u32) -> Option<Entry> {
+pub fn history_from_movie(id: u32, watched: &[Entry]) -> Option<Entry> {
     watched.iter().find(|x| x.movie_id == id).cloned()
 }
 

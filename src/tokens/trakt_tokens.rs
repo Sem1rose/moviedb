@@ -36,6 +36,7 @@ pub struct TraktTokens {
     home_dir:   PathBuf,
 }
 
+#[allow(dead_code)]
 impl TraktTokens {
     pub fn new(home_dir: &PathBuf) -> Self {
         Self {

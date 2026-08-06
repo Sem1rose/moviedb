@@ -2,7 +2,6 @@ mod add_movie;
 mod advanced_filter;
 mod delete_movie;
 mod edit_movie;
-mod fetch_artworks;
 mod omdb_init;
 mod out_of_box;
 mod punch_play_init;
@@ -13,7 +12,6 @@ pub use add_movie::{AddMoviePopup, Phase as AddMoviePopupPhase};
 pub use advanced_filter::AdvancedFilterPopup;
 pub use delete_movie::DeleteMoviePopup;
 pub use edit_movie::EditMoviePopup;
-pub use fetch_artworks::{FetchArtworksPopup, Phase as FetchArtworksPopupPhase};
 pub use omdb_init::OMDBInitPopup;
 pub use out_of_box::OutOfBoxPopup;
 pub use punch_play_init::{Phase as PunchPlayInitPopupPhase, PunchPlayInitPopup};
@@ -28,7 +26,6 @@ pub enum Popups {
     PunchPlayInit(PunchPlayInitPopup),
     TMDBInit(TMDBInitPopup),
     OMDBInit(OMDBInitPopup),
-    FetchArtworks(FetchArtworksPopup),
     OutOfBox(OutOfBoxPopup),
     AdvancedFilter(AdvancedFilterPopup),
 }
@@ -43,7 +40,6 @@ impl Popups {
             Popups::PunchPlayInit(punch_play_init_popup) => punch_play_init_popup,
             Popups::TMDBInit(tmdbinit_popup) => tmdbinit_popup,
             Popups::OMDBInit(omdbinit_popup) => omdbinit_popup,
-            Popups::FetchArtworks(fetch_artworks_popup) => fetch_artworks_popup,
             Popups::OutOfBox(out_of_box_popup) => out_of_box_popup,
             Popups::AdvancedFilter(advanced_filter_popup) => advanced_filter_popup,
         }
@@ -58,7 +54,6 @@ impl Popups {
             Popups::PunchPlayInit(punch_play_init_popup) => punch_play_init_popup,
             Popups::TMDBInit(tmdbinit_popup) => tmdbinit_popup,
             Popups::OMDBInit(omdbinit_popup) => omdbinit_popup,
-            Popups::FetchArtworks(fetch_artworks_popup) => fetch_artworks_popup,
             Popups::OutOfBox(out_of_box_popup) => out_of_box_popup,
             Popups::AdvancedFilter(advanced_filter_popup) => advanced_filter_popup,
         }

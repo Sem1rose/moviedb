@@ -1,18 +1,46 @@
 use std::{path::PathBuf, thread};
 
 use anyhow::{Context, anyhow};
+use itertools::Itertools;
 use reqwest::{blocking::ClientBuilder, header::HeaderMap};
 use serde::Deserialize;
 
 use crate::{
     download_image, send_tmdb_request,
     smo::{
-        ConfigurationResponse, ImagesConfiguration, RequestResponseError, TMDBCollectionDetails,
-        TMDBCredits, TMDBMovieDetails, TMDBMovieImagesResponse, TMDBSearchResult,
+        RequestResponseError, TMDBCollectionDetails, TMDBCredits, TMDBMovieDetails,
+        TMDBMovieImagesResponse, TMDBSearchResult,
     },
 };
 
 pub(crate) mod smo;
+
+// static CONFIGURATIONS: OnceLock<ImagesConfiguration> = OnceLock::new();
+// // let images_configurations = CONFIGURATIONS.get_or_init(|| get_configurations(access_token));
+// fn get_configurations(access_token: &str) -> ImagesConfiguration {
+//     let client = ClientBuilder::new().build().unwrap();
+
+//     let mut headers = HeaderMap::new();
+//     headers.insert("accept", "application/json".parse().unwrap());
+//     headers.insert("content-type", "application/json".parse().unwrap());
+//     headers.insert(
+//         "Authorization",
+//         format!("Bearer {}", access_token).parse().unwrap(),
+//     );
+//     let configuration_response = send_tmdb_request(
+//         &client,
+//         "https://api.themoviedb.org/3/configuration",
+//         &headers,
+//         None,
+//         None,
+//     )
+//     .unwrap();
+
+//     configuration_response
+//         .json::<ConfigurationResponse>()
+//         .unwrap()
+//         .images
+// }
 
 pub fn find_movie(access_token: &str, name: &str) -> anyhow::Result<Vec<TMDBSearchResult>> {
     let client = ClientBuilder::new().build()?;
@@ -294,76 +322,19 @@ pub fn get_movie_artworks(
     access_token: &str,
     tmdb_id: u32,
 ) -> anyhow::Result<bool> {
-    let client = ClientBuilder::new().build()?;
-    let mut headers = HeaderMap::new();
-
-    headers.insert("accept", "application/json".parse().unwrap());
-    headers.insert("content-type", "application/json".parse().unwrap());
-    headers.insert(
-        "Authorization",
-        format!("Bearer {}", access_token).parse().unwrap(),
-    );
-
     let movie_images = get_movie_images(access_token, tmdb_id)?;
-    let configuration_response = send_tmdb_request(
-        &client,
-        "https://api.themoviedb.org/3/configuration",
-        &headers,
-        None,
-        None,
-    )?;
-    if !configuration_response.status().is_success() {
-        return Err(
-            match configuration_response.json::<RequestResponseError>() {
-                Ok(err) => err.into(),
-                Err(_) => anyhow!(""),
-            },
-        )
-        .context("TMDB: Error while while querying for configurations");
-    }
-
-    let images_configurations = configuration_response
-        .json::<ConfigurationResponse>()?
-        .images;
-    let try_get_artwork = |images_configurations: &ImagesConfiguration,
-                           movie_images: &TMDBMovieImagesResponse,
-                           path: &PathBuf,
+    let try_get_artwork = |id: usize,
                            backdrop: bool,
-                           id: usize|
+                           path: &PathBuf,
+                           movie_images: &TMDBMovieImagesResponse|
      -> anyhow::Result<u8> {
         if (backdrop && id >= movie_images.posters.len()) || id >= movie_images.backdrops.len() {
             return Ok(2);
         }
 
-        // let image_bytes = reqwest::blocking::get(format!(
-        //     "{}{}{}",
-        //     images_configurations.base_url,
-        //     if backdrop {
-        //         images_configurations.backdrop_sizes[1].clone()
-        //     } else {
-        //         images_configurations.poster_sizes[3].clone()
-        //     },
-        //     if backdrop {
-        //         movie_images.backdrops[id].file_path.clone()
-        //     } else {
-        //         movie_images.posters[id].file_path.clone()
-        //     }
-        // ))?
-        // .bytes()?
-        // .into_iter()
-        // .collect_vec();
-
-        // if let Ok(img) = image::load_from_memory(&image_bytes) {
-        //     img.save(path)?;
-        // } else {
-        let image_bytes: Vec<_> = reqwest::blocking::get(format!(
-            "{}{}{}",
-            images_configurations.base_url,
-            if backdrop {
-                images_configurations.backdrop_sizes.last().unwrap().clone()
-            } else {
-                images_configurations.poster_sizes.last().unwrap().clone()
-            },
+        let image_bytes = reqwest::blocking::get(format!(
+            "https://image.tmdb.org/t/p/{}/{}",
+            if backdrop { "w1280" } else { "w500" },
             if backdrop {
                 movie_images.backdrops[id].file_path.clone()
             } else {
@@ -372,19 +343,13 @@ pub fn get_movie_artworks(
         ))?
         .bytes()?
         .into_iter()
-        .collect();
+        .collect_vec();
 
         if let Ok(img) = image::load_from_memory(&image_bytes) {
-            img.resize(
-                if backdrop { 10000 } else { 600 },
-                if backdrop { 720 } else { 10000 },
-                image::imageops::FilterType::CatmullRom,
-            )
-            .save(path)?;
+            img.save(path)?;
         } else {
             return Ok(1);
         }
-        // }
 
         Ok(0)
     };
@@ -392,19 +357,12 @@ pub fn get_movie_artworks(
     let mut status = false;
     let poster_path = cache_dir.join("posters").join(format!("{}.jpg", tmdb_id));
     let poster_handle = {
-        let images_configurations = images_configurations.clone();
         let movie_images = movie_images.clone();
 
         thread::spawn(move || -> anyhow::Result<bool> {
             if !movie_images.posters.is_empty() {
                 for i in 0..5 {
-                    let result = try_get_artwork(
-                        &images_configurations,
-                        &movie_images,
-                        &poster_path,
-                        false,
-                        i,
-                    )?;
+                    let result = try_get_artwork(i, false, &poster_path, &movie_images)?;
                     match result {
                         0 => return Ok(true),
                         2 => return Ok(false),
@@ -421,13 +379,7 @@ pub fn get_movie_artworks(
         thread::spawn(move || -> anyhow::Result<bool> {
             if !movie_images.backdrops.is_empty() {
                 for i in 0..5 {
-                    let result = try_get_artwork(
-                        &images_configurations,
-                        &movie_images,
-                        &backdrop_path,
-                        true,
-                        i,
-                    )?;
+                    let result = try_get_artwork(i, true, &backdrop_path, &movie_images)?;
                     match result {
                         0 => return Ok(true),
                         2 => return Ok(false),
@@ -486,35 +438,10 @@ pub fn get_person_artwork(
         .profile_path;
 
     if let Some(profile_path) = profile_path {
-        let configuration_response = send_tmdb_request(
-            &client,
-            "https://api.themoviedb.org/3/configuration",
-            &headers,
-            None,
-            None,
-        )?;
-        if !configuration_response.status().is_success() {
-            return Err(
-                match configuration_response.json::<RequestResponseError>() {
-                    Ok(err) => err.into(),
-                    Err(_) => anyhow!(""),
-                },
-            )
-            .context("TMDB: Error while while querying for configurations");
-        }
-        let images_configurations = configuration_response
-            .json::<ConfigurationResponse>()?
-            .images;
-
         let path = cache_dir.join("persons").join(format!("{}.jpg", id));
         download_image(
             client,
-            &format!(
-                "{}{}{}",
-                images_configurations.base_url,
-                images_configurations.poster_sizes[3].clone(),
-                profile_path
-            ),
+            &format!("https://image.tmdb.org/t/p/{}/{}", "w342", profile_path),
             path,
         )?;
 
@@ -574,35 +501,10 @@ pub fn get_collection_artwork(
     );
 
     if let Some(profile_path) = collection_details.poster_path {
-        let configuration_response = send_tmdb_request(
-            &client,
-            "https://api.themoviedb.org/3/configuration",
-            &headers,
-            None,
-            None,
-        )?;
-        if !configuration_response.status().is_success() {
-            return Err(
-                match configuration_response.json::<RequestResponseError>() {
-                    Ok(err) => err.into(),
-                    Err(_) => anyhow!(""),
-                },
-            )
-            .context("TMDB: Error while while querying for configurations");
-        }
-        let images_configurations = configuration_response
-            .json::<ConfigurationResponse>()?
-            .images;
-
         let path = cache_dir.join("collections").join(format!("{}.jpg", id));
         download_image(
             client,
-            &format!(
-                "{}{}{}",
-                images_configurations.base_url,
-                images_configurations.poster_sizes[4].clone(),
-                profile_path
-            ),
+            &format!("https://image.tmdb.org/t/p/{}/{}", "w500", profile_path),
             path,
         )?;
 

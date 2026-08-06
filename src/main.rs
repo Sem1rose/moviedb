@@ -13,14 +13,14 @@ mod widgets;
 
 use std::time::SystemTime;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Local};
 
 fn main() -> anyhow::Result<()> {
     fern::Dispatch::new()
         .format(|out, message, record| {
             out.finish(format_args!(
                 "[{} {} {}] {}",
-                DateTime::<Utc>::from(SystemTime::now()).format("%+"),
+                DateTime::<Local>::from(SystemTime::now()).format("%+"),
                 record.level(),
                 record.target(),
                 message

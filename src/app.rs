@@ -18,9 +18,9 @@ use crate::{
 };
 
 pub struct App {
-    pub cache_dir: PathBuf,
-    pub home_dir:  PathBuf,
-    pub quit:      bool,
+    pub _cache_dir: PathBuf,
+    pub home_dir:   PathBuf,
+    pub quit:       bool,
 
     pub movies:      Rc<RefCell<Vec<Movie>>>,
     pub watched:     Rc<RefCell<Vec<Entry>>>,
@@ -66,7 +66,7 @@ impl App {
 
             quit: false,
             home_dir,
-            cache_dir,
+            _cache_dir: cache_dir,
         }
         .load_data()
     }
@@ -256,7 +256,6 @@ impl App {
             );
         }
 
-        self.drawer.open_fetch_artworks_popup();
         self.drawer.close_popup();
         self.save_data(true, true, false, false);
     }
@@ -375,8 +374,11 @@ impl App {
             if let Some(tokens) = tmdb_init_popup.user_tokens.take() {
                 self.tmdb_tokens.set_creds(tokens).unwrap();
             }
-            self.drawer.close_popup();
         }
+        self.drawer
+            .image_renderer
+            .update_access_token(self.tmdb_tokens.access_token());
+        self.drawer.close_popup();
     }
 
     pub fn set_omdb_user_tokens(&mut self) {

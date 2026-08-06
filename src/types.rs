@@ -1,6 +1,6 @@
 use std::{cmp::Ordering, io::stdout};
 
-use chrono::{DateTime, Local, NaiveDate, NaiveTime};
+use chrono::{DateTime, Local, NaiveDate};
 use log::info;
 use punch_play::smo::PunchPlayDetailsResponse;
 use ratatui::{
@@ -201,7 +201,7 @@ pub struct Credits {
 pub struct Movie {
     pub id:               u32,
     pub title:            String,
-    pub release_date:     DateTime<Local>,
+    pub release_date:     NaiveDate,
     pub language:         String,
     pub external_ratings: ExternalRatings,
     pub genres:           Vec<String>,
@@ -253,9 +253,6 @@ impl From<TMDBMovieDetails> for Movie {
                 ..Default::default()
             },
             release_date:     NaiveDate::parse_from_str(&tmdb_details.release_date, "%Y-%m-%d")
-                .unwrap()
-                .and_time(NaiveTime::from_hms_opt(0, 0, 0).unwrap())
-                .and_local_timezone(Local)
                 .unwrap(),
             language:         tmdb_details.original_language.clone(),
             genres:           tmdb_details
@@ -281,7 +278,7 @@ impl From<TMDBMovieDetails> for Movie {
 }
 
 impl Movie {
-    pub fn add_trakt_details(&mut self, trakt_details: TraktDetailsResponse) {
+    pub fn add_trakt_details(&mut self, _trakt_details: TraktDetailsResponse) {
         // self.external_ratings.imdb = (
         //     trakt_details.imdb_rating.parse().unwrap_or(0.0),
         //     trakt_details
@@ -295,6 +292,8 @@ impl Movie {
     }
 
     pub fn add_punch_play_details(&mut self, punch_play_details: PunchPlayDetailsResponse) {
+        info!("{punch_play_details:#?}");
+
         if let Some(external_ratings) = punch_play_details.external_ratings {
             for external_rating in external_ratings.ratings {
                 if let Some(source) = external_rating.source.as_ref() {

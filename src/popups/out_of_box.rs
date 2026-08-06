@@ -16,8 +16,7 @@ use crate::{
     helpers::{add_padding, create_popup, static_area},
     key_event_handler::{self, Data, KeyEventHandler},
     popups::{
-        FetchArtworksPopup, OMDBInitPopup, PopupTrait, Popups, PunchPlayInitPopup, TMDBInitPopup,
-        TraktInitPopup,
+        OMDBInitPopup, PopupTrait, Popups, PunchPlayInitPopup, TMDBInitPopup, TraktInitPopup,
     },
     widgets::{self, Action, ActionTypes},
 };
@@ -80,12 +79,6 @@ impl PopupTrait for OutOfBoxPopup {
                     popups.push(Popups::OMDBInit(OMDBInitPopup::new(&app.home_dir, false)));
                     config.borrow_mut().options.omdb_enabled = true;
                 }
-
-                popups.push(Popups::FetchArtworks(FetchArtworksPopup::new(
-                    &app.cache_dir,
-                    false,
-                    false,
-                )));
             }
             config.borrow_mut().options.oob_done = true;
             config.borrow_mut().write_to_disk();

@@ -474,8 +474,8 @@ impl PopupTrait for AdvancedFilterPopup {
             Layout::vertical(constraints).areas(add_padding(popup_area, Padding::horizontal(1)));
 
         {
-            let this_tab = 0;
-            let tab_selected = self.tab == this_tab;
+            // let this_tab = 0;
+            // let tab_selected = self.tab == this_tab;
 
             let applied_block = Block::new()
                 .borders(Borders::TOP | Borders::BOTTOM)

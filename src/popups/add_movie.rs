@@ -1,4 +1,5 @@
 use std::{
+    path::PathBuf,
     sync::mpsc::{self, Receiver},
     thread,
 };
@@ -134,6 +135,8 @@ pub struct AddMoviePopup {
     punch_play_tokens: PunchPlayTokens,
     tmdb_tokens:       TMDBTokens,
     omdb_tokens:       OMDBTokens,
+
+    cache_dir: PathBuf,
 }
 
 impl AddMoviePopup {
@@ -142,12 +145,14 @@ impl AddMoviePopup {
         punch_play_tokens: PunchPlayTokens,
         tmdb_tokens: TMDBTokens,
         omdb_tokens: OMDBTokens,
+        cache_dir: &PathBuf,
     ) -> Self {
         Self {
             trakt_tokens,
             punch_play_tokens,
             tmdb_tokens,
             omdb_tokens,
+            cache_dir: cache_dir.clone(),
             ..Default::default()
         }
     }
@@ -205,6 +210,7 @@ impl AddMoviePopup {
         let punch_play_access_token = self.punch_play_tokens.access_token_owned();
         let tmdb_access_token = self.tmdb_tokens.access_token_owned();
         let tmdb_id = self.search_results.as_ref().unwrap()[self.selected_item].id;
+        let cache_dir = self.cache_dir.clone();
 
         thread::spawn(move || {
             let tmdb_result;
@@ -293,6 +299,8 @@ impl AddMoviePopup {
                     .ok()
                     .flatten();
             }
+
+            _ = tmdb::movie::get_movie_artworks(&cache_dir, &tmdb_access_token, tmdb_id);
 
             _ = tx_details_request.send(Ok(DetailsResponses {
                 trakt:      trakt_result,

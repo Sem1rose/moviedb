@@ -21,6 +21,7 @@ use ratatui_image::sliced::SignedPosition;
 use ratatui_textarea::TextArea;
 use serde::{Deserialize, Serialize};
 use strum::{EnumCount, IntoEnumIterator};
+use throbber_widgets_tui::ThrobberState;
 
 use crate::{
     config::Config,
@@ -28,7 +29,7 @@ use crate::{
         add_padding, default_rc, ellipsize_string, history_from_movie, ids_to_movies, is_between,
         wrap_text,
     },
-    image_backend::RatatuiImage,
+    image_backend::{ImageID, RatatuiImage},
     key_event_handler::{self, KeyEventHandler},
     load_file,
     screens::Screens,
@@ -71,6 +72,7 @@ pub struct PlaysTab {
 }
 
 pub struct MainScreen {
+    tick:                u64,
     tab:                 usize,
     item:                usize,
     pub sort:            Sort,
@@ -79,15 +81,15 @@ pub struct MainScreen {
     pub sort_ascending:  bool,
     pub filter_criteria: Vec<FilterCriterion>,
     pub search_input:    TextArea<'static>,
+    throbber_state:      ThrobberState,
 
     selected_list: ListID,
     lists:         Vec<List>,
 
-    pub config:          Rc<RefCell<Config>>,
+    pub _config:         Rc<RefCell<Config>>,
     pub movies:          Rc<RefCell<Vec<Movie>>>,
     pub watched:         Rc<RefCell<Vec<Entry>>>,
     pub filtered_movies: Vec<Movie>,
-    pub image_renderer:  RatatuiImage,
 
     movies_list_scroll_pos:             usize,
     movies_list_selected_item:          usize,
@@ -120,8 +122,9 @@ impl MainScreen {
         )
     }
 
-    pub fn new(home_dir: &PathBuf, cache_dir: &PathBuf, config: Rc<RefCell<Config>>) -> Self {
+    pub fn new(home_dir: &PathBuf, _config: Rc<RefCell<Config>>) -> Self {
         Self {
+            tick: 0,
             tab: 0,
             item: 0,
             sort: Sort::default(),
@@ -130,7 +133,8 @@ impl MainScreen {
             sort_ascending: false,
             search_input: TextArea::default(),
             filter_criteria: vec![],
-            config,
+            throbber_state: ThrobberState::default(),
+            _config,
 
             selected_list: Default::default(),
             lists: load_file!("lists", home_dir).unwrap_or(vec![]),
@@ -138,7 +142,6 @@ impl MainScreen {
             movies: default_rc(),
             watched: default_rc(),
             filtered_movies: vec![],
-            image_renderer: RatatuiImage::new(cache_dir),
 
             movies_list_scroll_pos: 0,
             movies_list_selected_item: 0,
@@ -155,7 +158,7 @@ impl MainScreen {
         }
     }
 
-    pub fn set_movies(
+    pub fn initialize(
         &mut self,
         movies: Rc<RefCell<Vec<Movie>>>,
         watched: Rc<RefCell<Vec<Entry>>>,
@@ -163,35 +166,24 @@ impl MainScreen {
         self.movies = movies;
         self.watched = watched;
 
-        self.image_renderer.preload_images(
-            self.movies.borrow().iter().map(|x| x.id).collect(),
-            &self.config.borrow().options.image_preload_rule,
-        );
         self.filter_sort_movies(None);
     }
 
-    fn get_list_movies(&self) -> Vec<Movie> {
-        let movie_ids = if matches!(&self.selected_list, ListID::Custom(0)) {
-            Some(
-                self.watched
-                    .borrow()
-                    .iter()
-                    .map(|x| x.movie_id)
-                    .collect_vec(),
-            )
+    pub fn get_list_ids(&self) -> Vec<u32> {
+        if matches!(&self.selected_list, ListID::Custom(0)) {
+            self.watched.borrow().iter().map(|x| x.movie_id).collect()
         } else {
             self.lists
                 .iter()
                 .find(|x| x.id == *&self.selected_list)
                 .map(|x| &x.movies)
                 .cloned()
-        };
-
-        if let Some(movie_ids) = movie_ids {
-            ids_to_movies(&self.movies.borrow(), &movie_ids)
-        } else {
-            vec![]
+                .unwrap()
         }
+    }
+
+    fn get_list_movies(&self) -> Vec<Movie> {
+        ids_to_movies(&self.get_list_ids(), &self.movies.borrow())
     }
 
     pub fn current_movie(&self) -> Option<&Movie> {
@@ -317,7 +309,7 @@ impl MainScreen {
                             x.credits
                                 .crew
                                 .iter()
-                                .filter_map(|x| (x.job_or_character == "Director").then(|| x.id))
+                                .filter_map(|x| (x.job_or_character == "Director").then_some(x.id))
                                 .contains(director)
                                 ^ if *inverted { true } else { false }
                         })
@@ -340,7 +332,7 @@ impl MainScreen {
                     movies = movies
                         .into_iter()
                         .filter(|x| {
-                            history_from_movie(&watched_borrowed, x.id)
+                            history_from_movie(x.id, &watched_borrowed)
                                 .map(|y| {
                                     is_between(
                                         y.get_first_play().year() as u32,
@@ -357,7 +349,7 @@ impl MainScreen {
                     movies = movies
                         .into_iter()
                         .filter(|x| {
-                            history_from_movie(&watched_borrowed, x.id)
+                            history_from_movie(x.id, &watched_borrowed)
                                 .map(|y| {
                                     is_between(
                                         y.get_latest_play().year() as u32,
@@ -383,7 +375,7 @@ impl MainScreen {
                     movies = movies
                         .into_iter()
                         .filter(|x| {
-                            history_from_movie(&watched_borrowed, x.id)
+                            history_from_movie(x.id, &watched_borrowed)
                                 .map(|y| {
                                     (y.get_user_rating().partial_cmp(rating).unwrap() == *ordering)
                                         ^ if *inverted { true } else { false }
@@ -428,11 +420,11 @@ impl MainScreen {
         match self.sort {
             Sort::UserRating => {
                 self.filtered_movies.sort_by(|x, y| {
-                    history_from_movie(&self.watched.borrow(), x.id)
+                    history_from_movie(x.id, &self.watched.borrow())
                         .unwrap()
                         .get_user_rating()
                         .partial_cmp(
-                            &history_from_movie(&self.watched.borrow(), y.id)
+                            &history_from_movie(y.id, &self.watched.borrow())
                                 .unwrap()
                                 .get_user_rating(),
                         )
@@ -464,7 +456,7 @@ impl MainScreen {
             }
             Sort::DateAdded => {
                 self.filtered_movies.sort_by_key(|x| {
-                    history_from_movie(&self.watched.borrow(), x.id)
+                    history_from_movie(x.id, &self.watched.borrow())
                         .unwrap()
                         .get_first_play()
                         .clone()
@@ -475,7 +467,7 @@ impl MainScreen {
             }
             Sort::MostRecent => {
                 self.filtered_movies.sort_by_key(|x| {
-                    history_from_movie(&self.watched.borrow(), x.id)
+                    history_from_movie(x.id, &self.watched.borrow())
                         .unwrap()
                         .get_latest_play()
                         .clone()
@@ -532,7 +524,17 @@ impl MainScreen {
         }
     }
 
-    pub fn render(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
+    pub fn render(
+        &mut self,
+        frame: &mut Frame,
+        key_event_handler: &mut KeyEventHandler,
+        image_renderer: &mut RatatuiImage,
+    ) {
+        self.tick += 1;
+        if self.tick & 7 == 0 {
+            self.throbber_state.calc_next();
+        }
+
         if !self.search_input.is_empty() {
             key_event_handler.bind_esc((Some(0), None), "Clear search".into(), |app, _| {
                 if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
@@ -640,8 +642,8 @@ impl MainScreen {
         frame.render_widget(Block::new().bg(tailwind::SLATE.c900), header);
 
         self.drawing_images = false;
-        self.render_movies_list(frame, list, key_event_handler);
-        self.render_movie_description(frame, description, key_event_handler);
+        self.render_movies_list(frame, image_renderer, key_event_handler, list);
+        self.render_movie_description(frame, image_renderer, key_event_handler, description);
         self.render_header(frame, header, key_event_handler);
         self.redraw_images = self.redraw_images.saturating_sub(1);
 
@@ -1265,8 +1267,9 @@ impl MainScreen {
     fn render_movies_list(
         &mut self,
         frame: &mut Frame,
-        area: Rect,
+        image_renderer: &mut RatatuiImage,
         key_event_handler: &mut KeyEventHandler,
+        area: Rect,
     ) {
         if self.filtered_movies.len() > 0 {
             let num_visible_items = self.movies_list_num_visible_items;
@@ -1498,7 +1501,7 @@ impl MainScreen {
                     },
                 );
 
-                self.draw_movie_widget(i, frame, area);
+                self.draw_movie_widget(i, frame, image_renderer, area);
             } else {
                 frame.render_widget(
                     Block::new().bg(if i & 1 == 1 {
@@ -1558,7 +1561,13 @@ impl MainScreen {
         }
     }
 
-    fn draw_movie_widget(&mut self, id: usize, frame: &mut Frame, area: Rect) {
+    fn draw_movie_widget(
+        &mut self,
+        id: usize,
+        frame: &mut Frame,
+        image_renderer: &mut RatatuiImage,
+        area: Rect,
+    ) {
         let is_partially_visible = MOVIE_WIDGET_HEIGHT > area.height as usize;
         let movie_index = self.movies_list_scroll_pos + id;
         let selected = self.movies_list_selected_item == movie_index;
@@ -1600,7 +1609,7 @@ impl MainScreen {
             .resize(Size::new(2, area.height.saturating_sub(2)))
             .offset(Offset::new(0, 1));
 
-        let rating = history_from_movie(&self.watched.borrow(), movie.id)
+        let rating = history_from_movie(movie.id, &self.watched.borrow())
             .unwrap()
             .get_user_rating();
         let rating_color = if rating >= 9.0 {
@@ -1730,9 +1739,8 @@ impl MainScreen {
         }
 
         if self.redraw_images < 1 {
-            self.drawing_images |= !self.image_renderer.draw_image(
-                self.filtered_movies[movie_index].id,
-                false,
+            self.drawing_images |= !image_renderer.draw_image(
+                ImageID::Movie(self.filtered_movies[movie_index].id, false),
                 poster_area,
                 if is_partially_visible {
                     Some(SignedPosition {
@@ -1746,6 +1754,7 @@ impl MainScreen {
                 } else {
                     None
                 },
+                &mut self.throbber_state,
                 frame,
             );
         } else {
@@ -1760,8 +1769,9 @@ impl MainScreen {
     fn render_movie_description(
         &mut self,
         frame: &mut Frame,
-        area: Rect,
+        image_renderer: &mut RatatuiImage,
         key_event_handler: &mut KeyEventHandler,
+        area: Rect,
     ) {
         const TABS: [&str; 2] = ["Overview", "Plays"];
         const TABS_COUNT: usize = TABS.len();
@@ -1833,7 +1843,7 @@ impl MainScreen {
             let mut name = movie.title.clone();
             name = ellipsize_string(&name, title_area.width as usize);
 
-            let rating = history_from_movie(&self.watched.borrow(), movie.id)
+            let rating = history_from_movie(movie.id, &self.watched.borrow())
                 .unwrap()
                 .get_user_rating();
             let user_rating_widget_bg = if rating >= 9.0 {
@@ -2038,11 +2048,11 @@ impl MainScreen {
 
         // frame.render_widget(Block::new().bg(tailwind::SLATE.c700), backdrop_area);
         if self.redraw_images < 1 && movie.is_some() {
-            self.drawing_images |= !self.image_renderer.draw_image(
-                self.current_movie().unwrap().id,
-                true,
+            self.drawing_images |= !image_renderer.draw_image(
+                ImageID::Movie(self.current_movie().unwrap().id, true),
                 backdrop_area,
                 None,
+                &mut self.throbber_state,
                 frame,
             );
         } else {
@@ -2165,7 +2175,7 @@ impl MainScreen {
         frame: &mut Frame,
         area: Rect,
     ) {
-        let movie_plays = history_from_movie(&self.watched.borrow(), movie.id)
+        let movie_plays = history_from_movie(movie.id, &self.watched.borrow())
             .unwrap()
             .history;
         let tab_selected = self.tab == 1;

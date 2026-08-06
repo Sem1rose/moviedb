@@ -11,6 +11,7 @@ pub struct OMDBTokens {
     home_dir:   PathBuf,
 }
 
+#[allow(dead_code)]
 impl OMDBTokens {
     pub fn new(home_dir: &PathBuf) -> Self {
         Self {

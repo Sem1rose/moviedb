@@ -36,6 +36,7 @@ pub struct PunchPlayTokens {
     home_dir:   PathBuf,
 }
 
+#[allow(dead_code)]
 impl PunchPlayTokens {
     pub fn new(home_dir: &PathBuf) -> Self {
         Self {

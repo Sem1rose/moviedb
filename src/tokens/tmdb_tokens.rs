@@ -29,6 +29,7 @@ pub struct TMDBTokens {
     home_dir:   PathBuf,
 }
 
+#[allow(dead_code)]
 impl TMDBTokens {
     pub fn new(home_dir: &PathBuf) -> Self {
         Self {
