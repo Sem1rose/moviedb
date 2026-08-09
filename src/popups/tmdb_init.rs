@@ -22,7 +22,7 @@ use tmdb;
 
 use crate::{
     app::App,
-    helpers::{add_padding, create_popup, dynamic_area, static_area, wrap_text},
+    helpers::{add_padding, centered_area, create_popup, wrap_text},
     key_event_handler::{self, KeyEventHandler},
     popups::{PopupTrait, Popups},
     tokens::tmdb_tokens::{TMDBTokens, UserTokens},
@@ -235,7 +235,7 @@ impl PopupTrait for TMDBInitPopup {
 
                 let popup_area = create_popup(
                     frame,
-                    static_area(6, 28, frame.area()),
+                    centered_area(6, 28, frame.area()),
                     " TMDB Authentication ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
@@ -316,7 +316,7 @@ impl PopupTrait for TMDBInitPopup {
 
                 let popup_area = create_popup(
                     frame,
-                    dynamic_area(8, 5.0, frame.area()),
+                    centered_area(8, 40, frame.area()),
                     " TMDB Authentication ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
@@ -398,7 +398,7 @@ impl PopupTrait for TMDBInitPopup {
 
                 let popup_area = create_popup(
                     frame,
-                    dynamic_area(10, 4.0, frame.area()),
+                    centered_area(10, 40, frame.area()),
                     " TMDB Authentication ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
@@ -509,7 +509,7 @@ impl PopupTrait for TMDBInitPopup {
 
                 let popup_area = create_popup(
                     frame,
-                    dynamic_area(11, 4.0, frame.area()),
+                    centered_area(11, 44, frame.area()),
                     " Error ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,

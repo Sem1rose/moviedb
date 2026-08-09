@@ -10,7 +10,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Padding},
 };
 
-use crate::types::{Entry, Movie};
+use crate::types::{FxIndexMap, Movie};
 
 pub fn wrap_text(line: &str, width: usize) -> Vec<String> {
     if line.chars().count() <= width {
@@ -50,23 +50,11 @@ pub fn wrap_text(line: &str, width: usize) -> Vec<String> {
     lines
 }
 
-pub fn static_area(height: u16, width: u16, area: Rect) -> Rect {
-    area.centered(constraint!(==width), constraint!(==height))
-}
-
-pub fn dynamic_area(max_height: u16, aspect_ratio: f64, area: Rect) -> Rect {
-    let mut height = max_height.min(area.height);
-    let mut width = (height as f64 * aspect_ratio) as u16;
-
-    if width > area.width {
-        width = area.width;
-        height = (width as f64 / aspect_ratio) as u16;
-        if height > area.height {
-            height = area.height;
-        }
-    }
-
-    area.centered(constraint!(==width), constraint!(==height))
+pub fn centered_area(height: u16, width: u16, area: Rect) -> Rect {
+    area.centered(
+        constraint!(==width.min(area.width)),
+        constraint!(==height.min(area.height)),
+    )
 }
 
 pub fn create_popup(
@@ -149,25 +137,19 @@ pub fn resize_area(area: Rect, offset: Offset) -> Rect {
 pub fn ellipsize_string(string: &str, max_width: usize) -> String {
     let mut new_string = String::from(string);
     if new_string.len() > max_width {
-        new_string.truncate(max_width - 3);
+        new_string.truncate(new_string.ceil_char_boundary(max_width - 3));
         new_string += "...";
     }
 
     new_string
 }
 
-pub fn ids_to_movies(ids: &[u32], movies: &[Movie]) -> Vec<Movie> {
-    ids.iter()
-        .map(|id| movies.iter().find(|x| x.id == *id).unwrap().clone())
-        .collect()
+pub fn ids_to_movies(ids: &[u32], movies: &FxIndexMap<u32, Movie>) -> Vec<Movie> {
+    ids.iter().map(|id| movies[id].clone()).collect()
 }
 
 pub fn is_between<T: PartialOrd>(v: T, lb: T, ub: T) -> bool {
     v >= lb && v <= ub
-}
-
-pub fn history_from_movie(id: u32, watched: &[Entry]) -> Option<Entry> {
-    watched.iter().find(|x| x.movie_id == id).cloned()
 }
 
 pub fn default_rc<T: Default>() -> Rc<RefCell<T>> {
@@ -199,7 +181,7 @@ macro_rules! load_file {
                     None
                 }
                 Ok(read_result) => {
-                    match serde_json::from_str(&read_result) {
+                    match serde_json::from_str::<Vec<_>>(&read_result) {
                         Err(error) => {
                             error!("Error deserializing {} file: {error}.\nRenaming corrupted file and creating a new database.", $name);
 

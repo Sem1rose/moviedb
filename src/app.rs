@@ -1,5 +1,6 @@
 use std::{cell::RefCell, fs, path::PathBuf, rc::Rc, time::Duration};
 
+use itertools::Itertools;
 use log::error;
 use ratatui::crossterm::event::{self, Event, KeyEvent, KeyEventState, KeyModifiers};
 
@@ -13,7 +14,8 @@ use crate::{
     screens::Screens,
     tokens::*,
     types::{
-        Collection, Entry, HistoryEntry, Movie, Person, Term, initialize_terminal, reset_terminal,
+        Collection, Entry, FxIndexMap, HistoryEntry, Movie, Person, Term, initialize_terminal,
+        reset_terminal,
     },
 };
 
@@ -22,10 +24,10 @@ pub struct App {
     pub home_dir:   PathBuf,
     pub quit:       bool,
 
-    pub movies:      Rc<RefCell<Vec<Movie>>>,
-    pub watched:     Rc<RefCell<Vec<Entry>>>,
-    pub persons:     Rc<RefCell<Vec<Person>>>,
-    pub collections: Rc<RefCell<Vec<Collection>>>,
+    pub movies:      Rc<RefCell<FxIndexMap<u32, Movie>>>,
+    pub watched:     Rc<RefCell<FxIndexMap<u32, Entry>>>,
+    pub persons:     Rc<RefCell<FxIndexMap<u32, Person>>>,
+    pub collections: Rc<RefCell<FxIndexMap<u32, Collection>>>,
 
     terminal:              Term,
     pub drawer:            Drawer,
@@ -73,16 +75,20 @@ impl App {
 
     pub fn load_data(self) -> Self {
         if let Some(x) = load_file!("movies", self.home_dir) {
-            *self.movies.borrow_mut() = x;
+            *self.movies.borrow_mut() =
+                FxIndexMap::from_iter(x.into_iter().map(|x: Movie| (x.id, x)));
         }
         if let Some(x) = load_file!("watched", self.home_dir) {
-            *self.watched.borrow_mut() = x;
+            *self.watched.borrow_mut() =
+                FxIndexMap::from_iter(x.into_iter().map(|x: Entry| (x.movie_id, x)));
         }
         if let Some(x) = load_file!("persons", self.home_dir) {
-            *self.persons.borrow_mut() = x;
+            *self.persons.borrow_mut() =
+                FxIndexMap::from_iter(x.into_iter().map(|x: Person| (x.id, x)));
         }
         if let Some(x) = load_file!("collections", &self.home_dir) {
-            *self.collections.borrow_mut() = x;
+            *self.collections.borrow_mut() =
+                FxIndexMap::from_iter(x.into_iter().map(|x: Collection| (x.id, x)));
         }
 
         self
@@ -149,18 +155,11 @@ impl App {
                     edit_movie_popup.rating_input.lines()[0].parse().unwrap()
                 };
 
-                let pos = self
-                    .watched
-                    .borrow()
-                    .iter()
-                    .position(|x| x.movie_id == selected_movie_id);
-                if let Some(position) = pos {
-                    let mut entry = self.watched.borrow_mut().remove(position);
-                    entry.add_play(date, rating, None);
-
-                    self.watched.borrow_mut().push(entry);
-                } else {
-                    self.watched.borrow_mut().push(Entry {
+                self.watched
+                    .borrow_mut()
+                    .entry(selected_movie_id)
+                    .and_modify(|x| x.add_play(date, rating, None))
+                    .or_insert(Entry {
                         movie_id: selected_movie_id,
                         history:  vec![HistoryEntry {
                             date,
@@ -168,7 +167,6 @@ impl App {
                             note: None,
                         }],
                     });
-                }
             }
             main_screen.filter_sort_movies(None);
             main_screen.goto_index(
@@ -187,48 +185,66 @@ impl App {
         let (movie, date, rating) = if let Some(Popups::AddMovie(add_movie_popup)) =
             self.drawer.active_popup.as_mut()
         {
+            let tmdb_movie_details = add_movie_popup.tmdb_movie_details_result.take().unwrap();
             let trakt_movie_details = add_movie_popup.trakt_movie_details_result.take();
             let punch_play_movie_details = add_movie_popup.punch_play_movie_details_result.take();
-            let tmdb_movie_details = add_movie_popup.tmdb_movie_details_result.take();
             let omdb_movie_details = add_movie_popup.omdb_movie_details_result.take();
 
-            (
-                if let Some(tmdb_details) = tmdb_movie_details {
-                    let mut movie = Movie::from(tmdb_details);
-                    if let Some(trakt_details) = trakt_movie_details {
-                        movie.add_trakt_details(trakt_details);
-                    }
-                    if let Some(punch_play_details) = punch_play_movie_details {
-                        movie.add_punch_play_details(punch_play_details);
-                    }
-                    if let Some(omdb) = omdb_movie_details {
-                        movie.add_omdb_details(omdb);
-                    }
+            if let Some(credits) = tmdb_movie_details.credits.as_ref() {
+                for person in credits.cast.iter().take(14).chain(credits.crew.iter()) {
+                    self.persons
+                        .borrow_mut()
+                        .entry(person.id)
+                        .or_insert(person.into());
+                }
+            }
+            if let Some(collection_details) = tmdb_movie_details.collection_details.as_ref() {
+                self.collections
+                    .borrow_mut()
+                    .entry(collection_details.id)
+                    .and_modify(|x| {
+                        if x.parts.is_empty() {
+                            x.parts = collection_details.parts.iter().map(|x| x.id).collect();
+                        }
+                    })
+                    .or_insert(Collection {
+                        id:    collection_details.id,
+                        name:  collection_details.name.clone(),
+                        parts: collection_details.parts.iter().map(|x| x.id).collect(),
+                    });
+            } else if let Some(collection) = tmdb_movie_details.belongs_to_collection.as_ref() {
+                self.collections
+                    .borrow_mut()
+                    .entry(collection.id)
+                    .or_insert(Collection {
+                        id:    collection.id,
+                        name:  collection.name.clone(),
+                        parts: vec![],
+                    });
+            }
 
-                    movie
-                } else {
-                    unreachable!()
-                },
-                add_movie_popup.date,
-                add_movie_popup.user_rating,
-            )
+            let mut movie = Movie::from(tmdb_movie_details);
+            if let Some(trakt_details) = trakt_movie_details {
+                movie.add_trakt_details(trakt_details);
+            }
+            if let Some(punch_play_details) = punch_play_movie_details {
+                movie.add_punch_play_details(punch_play_details);
+            }
+            if let Some(omdb) = omdb_movie_details {
+                movie.add_omdb_details(omdb);
+            }
+
+            (movie, add_movie_popup.date, add_movie_popup.user_rating)
         } else {
             unreachable!()
         };
         let movie_id = movie.id;
 
-        let pos = self
-            .watched
-            .borrow()
-            .iter()
-            .position(|x| x.movie_id == movie_id);
-        if let Some(position) = pos {
-            let mut entry = self.watched.borrow_mut().remove(position);
-            entry.add_play(date, rating, None);
-
-            self.watched.borrow_mut().push(entry);
-        } else {
-            self.watched.borrow_mut().push(Entry {
+        self.watched
+            .borrow_mut()
+            .entry(movie_id)
+            .and_modify(|x| x.add_play(date, rating, None))
+            .or_insert(Entry {
                 movie_id: movie_id,
                 history:  vec![HistoryEntry {
                     date,
@@ -236,14 +252,12 @@ impl App {
                     note: None,
                 }],
             });
-        }
 
         // if the movie is already cached, remove it because the info is probably outdated.
-        let pos = self.movies.borrow().iter().position(|x| x.id == movie_id);
-        if let Some(position) = pos {
-            _ = self.movies.borrow_mut().remove(position);
-        }
-        self.movies.borrow_mut().push(movie);
+        self.movies
+            .borrow_mut()
+            .entry(movie_id)
+            .and_modify(|x| *x = movie);
 
         if let Some(Screens::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
             main_screen.filter_sort_movies(None);
@@ -282,31 +296,17 @@ impl App {
                     edit_movie_popup.date_input.lines()[0].parse().unwrap()
                 };
 
-                let movie_id = main_screen.current_movie().unwrap().id;
-                let pos = self
-                    .watched
-                    .borrow()
-                    .iter()
-                    .position(|x| x.movie_id == movie_id);
-                if let Some(position) = pos {
-                    _ = self
-                        .watched
-                        .borrow_mut()
-                        .get_mut(position)
-                        .unwrap()
-                        .history
-                        .last_mut()
-                        .map(|x| {
+                self.watched
+                    .borrow_mut()
+                    .entry(main_screen.current_movie().unwrap().id)
+                    .and_modify(|x| {
+                        x.history.last_mut().map(|x| {
                             x.date = date;
                             x.rating = rating;
                         });
-                    self.watched
-                        .borrow_mut()
-                        .get_mut(position)
-                        .unwrap()
-                        .history
-                        .sort_by(|a, b| a.date.partial_cmp(&b.date).unwrap());
-                }
+                        x.history
+                            .sort_by(|a, b| a.date.partial_cmp(&b.date).unwrap());
+                    });
             }
             main_screen.filter_sort_movies(Some(true));
         }
@@ -316,15 +316,9 @@ impl App {
 
     pub fn remove_movie(&mut self) {
         if let Some(Screens::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
-            let movie_id = main_screen.current_movie().unwrap().id;
-            let pos = self
-                .watched
-                .borrow()
-                .iter()
-                .position(|x| x.movie_id == movie_id);
-            if let Some(position) = pos {
-                _ = self.watched.borrow_mut().remove(position);
-            }
+            self.watched
+                .borrow_mut()
+                .swap_remove(&main_screen.current_movie().unwrap().id);
 
             let pos = main_screen.filtered_movies.iter().position(|x| {
                 x.id == main_screen
@@ -400,7 +394,7 @@ impl App {
         macro_rules! save {
             ($name:expr, $obj:expr) => {{
                 let path = &self.home_dir.join(format!("{}.json", $name));
-                match serde_json::to_string_pretty(&$obj.as_slice()) {
+                match serde_json::to_string(&$obj.collect_vec()) {
                     Err(error) => {
                         error!("Error while trying to serialize {}: {error}", $name)
                     }
@@ -415,16 +409,16 @@ impl App {
         }
 
         if save_movies {
-            save!("movies", self.movies.borrow());
+            save!("movies", self.movies.borrow().values());
         }
         if save_watched {
-            save!("watched", self.watched.borrow());
+            save!("watched", self.watched.borrow().values());
         }
         if save_persons {
-            save!("persons", self.persons.borrow());
+            save!("persons", self.persons.borrow().values());
         }
         if save_collections {
-            save!("collections", &self.collections.borrow());
+            save!("collections", self.collections.borrow().values());
         }
     }
 

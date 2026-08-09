@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use itertools::Itertools;
 use ratatui::{
@@ -63,6 +63,18 @@ impl KeyEventHandler {
         self.bind_key((None, None), 'q', "Quit".into(), |app, _| app.quit = true);
     }
 
+    fn add_key_bind(
+        &mut self,
+        state: State,
+        description: String,
+        callback: impl FnOnce(&mut App, Data) + 'static,
+        bind: Bind,
+    ) {
+        _ = self
+            .key_binds
+            .insert((bind, state), (description, Box::new(callback)));
+    }
+
     pub fn bind_immediate(&mut self, callback: impl FnOnce(&mut App, Data) + 'static) {
         self.execute_immediate.push(Box::new(callback));
     }
@@ -73,9 +85,7 @@ impl KeyEventHandler {
         description: String,
         callback: impl FnOnce(&mut App, Data) + 'static,
     ) {
-        _ = self
-            .key_binds
-            .insert((Bind::Horizontal, state), (description, Box::new(callback)));
+        self.add_key_bind(state, description, callback, Bind::Horizontal)
     }
 
     pub fn bind_vertical(
@@ -84,9 +94,7 @@ impl KeyEventHandler {
         description: String,
         callback: impl FnOnce(&mut App, Data) + 'static,
     ) {
-        _ = self
-            .key_binds
-            .insert((Bind::Vertical, state), (description, Box::new(callback)));
+        self.add_key_bind(state, description, callback, Bind::Vertical)
     }
 
     pub fn bind_tab(
@@ -95,9 +103,7 @@ impl KeyEventHandler {
         description: String,
         callback: impl FnOnce(&mut App, Data) + 'static,
     ) {
-        _ = self
-            .key_binds
-            .insert((Bind::Tab, state), (description, Box::new(callback)));
+        self.add_key_bind(state, description, callback, Bind::Tab)
     }
 
     pub fn bind_input_field(
@@ -106,9 +112,7 @@ impl KeyEventHandler {
         description: String,
         callback: impl FnOnce(&mut App, Data) + 'static,
     ) {
-        _ = self
-            .key_binds
-            .insert((Bind::Input, state), (description, Box::new(callback)));
+        self.add_key_bind(state, description, callback, Bind::Input)
     }
 
     pub fn bind_esc(
@@ -117,9 +121,7 @@ impl KeyEventHandler {
         description: String,
         callback: impl FnOnce(&mut App, Data) + 'static,
     ) {
-        _ = self
-            .key_binds
-            .insert((Bind::Esc, state), (description, Box::new(callback)));
+        self.add_key_bind(state, description, callback, Bind::Esc)
     }
 
     pub fn bind_enter(
@@ -128,9 +130,7 @@ impl KeyEventHandler {
         description: String,
         callback: impl FnOnce(&mut App, Data) + 'static,
     ) {
-        _ = self
-            .key_binds
-            .insert((Bind::Enter, state), (description, Box::new(callback)));
+        self.add_key_bind(state, description, callback, Bind::Enter)
     }
 
     pub fn bind_key(
@@ -140,10 +140,7 @@ impl KeyEventHandler {
         description: String,
         callback: impl FnOnce(&mut App, Data) + 'static,
     ) {
-        _ = self.key_binds.insert(
-            (Bind::Key(keys.to_string()), state),
-            (description, Box::new(callback)),
-        );
+        self.add_key_bind(state, description, callback, Bind::Key(keys.to_string()))
     }
 
     pub fn bind_mouse_button_down(
@@ -199,7 +196,7 @@ impl KeyEventHandler {
                         .map(|x| state.1.is_some() && x == state.1.unwrap())
                         .unwrap_or(true)
             })
-            .sorted_by_key(|((_, s), _)| s.0.is_some() as usize + s.1.is_some() as usize)
+            .sorted_by_key(|((_, s), _)| s.0.is_some() as usize * 2 + s.1.is_some() as usize)
             .last()
         else {
             return None;
@@ -255,11 +252,7 @@ impl KeyEventHandler {
         None
     }
 
-    pub fn get_key_binds_descriptions(
-        &self,
-        drawer: &Drawer,
-        max: usize,
-    ) -> HashSet<(Bind, String)> {
+    pub fn get_key_binds_descriptions(&self, drawer: &Drawer, max: usize) -> Vec<(Bind, String)> {
         let state = if let Some(popup) = drawer.active_popup.as_ref() {
             popup.get_state()
         } else if let Some(screen) = drawer.current_screen.as_ref() {
@@ -267,10 +260,10 @@ impl KeyEventHandler {
                 crate::screens::Screens::MainScreen(main_screen) => main_screen.get_state(),
             }
         } else {
-            return HashSet::default();
+            return vec![];
         };
 
-        let mut binds = HashSet::new();
+        let mut binds = vec![];
 
         if let Some(semi_bind) = self.semi_bind {
             let matches = self
@@ -289,13 +282,13 @@ impl KeyEventHandler {
                             .map(|x| state.1.is_some() && x == state.1.unwrap())
                             .unwrap_or(true)
                 })
-                .sorted_by_key(|((_, s), _)| s.0.is_some() as usize + s.1.is_some() as usize)
+                .sorted_by_key(|((_, s), _)| s.0.is_some() as usize * 2 + s.1.is_some() as usize)
                 .collect_vec();
             if !matches.is_empty() {
                 binds.extend(
                     matches
                         .iter()
-                        .map(|&((b, _), (d, _))| (b.clone(), d.clone())),
+                        .map(|&((b, k), (d, _))| (b.clone(), *k, d.clone())),
                 );
             }
         } else {
@@ -318,18 +311,39 @@ impl KeyEventHandler {
                                 .map(|x| state.1.is_some() && x == state.1.unwrap())
                                 .unwrap_or(true)
                     })
-                    .sorted_by_key(|((_, s), _)| s.0.is_some() as usize + s.1.is_some() as usize)
+                    .sorted_by_key(|((_, s), _)| {
+                        s.0.is_some() as usize * 2 + s.1.is_some() as usize
+                    })
                     .collect_vec();
                 if !matches.is_empty() {
-                    binds.extend(matches.iter().map(|&(_, (d, _))| (bind.clone(), d.clone())));
+                    binds.extend(
+                        matches
+                            .iter()
+                            .map(|&((_, k), (d, _))| (bind.clone(), *k, d.clone())),
+                    );
                 }
             }
 
-            let input = self
+            // let input = self
+            //     .key_binds
+            //     .iter()
+            //     .filter(|((b, s), _)| {
+            //         matches!(b, Bind::Input)
+            //             && s.0
+            //                 .map(|x| state.0.is_some() && x == state.0.unwrap())
+            //                 .unwrap_or(true)
+            //             && s.1
+            //                 .map(|x| state.1.is_some() && x == state.1.unwrap())
+            //                 .unwrap_or(true)
+            //     })
+            //     .count()
+            //     > 0;
+            // if !input {
+            let matches = self
                 .key_binds
                 .iter()
-                .filter(|((b, s), _)| {
-                    matches!(b, Bind::Input)
+                .filter(|((bind, s), _)| {
+                    matches!(bind, Bind::Key(_))
                         && s.0
                             .map(|x| state.0.is_some() && x == state.0.unwrap())
                             .unwrap_or(true)
@@ -337,34 +351,31 @@ impl KeyEventHandler {
                             .map(|x| state.1.is_some() && x == state.1.unwrap())
                             .unwrap_or(true)
                 })
-                .count()
-                > 0;
-            if !input {
-                let matches = self
-                    .key_binds
-                    .iter()
-                    .filter(|((bind, s), _)| {
-                        matches!(bind, Bind::Key(_))
-                            && s.0
-                                .map(|x| state.0.is_some() && x == state.0.unwrap())
-                                .unwrap_or(true)
-                            && s.1
-                                .map(|x| state.1.is_some() && x == state.1.unwrap())
-                                .unwrap_or(true)
-                    })
-                    .sorted_by_key(|((_, s), _)| s.0.is_some() as usize + s.1.is_some() as usize)
-                    .collect_vec();
+                .sorted_by_key(|((_, s), _)| s.0.is_some() as usize * 2 + s.1.is_some() as usize)
+                .collect_vec();
 
-                if !matches.is_empty() {
-                    binds.extend(matches.iter().map(|&(k, v)| (k.0.clone(), v.0.clone())));
-                }
+            if !matches.is_empty() {
+                binds.extend(
+                    matches
+                        .iter()
+                        .map(|&((b, k), (d, _))| (b.clone(), *k, d.clone())),
+                );
             }
+            // }
         }
 
         binds
             .into_iter()
-            .filter(|(_, x)| !x.is_empty())
+            .filter(|(_, _, d)| !d.is_empty())
+            .sorted_by_key(|(b, _, _)| b.sort_key())
+            .chunk_by(|a| a.0.clone())
+            .into_iter()
+            .filter_map(|(_, g)| {
+                g.sorted_by_key(|x| x.1.0.is_some() as usize * 2 + x.1.1.is_some() as usize)
+                    .last()
+            })
             .take(max)
+            .map(|(b, _, d)| (b, d))
             .collect()
     }
 
@@ -454,9 +465,9 @@ impl KeyEventHandler {
                     None
                 },
             KeyCode::Char(key) =>
-                if let Some(callback) = self.try_get_key_bind(Bind::Input, state) {
+                if let Some(callback) = self.try_get_keys_bind(key, state) {
                     Some((callback, Data::Key(event)))
-                } else if let Some(callback) = self.try_get_keys_bind(key, state) {
+                } else if let Some(callback) = self.try_get_key_bind(Bind::Input, state) {
                     Some((callback, Data::Key(event)))
                 } else {
                     None

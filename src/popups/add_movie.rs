@@ -36,7 +36,7 @@ use trakt::{
 };
 
 use crate::{
-    helpers::{add_padding, create_popup, dynamic_area, wrap_text},
+    helpers::{add_padding, centered_area, create_popup, wrap_text},
     key_event_handler::{self, KeyEventHandler},
     omdb::{self, OMDBDetailsResponse},
     popups::{PopupTrait, Popups},
@@ -330,7 +330,7 @@ impl AddMoviePopup {
                 {
                     Local::now()
                 } else {
-                    self.input0.lines()[0].parse().unwrap()
+                    self.input1.lines()[0].parse().unwrap()
                 };
 
                 self.request_details();
@@ -529,7 +529,7 @@ impl PopupTrait for AddMoviePopup {
 
                 let popup_area = create_popup(
                     frame,
-                    dynamic_area(28, 2.4, frame.area()),
+                    centered_area(28, 66, frame.area()),
                     " Add movie ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
@@ -910,7 +910,7 @@ impl PopupTrait for AddMoviePopup {
 
                 let popup_area = create_popup(
                     frame,
-                    dynamic_area(12, 3.5, frame.area()),
+                    centered_area(11, 44, frame.area()),
                     " Add movie ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
@@ -1035,7 +1035,7 @@ impl PopupTrait for AddMoviePopup {
 
                 let popup_area = create_popup(
                     frame,
-                    dynamic_area(10, 5.0, frame.area()),
+                    centered_area(10, 50, frame.area()),
                     " Add movie ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
@@ -1073,7 +1073,7 @@ impl PopupTrait for AddMoviePopup {
 
                 let popup_area = create_popup(
                     frame,
-                    dynamic_area(11, 4.0, frame.area()),
+                    centered_area(11, 44, frame.area()),
                     " Error ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,

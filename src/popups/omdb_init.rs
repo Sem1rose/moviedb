@@ -18,7 +18,7 @@ use ratatui_textarea::{TextArea, WrapMode};
 use throbber_widgets_tui::{Throbber, ThrobberState};
 
 use crate::{
-    helpers::{add_padding, create_popup, dynamic_area},
+    helpers::{add_padding, centered_area, create_popup},
     key_event_handler::{self, KeyEventHandler},
     popups::{PopupTrait, Popups},
     tokens::omdb_tokens::OMDBTokens,
@@ -162,7 +162,7 @@ impl PopupTrait for OMDBInitPopup {
 
             let popup_area = create_popup(
                 frame,
-                dynamic_area(8, 5.0, frame.area()),
+                centered_area(8, 40, frame.area()),
                 " OMDB Authentication ",
                 Style::new().fg(material::YELLOW.c800),
                 Alignment::Center,
@@ -233,7 +233,7 @@ impl PopupTrait for OMDBInitPopup {
         } else {
             let popup_area = create_popup(
                 frame,
-                dynamic_area(7, 4.0, frame.area()),
+                centered_area(7, 30, frame.area()),
                 " OMDB Authentication ",
                 Style::new().fg(material::YELLOW.c800),
                 Alignment::Center,

@@ -331,13 +331,15 @@ impl RatatuiImage {
             if let Some(protocol) = value {
                 let Size { width, height } = protocol.size();
 
+                let centered_area = area.centered(constraint!(== width), constraint!(== height));
                 frame.render_widget(
                     SlicedImage::new(
                         protocol,
                         sliced_pos.unwrap_or(SignedPosition { x: 0, y: 0 }),
                     ),
-                    area.centered(constraint!(== width), constraint!(== height)),
+                    centered_area,
                 );
+
                 drawn = true;
             } else {
                 frame.render_widget(Block::new().bg(tailwind::GRAY.c950), area);

@@ -116,6 +116,10 @@ pub fn get_movie_details(access_token: &str, tmdb_id: u32) -> anyhow::Result<TMD
                 .ok();
             x.recommendations = get_movie_recommendations(access_token, tmdb_id).ok();
 
+            if let Some(collection_id) = x.belongs_to_collection.as_ref().map(|x| x.id) {
+                x.collection_details = get_collection_details(access_token, collection_id).ok();
+            }
+
             x
         })
         .map_err(Into::into)
@@ -280,36 +284,52 @@ pub(crate) fn get_movie_images(
         .into();
 
     if movie_images.backdrops.is_empty() || movie_images.posters.is_empty() {
-        for query in [vec![("include_image_language", "en")], vec![]] {
-            let response = send_tmdb_request(
-                &client,
-                &format!("https://api.themoviedb.org/3/movie/{tmdb_id}/images"),
-                &headers,
-                None,
-                Some(&query),
-            );
-            if response.is_err() {
-                continue;
-            }
-
-            let images_response = response.unwrap();
-            if !images_response.status().is_success() {
-                continue;
-            }
-
-            let result = images_response.json::<TMDBMovieImagesResponse>();
-
-            if let Ok(images) = result {
-                if movie_images.backdrops.is_empty() && !images.backdrops.is_empty() {
-                    movie_images.backdrops = images.backdrops;
+        let response = send_tmdb_request(
+            &client,
+            &format!("https://api.themoviedb.org/3/movie/{tmdb_id}/images"),
+            &headers,
+            None,
+            None,
+        );
+        if let Ok(images_response) = response {
+            if images_response.status().is_success() {
+                let result = images_response.json::<TMDBMovieImagesResponse>();
+                if let Ok(images) = result {
+                    if movie_images.backdrops.is_empty() && !images.backdrops.is_empty() {
+                        movie_images.backdrops = images
+                            .backdrops
+                            .into_iter()
+                            .sorted_by(|a, b| {
+                                b.vote_average
+                                    .partial_cmp(&a.vote_average)
+                                    .map(|x| {
+                                        matches!(x, std::cmp::Ordering::Equal)
+                                            .then_some(b.vote_count.cmp(&a.vote_count))
+                                            .or_else(|| Some(x))
+                                    })
+                                    .flatten()
+                                    .unwrap_or(std::cmp::Ordering::Equal)
+                            })
+                            .collect();
+                    }
+                    if movie_images.posters.is_empty() && !images.posters.is_empty() {
+                        movie_images.posters = images
+                            .posters
+                            .into_iter()
+                            .sorted_by(|a, b| {
+                                b.vote_average
+                                    .partial_cmp(&a.vote_average)
+                                    .map(|x| {
+                                        matches!(x, std::cmp::Ordering::Equal)
+                                            .then_some(b.vote_count.cmp(&a.vote_count))
+                                            .or_else(|| Some(x))
+                                    })
+                                    .flatten()
+                                    .unwrap_or(std::cmp::Ordering::Equal)
+                            })
+                            .collect();
+                    }
                 }
-                if movie_images.posters.is_empty() && !images.posters.is_empty() {
-                    movie_images.posters = images.posters;
-                }
-            }
-
-            if !(movie_images.backdrops.is_empty() || movie_images.posters.is_empty()) {
-                break;
             }
         }
     }
@@ -328,13 +348,19 @@ pub fn get_movie_artworks(
                            path: &PathBuf,
                            movie_images: &TMDBMovieImagesResponse|
      -> anyhow::Result<u8> {
-        if (backdrop && id >= movie_images.posters.len()) || id >= movie_images.backdrops.len() {
+        if id
+            >= if backdrop {
+                movie_images.backdrops.len()
+            } else {
+                movie_images.posters.len()
+            }
+        {
             return Ok(2);
         }
 
         let image_bytes = reqwest::blocking::get(format!(
             "https://image.tmdb.org/t/p/{}/{}",
-            if backdrop { "w1280" } else { "w500" },
+            if backdrop { "w780" } else { "w500" },
             if backdrop {
                 movie_images.backdrops[id].file_path.clone()
             } else {

@@ -13,7 +13,7 @@ use ratatui::{
 use ratatui_textarea::{TextArea, WrapMode};
 
 use crate::{
-    helpers::{add_padding, create_popup, dynamic_area},
+    helpers::{add_padding, centered_area, create_popup},
     key_event_handler::KeyEventHandler,
     popups::{PopupTrait, Popups},
     widgets::{self, Action, ActionTypes},
@@ -227,7 +227,7 @@ impl PopupTrait for EditMoviePopup {
 
         let popup_area = create_popup(
             frame,
-            dynamic_area(11, 4.0, frame.area()),
+            centered_area(11, 44, frame.area()),
             if self.new_play {
                 " Add a new play "
             } else {

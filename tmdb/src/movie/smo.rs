@@ -29,29 +29,41 @@ impl Into<TMDBMovieImagesResponse> for TMDBMovieDetails {
             posters:   self
                 .poster_path
                 .and_then(|x| if x.is_empty() { None } else { Some(x) })
-                .map(|x| vec![TMDBMovieImage { file_path: x }])
+                .map(|x| {
+                    vec![TMDBMovieImage {
+                        file_path:    x,
+                        vote_average: 10.0,
+                        vote_count:   1000,
+                    }]
+                })
                 .unwrap_or(vec![]),
             backdrops: self
                 .backdrop_path
                 .and_then(|x| if x.is_empty() { None } else { Some(x) })
-                .map(|x| vec![TMDBMovieImage { file_path: x }])
+                .map(|x| {
+                    vec![TMDBMovieImage {
+                        file_path:    x,
+                        vote_average: 10.0,
+                        vote_count:   1000,
+                    }]
+                })
                 .unwrap_or(vec![]),
         }
     }
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Debug)]
 pub(crate) struct TMDBMovieImage {
     // aspect_ratio: f32,
     // height: u32,
     // iso_639_1: String,
-    pub file_path: String,
-    // vote_average: f32,
-    // vote_count: u32,
+    pub file_path:    String,
+    pub vote_average: f32,
+    pub vote_count:   u32,
     // width: u32,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct TMDBCollectionDetails {
     pub id:            u32,
     pub name:          String,
@@ -91,6 +103,7 @@ pub struct TMDBMovieDetails {
     pub credits:               Option<TMDBCredits>,
     pub certificate:           Option<String>,
     pub recommendations:       Option<Vec<u32>>,
+    pub collection_details:    Option<TMDBCollectionDetails>,
 }
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct TMDBCollection {

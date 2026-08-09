@@ -22,7 +22,7 @@ use throbber_widgets_tui::{Throbber, ThrobberState};
 
 use crate::{
     app::App,
-    helpers::{add_padding, create_popup, dynamic_area, static_area, wrap_text},
+    helpers::{add_padding, centered_area, create_popup, wrap_text},
     key_event_handler::{self, KeyEventHandler},
     popups::{PopupTrait, Popups},
     tokens::punch_play_tokens::{PunchPlayTokens, UserTokens},
@@ -270,7 +270,7 @@ impl PopupTrait for PunchPlayInitPopup {
 
                 let popup_area = create_popup(
                     frame,
-                    static_area(6, 28, frame.area()),
+                    centered_area(8, 42, frame.area()),
                     " PunchPlay Authentication ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
@@ -283,12 +283,60 @@ impl PopupTrait for PunchPlayInitPopup {
                     popup_area.outer(Margin::new(1, 1)),
                     |_, _| {},
                 );
-                let [_, message_area, _, throbber_area] =
-                    vertical![>=1, ==2, >=1, ==1].areas(popup_area);
+                let [_, message_area, _, throbber_area, _] =
+                    vertical![>=1, ==2, ==1, ==1, >=1].areas(popup_area);
                 frame.render_widget(
                     span!(self.phase.as_ref()).into_centered_line(),
                     message_area,
                 );
+
+                if matches!(self.phase, Phase::RefreshingTokens) {
+                    key_event_handler.bind_enter((None, Some(1)), "Skip".into(), |app, _| {
+                        if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
+                            app.drawer.active_popup.as_mut()
+                        {
+                            punch_play_init_popup.phase = Phase::Done;
+                        }
+                    });
+                    key_event_handler.bind_tab((None, None), "".into(), |app, data| {
+                        if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
+                            app.drawer.active_popup.as_mut()
+                        {
+                            match data {
+                                crate::key_event_handler::Data::Direction(true, _) => {
+                                    punch_play_init_popup.item += 1;
+                                    if punch_play_init_popup.item > 1 {
+                                        punch_play_init_popup.item = 0;
+                                    }
+                                }
+                                crate::key_event_handler::Data::Direction(false, _) => {
+                                    punch_play_init_popup.item =
+                                        punch_play_init_popup.item.checked_sub(1).unwrap_or(1);
+                                }
+                                _ => {}
+                            }
+                        }
+                    });
+
+                    let skip_mouse_area = widgets::action(
+                        Action::new(" Skip ", ActionTypes::Normal, self.item == 1, true),
+                        HorizontalAlignment::Right,
+                        false,
+                        popup_area,
+                        frame,
+                    );
+                    key_event_handler.bind_mouse_button_down(
+                        ratatui::crossterm::event::MouseButton::Left,
+                        skip_mouse_area,
+                        |app, _| {
+                            if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
+                                app.drawer.active_popup.as_mut()
+                            {
+                                punch_play_init_popup.phase = Phase::Done;
+                            }
+                        },
+                    );
+                }
 
                 frame.render_stateful_widget(
                     Throbber::default()
@@ -390,7 +438,7 @@ impl PopupTrait for PunchPlayInitPopup {
 
                 let popup_area = create_popup(
                     frame,
-                    dynamic_area(11, 4.0, frame.area()),
+                    centered_area(11, 44, frame.area()),
                     " PunchPlay Authentication ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
@@ -497,7 +545,7 @@ impl PopupTrait for PunchPlayInitPopup {
 
                 let popup_area = create_popup(
                     frame,
-                    dynamic_area(10, 4.0, frame.area()),
+                    centered_area(10, 40, frame.area()),
                     " PunchPlay Authentication ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
@@ -616,7 +664,7 @@ impl PopupTrait for PunchPlayInitPopup {
 
                 let popup_area = create_popup(
                     frame,
-                    dynamic_area(11, 4.0, frame.area()),
+                    centered_area(11, 44, frame.area()),
                     " Error ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,

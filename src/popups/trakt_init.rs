@@ -22,7 +22,7 @@ use trakt::{self, smo::TokenResponse};
 
 use crate::{
     app::App,
-    helpers::{add_padding, create_popup, dynamic_area, static_area, wrap_text},
+    helpers::{add_padding, centered_area, create_popup, wrap_text},
     key_event_handler::{self, KeyEventHandler},
     popups::{PopupTrait, Popups},
     tokens::trakt_tokens::{TraktTokens, UserTokens},
@@ -276,7 +276,7 @@ impl PopupTrait for TraktInitPopup {
 
                 let popup_area = create_popup(
                     frame,
-                    static_area(6, 28, frame.area()),
+                    centered_area(6, 28, frame.area()),
                     " Trakt Authentication ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
@@ -395,7 +395,7 @@ impl PopupTrait for TraktInitPopup {
 
                 let popup_area = create_popup(
                     frame,
-                    dynamic_area(11, 4.0, frame.area()),
+                    centered_area(11, 44, frame.area()),
                     " Trakt Authentication ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
@@ -579,7 +579,7 @@ impl PopupTrait for TraktInitPopup {
 
                 let popup_area = create_popup(
                     frame,
-                    dynamic_area(12, 4.0, frame.area()),
+                    centered_area(12, 48, frame.area()),
                     " Trakt Authentication ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,
@@ -755,7 +755,7 @@ impl PopupTrait for TraktInitPopup {
 
                 let popup_area = create_popup(
                     frame,
-                    dynamic_area(11, 4.0, frame.area()),
+                    centered_area(11, 44, frame.area()),
                     " Error ",
                     Style::new().fg(material::YELLOW.c800),
                     Alignment::Center,

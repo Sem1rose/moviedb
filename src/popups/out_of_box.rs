@@ -13,7 +13,7 @@ use ratatui::{
 
 use crate::{
     app::App,
-    helpers::{add_padding, create_popup, static_area},
+    helpers::{add_padding, centered_area, create_popup},
     key_event_handler::{self, Data, KeyEventHandler},
     popups::{
         OMDBInitPopup, PopupTrait, Popups, PunchPlayInitPopup, TMDBInitPopup, TraktInitPopup,
@@ -229,7 +229,7 @@ impl PopupTrait for OutOfBoxPopup {
 
         let popup_area = create_popup(
             frame,
-            static_area(
+            centered_area(
                 (4 + NUM_REQUIRED_CHOICES.div_ceil(COLUMNS) * 5
                     + (self.toggled_list.len() - NUM_REQUIRED_CHOICES).div_ceil(COLUMNS) * 5)
                     as u16

@@ -25,15 +25,12 @@ use throbber_widgets_tui::ThrobberState;
 
 use crate::{
     config::Config,
-    helpers::{
-        add_padding, default_rc, ellipsize_string, history_from_movie, ids_to_movies, is_between,
-        wrap_text,
-    },
+    helpers::{add_padding, default_rc, ellipsize_string, ids_to_movies, is_between, wrap_text},
     image_backend::{ImageID, RatatuiImage},
     key_event_handler::{self, KeyEventHandler},
     load_file,
     screens::Screens,
-    types::{Entry, FilterCriterion, Movie, Sort, pop_criterion},
+    types::{Entry, FilterCriterion, FxIndexMap, Movie, Sort, pop_criterion},
     widgets,
 };
 
@@ -87,8 +84,8 @@ pub struct MainScreen {
     lists:         Vec<List>,
 
     pub _config:         Rc<RefCell<Config>>,
-    pub movies:          Rc<RefCell<Vec<Movie>>>,
-    pub watched:         Rc<RefCell<Vec<Entry>>>,
+    pub movies:          Rc<RefCell<FxIndexMap<u32, Movie>>>,
+    pub watched:         Rc<RefCell<FxIndexMap<u32, Entry>>>,
     pub filtered_movies: Vec<Movie>,
 
     movies_list_scroll_pos:             usize,
@@ -160,8 +157,8 @@ impl MainScreen {
 
     pub fn initialize(
         &mut self,
-        movies: Rc<RefCell<Vec<Movie>>>,
-        watched: Rc<RefCell<Vec<Entry>>>,
+        movies: Rc<RefCell<FxIndexMap<u32, Movie>>>,
+        watched: Rc<RefCell<FxIndexMap<u32, Entry>>>,
     ) {
         self.movies = movies;
         self.watched = watched;
@@ -171,13 +168,11 @@ impl MainScreen {
 
     pub fn get_list_ids(&self) -> Vec<u32> {
         if matches!(&self.selected_list, ListID::Custom(0)) {
-            self.watched.borrow().iter().map(|x| x.movie_id).collect()
+            self.watched.borrow().values().map(|x| x.movie_id).collect()
         } else {
             self.lists
                 .iter()
-                .find(|x| x.id == *&self.selected_list)
-                .map(|x| &x.movies)
-                .cloned()
+                .find_map(|x| (x.id == *&self.selected_list).then(|| x.movies.clone()))
                 .unwrap()
         }
     }
@@ -332,7 +327,8 @@ impl MainScreen {
                     movies = movies
                         .into_iter()
                         .filter(|x| {
-                            history_from_movie(x.id, &watched_borrowed)
+                            watched_borrowed
+                                .get(&x.id)
                                 .map(|y| {
                                     is_between(
                                         y.get_first_play().year() as u32,
@@ -349,7 +345,8 @@ impl MainScreen {
                     movies = movies
                         .into_iter()
                         .filter(|x| {
-                            history_from_movie(x.id, &watched_borrowed)
+                            watched_borrowed
+                                .get(&x.id)
                                 .map(|y| {
                                     is_between(
                                         y.get_latest_play().year() as u32,
@@ -375,7 +372,8 @@ impl MainScreen {
                     movies = movies
                         .into_iter()
                         .filter(|x| {
-                            history_from_movie(x.id, &watched_borrowed)
+                            watched_borrowed
+                                .get(&x.id)
                                 .map(|y| {
                                     (y.get_user_rating().partial_cmp(rating).unwrap() == *ordering)
                                         ^ if *inverted { true } else { false }
@@ -384,12 +382,11 @@ impl MainScreen {
                         })
                         .collect();
                 }
-                FilterCriterion::Language(languages, inverted) => {
+                FilterCriterion::Language(language, inverted) => {
                     movies = movies
                         .into_iter()
                         .filter(|x| {
-                            languages.iter().any(|y| *y == x.language)
-                                ^ if *inverted { true } else { false }
+                            (*language == x.language) ^ if *inverted { true } else { false }
                         })
                         .collect();
                 }
@@ -420,14 +417,9 @@ impl MainScreen {
         match self.sort {
             Sort::UserRating => {
                 self.filtered_movies.sort_by(|x, y| {
-                    history_from_movie(x.id, &self.watched.borrow())
-                        .unwrap()
+                    self.watched.borrow()[&x.id]
                         .get_user_rating()
-                        .partial_cmp(
-                            &history_from_movie(y.id, &self.watched.borrow())
-                                .unwrap()
-                                .get_user_rating(),
-                        )
+                        .partial_cmp(&self.watched.borrow()[&y.id].get_user_rating())
                         .unwrap()
                 });
                 if !self.sort_ascending {
@@ -450,29 +442,21 @@ impl MainScreen {
             Sort::ReleaseDate => {
                 self.filtered_movies
                     .sort_by_key(|x| x.release_date.year().to_string());
-                if self.sort_ascending {
+                if !self.sort_ascending {
                     self.filtered_movies.reverse();
                 }
             }
             Sort::DateAdded => {
-                self.filtered_movies.sort_by_key(|x| {
-                    history_from_movie(x.id, &self.watched.borrow())
-                        .unwrap()
-                        .get_first_play()
-                        .clone()
-                });
-                if self.sort_ascending {
+                self.filtered_movies
+                    .sort_by_key(|x| self.watched.borrow()[&x.id].get_first_play().clone());
+                if !self.sort_ascending {
                     self.filtered_movies.reverse();
                 }
             }
             Sort::MostRecent => {
-                self.filtered_movies.sort_by_key(|x| {
-                    history_from_movie(x.id, &self.watched.borrow())
-                        .unwrap()
-                        .get_latest_play()
-                        .clone()
-                });
-                if self.sort_ascending {
+                self.filtered_movies
+                    .sort_by_key(|x| self.watched.borrow()[&x.id].get_latest_play().clone());
+                if !self.sort_ascending {
                     self.filtered_movies.reverse();
                 }
             }
@@ -1152,7 +1136,7 @@ impl MainScreen {
             self.item == 1,
             frame,
             sort_area,
-            &ellipsize_string(self.sort.as_ref(), sort_area.width as usize - 4),
+            ellipsize_string(self.sort.as_ref(), sort_area.width as usize - 4),
         );
         key_event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
@@ -1192,6 +1176,7 @@ impl MainScreen {
                 Sort::COUNT,
                 sort_area,
                 frame,
+                key_event_handler,
             );
             for i in 0..len {
                 key_event_handler.bind_mouse_button_down(
@@ -1609,9 +1594,7 @@ impl MainScreen {
             .resize(Size::new(2, area.height.saturating_sub(2)))
             .offset(Offset::new(0, 1));
 
-        let rating = history_from_movie(movie.id, &self.watched.borrow())
-            .unwrap()
-            .get_user_rating();
+        let rating = self.watched.borrow()[&movie.id].get_user_rating();
         let rating_color = if rating >= 9.0 {
             tailwind::SKY.c400
         } else if rating >= 8.0 {
@@ -1843,9 +1826,7 @@ impl MainScreen {
             let mut name = movie.title.clone();
             name = ellipsize_string(&name, title_area.width as usize);
 
-            let rating = history_from_movie(movie.id, &self.watched.borrow())
-                .unwrap()
-                .get_user_rating();
+            let rating = self.watched.borrow()[&movie.id].get_user_rating();
             let user_rating_widget_bg = if rating >= 9.0 {
                 tailwind::SKY.c400
             } else if rating >= 8.0 {
@@ -2175,9 +2156,7 @@ impl MainScreen {
         frame: &mut Frame,
         area: Rect,
     ) {
-        let movie_plays = history_from_movie(movie.id, &self.watched.borrow())
-            .unwrap()
-            .history;
+        let movie_plays = &self.watched.borrow()[&movie.id].history;
         let tab_selected = self.tab == 1;
         let num_plays = movie_plays.len();
         let num_visible_plays = area.height as usize / 3;

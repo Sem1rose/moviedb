@@ -14,7 +14,7 @@ use ratatui::{
 };
 use ratatui_textarea::{TextArea, WrapMode};
 
-use crate::helpers::add_padding;
+use crate::{helpers::add_padding, key_event_handler::KeyEventHandler};
 
 pub fn input_field(
     tab_selected: bool,
@@ -24,15 +24,11 @@ pub fn input_field(
     wrap_mode: WrapMode,
     frame: &mut Frame,
     area: Rect,
-    title: &'static str,
+    title: &str,
     placeholder_text: &str,
 ) {
-    input.set_style(Style::new().fg(if tab_selected {
-        if selected {
-            tailwind::SLATE.c200
-        } else {
-            tailwind::STONE.c400
-        }
+    input.set_style(Style::new().fg(if tab_selected && selected {
+        tailwind::SLATE.c200
     } else {
         tailwind::STONE.c400
     }));
@@ -61,7 +57,7 @@ pub fn input_field(
             } else {
                 tailwind::STONE.c600
             })
-            .title(title)
+            .title(title.to_string())
             .title_style(Style::new().fg(if tab_selected {
                 if selected {
                     material::BLUE.c400
@@ -80,7 +76,7 @@ pub fn input_field(
     frame.render_widget(&*input, area);
 }
 
-pub fn dropdown(tab_selected: bool, selected: bool, frame: &mut Frame, area: Rect, text: &str) {
+pub fn dropdown(tab_selected: bool, selected: bool, frame: &mut Frame, area: Rect, text: String) {
     // "▼⬇⬆⏷▲▴▼▾◥◤◣◢⥡⥝⥜⥠🡙🢓🢑"
     let sort_block = Block::bordered()
         .border_set(border::PROPORTIONAL_WIDE)
@@ -150,6 +146,7 @@ pub fn dropdown_popup(
     num_visible_items: usize,
     dropdown_widget_area: Rect,
     frame: &mut Frame,
+    key_event_handler: &mut KeyEventHandler,
 ) -> (Rect, usize) {
     let items_len = items.len();
     let mut visible_items = items
@@ -160,10 +157,10 @@ pub fn dropdown_popup(
     let visible_items_len = visible_items.len();
 
     let selected = visible_items
-        .remove(selected_index - scroll_pos)
+        .remove(selected_index.saturating_sub(scroll_pos))
         .fg(material::BLUE.c100)
         .bg(material::LIGHT_BLUE.c900);
-    visible_items.insert(selected_index - scroll_pos, selected);
+    visible_items.insert(selected_index.saturating_sub(scroll_pos), selected);
 
     let dropdown_popup_area = dropdown_widget_area
         .offset(Offset::new(0, 2))
@@ -174,6 +171,11 @@ pub fn dropdown_popup(
     frame.render_widget(
         Clear,
         add_padding(dropdown_popup_area, Padding::vertical(1)),
+    );
+    key_event_handler.bind_mouse_button_down(
+        ratatui::crossterm::event::MouseButton::Left,
+        dropdown_popup_area,
+        |_, _| {},
     );
 
     let sort_popup_block = Block::bordered()
@@ -228,10 +230,10 @@ pub fn scroll_bar(
     let max_scroll_amount = items_count.saturating_sub(num_visible_items);
 
     let mut handle_size = num_pixels.saturating_sub(max_scroll_amount);
-    let mut scroll_pixels = (handle_size.div_ceil(max_scroll_amount)
-        - if handle_size % max_scroll_amount == 0 { 1 } else { 0 })
+    let mut scroll_pixels = handle_size.div_ceil(max_scroll_amount)
+        // - if handle_size % max_scroll_amount == 0 { 1 } else { 0 })
     .min(3);
-    handle_size -= (scroll_pixels - 1) * max_scroll_amount;
+    handle_size -= scroll_pixels.saturating_sub(1) * max_scroll_amount;
     while handle_size < 8 && scroll_pixels > 1 {
         handle_size += max_scroll_amount;
         scroll_pixels -= 1;

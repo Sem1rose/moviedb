@@ -12,7 +12,7 @@ use ratatui::{
 
 use crate::{
     config::Config,
-    helpers::{ellipsize_string, history_from_movie},
+    helpers::ellipsize_string,
     image_backend::RatatuiImage,
     key_event_handler::{self, KeyEventHandler},
     popups::*,
@@ -173,8 +173,10 @@ impl Drawer {
                         if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
-                            advanced_filter_popup
-                                .initialize(&app.movies.borrow(), &app.persons.borrow());
+                            advanced_filter_popup.initialize(
+                                &app.movies.borrow().values().collect_vec(),
+                                &app.persons.borrow(),
+                            );
                         }
                     });
                 }
@@ -189,7 +191,7 @@ impl Drawer {
                             main_screen.initialize(app.movies.clone(), app.watched.clone());
 
                             app.drawer.image_renderer.preload_movies(
-                                app.movies.borrow().iter().map(|x| x.id).collect(),
+                                app.movies.borrow().keys().copied().collect(),
                                 &app.config.borrow().options.image_preload_rule,
                             );
                         }
@@ -247,11 +249,7 @@ impl Drawer {
 
     pub fn open_edit_movie_popup(&mut self) {
         if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_mut() {
-            let entry = history_from_movie(
-                main_screen.current_movie().unwrap().id,
-                &main_screen.watched.borrow(),
-            )
-            .unwrap();
+            let entry = &main_screen.watched.borrow()[&main_screen.current_movie().unwrap().id];
             self.popup_queue.push(Popups::EditMovie(EditMoviePopup::new(
                 false,
                 entry.get_user_rating(),
@@ -265,10 +263,8 @@ impl Drawer {
             if let Some(name) = main_screen
                 .movies
                 .borrow()
-                .iter()
-                .filter(|x| x.id == main_screen.current_movie().unwrap().id)
+                .get(&main_screen.current_movie().unwrap().id)
                 .map(|x| &x.title)
-                .nth(0)
             {
                 self.popup_queue
                     .push(Popups::DeleteMovie(DeleteMoviePopup::new(name)));
@@ -370,10 +366,7 @@ impl Drawer {
             .fg(tailwind::AMBER.c600)
         };
         let binds = key_event_handler
-            .get_key_binds_descriptions(self, (area.width / 10 * area.height) as usize)
-            .into_iter()
-            .sorted_by_key(|(b, _)| b.sort_key())
-            .collect_vec();
+            .get_key_binds_descriptions(self, (area.width / 10 * area.height) as usize);
 
         let num_items_per_row = (binds.len() as f64 / area.height as f64).ceil() as usize;
         let len_item = ((area.width - 2 * (num_items_per_row.saturating_sub(1) as u16)) as f32

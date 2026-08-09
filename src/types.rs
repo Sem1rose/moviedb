@@ -1,6 +1,7 @@
 use std::{cmp::Ordering, io::stdout};
 
 use chrono::{DateTime, Local, NaiveDate};
+use indexmap::IndexMap;
 use log::info;
 use punch_play::smo::PunchPlayDetailsResponse;
 use ratatui::{
@@ -12,9 +13,10 @@ use ratatui::{
         terminal::{EnterAlternateScreen, LeaveAlternateScreen},
     },
 };
+use rustc_hash::FxBuildHasher;
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, EnumCount, EnumDiscriminants, EnumIter, FromRepr, IntoStaticStr};
-use tmdb::smo::TMDBMovieDetails;
+use tmdb::smo::{Person as TMDBPerson, TMDBMovieDetails};
 use trakt::smo::TraktDetailsResponse;
 
 use crate::omdb::OMDBDetailsResponse;
@@ -22,6 +24,7 @@ pub use crate::pop_criterion;
 
 pub type Term = Terminal<TermBackend>;
 type TermBackend = CrosstermBackend<std::io::Stdout>;
+pub type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
 
 pub fn initialize_terminal() -> anyhow::Result<Term> {
     set_panic_hook();
@@ -108,7 +111,7 @@ pub enum FilterCriterion {
     ),
     UserRating(f64, Ordering, bool /*inverted*/),
     Rating(f64, Ordering, bool /*inverted*/),
-    Language(Vec<String>, bool /*inverted*/),
+    Language(String, bool /*inverted*/),
     Country(String, bool /*inverted*/),
     Certification(Vec<String>, bool /*inverted*/),
 }
@@ -186,6 +189,15 @@ pub struct Person {
     pub gender: usize,
     pub name:   String,
 }
+impl From<&TMDBPerson> for Person {
+    fn from(value: &TMDBPerson) -> Self {
+        Self {
+            id:     value.id,
+            gender: value.gender,
+            name:   value.name.clone(),
+        }
+    }
+}
 #[derive(Serialize, Clone, Deserialize, Debug)]
 pub struct Collection {
     pub id:    u32,
@@ -223,7 +235,7 @@ impl From<TMDBMovieDetails> for Movie {
                 credits
                     .cast
                     .iter()
-                    .take(20)
+                    .take(14)
                     .map(|x| Role {
                         id:               x.id,
                         job_or_character: x.character.clone().unwrap_or("Unknown".into()),
@@ -299,27 +311,27 @@ impl Movie {
                 if let Some(source) = external_rating.source.as_ref() {
                     if source == "imdb" {
                         self.external_ratings.imdb = (
-                            external_rating.score.unwrap_or(0) as f64 / 10.0,
+                            external_rating.value.unwrap_or(0.0),
                             external_rating.votes.unwrap_or(0),
                         );
                     } else if source == "trakt" {
                         self.external_ratings.trakt = (
-                            external_rating.score.unwrap_or(0),
+                            external_rating.value.unwrap_or(0.0) as u32,
                             external_rating.votes.unwrap_or(0),
                         );
                     } else if source == "letterboxd" {
                         self.external_ratings.letterboxd = (
-                            external_rating.score.unwrap_or(0) as f64 / 10.0,
+                            external_rating.value.unwrap_or(0.0),
                             external_rating.votes.unwrap_or(0),
                         );
                     } else if source == "popcorn" {
                         self.external_ratings.popcorn = (
-                            external_rating.score.unwrap_or(0),
+                            external_rating.value.unwrap_or(0.0) as u32,
                             external_rating.votes.unwrap_or(0),
                         );
                     } else if source == "tomatoes" {
                         self.external_ratings.tomatoes = (
-                            external_rating.score.unwrap_or(0),
+                            external_rating.value.unwrap_or(0.0) as u32,
                             external_rating.votes.unwrap_or(0),
                         );
                     }
