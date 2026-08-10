@@ -395,7 +395,7 @@ impl KeyEventHandler {
                 crate::screens::Screens::MainScreen(main_screen) => main_screen.get_state(),
             }
         } else {
-            return None;
+            (None, None)
         };
 
         match event.code {
@@ -488,7 +488,7 @@ impl KeyEventHandler {
                 crate::screens::Screens::MainScreen(main_screen) => main_screen.get_state(),
             }
         } else {
-            return None;
+            (None, None)
         };
 
         let position = Position {

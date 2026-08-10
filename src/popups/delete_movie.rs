@@ -1,14 +1,13 @@
 use ratatui::{
     Frame,
-    layout::{Alignment, HorizontalAlignment, Margin},
+    layout::{HorizontalAlignment, Margin},
     macros::vertical,
-    style::{Style, palette::tailwind},
     text::Text,
     widgets::Padding,
 };
 
 use crate::{
-    helpers::{add_padding, centered_area, create_popup, wrap_text},
+    helpers,
     key_event_handler::{self, KeyEventHandler},
     popups::{PopupTrait, Popups},
     widgets::{self, Action, ActionTypes},
@@ -70,22 +69,18 @@ impl PopupTrait for DeleteMoviePopup {
         key_event_handler.bind_esc((None, None), "Cancel".into(), |app, _| {
             app.drawer.close_popup();
         });
-        key_event_handler.bind_enter((None, Some(0)), "Cancel".into(), |app, _| {
-            app.drawer.close_popup();
-        });
-        key_event_handler.bind_enter((None, Some(1)), "Confirm".into(), |app, _| {
+        key_event_handler.bind_enter((None, Some(0)), "Confirm".into(), |app, _| {
             app.remove_movie();
             app.drawer.close_popup();
         });
+        key_event_handler.bind_enter((None, Some(1)), "Cancel".into(), |app, _| {
+            app.drawer.close_popup();
+        });
 
-        let popup_area = create_popup(
+        let popup_area = widgets::window_popup(
             frame,
-            centered_area(8, 40, frame.area()),
+            helpers::centered_area(8, 40, frame.area()),
             " Remove movie ",
-            Style::new().fg(tailwind::AMBER.c500),
-            Alignment::Center,
-            Style::new().fg(tailwind::VIOLET.c950),
-            tailwind::BLUE.c950,
             true,
         );
         key_event_handler.bind_mouse_button_down(
@@ -94,9 +89,9 @@ impl PopupTrait for DeleteMoviePopup {
             |_, _| {},
         );
         let [message_area] =
-            vertical![>=3].areas(add_padding(popup_area, Padding::proportional(1)));
+            vertical![>=3].areas(helpers::add_padding(popup_area, Padding::proportional(1)));
         frame.render_widget(
-            Text::from_iter(wrap_text(
+            Text::from_iter(helpers::wrap_text(
                 &format!("Do you really want to remove {}?", self.name),
                 message_area.width as usize,
             )),
@@ -105,13 +100,13 @@ impl PopupTrait for DeleteMoviePopup {
 
         let actions_mouse_areas = widgets::actions(
             [
-                Action::new(" Confirm ", ActionTypes::Critical, self.item == 1, true),
-                Action::new(" Cancel ", ActionTypes::Normal, self.item == 0, true),
+                Action::new(" Cancel ", ActionTypes::Critical, self.item == 1, true),
+                Action::new(" Confirm ", ActionTypes::Normal, self.item == 0, true),
             ],
             HorizontalAlignment::Right,
             true,
             1,
-            add_padding(popup_area, Padding::right(1)),
+            helpers::add_padding(popup_area, Padding::right(1)),
             frame,
         );
         for (i, mouse_area) in actions_mouse_areas.into_iter().enumerate() {
@@ -119,7 +114,7 @@ impl PopupTrait for DeleteMoviePopup {
                 ratatui::crossterm::event::MouseButton::Left,
                 mouse_area,
                 move |app, _| {
-                    if i == 0 {
+                    if i == 1 {
                         app.remove_movie();
                     }
                     app.drawer.close_popup();

@@ -1,19 +1,16 @@
 use itertools::Itertools;
 use ratatui::{
     Frame,
-    layout::{Alignment, Layout, Margin, Offset, Rect, Size},
+    layout::{Layout, Margin, Offset, Rect, Size},
     macros::{constraints, horizontal, span, text, vertical},
-    style::{
-        Style, Stylize,
-        palette::{material, tailwind},
-    },
+    style::{Stylize, palette::tailwind},
     symbols::border,
     widgets::{Block, Padding},
 };
 
 use crate::{
     app::App,
-    helpers::{add_padding, centered_area, create_popup},
+    helpers,
     key_event_handler::{self, Data, KeyEventHandler},
     popups::{
         OMDBInitPopup, PopupTrait, Popups, PunchPlayInitPopup, TMDBInitPopup, TraktInitPopup,
@@ -204,8 +201,9 @@ impl PopupTrait for OutOfBoxPopup {
                 );
             }
 
-            let [check_box_area, _, text_area] = horizontal![==4, ==2, >=1]
-                .areas(add_padding(a_block.inner(area), Padding::horizontal(1)));
+            let [check_box_area, _, text_area] = horizontal![==4, ==2, >=1].areas(
+                helpers::add_padding(a_block.inner(area), Padding::horizontal(1)),
+            );
             let checkbox_block = Block::bordered()
                 .border_set(border::PROPORTIONAL_WIDE)
                 .fg(tailwind::INDIGO.c950);
@@ -227,9 +225,9 @@ impl PopupTrait for OutOfBoxPopup {
             );
         };
 
-        let popup_area = create_popup(
+        let popup_area = widgets::window_popup(
             frame,
-            centered_area(
+            helpers::centered_area(
                 (4 + NUM_REQUIRED_CHOICES.div_ceil(COLUMNS) * 5
                     + (self.toggled_list.len() - NUM_REQUIRED_CHOICES).div_ceil(COLUMNS) * 5)
                     as u16
@@ -238,10 +236,6 @@ impl PopupTrait for OutOfBoxPopup {
                 frame.area(),
             ),
             " Choose Backends ",
-            Style::new().fg(material::YELLOW.c800),
-            Alignment::Center,
-            Style::new().fg(tailwind::VIOLET.c950),
-            tailwind::BLUE.c950,
             true,
         );
         key_event_handler.bind_mouse_button_down(
@@ -250,7 +244,7 @@ impl PopupTrait for OutOfBoxPopup {
             |_, _| {},
         );
         let [_, mut remaining_area] =
-            vertical![==1, >=1].areas(add_padding(popup_area, Padding::horizontal(2)));
+            vertical![==1, >=1].areas(helpers::add_padding(popup_area, Padding::horizontal(2)));
 
         let mut table_indices = vec![];
         let labels = ["TMDB", "PunchPlay", "Trakt", "OMDB"];
@@ -389,7 +383,7 @@ impl PopupTrait for OutOfBoxPopup {
             Action::new(" Confirm ", ActionTypes::Default, self.tab == 1, true),
             ratatui::layout::HorizontalAlignment::Right,
             true,
-            add_padding(popup_area, Padding::right(1)),
+            helpers::add_padding(popup_area, Padding::right(1)),
             frame,
         );
         key_event_handler.bind_mouse_button_down(

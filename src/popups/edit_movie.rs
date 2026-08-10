@@ -2,18 +2,14 @@ use chrono::{DateTime, Local};
 use ratatui::{
     Frame,
     crossterm::event::KeyCode,
-    layout::{Alignment, HorizontalAlignment, Margin},
+    layout::{HorizontalAlignment, Margin},
     macros::vertical,
-    style::{
-        Style,
-        palette::{material, tailwind},
-    },
     widgets::Padding,
 };
 use ratatui_textarea::{TextArea, WrapMode};
 
 use crate::{
-    helpers::{add_padding, centered_area, create_popup},
+    helpers,
     key_event_handler::KeyEventHandler,
     popups::{PopupTrait, Popups},
     widgets::{self, Action, ActionTypes},
@@ -29,22 +25,24 @@ pub struct EditMoviePopup {
 }
 
 impl EditMoviePopup {
-    pub fn new(new_play: bool, user_rating: f64, watched_at: Option<DateTime<Local>>) -> Self {
+    pub fn new(user_rating: f64, watched_at: DateTime<Local>) -> Self {
         let mut popup = Self::default();
-        popup.new_play = new_play;
 
-        popup.rating_input = TextArea::from([if new_play {
-            "".into()
-        } else {
-            format!("{:.1}", user_rating)
-        }]);
-        popup.date_input = TextArea::from([watched_at.map(|x| x.to_string()).unwrap_or("".into())]);
+        popup.rating_input = TextArea::from([format!("{:.1}", user_rating)]);
+        popup.date_input = TextArea::from([watched_at.to_string()]);
         popup
             .rating_input
             .move_cursor(ratatui_textarea::CursorMove::End);
         popup
             .date_input
             .move_cursor(ratatui_textarea::CursorMove::End);
+
+        popup
+    }
+
+    pub fn new_add_play() -> Self {
+        let mut popup = Self::default();
+        popup.new_play = true;
 
         popup
     }
@@ -88,20 +86,21 @@ impl PopupTrait for EditMoviePopup {
                 app.drawer.close_popup();
             },
         );
+
+        let add_play = self.new_play;
         let rating_valid = self.validate_rating();
         let date_valid = self.validate_input_date();
-        let add_play = self.new_play;
 
         key_event_handler.bind_esc((None, Some(3)), "Close".into(), |app, _| {
             app.drawer.close_popup();
         });
-        key_event_handler.bind_esc((None, None), "Close".into(), |app, _| {
+        key_event_handler.bind_esc((None, None), "Back".into(), |app, _| {
             if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
                 edit_movie_popup.item = 3;
             }
         });
 
-        key_event_handler.bind_tab((None, None), "".into(), |app, data| {
+        key_event_handler.bind_tab((None, None), "Navigate".into(), |app, data| {
             if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
                 match data {
                     crate::key_event_handler::Data::Direction(true, _) => {
@@ -119,22 +118,14 @@ impl PopupTrait for EditMoviePopup {
         });
 
         if rating_valid {
-            key_event_handler.bind_enter((None, Some(0)), "".into(), |app, _| {
+            key_event_handler.bind_enter((None, Some(0)), "Next".into(), |app, _| {
                 if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut()
                 {
                     edit_movie_popup.item = 1;
                 }
             });
             if date_valid {
-                key_event_handler.bind_enter((None, Some(2)), "Confirm".into(), move |app, _| {
-                    if add_play {
-                        app.add_play();
-                    } else {
-                        app.edit_movie();
-                    }
-                    app.drawer.close_popup();
-                });
-                key_event_handler.bind_enter((None, Some(1)), "Confirm".into(), move |app, _| {
+                key_event_handler.bind_enter((None, None), "Confirm".into(), move |app, _| {
                     if add_play {
                         app.add_play();
                     } else {
@@ -148,7 +139,7 @@ impl PopupTrait for EditMoviePopup {
             app.drawer.close_popup();
         });
 
-        key_event_handler.bind_vertical((None, Some(0)), "".into(), |app, data| {
+        key_event_handler.bind_vertical((None, Some(0)), "Navigate".into(), |app, data| {
             if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
                 match data {
                     crate::key_event_handler::Data::Direction(true, _) => {
@@ -158,7 +149,7 @@ impl PopupTrait for EditMoviePopup {
                 }
             }
         });
-        key_event_handler.bind_vertical((None, Some(1)), "".into(), |app, data| {
+        key_event_handler.bind_vertical((None, Some(1)), "Navigate".into(), |app, data| {
             if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
                 match data {
                     crate::key_event_handler::Data::Direction(false, _) => {
@@ -169,7 +160,7 @@ impl PopupTrait for EditMoviePopup {
             }
         });
 
-        key_event_handler.bind_horizontal((None, Some(2)), "".into(), |app, data| {
+        key_event_handler.bind_horizontal((None, Some(2)), "Navigate".into(), |app, data| {
             if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
                 match data {
                     crate::key_event_handler::Data::Direction(true, _) => {
@@ -179,7 +170,7 @@ impl PopupTrait for EditMoviePopup {
                 }
             }
         });
-        key_event_handler.bind_horizontal((None, Some(3)), "".into(), |app, data| {
+        key_event_handler.bind_horizontal((None, Some(3)), "Navigate".into(), |app, data| {
             if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
                 match data {
                     crate::key_event_handler::Data::Direction(false, _) => {
@@ -225,18 +216,14 @@ impl PopupTrait for EditMoviePopup {
             }
         });
 
-        let popup_area = create_popup(
+        let popup_area = widgets::window_popup(
             frame,
-            centered_area(11, 44, frame.area()),
+            helpers::centered_area(11, 44, frame.area()),
             if self.new_play {
                 " Add a new play "
             } else {
                 " Edit rating "
             },
-            Style::new().fg(material::YELLOW.c800),
-            Alignment::Center,
-            Style::new().fg(tailwind::VIOLET.c950),
-            tailwind::BLUE.c950,
             true,
         );
         key_event_handler.bind_mouse_button_down(
@@ -244,8 +231,8 @@ impl PopupTrait for EditMoviePopup {
             popup_area.outer(Margin::new(1, 1)),
             |_, _| {},
         );
-        let [rating_input_area, date_input_area, _] =
-            vertical![==3, ==3, >=1].areas(add_padding(popup_area, Padding::proportional(1)));
+        let [rating_input_area, date_input_area, _] = vertical![==3, ==3, >=1]
+            .areas(helpers::add_padding(popup_area, Padding::proportional(1)));
 
         let rating_input_selected = self.item == 0;
         widgets::input_field(
@@ -261,7 +248,7 @@ impl PopupTrait for EditMoviePopup {
         );
         key_event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
-            add_padding(rating_input_area, Padding::horizontal(2)),
+            helpers::add_padding(rating_input_area, Padding::horizontal(2)),
             |app, _| {
                 if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut()
                 {
@@ -284,7 +271,7 @@ impl PopupTrait for EditMoviePopup {
         );
         key_event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
-            add_padding(date_input_area, Padding::horizontal(2)),
+            helpers::add_padding(date_input_area, Padding::horizontal(2)),
             |app, _| {
                 if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut()
                 {
@@ -306,7 +293,7 @@ impl PopupTrait for EditMoviePopup {
             HorizontalAlignment::Right,
             true,
             1,
-            add_padding(popup_area, Padding::right(1)),
+            helpers::add_padding(popup_area, Padding::right(1)),
             frame,
         );
         for (i, mouse_area) in actions_mouse_areas.into_iter().enumerate() {

@@ -6,19 +6,16 @@ use std::{
 
 use ratatui::{
     Frame,
-    layout::{Alignment, HorizontalAlignment, Margin},
+    layout::{HorizontalAlignment, Margin},
     macros::{constraint, line, vertical},
-    style::{
-        Style,
-        palette::{material, tailwind},
-    },
+    style::{Style, palette::tailwind},
     widgets::Padding,
 };
 use ratatui_textarea::{TextArea, WrapMode};
 use throbber_widgets_tui::{Throbber, ThrobberState};
 
 use crate::{
-    helpers::{add_padding, centered_area, create_popup},
+    helpers,
     key_event_handler::{self, KeyEventHandler},
     popups::{PopupTrait, Popups},
     tokens::omdb_tokens::OMDBTokens,
@@ -160,14 +157,10 @@ impl PopupTrait for OMDBInitPopup {
                 }
             });
 
-            let popup_area = create_popup(
+            let popup_area = widgets::window_popup(
                 frame,
-                centered_area(8, 40, frame.area()),
+                helpers::centered_area(8, 40, frame.area()),
                 " OMDB Authentication ",
-                Style::new().fg(material::YELLOW.c800),
-                Alignment::Center,
-                Style::new().fg(tailwind::VIOLET.c950),
-                tailwind::BLUE.c950,
                 true,
             );
             key_event_handler.bind_mouse_button_down(
@@ -176,8 +169,8 @@ impl PopupTrait for OMDBInitPopup {
                 |_, _| {},
             );
 
-            let [input_area, _] =
-                vertical![==3, ==1].areas(add_padding(popup_area, Padding::proportional(1)));
+            let [input_area, _] = vertical![==3, ==1]
+                .areas(helpers::add_padding(popup_area, Padding::proportional(1)));
 
             let input_selected = self.item == 0;
             widgets::input_field(
@@ -193,7 +186,7 @@ impl PopupTrait for OMDBInitPopup {
             );
             key_event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,
-                add_padding(input_area, Padding::horizontal(2)),
+                helpers::add_padding(input_area, Padding::horizontal(2)),
                 |app, _| {
                     if let Some(Popups::OMDBInit(omdb_init_popup)) =
                         app.drawer.active_popup.as_mut()
@@ -212,7 +205,7 @@ impl PopupTrait for OMDBInitPopup {
                 ),
                 HorizontalAlignment::Right,
                 true,
-                add_padding(popup_area, Padding::right(1)),
+                helpers::add_padding(popup_area, Padding::right(1)),
                 frame,
             );
             if input_valid {
@@ -231,14 +224,10 @@ impl PopupTrait for OMDBInitPopup {
                 );
             }
         } else {
-            let popup_area = create_popup(
+            let popup_area = widgets::window_popup(
                 frame,
-                centered_area(7, 30, frame.area()),
+                helpers::centered_area(7, 30, frame.area()),
                 " OMDB Authentication ",
-                Style::new().fg(material::YELLOW.c800),
-                Alignment::Center,
-                Style::new().fg(tailwind::VIOLET.c950),
-                tailwind::BLUE.c950,
                 false,
             );
             key_event_handler.bind_mouse_button_down(

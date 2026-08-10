@@ -104,18 +104,20 @@ impl App {
                 })
                 .map(|_| ())?;
 
+            let mut executed_immediate = false;
             for callback in self.key_event_handler.get_execute_immediates() {
                 callback(self, crate::key_event_handler::Data::None);
+                executed_immediate = true;
             }
 
-            if !self.drawer.check_refresh_immediate() {
-                if self.drawer.check_refresh_delayed() {
-                    if event::poll(Duration::from_millis(15))? {
-                        if let Ok(event) = event::read() {
-                            self.handle_event(event);
-                        }
-                    }
+            if !executed_immediate {
+                if event::poll(if self.drawer.check_refresh_immediate() {
+                    Duration::ZERO
+                } else if self.drawer.check_refresh_delayed() {
+                    Duration::from_millis(15)
                 } else {
+                    Duration::MAX
+                })? {
                     if let Ok(event) = event::read() {
                         self.handle_event(event);
                     }
@@ -257,7 +259,8 @@ impl App {
         self.movies
             .borrow_mut()
             .entry(movie_id)
-            .and_modify(|x| *x = movie);
+            .and_modify(|x| *x = movie.clone()) // this error is stupid the rust compiler is retarded
+            .or_insert(movie);
 
         if let Some(Screens::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
             main_screen.filter_sort_movies(None);
@@ -271,7 +274,79 @@ impl App {
         }
 
         self.drawer.close_popup();
-        self.save_data(true, true, false, false);
+        self.save_data(true, true, true, true);
+    }
+
+    pub fn update_movie_details(&mut self) {
+        let movie = if let Some(Popups::AddMovie(add_movie_popup)) =
+            self.drawer.active_popup.as_mut()
+        {
+            let tmdb_movie_details = add_movie_popup.tmdb_movie_details_result.take().unwrap();
+            let trakt_movie_details = add_movie_popup.trakt_movie_details_result.take();
+            let punch_play_movie_details = add_movie_popup.punch_play_movie_details_result.take();
+            let omdb_movie_details = add_movie_popup.omdb_movie_details_result.take();
+
+            if let Some(credits) = tmdb_movie_details.credits.as_ref() {
+                for person in credits.cast.iter().take(14).chain(credits.crew.iter()) {
+                    self.persons
+                        .borrow_mut()
+                        .entry(person.id)
+                        .or_insert(person.into());
+                }
+            }
+
+            if let Some(collection_details) = tmdb_movie_details.collection_details.as_ref() {
+                self.collections
+                    .borrow_mut()
+                    .entry(collection_details.id)
+                    .and_modify(|x| {
+                        if x.parts.is_empty() {
+                            x.parts = collection_details.parts.iter().map(|x| x.id).collect();
+                        }
+                    })
+                    .or_insert(Collection {
+                        id:    collection_details.id,
+                        name:  collection_details.name.clone(),
+                        parts: collection_details.parts.iter().map(|x| x.id).collect(),
+                    });
+            } else if let Some(collection) = tmdb_movie_details.belongs_to_collection.as_ref() {
+                self.collections
+                    .borrow_mut()
+                    .entry(collection.id)
+                    .or_insert(Collection {
+                        id:    collection.id,
+                        name:  collection.name.clone(),
+                        parts: vec![],
+                    });
+            }
+
+            let mut movie = Movie::from(tmdb_movie_details);
+            if let Some(trakt_details) = trakt_movie_details {
+                movie.add_trakt_details(trakt_details);
+            }
+            if let Some(punch_play_details) = punch_play_movie_details {
+                movie.add_punch_play_details(punch_play_details);
+            }
+            if let Some(omdb) = omdb_movie_details {
+                movie.add_omdb_details(omdb);
+            }
+
+            movie
+        } else {
+            unreachable!()
+        };
+
+        self.movies
+            .borrow_mut()
+            .entry(movie.id)
+            .and_modify(|x| *x = movie);
+
+        if let Some(Screens::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
+            main_screen.filter_sort_movies(Some(true));
+        }
+
+        self.drawer.close_popup();
+        self.save_data(true, false, true, true);
     }
 
     pub fn edit_movie(&mut self) {

@@ -6,7 +6,7 @@ use std::{
 
 use ratatui::{
     Frame,
-    layout::{Alignment, Flex, HorizontalAlignment, Margin},
+    layout::{Flex, HorizontalAlignment, Margin},
     macros::{constraint, horizontal, span, text, vertical},
     style::{
         Style, Stylize,
@@ -22,7 +22,7 @@ use trakt::{self, smo::TokenResponse};
 
 use crate::{
     app::App,
-    helpers::{add_padding, centered_area, create_popup, wrap_text},
+    helpers,
     key_event_handler::{self, KeyEventHandler},
     popups::{PopupTrait, Popups},
     tokens::trakt_tokens::{TraktTokens, UserTokens},
@@ -274,14 +274,10 @@ impl PopupTrait for TraktInitPopup {
             | Phase::Done => {
                 self.throbber_visible = true;
 
-                let popup_area = create_popup(
+                let popup_area = widgets::window_popup(
                     frame,
-                    centered_area(6, 28, frame.area()),
+                    helpers::centered_area(6, 28, frame.area()),
                     " Trakt Authentication ",
-                    Style::new().fg(material::YELLOW.c800),
-                    Alignment::Center,
-                    Style::new().fg(tailwind::VIOLET.c950),
-                    tailwind::BLUE.c950,
                     true,
                 );
                 key_event_handler.bind_mouse_button_down(
@@ -393,14 +389,10 @@ impl PopupTrait for TraktInitPopup {
                     }
                 });
 
-                let popup_area = create_popup(
+                let popup_area = widgets::window_popup(
                     frame,
-                    centered_area(11, 44, frame.area()),
+                    helpers::centered_area(11, 44, frame.area()),
                     " Trakt Authentication ",
-                    Style::new().fg(material::YELLOW.c800),
-                    Alignment::Center,
-                    Style::new().fg(tailwind::VIOLET.c950),
-                    tailwind::BLUE.c950,
                     true,
                 );
                 key_event_handler.bind_mouse_button_down(
@@ -410,7 +402,7 @@ impl PopupTrait for TraktInitPopup {
                 );
 
                 let [ci_input_area, cs_input_area, _] = vertical![==3, ==3, >=1]
-                    .areas(add_padding(popup_area, Padding::proportional(1)));
+                    .areas(helpers::add_padding(popup_area, Padding::proportional(1)));
 
                 let ci_input_selected = self.item == 0;
                 widgets::input_field(
@@ -469,7 +461,7 @@ impl PopupTrait for TraktInitPopup {
                     ),
                     HorizontalAlignment::Right,
                     true,
-                    add_padding(popup_area, Padding::right(1)),
+                    helpers::add_padding(popup_area, Padding::right(1)),
                     frame,
                 );
                 if input_valid {
@@ -577,14 +569,10 @@ impl PopupTrait for TraktInitPopup {
                     }
                 });
 
-                let popup_area = create_popup(
+                let popup_area = widgets::window_popup(
                     frame,
-                    centered_area(12, 48, frame.area()),
+                    helpers::centered_area(12, 48, frame.area()),
                     " Trakt Authentication ",
-                    Style::new().fg(material::YELLOW.c800),
-                    Alignment::Center,
-                    Style::new().fg(tailwind::VIOLET.c950),
-                    tailwind::BLUE.c950,
                     true,
                 );
                 key_event_handler.bind_mouse_button_down(
@@ -638,7 +626,7 @@ impl PopupTrait for TraktInitPopup {
                 );
 
                 let [_, message_area, _, input_area, _] = vertical![==1, ==3, >=1, ==3, ==1]
-                    .areas(add_padding(popup_area, Padding::proportional(1)));
+                    .areas(helpers::add_padding(popup_area, Padding::proportional(1)));
 
                 let hyperlink_text = "  Click to Authorize  ";
                 let [message_area] = horizontal![==(hyperlink_text.len() as u16)]
@@ -664,7 +652,7 @@ impl PopupTrait for TraktInitPopup {
                     &mut self.input0,
                     WrapMode::None,
                     frame,
-                    add_padding(input_area, Padding::horizontal(8)),
+                    helpers::add_padding(input_area, Padding::horizontal(8)),
                     " Authorization Code ",
                     "Enter the authorization code",
                 );
@@ -689,7 +677,7 @@ impl PopupTrait for TraktInitPopup {
                     ),
                     HorizontalAlignment::Right,
                     true,
-                    add_padding(popup_area, Padding::right(1)),
+                    helpers::add_padding(popup_area, Padding::right(1)),
                     frame,
                 );
                 if input_valid {
@@ -753,14 +741,10 @@ impl PopupTrait for TraktInitPopup {
                     });
                 }
 
-                let popup_area = create_popup(
+                let popup_area = widgets::window_popup(
                     frame,
-                    centered_area(11, 44, frame.area()),
+                    helpers::centered_area(11, 44, frame.area()),
                     " Error ",
-                    Style::new().fg(material::YELLOW.c800),
-                    Alignment::Center,
-                    Style::new().fg(tailwind::VIOLET.c950),
-                    tailwind::BLUE.c950,
                     true,
                 );
                 key_event_handler.bind_mouse_button_down(
@@ -768,11 +752,14 @@ impl PopupTrait for TraktInitPopup {
                     popup_area.outer(Margin::new(1, 1)),
                     |_, _| {},
                 );
-                let [message_area, _] =
-                    vertical![>=1, ==1].areas(add_padding(popup_area, Padding::proportional(1)));
+                let [message_area, _] = vertical![>=1, ==1]
+                    .areas(helpers::add_padding(popup_area, Padding::proportional(1)));
                 frame.render_widget(
-                    Text::from_iter(wrap_text(error.as_str(), message_area.width as usize))
-                        .centered(),
+                    Text::from_iter(helpers::wrap_text(
+                        error.as_str(),
+                        message_area.width as usize,
+                    ))
+                    .centered(),
                     message_area,
                 );
 
@@ -801,7 +788,7 @@ impl PopupTrait for TraktInitPopup {
                     Action::new(" Back ", ActionTypes::Default, self.item == 0, true),
                     HorizontalAlignment::Center,
                     true,
-                    add_padding(popup_area, Padding::right(1)),
+                    helpers::add_padding(popup_area, Padding::right(1)),
                     frame,
                 );
                 key_event_handler.bind_mouse_button_down(

@@ -4,7 +4,7 @@ use itertools::Itertools;
 use ratatui::{
     Frame,
     crossterm::event::KeyCode,
-    layout::{Alignment, Constraint, HorizontalAlignment, Layout, Margin, Offset, Rect, Size},
+    layout::{Constraint, HorizontalAlignment, Layout, Margin, Offset, Rect, Size},
     macros::{constraint, constraints, horizontal, line, span},
     style::{
         Modifier, Style, Stylize,
@@ -18,7 +18,7 @@ use strum::IntoEnumIterator;
 
 use crate::{
     app::App,
-    helpers::{add_padding, centered_area, create_popup, ellipsize_string, resize_area},
+    helpers,
     key_event_handler::{self, KeyEventHandler},
     pop_criterion,
     popups::{PopupTrait, Popups},
@@ -245,7 +245,7 @@ impl Widget {
     }
 
     fn bind(
-        &self,
+        &mut self,
         key_event_handler: &mut KeyEventHandler,
         valid: bool,
         area: Rect,
@@ -261,22 +261,22 @@ impl Widget {
             } => (),
             Widget::Dropdown {
                 item,
-                text_input: _,
+                text_input,
                 dropdown_type,
                 constraint: _,
                 items,
-                current_selected: _,
+                current_selected,
                 scroll_pos,
-                selected_items: _,
+                selected_items,
                 num_visible_items,
                 placeholder_text: _,
-                search_placeholder: search,
+                search_placeholder,
                 visible_if: _,
             } => {
                 let item = *item;
                 let selected = item == selected_item;
                 let dropdown_type = dropdown_type.clone();
-                let can_search = search.is_some();
+                let can_search = search_placeholder.is_some();
                 key_event_handler.bind_enter(
                     (Some(2), Some(item)),
                     if last_item && valid { "Confirm" } else { "Select" }.into(),
@@ -342,8 +342,9 @@ impl Widget {
                                     crate::key_event_handler::Data::Direction(true, _) =>
                                         if *current_selected < items.len() - 1 {
                                             *current_selected += 1;
-                                            if current_selected.saturating_sub(*scroll_pos)
-                                                >= *num_visible_items
+                                            if *current_selected < *scroll_pos
+                                                || *current_selected - *scroll_pos
+                                                    >= *num_visible_items
                                             {
                                                 *scroll_pos = current_selected
                                                     .saturating_sub(*num_visible_items - 1)
@@ -413,29 +414,6 @@ impl Widget {
                         {
                             advanced_filter_popup.tab = 2;
                             advanced_filter_popup.item = item;
-                            match advanced_filter_popup.get_widget_at_mut(item).unwrap() {
-                                Widget::Dropdown {
-                                    item: _,
-                                    dropdown_type: _,
-                                    text_input: _,
-                                    constraint: _,
-                                    items: _,
-                                    current_selected,
-                                    scroll_pos,
-                                    selected_items: _,
-                                    num_visible_items: _,
-                                    placeholder_text: _,
-                                    search_placeholder: _,
-                                    visible_if: _,
-                                } => match dropdown_type {
-                                    DropdownType::Normal => (),
-                                    DropdownType::MultipleChoice => {
-                                        *current_selected = 0;
-                                        *scroll_pos = 0;
-                                    }
-                                },
-                                _ => unreachable!(),
-                            };
                         }
                     },
                 );
@@ -480,10 +458,10 @@ impl Widget {
                 if selected && tab_selected {
                     let num_visible_items = (*num_visible_items).min(items.len() - *scroll_pos);
                     let mut mouse_area = area
-                        .offset(Offset::new(0, 3))
+                        .offset(Offset::new(1, 3))
                         .resize(Size::new(area.width - 2, 1));
                     for i in 0..num_visible_items {
-                        let index = i + scroll_pos;
+                        let index = i + *scroll_pos;
                         key_event_handler.bind_mouse_button_down(
                             ratatui::crossterm::event::MouseButton::Left,
                             mouse_area,
@@ -538,6 +516,16 @@ impl Widget {
                         );
                         mouse_area = mouse_area.offset(Offset { x: 0, y: 1 });
                     }
+                } else {
+                    text_input.clear();
+
+                    if matches!(dropdown_type, DropdownType::MultipleChoice) {
+                        *scroll_pos = 0;
+                        *current_selected = 0;
+                    } else if can_search {
+                        *current_selected = *selected_items.get(0).unwrap_or(&0);
+                        *scroll_pos = current_selected.saturating_sub(*num_visible_items - 1)
+                    }
                 }
             }
             Widget::TextInput {
@@ -551,20 +539,6 @@ impl Widget {
             } => {
                 let item = *item;
                 let text_input_type = *text_input_type;
-                // let confirm_and_append = advanced_filter_popup.confirm.as_ref().unwrap().clone();
-                // key_event_handler.bind_enter((Some(2), Some(item)), "".into(), move |app, _| {
-                //     if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
-                //         app.drawer.active_popup.as_mut()
-                //     {
-                //         confirm_and_append(advanced_filter_popup);
-
-                //         advanced_filter_popup.tab = 1;
-                //         advanced_filter_popup.active_criterion = None;
-                //         advanced_filter_popup.widgets = None;
-                //         advanced_filter_popup.validate = None;
-                //         advanced_filter_popup.confirm = None;
-                //     }
-                // });
 
                 key_event_handler.bind_enter(
                     (Some(2), Some(item)),
@@ -592,7 +566,7 @@ impl Widget {
                             app.drawer.active_popup.as_mut()
                         {
                             match data {
-                                key_event_handler::Data::Key(key_event) =>
+                                key_event_handler::Data::Key(key_event) => {
                                     match advanced_filter_popup.get_widget_at_mut(item).unwrap() {
                                         Widget::TextInput {
                                             item: _,
@@ -645,7 +619,8 @@ impl Widget {
                                             }
                                         },
                                         _ => unreachable!(),
-                                    },
+                                    }
+                                }
                                 _ => (),
                             }
                         }
@@ -687,11 +662,11 @@ impl Widget {
                 selected_items,
                 num_visible_items,
                 placeholder_text,
-                search_placeholder: search,
+                search_placeholder,
                 visible_if: _,
             } => {
                 let selected = selected_item == *item;
-                if let Some(placeholder) = search {
+                if let Some(placeholder) = search_placeholder {
                     widgets::dropdown(
                         tab_selected,
                         selected,
@@ -765,9 +740,13 @@ impl Widget {
                         items
                             .iter()
                             .map(|x| {
-                                line!(" ", ellipsize_string(x, area.width as usize - 4), " ")
-                                    .fg(material::INDIGO.c200)
-                                    .bg(material::INDIGO.c900)
+                                line!(
+                                    " ",
+                                    helpers::ellipsize_string(x, area.width as usize - 4),
+                                    " "
+                                )
+                                .fg(material::INDIGO.c200)
+                                .bg(material::INDIGO.c900)
                             })
                             .collect_vec(),
                         *current_selected,
@@ -790,14 +769,6 @@ impl Widget {
 
                             mouse_area = mouse_area.offset(Offset { x: 0, y: 1 });
                         }
-                    }
-                } else {
-                    text_input.clear();
-
-                    if matches!(dropdown_type, DropdownType::MultipleChoice) {
-                        *current_selected = 0;
-                    } else if search.is_some() {
-                        *current_selected = *selected_items.get(0).unwrap_or(&0);
                     }
                 }
             }
@@ -843,7 +814,7 @@ impl Widget {
             } => {
                 frame.render_widget(
                     span!(text).fg(tailwind::WHITE).into_right_aligned_line(),
-                    add_padding(area, Padding::vertical(1)),
+                    helpers::add_padding(area, Padding::vertical(1)),
                 );
             }
         }
@@ -1799,7 +1770,7 @@ impl AdvancedFilterPopup {
                                 placeholder_text: _,
                                 search_placeholder: _,
                                 visible_if: _,
-                            } =>
+                            } => {
                                 if matches!(
                                     criterion_discriminant,
                                     FilterCriterionDiscriminants::Language
@@ -1809,7 +1780,8 @@ impl AdvancedFilterPopup {
                                 } else {
                                     advanced_filter_popup.available_countries[*current_selected]
                                         .clone()
-                                },
+                                }
+                            }
                             _ => unreachable!(),
                         },
                         match advanced_filter_popup.get_widget_at(0).unwrap() {
@@ -2066,14 +2038,10 @@ impl PopupTrait for AdvancedFilterPopup {
         };
         let constraints = constraints![==(applied_height + 2), ==3, ==(options_height + 2), ==2];
         let popup_height = applied_height + 2 + 3 + options_height + 2 + 2 + 2;
-        let popup_area = create_popup(
+        let popup_area = widgets::window_popup(
             frame,
-            centered_area(popup_height, 55, frame.area()),
+            helpers::centered_area(popup_height, 55, frame.area()),
             " Advanced Filter ",
-            Style::new().fg(material::YELLOW.c800),
-            Alignment::Center,
-            Style::new().fg(tailwind::VIOLET.c950),
-            tailwind::BLUE.c950,
             true,
         );
         key_event_handler.bind_mouse_button_down(
@@ -2081,8 +2049,8 @@ impl PopupTrait for AdvancedFilterPopup {
             popup_area.outer(Margin::new(1, 1)),
             |_, _| {},
         );
-        let [applied_area, dropdown_area, options_area, _] =
-            Layout::vertical(constraints).areas(add_padding(popup_area, Padding::horizontal(1)));
+        let [applied_area, dropdown_area, options_area, _] = Layout::vertical(constraints)
+            .areas(helpers::add_padding(popup_area, Padding::horizontal(1)));
 
         {
             // let this_tab = 0;
@@ -2172,7 +2140,7 @@ impl PopupTrait for AdvancedFilterPopup {
                 HorizontalAlignment::Center,
                 true,
                 1,
-                add_padding(popup_area, Padding::right(1)),
+                helpers::add_padding(popup_area, Padding::right(1)),
                 frame,
             );
             for (i, mouse_area) in actions_mouse_areas.into_iter().enumerate() {
@@ -2345,7 +2313,7 @@ impl PopupTrait for AdvancedFilterPopup {
                 HorizontalAlignment::Right,
                 true,
                 1,
-                add_padding(inner_area, Padding::right(2)),
+                helpers::add_padding(inner_area, Padding::right(2)),
                 frame,
             );
             for (i, mouse_area) in actions_mouse_areas
@@ -2376,7 +2344,7 @@ impl PopupTrait for AdvancedFilterPopup {
             }
 
             let areas = Layout::vertical(vec![constraint!(==3); widgets.len()])
-                .split(add_padding(inner_area, Padding::new(2, 2, 0, 1)));
+                .split(helpers::add_padding(inner_area, Padding::new(2, 2, 0, 1)));
             for (row_area, (i, row)) in areas
                 .into_iter()
                 .rev()
@@ -2491,10 +2459,11 @@ impl PopupTrait for AdvancedFilterPopup {
                                                 ) >= advanced_filter_popup
                                                     .dropdown_num_visible_items
                                                 {
-                                                    advanced_filter_popup.dropdown_scroll_pos = (x + 1)
-                                                        .saturating_sub(
+                                                    advanced_filter_popup.dropdown_scroll_pos =
+                                                        (x + 1).saturating_sub(
                                                             advanced_filter_popup
-                                                                .dropdown_num_visible_items - 1
+                                                                .dropdown_num_visible_items
+                                                                - 1,
                                                         )
                                                 }
 
@@ -2572,7 +2541,7 @@ impl PopupTrait for AdvancedFilterPopup {
 
             frame.render_widget(
                 "Add a new Criterion:",
-                resize_area(message_area, Offset::new(0, -2)),
+                helpers::resize_area_centered(message_area, Offset::new(0, -2)),
             );
 
             let selected = self.item == 0;
@@ -2581,7 +2550,7 @@ impl PopupTrait for AdvancedFilterPopup {
                 tab_selected && selected,
                 frame,
                 dropdown_area,
-                ellipsize_string(
+                helpers::ellipsize_string(
                     self.active_criterion
                         .as_ref()
                         .map(|x| x.into())
@@ -2596,19 +2565,29 @@ impl PopupTrait for AdvancedFilterPopup {
                     if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
+                        let selected = advanced_filter_popup.tab == this_tab
+                            && advanced_filter_popup.item == 0;
                         advanced_filter_popup.tab = this_tab;
                         advanced_filter_popup.item = 0;
 
-                        advanced_filter_popup.dropdown_selected_item = advanced_filter_popup
-                            .dropdown_selected_item
-                            .map(|_| None)
-                            .unwrap_or(
-                                if let Some(x) = advanced_filter_popup.active_criterion.as_ref() {
-                                    Some(*x as usize)
-                                } else {
-                                    Some(0)
-                                },
-                            );
+                        if selected {
+                            advanced_filter_popup.dropdown_selected_item = advanced_filter_popup
+                                .dropdown_selected_item
+                                .map(|_| None)
+                                .unwrap_or(
+                                    advanced_filter_popup
+                                        .active_criterion
+                                        .as_ref()
+                                        .map(|x| *x as usize)
+                                        .or(Some(0)),
+                                );
+                        } else {
+                            advanced_filter_popup.dropdown_selected_item = advanced_filter_popup
+                                .active_criterion
+                                .as_ref()
+                                .map(|x| *x as usize)
+                                .or(Some(0));
+                        }
                         advanced_filter_popup.dropdown_num_visible_items = 5;
                         advanced_filter_popup.dropdown_scroll_pos = advanced_filter_popup
                             .dropdown_selected_item
@@ -2640,7 +2619,10 @@ impl PopupTrait for AdvancedFilterPopup {
                             .map(|x| {
                                 line!(
                                     " ",
-                                    ellipsize_string(x.into(), dropdown_area.width as usize - 2,),
+                                    helpers::ellipsize_string(
+                                        x.into(),
+                                        dropdown_area.width as usize - 2,
+                                    ),
                                     " "
                                 )
                                 .fg(material::INDIGO.c200)

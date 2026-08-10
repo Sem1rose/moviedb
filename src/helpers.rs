@@ -2,12 +2,9 @@ use std::{cell::RefCell, rc::Rc};
 
 use itertools::Itertools;
 use ratatui::{
-    Frame,
-    layout::{Alignment, Offset, Rect, Size},
+    layout::{Offset, Rect, Size},
     macros::constraint,
-    style::{Color, Style, Stylize},
-    symbols::border,
-    widgets::{Block, Borders, Clear, Padding},
+    widgets::{Block, Padding},
 };
 
 use crate::types::{FxIndexMap, Movie};
@@ -57,76 +54,11 @@ pub fn centered_area(height: u16, width: u16, area: Rect) -> Rect {
     )
 }
 
-pub fn create_popup(
-    frame: &mut Frame,
-    area: Rect,
-    title: &str,
-    title_style: Style,
-    title_alignment: Alignment,
-    border_style: Style,
-    background_color: Color,
-    and_a_half: bool,
-) -> Rect {
-    let popup = Block::bordered()
-        .border_set(border::PROPORTIONAL_WIDE)
-        .border_style(border_style)
-        .title(title)
-        .title_alignment(title_alignment)
-        .title_style(title_style);
-
-    let mut top_colors = vec![];
-    for x in 0..area.width {
-        top_colors.push(frame.buffer_mut().cell((area.x + x, area.y)).unwrap().bg);
-    }
-    let mut bottom_colors = vec![];
-    for x in 0..area.width {
-        bottom_colors.push(
-            frame
-                .buffer_mut()
-                .cell((area.x + x, area.y + area.height - 1))
-                .unwrap()
-                .bg,
-        );
-    }
-
-    let popup_area = popup.inner(area);
-    frame.render_widget(Clear, area);
-    frame.render_widget(popup, area);
-    for x in 0..area.width {
-        frame
-            .buffer_mut()
-            .cell_mut((area.x + x, area.y))
-            .unwrap()
-            .bg = top_colors[x as usize];
-    }
-    if and_a_half {
-        frame.render_widget(
-            Block::new()
-                .borders(!Borders::TOP)
-                .border_set(border::PROPORTIONAL_TALL)
-                .border_style(border_style)
-                .bg(background_color),
-            add_padding(area, Padding::top(1)),
-        );
-    } else {
-        for x in 0..area.width {
-            frame
-                .buffer_mut()
-                .cell_mut((area.x + x, area.y + area.height - 1))
-                .unwrap()
-                .bg = bottom_colors[x as usize];
-        }
-    }
-    frame.render_widget(Block::new().bg(background_color), popup_area);
-
-    popup_area
-}
-
 pub fn add_padding(area: Rect, padding: Padding) -> Rect {
     Block::new().padding(padding).inner(area)
 }
 
-pub fn resize_area(area: Rect, offset: Offset) -> Rect {
+pub fn resize_area_centered(area: Rect, offset: Offset) -> Rect {
     area.resize(Size::new(
         (area.width as i32 + offset.x) as u16,
         (area.height as i32 + offset.y) as u16,

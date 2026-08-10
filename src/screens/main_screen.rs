@@ -2,12 +2,12 @@ use std::{cell::RefCell, fs, path::PathBuf, rc::Rc};
 
 use chrono::Datelike;
 use itertools::Itertools;
-use log::error;
+use log::{error, info};
 use nucleo_matcher::{Config as MatcherConfig, Matcher, pattern::Atom};
 use ratatui::{
     Frame,
     crossterm::event::KeyModifiers,
-    layout::{Layout, Margin, Offset, Position, Rect, Size},
+    layout::{Layout, Offset, Position, Rect, Size},
     macros::{constraint, horizontal, line, span, text, vertical},
     style::{
         Color, Modifier, Styled, Stylize,
@@ -15,7 +15,7 @@ use ratatui::{
     },
     symbols::border,
     text::{Line, Span, Text},
-    widgets::{Block, Clear, Padding},
+    widgets::{Block, Padding},
 };
 use ratatui_image::sliced::SignedPosition;
 use ratatui_textarea::TextArea;
@@ -73,7 +73,6 @@ pub struct MainScreen {
     tab:                 usize,
     item:                usize,
     pub sort:            Sort,
-    pub redraw_images:   u8,
     pub drawing_images:  bool,
     pub sort_ascending:  bool,
     pub filter_criteria: Vec<FilterCriterion>,
@@ -125,7 +124,6 @@ impl MainScreen {
             tab: 0,
             item: 0,
             sort: Sort::default(),
-            redraw_images: 0,
             drawing_images: false,
             sort_ascending: false,
             search_input: TextArea::default(),
@@ -548,6 +546,19 @@ impl MainScreen {
                 });
                 key_event_handler.bind_key(
                     (Some(tab), None),
+                    'R',
+                    "Refetch details".into(),
+                    |app, _| {
+                        app.drawer.open_refetch_details_popup(
+                            app.trakt_tokens.clone(),
+                            app.punch_play_tokens.clone(),
+                            app.tmdb_tokens.clone(),
+                            app.omdb_tokens.clone(),
+                        );
+                    },
+                );
+                key_event_handler.bind_key(
+                    (Some(tab), None),
                     'e',
                     "Edit movie".into(),
                     |app, _| {
@@ -629,7 +640,6 @@ impl MainScreen {
         self.render_movies_list(frame, image_renderer, key_event_handler, list);
         self.render_movie_description(frame, image_renderer, key_event_handler, description);
         self.render_header(frame, header, key_event_handler);
-        self.redraw_images = self.redraw_images.saturating_sub(1);
 
         if let Some(pos) = self.context_menu_pos {
             key_event_handler.clear();
@@ -642,9 +652,7 @@ impl MainScreen {
                         app.drawer.current_screen.as_mut()
                     {
                         main_screen.context_menu_pos = None;
-                        main_screen.redraw_images = 1;
                     }
-                    app.drawer.refresh_immediate += 2;
                 },
             );
             key_event_handler.bind_mouse_button_down(
@@ -655,25 +663,19 @@ impl MainScreen {
                         app.drawer.current_screen.as_mut()
                     {
                         main_screen.context_menu_pos = None;
-                        main_screen.redraw_images = 1;
                     }
-                    app.drawer.refresh_immediate += 2;
                 },
             );
 
             key_event_handler.bind_esc((None, None), "Cancel".into(), |app, _| {
                 if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     main_screen.context_menu_pos = None;
-                    main_screen.redraw_images = 1;
                 }
-                app.drawer.refresh_immediate += 2;
             });
 
             key_event_handler.bind_enter((None, None), "Choose".into(), |app, _| {
                 if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     main_screen.context_menu_pos = None;
-                    main_screen.redraw_images = 1;
-
                     if main_screen.context_menu_selected == 0 {
                         app.drawer.open_add_play_popup();
                     } else if main_screen.context_menu_selected == 1 {
@@ -682,39 +684,45 @@ impl MainScreen {
                         app.drawer.open_delete_movie_popup();
                     }
                 }
-                app.drawer.refresh_immediate += 2;
             });
 
             key_event_handler.bind_key((None, None), 'q', "Cancel".into(), |app, _| {
                 if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     main_screen.context_menu_pos = None;
-                    main_screen.redraw_images = 1;
                 }
-                app.drawer.refresh_immediate += 2;
             });
             key_event_handler.bind_key((None, None), 'A', "Add play".into(), |app, _| {
                 app.drawer.open_add_play_popup();
+
                 if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     main_screen.context_menu_pos = None;
-                    main_screen.redraw_images = 1;
                 }
-                app.drawer.refresh_immediate += 2;
+            });
+            key_event_handler.bind_key((None, None), 'R', "Refetch details".into(), |app, _| {
+                app.drawer.open_refetch_details_popup(
+                    app.trakt_tokens.clone(),
+                    app.punch_play_tokens.clone(),
+                    app.tmdb_tokens.clone(),
+                    app.omdb_tokens.clone(),
+                );
+
+                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                    main_screen.context_menu_pos = None;
+                }
             });
             key_event_handler.bind_key((None, None), 'e', "Edit movie".into(), |app, _| {
                 app.drawer.open_edit_movie_popup();
+
                 if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     main_screen.context_menu_pos = None;
-                    main_screen.redraw_images = 1;
                 }
-                app.drawer.refresh_immediate += 2;
             });
             key_event_handler.bind_key((None, None), 'd', "Delete movie".into(), |app, _| {
                 app.drawer.open_delete_movie_popup();
+
                 if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     main_screen.context_menu_pos = None;
-                    main_screen.redraw_images = 1;
                 }
-                app.drawer.refresh_immediate += 2;
             });
 
             key_event_handler.bind_vertical((None, None), "Navigate".into(), |app, data| {
@@ -733,15 +741,8 @@ impl MainScreen {
                 }
             });
 
-            let mut actions = vec![" add play ", " edit ", " delete "]
-                .iter()
-                .map(|&x| line!(x).fg(material::INDIGO.c200).bg(material::INDIGO.c900))
-                .collect_vec();
-            actions[self.context_menu_selected] = actions[self.context_menu_selected]
-                .clone()
-                .fg(material::BLUE.c100)
-                .bg(material::LIGHT_BLUE.c900);
-            let width = actions.iter().map(|x| x.width()).max().unwrap() as u16 + 4;
+            let actions = vec!["Add play", "Refetch details", "Edit", "Delete"];
+            let width = actions.iter().map(|x| x.len()).max().unwrap() as u16 + 4;
             let height = actions.len() as u16 + 2;
 
             let x = if pos.x + width - 1 >= frame.area().width {
@@ -754,49 +755,26 @@ impl MainScreen {
             } else {
                 pos.y
             };
-            let actions_popup_area = Rect::new(x, y, width, height);
-            key_event_handler.bind_mouse_button_down(
-                ratatui::crossterm::event::MouseButton::Left,
-                actions_popup_area.outer(Margin::new(1, 1)),
-                |_, _| {},
+
+            let (mut mouse_area, len) = widgets::normal_popup(
+                actions
+                    .iter()
+                    .map(|x| {
+                        line!(" ", *x, " ")
+                            .fg(material::INDIGO.c200)
+                            .bg(material::INDIGO.c900)
+                    })
+                    .collect(),
+                self.context_menu_selected,
+                0,
+                5,
+                Position { x, y },
+                width,
+                frame,
+                key_event_handler,
             );
 
-            let bg_top = frame
-                .buffer_mut()
-                .cell(Position::new(
-                    actions_popup_area.x + actions_popup_area.width / 2,
-                    actions_popup_area.y,
-                ))
-                .unwrap()
-                .bg;
-            let bg_bottom = frame
-                .buffer_mut()
-                .cell(Position::new(
-                    actions_popup_area.x + actions_popup_area.width / 2,
-                    actions_popup_area.y + actions_popup_area.height - 1,
-                ))
-                .unwrap()
-                .bg;
-
-            let actions_popup_block = Block::bordered()
-                .border_set(border::PROPORTIONAL_WIDE)
-                .fg(material::INDIGO.c900);
-            frame.render_widget(Clear, actions_popup_area);
-            frame.render_widget(&actions_popup_block, actions_popup_area);
-            frame.render_widget(
-                Block::new().bg(bg_top),
-                add_padding(actions_popup_area, Padding::bottom(1)),
-            );
-            frame.render_widget(
-                Block::new().bg(bg_bottom),
-                add_padding(actions_popup_area, Padding::top(1)),
-            );
-            let actions_inner_area = actions_popup_block.inner(actions_popup_area);
-            let mut mouse_area = actions_inner_area.resize(Size {
-                width:  actions_inner_area.width,
-                height: 1,
-            });
-            for i in 0..actions.len() {
+            for i in 0..len {
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     mouse_area,
@@ -804,23 +782,27 @@ impl MainScreen {
                         if i == 0 {
                             app.drawer.open_add_play_popup();
                         } else if i == 1 {
-                            app.drawer.open_edit_movie_popup();
+                            app.drawer.open_refetch_details_popup(
+                                app.trakt_tokens.clone(),
+                                app.punch_play_tokens.clone(),
+                                app.tmdb_tokens.clone(),
+                                app.omdb_tokens.clone(),
+                            );
                         } else if i == 2 {
+                            app.drawer.open_edit_movie_popup();
+                        } else if i == 3 {
                             app.drawer.open_delete_movie_popup();
                         }
+
                         if let Some(Screens::MainScreen(main_screen)) =
                             app.drawer.current_screen.as_mut()
                         {
                             main_screen.context_menu_pos = None;
-                            main_screen.redraw_images = 1;
                         }
-                        app.drawer.refresh_immediate += 2;
                     },
                 );
                 mouse_area = mouse_area.offset(Offset { x: 0, y: 1 });
             }
-
-            frame.render_widget(Text::from_iter(actions).left_aligned(), actions_inner_area);
         }
     }
 
@@ -1650,7 +1632,7 @@ impl MainScreen {
 
         let areas = Layout::vertical(vec![constraint!(==1); description_area.height as usize])
             .split(description_area);
-        for i in 0..description_area.height {
+        for i in (0..description_area.height).rev() {
             let index = if is_partially_visible {
                 if self.movies_list_alignment_bottom {
                     i + (MOVIE_WIDGET_HEIGHT as u16 - 1 - area.height)
@@ -1659,11 +1641,11 @@ impl MainScreen {
                 }
             } else {
                 i
-            };
+            } as usize;
 
             let area = areas[i as usize];
-            match index {
-                0 => frame.render_widget(
+            if index == 0 {
+                frame.render_widget(
                     line!(format!("#{}", movie_index + 1))
                         .right_aligned()
                         .bold()
@@ -1673,76 +1655,61 @@ impl MainScreen {
                             tailwind::GRAY.c400
                         }),
                     area,
-                ),
-                _ =>
-                    if i > 0
-                        && (i as usize - 1)
-                            .checked_sub(
-                                (MOVIE_WIDGET_HEIGHT - 3).saturating_sub(description_lines.len()),
-                            )
-                            .is_some()
-                    {
-                        frame.render_widget(
-                            &description_lines[i as usize
-                                - 1
-                                - (MOVIE_WIDGET_HEIGHT - 3)
-                                    .saturating_sub(description_lines.len())],
-                            area,
-                        )
-                    },
+                )
+            }
+            if let Some(index) =
+                (description_lines.len() - 1).checked_sub(MOVIE_WIDGET_HEIGHT - 3 - index)
+            {
+                frame.render_widget(&description_lines[index], area)
             }
         }
 
-        let unfocused_rating_color = if rating >= 9.0 {
-            tailwind::SKY.c600
-        } else if rating >= 8.0 {
-            tailwind::GREEN.c700
-        } else if rating >= 7.5 {
-            tailwind::LIME.c700
-        } else if rating >= 7.0 {
-            material::YELLOW.c700
-        } else if rating >= 6.0 {
-            tailwind::AMBER.c600
-        } else {
-            material::DEEP_ORANGE.c800
-        };
-        if selected {
+        // let unfocused_rating_color = if rating >= 9.0 {
+        //     tailwind::SKY.c600
+        // } else if rating >= 8.0 {
+        //     tailwind::GREEN.c700
+        // } else if rating >= 7.5 {
+        //     tailwind::LIME.c700
+        // } else if rating >= 7.0 {
+        //     material::YELLOW.c700
+        // } else if rating >= 6.0 {
+        //     tailwind::AMBER.c600
+        // } else {
+        //     material::DEEP_ORANGE.c800
+        // };
+        if tab_selected && selected {
             frame.render_widget(
                 text![span!("▐"); highlight_area.height as usize]
                 // text!["1", "2", "3", "4", "5", "6", "7", "8", "9", "a", "b", "c"]
                     .fg(
-                    if tab_selected {
+                    // if tab_selected {
                         rating_color
-                    } else {
-                        unfocused_rating_color
-                    },
+                    // } else {
+                    //     unfocused_rating_color
+                    // },
                 ),
                 highlight_area,
             );
         }
 
-        if self.redraw_images < 1 {
-            self.drawing_images |= !image_renderer.draw_image(
-                ImageID::Movie(self.filtered_movies[movie_index].id, false),
-                poster_area,
-                if is_partially_visible {
-                    Some(SignedPosition {
-                        x: 0,
-                        y: if self.movies_list_alignment_bottom {
-                            -(MOVIE_WIDGET_HEIGHT as i16 - 2 - poster_area.height as i16)
-                        } else {
-                            0
-                        },
-                    })
-                } else {
-                    None
-                },
-                &mut self.throbber_state,
-                frame,
-            );
-        } else {
-            frame.render_widget(Block::new().bg(tailwind::SLATE.c700), poster_area);
-        }
+        self.drawing_images |= !image_renderer.draw_image(
+            ImageID::Movie(self.filtered_movies[movie_index].id, false),
+            poster_area,
+            if is_partially_visible {
+                Some(SignedPosition {
+                    x: 0,
+                    y: if self.movies_list_alignment_bottom {
+                        -(MOVIE_WIDGET_HEIGHT as i16 - 2 - poster_area.height as i16)
+                    } else {
+                        0
+                    },
+                })
+            } else {
+                None
+            },
+            &mut self.throbber_state,
+            frame,
+        );
         // frame.render_widget(
         //     line!("1 2 3 4 5 6 7 8 9 a b c d e f "),
         //     poster_area.offset(Offset { x: 0, y: -1 }),
@@ -2028,17 +1995,13 @@ impl MainScreen {
         }
 
         // frame.render_widget(Block::new().bg(tailwind::SLATE.c700), backdrop_area);
-        if self.redraw_images < 1 && movie.is_some() {
-            self.drawing_images |= !image_renderer.draw_image(
-                ImageID::Movie(self.current_movie().unwrap().id, true),
-                backdrop_area,
-                None,
-                &mut self.throbber_state,
-                frame,
-            );
-        } else {
-            frame.render_widget(Block::new().bg(tailwind::SLATE.c700), backdrop_area);
-        }
+        self.drawing_images |= !image_renderer.draw_image(
+            ImageID::Movie(self.current_movie().unwrap().id, true),
+            backdrop_area,
+            None,
+            &mut self.throbber_state,
+            frame,
+        );
     }
 
     fn draw_ratings(&self, movie: &Movie, frame: &mut Frame, area: Rect) {

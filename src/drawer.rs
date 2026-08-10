@@ -120,8 +120,13 @@ impl Drawer {
                 Popups::DeleteMovie(_) => {}
                 Popups::AddMovie(add_movie_popup) => {
                     if let AddMoviePopupPhase::Done = add_movie_popup.phase {
-                        key_event_handler.bind_immediate(|app, _| {
-                            app.add_movie();
+                        let refetch_details = add_movie_popup.refetch_details;
+                        key_event_handler.bind_immediate(move |app, _| {
+                            if refetch_details {
+                                app.update_movie_details();
+                            } else {
+                                app.add_movie();
+                            }
                         });
                     }
                 }
@@ -242,18 +247,37 @@ impl Drawer {
         )));
     }
 
+    pub fn open_refetch_details_popup(
+        &mut self,
+        trakt_tokens: TraktTokens,
+        punch_play_tokens: PunchPlayTokens,
+        tmdb_tokens: TMDBTokens,
+        omdb_tokens: OMDBTokens,
+    ) {
+        if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_mut() {
+            self.popup_queue
+                .push(Popups::AddMovie(AddMoviePopup::new_refetch_details(
+                    main_screen.current_movie().unwrap().id,
+                    trakt_tokens,
+                    punch_play_tokens,
+                    tmdb_tokens,
+                    omdb_tokens,
+                    &self.cache_dir,
+                )));
+        }
+    }
+
     pub fn open_add_play_popup(&mut self) {
         self.popup_queue
-            .push(Popups::EditMovie(EditMoviePopup::new(true, 0.0, None)));
+            .push(Popups::EditMovie(EditMoviePopup::new_add_play()));
     }
 
     pub fn open_edit_movie_popup(&mut self) {
         if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_mut() {
             let entry = &main_screen.watched.borrow()[&main_screen.current_movie().unwrap().id];
             self.popup_queue.push(Popups::EditMovie(EditMoviePopup::new(
-                false,
                 entry.get_user_rating(),
-                Some(entry.get_latest_play()),
+                entry.get_latest_play(),
             )));
         }
     }
@@ -283,16 +307,6 @@ impl Drawer {
 
     pub fn close_popup(&mut self) {
         self.active_popup = None;
-
-        self.refresh_images();
-    }
-
-    pub fn refresh_images(&mut self) {
-        if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_mut() {
-            main_screen.redraw_images = 1;
-        }
-
-        self.refresh_immediate += 2;
     }
 
     pub fn check_refresh_immediate(&mut self) -> bool {

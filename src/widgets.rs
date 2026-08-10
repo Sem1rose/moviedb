@@ -2,7 +2,7 @@ use itertools::Itertools;
 use ratatui::{
     Frame,
     buffer::Buffer,
-    layout::{HorizontalAlignment, Offset, Rect, Size},
+    layout::{Alignment, HorizontalAlignment, Offset, Position, Rect, Size},
     macros::{line, span, text, vertical},
     style::{
         Modifier, Style, Stylize,
@@ -10,7 +10,7 @@ use ratatui::{
     },
     symbols::border,
     text::{Line, Span, Text},
-    widgets::{Block, Clear, Padding, Widget},
+    widgets::{Block, Borders, Clear, Padding, Widget},
 };
 use ratatui_textarea::{TextArea, WrapMode};
 
@@ -148,6 +148,37 @@ pub fn dropdown_popup(
     frame: &mut Frame,
     key_event_handler: &mut KeyEventHandler,
 ) -> (Rect, usize) {
+    let result = normal_popup(
+        items,
+        selected_index,
+        scroll_pos,
+        num_visible_items,
+        dropdown_widget_area.offset(Offset::new(0, 2)).as_position(),
+        dropdown_widget_area.width,
+        frame,
+        key_event_handler,
+    );
+
+    frame.render_widget(
+        Block::new().bg(material::BLUE.c600),
+        dropdown_widget_area
+            .offset(Offset::new(0, 2))
+            .resize(Size::new(dropdown_widget_area.width, 1)),
+    );
+
+    result
+}
+
+pub fn normal_popup(
+    items: Vec<Line>,
+    selected_index: usize,
+    scroll_pos: usize,
+    num_visible_items: usize,
+    position: Position,
+    width: u16,
+    frame: &mut Frame,
+    key_event_handler: &mut KeyEventHandler,
+) -> (Rect, usize) {
     let items_len = items.len();
     let mut visible_items = items
         .into_iter()
@@ -162,31 +193,38 @@ pub fn dropdown_popup(
         .bg(material::LIGHT_BLUE.c900);
     visible_items.insert(selected_index.saturating_sub(scroll_pos), selected);
 
-    let dropdown_popup_area = dropdown_widget_area
-        .offset(Offset::new(0, 2))
-        .resize(Size::new(
-            dropdown_widget_area.width,
-            dropdown_widget_area.height + visible_items.len() as u16 - 1,
-        ));
-    frame.render_widget(
-        Clear,
-        add_padding(dropdown_popup_area, Padding::vertical(1)),
-    );
+    let area = Rect {
+        x: position.x,
+        y: position.y,
+        width,
+        height: visible_items_len as u16 + 2,
+    };
+    let mut top_colors = vec![];
+    for x in 0..area.width {
+        top_colors.push(frame.buffer_mut().cell((area.x + x, area.y)).unwrap().bg);
+    }
+    let mut bottom_colors = vec![];
+    for x in 0..area.width {
+        bottom_colors.push(
+            frame
+                .buffer_mut()
+                .cell((area.x + x, area.y + area.height - 1))
+                .unwrap()
+                .bg,
+        );
+    }
+    frame.render_widget(Clear, area);
     key_event_handler.bind_mouse_button_down(
         ratatui::crossterm::event::MouseButton::Left,
-        dropdown_popup_area,
+        area,
         |_, _| {},
     );
 
     let sort_popup_block = Block::bordered()
         .border_set(border::PROPORTIONAL_WIDE)
         .fg(tailwind::INDIGO.c900);
-    let inner_area = sort_popup_block.inner(dropdown_popup_area);
-    frame.render_widget(&sort_popup_block, dropdown_popup_area);
-    frame.render_widget(
-        Block::new().bg(material::BLUE.c600),
-        dropdown_popup_area.resize(Size::new(dropdown_popup_area.width, 1)),
-    );
+    let inner_area = sort_popup_block.inner(area);
+    frame.render_widget(&sort_popup_block, area);
     frame.render_widget(Block::new().bg(material::INDIGO.c900), inner_area);
     frame.render_widget(Text::from_iter(visible_items).left_aligned(), inner_area);
 
@@ -202,6 +240,21 @@ pub fn dropdown_popup(
         );
     }
 
+    for x in 0..area.width {
+        frame
+            .buffer_mut()
+            .cell_mut((area.x + x, area.y))
+            .unwrap()
+            .bg = top_colors[x as usize];
+    }
+    for x in 0..area.width {
+        frame
+            .buffer_mut()
+            .cell_mut((area.x + x, area.y + area.height - 1))
+            .unwrap()
+            .bg = bottom_colors[x as usize];
+    }
+
     (
         inner_area.resize(Size {
             width:  inner_area.width,
@@ -209,6 +262,62 @@ pub fn dropdown_popup(
         }),
         visible_items_len,
     )
+}
+
+pub fn window_popup(frame: &mut Frame, area: Rect, title: &str, and_a_half: bool) -> Rect {
+    let popup = Block::bordered()
+        .border_set(border::PROPORTIONAL_WIDE)
+        .border_style(Style::new().fg(tailwind::VIOLET.c950))
+        .title(title)
+        .title_alignment(Alignment::Center)
+        .title_style(Style::new().fg(material::YELLOW.c800));
+
+    let mut top_colors = vec![];
+    for x in 0..area.width {
+        top_colors.push(frame.buffer_mut().cell((area.x + x, area.y)).unwrap().bg);
+    }
+    let mut bottom_colors = vec![];
+    for x in 0..area.width {
+        bottom_colors.push(
+            frame
+                .buffer_mut()
+                .cell((area.x + x, area.y + area.height - 1))
+                .unwrap()
+                .bg,
+        );
+    }
+
+    let popup_area = popup.inner(area);
+    frame.render_widget(Clear, area);
+    frame.render_widget(popup, area);
+    for x in 0..area.width {
+        frame
+            .buffer_mut()
+            .cell_mut((area.x + x, area.y))
+            .unwrap()
+            .bg = top_colors[x as usize];
+    }
+    if and_a_half {
+        frame.render_widget(
+            Block::new()
+                .borders(!Borders::TOP)
+                .border_set(border::PROPORTIONAL_TALL)
+                .border_style(Style::new().fg(tailwind::VIOLET.c950))
+                .bg(tailwind::BLUE.c950),
+            add_padding(area, Padding::top(1)),
+        );
+    } else {
+        for x in 0..area.width {
+            frame
+                .buffer_mut()
+                .cell_mut((area.x + x, area.y + area.height - 1))
+                .unwrap()
+                .bg = bottom_colors[x as usize];
+        }
+    }
+    frame.render_widget(Block::new().bg(tailwind::BLUE.c950), popup_area);
+
+    popup_area
 }
 
 pub fn scroll_bar(
