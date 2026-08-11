@@ -19,7 +19,7 @@ use crate::{
     key_event_handler::{self, KeyEventHandler},
     popups::{PopupTrait, Popups},
     tokens::omdb_tokens::OMDBTokens,
-    widgets::{self, Action, ActionTypes},
+    widgets::{self, Action, ActionType},
 };
 
 #[derive(Default)]
@@ -157,7 +157,7 @@ impl PopupTrait for OMDBInitPopup {
                 }
             });
 
-            let popup_area = widgets::window_popup(
+            let popup_area = widgets::window(
                 frame,
                 helpers::centered_area(8, 40, frame.area()),
                 " OMDB Authentication ",
@@ -199,7 +199,7 @@ impl PopupTrait for OMDBInitPopup {
             let confirm_mouse_area = widgets::action(
                 Action::new(
                     " Confirm ",
-                    ActionTypes::Default,
+                    ActionType::Default,
                     self.item == 1,
                     input_valid,
                 ),
@@ -224,7 +224,7 @@ impl PopupTrait for OMDBInitPopup {
                 );
             }
         } else {
-            let popup_area = widgets::window_popup(
+            let popup_area = widgets::window(
                 frame,
                 helpers::centered_area(7, 30, frame.area()),
                 " OMDB Authentication ",

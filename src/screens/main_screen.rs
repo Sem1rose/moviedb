@@ -2,7 +2,7 @@ use std::{cell::RefCell, fs, path::PathBuf, rc::Rc};
 
 use chrono::Datelike;
 use itertools::Itertools;
-use log::{error, info};
+use log::error;
 use nucleo_matcher::{Config as MatcherConfig, Matcher, pattern::Atom};
 use ratatui::{
     Frame,
@@ -20,7 +20,7 @@ use ratatui::{
 use ratatui_image::sliced::SignedPosition;
 use ratatui_textarea::TextArea;
 use serde::{Deserialize, Serialize};
-use strum::{EnumCount, IntoEnumIterator};
+use strum::IntoEnumIterator;
 use throbber_widgets_tui::ThrobberState;
 
 use crate::{
@@ -30,8 +30,8 @@ use crate::{
     key_event_handler::{self, KeyEventHandler},
     load_file,
     screens::Screens,
-    types::{Entry, FilterCriterion, FxIndexMap, Movie, Sort, pop_criterion},
-    widgets,
+    types::{Entry, FilterCriterion, FxIndexMap, Movie, RatingSource, Sort, pop_criterion},
+    widgets::{self, ContextMenu},
 };
 
 #[derive(Serialize, Deserialize, PartialEq, Clone)]
@@ -62,10 +62,26 @@ impl From<&[Entry]> for List {
 }
 
 #[derive(Default)]
+pub struct MoviesList {
+    pub scroll_pos:             usize,
+    pub selected_item:          usize,
+    pub alignment_bottom:       bool,
+    pub partially_visible_item: bool,
+    pub num_visible_items:      usize,
+}
+
+#[derive(Default)]
 pub struct PlaysTab {
     scroll_pos:        usize,
     alignment_bottom:  bool,
     num_visible_items: usize,
+}
+
+#[derive(Default)]
+pub struct MoviesDescription {
+    pub selected_tab:    usize,
+    pub plays_tab:       PlaysTab,
+    pub overview_scroll: usize,
 }
 
 pub struct MainScreen {
@@ -87,18 +103,11 @@ pub struct MainScreen {
     pub watched:         Rc<RefCell<FxIndexMap<u32, Entry>>>,
     pub filtered_movies: Vec<Movie>,
 
-    movies_list_scroll_pos:             usize,
-    movies_list_selected_item:          usize,
-    movies_list_alignment_bottom:       bool,
-    movies_list_partially_visible_item: bool,
-    movies_list_num_visible_items:      usize,
-    movies_description_selected_tab:    usize,
-
-    context_menu_pos:      Option<Position>,
-    context_menu_selected: usize,
-
-    movies_description_plays_tab:       PlaysTab,
-    movies_description_overview_scroll: usize,
+    movies_list:        MoviesList,
+    movies_description: MoviesDescription,
+    sort_popup:         ContextMenu,
+    context_menu_pos:   Option<Position>,
+    context_menu:       ContextMenu,
 }
 
 const MOVIE_WIDGET_HEIGHT: usize = 11;
@@ -110,7 +119,7 @@ impl MainScreen {
             Some(
                 self.item
                     + if self.tab == 1 {
-                        self.movies_description_selected_tab << 9
+                        self.movies_description.selected_tab << 9
                     } else {
                         0
                     },
@@ -138,18 +147,28 @@ impl MainScreen {
             watched: default_rc(),
             filtered_movies: vec![],
 
-            movies_list_scroll_pos: 0,
-            movies_list_selected_item: 0,
-            movies_list_alignment_bottom: false,
-            movies_list_partially_visible_item: false,
-            movies_list_num_visible_items: 0,
-            movies_description_selected_tab: 0,
-
+            movies_list: MoviesList::default(),
+            movies_description: MoviesDescription::default(),
+            sort_popup: ContextMenu::new(vec![], 5, None, false).with_submenu(
+                <usize>::from(Sort::Rating(Default::default())),
+                RatingSource::iter()
+                    .map(|x| x.as_ref().to_string())
+                    .collect_vec(),
+                4,
+                None,
+            ),
             context_menu_pos: None,
-            context_menu_selected: 0,
-
-            movies_description_plays_tab: PlaysTab::default(),
-            movies_description_overview_scroll: 0,
+            context_menu: ContextMenu::new(
+                vec![
+                    "Add play".into(),
+                    "Refetch details".into(),
+                    "Edit".into(),
+                    "Delete".into(),
+                ],
+                5,
+                None,
+                false,
+            ),
         }
     }
 
@@ -180,7 +199,7 @@ impl MainScreen {
     }
 
     pub fn current_movie(&self) -> Option<&Movie> {
-        self.filtered_movies.get(self.movies_list_selected_item)
+        self.filtered_movies.get(self.movies_list.selected_item)
     }
 
     pub fn goto_index(&mut self, index: isize) {
@@ -190,15 +209,16 @@ impl MainScreen {
             (index as usize).min(self.filtered_movies.len() - 1)
         };
 
-        self.movies_list_selected_item = index;
-        self.movies_list_scroll_pos = self
-            .movies_list_scroll_pos
-            .min(self.movies_list_selected_item);
-        if self.movies_list_selected_item - self.movies_list_scroll_pos
-            >= self.movies_list_num_visible_items
+        self.movies_list.selected_item = index;
+        self.movies_list.scroll_pos = self
+            .movies_list
+            .scroll_pos
+            .min(self.movies_list.selected_item);
+        if self.movies_list.selected_item - self.movies_list.scroll_pos
+            >= self.movies_list.num_visible_items
         {
-            self.movies_list_scroll_pos =
-                self.movies_list_selected_item - self.movies_list_num_visible_items + 1;
+            self.movies_list.scroll_pos =
+                self.movies_list.selected_item - self.movies_list.num_visible_items + 1;
         }
     }
 
@@ -240,15 +260,15 @@ impl MainScreen {
                 .position(|x| x == movie)
                 .unwrap();
 
-            self.movies_list_selected_item = index;
-            self.movies_list_scroll_pos = index
-                .saturating_sub(self.movies_list_num_visible_items / 2)
+            self.movies_list.selected_item = index;
+            self.movies_list.scroll_pos = index
+                .saturating_sub(self.movies_list.num_visible_items / 2)
                 .min(
                     self.filtered_movies
                         .len()
-                        .saturating_sub(self.movies_list_num_visible_items),
+                        .saturating_sub(self.movies_list.num_visible_items),
                 );
-            self.movies_list_alignment_bottom = false;
+            self.movies_list.alignment_bottom = false;
         }
     }
 
@@ -256,7 +276,7 @@ impl MainScreen {
         let mut movies = self.get_list_movies();
         for criterion in &self.filter_criteria {
             match criterion {
-                FilterCriterion::Title(name, _) => {
+                FilterCriterion::Title(name, _) if !name.is_empty() => {
                     if name.is_empty() {
                         continue;
                     }
@@ -292,6 +312,7 @@ impl MainScreen {
                     }
                     movies = scores.iter().map(|&(_, movie)| movie.clone()).collect();
                 }
+                FilterCriterion::Title(_, _) => (),
                 FilterCriterion::Actors(actors, contains_all, inverted) => {
                     movies = movies.into_iter().filter(|x| if *contains_all {actors.iter().all(|y| x.credits.cast.iter().map(|x| x.id).contains(y))} else {actors.iter().any(|y| x.credits.cast.iter().map(|x| x.id).contains(y))} ^ if *inverted {true} else {false}).collect();
                 }
@@ -424,9 +445,9 @@ impl MainScreen {
                     self.filtered_movies.reverse();
                 }
             }
-            Sort::Rating => {
+            Sort::Rating(rating_source) => {
                 self.filtered_movies
-                    .sort_by(|a, b| a.partial_cmp(b).unwrap());
+                    .sort_by(|a, b| a.cmp_rating(b, rating_source));
                 if !self.sort_ascending {
                     self.filtered_movies.reverse();
                 }
@@ -438,22 +459,21 @@ impl MainScreen {
                 }
             }
             Sort::ReleaseDate => {
-                self.filtered_movies
-                    .sort_by_key(|x| x.release_date.year().to_string());
+                self.filtered_movies.sort_by_key(|x| x.release_date);
                 if !self.sort_ascending {
                     self.filtered_movies.reverse();
                 }
             }
             Sort::DateAdded => {
                 self.filtered_movies
-                    .sort_by_key(|x| self.watched.borrow()[&x.id].get_first_play().clone());
+                    .sort_by_key(|x| self.watched.borrow()[&x.id].get_first_play());
                 if !self.sort_ascending {
                     self.filtered_movies.reverse();
                 }
             }
             Sort::MostRecent => {
                 self.filtered_movies
-                    .sort_by_key(|x| self.watched.borrow()[&x.id].get_latest_play().clone());
+                    .sort_by_key(|x| self.watched.borrow()[&x.id].get_latest_play());
                 if !self.sort_ascending {
                     self.filtered_movies.reverse();
                 }
@@ -481,27 +501,27 @@ impl MainScreen {
                     .iter()
                     .position(|x| x.id == selected_movie_id);
                 if let Some(index) = pos {
-                    self.movies_list_selected_item = index;
+                    self.movies_list.selected_item = index;
 
-                    if self.movies_list_scroll_pos > index
-                        || index >= self.movies_list_scroll_pos + self.movies_list_num_visible_items
+                    if self.movies_list.scroll_pos > index
+                        || index >= self.movies_list.scroll_pos + self.movies_list.num_visible_items
                     {
-                        self.movies_list_scroll_pos = index
-                            .saturating_sub(self.movies_list_num_visible_items / 2)
+                        self.movies_list.scroll_pos = index
+                            .saturating_sub(self.movies_list.num_visible_items / 2)
                             .min(
                                 self.filtered_movies
                                     .len()
-                                    .saturating_sub(self.movies_list_num_visible_items),
+                                    .saturating_sub(self.movies_list.num_visible_items),
                             );
-                        self.movies_list_alignment_bottom = false;
+                        self.movies_list.alignment_bottom = false;
                     }
                 } else {
-                    self.movies_list_selected_item = 0;
-                    self.movies_list_scroll_pos = 0;
+                    self.movies_list.selected_item = 0;
+                    self.movies_list.scroll_pos = 0;
                 }
             } else {
-                self.movies_list_selected_item = 0;
-                self.movies_list_scroll_pos = 0;
+                self.movies_list.selected_item = 0;
+                self.movies_list.scroll_pos = 0;
             }
         }
     }
@@ -590,6 +610,7 @@ impl MainScreen {
             if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 main_screen.tab = 2;
                 main_screen.item = 1;
+                main_screen.sort_popup.reset_state();
             }
         });
         key_event_handler.bind_key((Some(0), None), '/', "Find".into(), |app, _| {
@@ -613,7 +634,9 @@ impl MainScreen {
                 main_screen.tab = 2;
                 main_screen.item = 0;
 
-                main_screen.sort = Sort::Relevance;
+                if let Sort::Relevance = main_screen.sort {
+                    main_screen.sort = Sort::default();
+                }
                 _ = pop_criterion!(main_screen.filter_criteria, FilterCriterion::Title(_, _));
                 main_screen
                     .filter_criteria
@@ -676,11 +699,19 @@ impl MainScreen {
             key_event_handler.bind_enter((None, None), "Choose".into(), |app, _| {
                 if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     main_screen.context_menu_pos = None;
-                    if main_screen.context_menu_selected == 0 {
+                    let a = *main_screen.context_menu.choose().first().unwrap();
+                    if a == 0 {
                         app.drawer.open_add_play_popup();
-                    } else if main_screen.context_menu_selected == 1 {
+                    } else if a == 1 {
+                        app.drawer.open_refetch_details_popup(
+                            app.trakt_tokens.clone(),
+                            app.punch_play_tokens.clone(),
+                            app.tmdb_tokens.clone(),
+                            app.omdb_tokens.clone(),
+                        );
+                    } else if a == 2 {
                         app.drawer.open_edit_movie_popup();
-                    } else if main_screen.context_menu_selected == 2 {
+                    } else if a == 3 {
                         app.drawer.open_delete_movie_popup();
                     }
                 }
@@ -725,25 +756,23 @@ impl MainScreen {
                 }
             });
 
-            key_event_handler.bind_vertical((None, None), "Navigate".into(), |app, data| {
+            key_event_handler.bind_vertical((None, None), "Navigate".into(), move |app, data| {
                 if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     match data {
-                        key_event_handler::Data::Direction(false, _) => {
-                            main_screen.context_menu_selected =
-                                main_screen.context_menu_selected.saturating_sub(1);
-                        }
-                        key_event_handler::Data::Direction(true, _) => {
-                            main_screen.context_menu_selected =
-                                (main_screen.context_menu_selected + 1).min(2);
+                        key_event_handler::Data::Direction(dir, _) => {
+                            main_screen.context_menu.scroll(dir);
                         }
                         _ => (),
                     }
                 }
             });
 
-            let actions = vec!["Add play", "Refetch details", "Edit", "Delete"];
-            let width = actions.iter().map(|x| x.len()).max().unwrap() as u16 + 4;
-            let height = actions.len() as u16 + 2;
+            let width = self.context_menu.width;
+            let height = self
+                .context_menu
+                .model
+                .len()
+                .min(self.context_menu.num_visible_items) as u16;
 
             let x = if pos.x + width - 1 >= frame.area().width {
                 frame.area().width - width
@@ -756,23 +785,13 @@ impl MainScreen {
                 pos.y
             };
 
-            let (mut mouse_area, len) = widgets::normal_popup(
-                actions
-                    .iter()
-                    .map(|x| {
-                        line!(" ", *x, " ")
-                            .fg(material::INDIGO.c200)
-                            .bg(material::INDIGO.c900)
-                    })
-                    .collect(),
-                self.context_menu_selected,
-                0,
-                5,
-                Position { x, y },
-                width,
-                frame,
-                key_event_handler,
-            );
+            let (mut mouse_area, len) = self
+                .context_menu
+                .render(Position { x, y }, frame, key_event_handler)
+                .into_iter()
+                .nth(0)
+                .unwrap()
+                .1;
 
             for i in 0..len {
                 key_event_handler.bind_mouse_button_down(
@@ -843,41 +862,49 @@ impl MainScreen {
             }
         });
 
-        key_event_handler.bind_tab((Some(2), Some(0)), "Change focus".into(), |app, _| {
+        key_event_handler.bind_tab((Some(2), None), "Change focus".into(), |app, data| {
             if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                main_screen.item = 1;
+                if main_screen.item == 0 {
+                    let FilterCriterion::Title(name, filter) = pop_criterion!(
+                        main_screen.filter_criteria,
+                        FilterCriterion::Title(_, _),
+                        FilterCriterion::Title(String::new(), false)
+                    ) else {
+                        unreachable!()
+                    };
 
-                let FilterCriterion::Title(name, filter) = pop_criterion!(
-                    main_screen.filter_criteria,
-                    FilterCriterion::Title(_, _),
-                    FilterCriterion::Title(String::new(), false)
-                ) else {
-                    unreachable!()
-                };
-
-                if name.is_empty() || !filter {
-                    if let Sort::Relevance = main_screen.sort {
-                        main_screen.sort = Sort::default();
+                    if name.is_empty() || !filter {
+                        if let Sort::Relevance = main_screen.sort {
+                            main_screen.sort = Sort::default();
+                        }
+                        main_screen.search_input = TextArea::from([""]);
+                    } else if filter {
+                        main_screen
+                            .filter_criteria
+                            .push(FilterCriterion::Title(name, true));
                     }
+                } else {
+                    // main_screen.sort = Sort::Relevance;
                     main_screen.search_input = TextArea::from([""]);
-                } else if filter {
+                    _ = pop_criterion!(main_screen.filter_criteria, FilterCriterion::Title(_, _));
                     main_screen
                         .filter_criteria
-                        .push(FilterCriterion::Title(name, true));
+                        .push(FilterCriterion::Title("".into(), true));
+                    main_screen.filter_sort_movies(Some(true));
                 }
-            }
-        });
-        key_event_handler.bind_tab((Some(2), None), "Change focus".into(), |app, _| {
-            if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                main_screen.item = 0;
 
-                main_screen.sort = Sort::Relevance;
-                main_screen.search_input = TextArea::from([""]);
-                _ = pop_criterion!(main_screen.filter_criteria, FilterCriterion::Title(_, _));
-                main_screen
-                    .filter_criteria
-                    .push(FilterCriterion::Title("".into(), true));
-                main_screen.filter_sort_movies(Some(true));
+                match data {
+                    key_event_handler::Data::Direction(true, _) => {
+                        main_screen.item += 1;
+                        if main_screen.item > 2 {
+                            main_screen.item = 0;
+                        }
+                    }
+                    key_event_handler::Data::Direction(false, _) => {
+                        main_screen.item = main_screen.item.checked_sub(1).unwrap_or(2);
+                    }
+                    _ => (),
+                }
             }
         });
 
@@ -921,8 +948,8 @@ impl MainScreen {
         });
         key_event_handler.bind_key((Some(2), Some(2)), ',', "Sort".into(), |app, _| {
             if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                main_screen.tab = 2;
                 main_screen.item = 1;
+                main_screen.sort_popup.reset_state();
             }
         });
         key_event_handler.bind_key(
@@ -936,23 +963,67 @@ impl MainScreen {
                 }
             },
         );
-        key_event_handler.bind_key((Some(2), None), 'q', "Close".into(), |app, _| {
+        key_event_handler.bind_key((Some(2), Some(1)), 'q', "Close".into(), |app, _| {
+            if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                main_screen.tab = 0;
+                main_screen.item = 0;
+            }
+        });
+        key_event_handler.bind_key((Some(2), Some(2)), 'q', "Close".into(), |app, _| {
             if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 main_screen.tab = 0;
                 main_screen.item = 0;
             }
         });
 
-        key_event_handler.bind_horizontal((Some(2), Some(1)), "Navigate".into(), |app, data| {
-            if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                match data {
-                    key_event_handler::Data::Direction(true, _) => {
-                        main_screen.item += 1;
-                    }
-                    _ => (),
+        if matches!(self.sort, Sort::Rating(_)) {
+            key_event_handler.bind_horizontal(
+                (Some(2), Some(1)),
+                if self.sort_popup.opened_submenu.is_none() {
+                    "Open submenu/Navigate"
+                } else {
+                    "Close submenu"
                 }
-            }
-        });
+                .into(),
+                |app, data| {
+                    if let Some(Screens::MainScreen(main_screen)) =
+                        app.drawer.current_screen.as_mut()
+                    {
+                        match data {
+                            key_event_handler::Data::Direction(false, _) => {
+                                main_screen.sort_popup.open_submenu(true);
+                            }
+                            key_event_handler::Data::Direction(true, _) => {
+                                if main_screen.sort_popup.opened_submenu.is_some() {
+                                    main_screen.sort_popup.close_submenu();
+                                } else {
+                                    main_screen.item += 1;
+                                }
+                            }
+                            _ => (),
+                        }
+                        main_screen.filter_sort_movies(Some(true));
+                    }
+                },
+            );
+        } else {
+            key_event_handler.bind_horizontal(
+                (Some(2), Some(1)),
+                "Navigate".into(),
+                |app, data| {
+                    if let Some(Screens::MainScreen(main_screen)) =
+                        app.drawer.current_screen.as_mut()
+                    {
+                        match data {
+                            key_event_handler::Data::Direction(true, _) => {
+                                main_screen.item += 1;
+                            }
+                            _ => (),
+                        }
+                    }
+                },
+            );
+        }
         key_event_handler.bind_horizontal((Some(2), Some(2)), "Navigate".into(), |app, data| {
             if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 match data {
@@ -963,31 +1034,40 @@ impl MainScreen {
                 }
             }
         });
-        key_event_handler.bind_vertical((Some(2), Some(1)), "Change sort".into(), |app, data| {
-            if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                match data {
-                    key_event_handler::Data::Direction(false, _) => {
-                        main_screen.sort = Sort::from_repr(
-                            (main_screen.sort as usize).checked_sub(1).unwrap_or(0),
-                        )
-                        .unwrap();
-                    }
-                    key_event_handler::Data::Direction(true, _) => {
-                        main_screen.sort = Sort::from_repr(main_screen.sort as usize + 1)
-                            .unwrap_or(main_screen.sort);
 
-                        if main_screen.search_input.is_empty()
-                            && matches!(main_screen.sort, Sort::Relevance)
-                        {
-                            main_screen.sort = Sort::from_repr(main_screen.sort as usize - 1)
-                                .unwrap_or(main_screen.sort);
-                        }
-                    }
-                    _ => (),
-                }
-                main_screen.filter_sort_movies(Some(true));
+        key_event_handler.bind_vertical(
+            (Some(2), Some(1)),
+            if self.sort_popup.opened_submenu.is_none() {
+                "Change sort"
+            } else {
+                "Change rating source"
             }
-        });
+            .into(),
+            |app, data| {
+                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                    match data {
+                        key_event_handler::Data::Direction(direction, _) => {
+                            main_screen.sort_popup.scroll(direction);
+
+                            main_screen.sort = if let Some(submenu_id) =
+                                main_screen.sort_popup.opened_submenu.as_ref()
+                            {
+                                Sort::Rating(
+                                    RatingSource::from_repr(
+                                        main_screen.sort_popup.submenus[submenu_id].selected_index,
+                                    )
+                                    .unwrap(),
+                                )
+                            } else {
+                                Sort::from_repr(main_screen.sort_popup.selected_index).unwrap()
+                            };
+                        }
+                        _ => (),
+                    }
+                    main_screen.filter_sort_movies(Some(true));
+                }
+            },
+        );
         key_event_handler.bind_vertical(
             (Some(2), Some(2)),
             "Change sort order".into(),
@@ -1025,6 +1105,11 @@ impl MainScreen {
                         ) else {
                             unreachable!()
                         };
+                        main_screen.sort = if filter && !main_screen.search_input.is_empty() {
+                            Sort::Relevance
+                        } else {
+                            Sort::default()
+                        };
                         main_screen.filter_criteria.push(FilterCriterion::Title(
                             main_screen.search_input.lines()[0].clone(),
                             filter,
@@ -1040,7 +1125,7 @@ impl MainScreen {
             }
         });
 
-        let [_debug_area, input_area, _, sort_area, _, direction_area, _] =
+        let [_, input_area, _, sort_area, _, direction_area, _] =
             horizontal![>=1, <=25, ==1, <=16, ==1, ==3, ==1].areas(area);
 
         let filter = if let Some(FilterCriterion::Title(n, f)) =
@@ -1105,8 +1190,10 @@ impl MainScreen {
                         ) else {
                             unreachable!()
                         };
-                        let criterion = FilterCriterion::Title("".into(), true);
-                        main_screen.filter_criteria.push(criterion);
+
+                        main_screen
+                            .filter_criteria
+                            .push(FilterCriterion::Title("".into(), true));
                         main_screen.filter_sort_movies(Some(true));
                     }
                 }
@@ -1127,21 +1214,14 @@ impl MainScreen {
                 if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     main_screen.tab = 2;
                     main_screen.item = 1;
+                    main_screen.sort_popup.reset_state();
                 }
             },
         );
 
         if tab_selected && self.item == 1 {
             let mut items = Sort::iter()
-                .map(|x| {
-                    line!(
-                        " ",
-                        ellipsize_string(x.as_ref(), sort_area.width as usize - 2),
-                        " "
-                    )
-                    .fg(material::INDIGO.c200)
-                    .bg(material::INDIGO.c900)
-                })
+                .map(|x| ellipsize_string(x.as_ref(), sort_area.width as usize - 2))
                 .collect_vec();
             if self.search_input.is_empty() {
                 _ = items.pop();
@@ -1150,32 +1230,102 @@ impl MainScreen {
                     self.sort = Sort::default();
                 }
             }
+            self.sort_popup.model = items;
 
-            let (mut mouse_area, len) = widgets::dropdown_popup(
-                items,
-                self.sort as usize,
-                0,
-                Sort::COUNT,
-                sort_area,
-                frame,
-                key_event_handler,
-            );
-            for i in 0..len {
-                key_event_handler.bind_mouse_button_down(
-                    ratatui::crossterm::event::MouseButton::Left,
-                    mouse_area,
-                    move |app, _| {
-                        if let Some(Screens::MainScreen(main_screen)) =
-                            app.drawer.current_screen.as_mut()
-                        {
-                            main_screen.tab = 0;
-                            main_screen.item = 0;
-                            main_screen.sort = Sort::from_repr(i).unwrap();
-                            main_screen.filter_sort_movies(Some(true));
-                        }
-                    },
-                );
-                mouse_area = mouse_area.offset(Offset { x: 0, y: 1 });
+            let selected_sort = <usize>::from(self.sort);
+            self.sort_popup.selected_index = selected_sort;
+            if let Sort::Rating(source) = self.sort {
+                self.sort_popup
+                    .submenus
+                    .get_mut(&<usize>::from(Sort::Rating(Default::default())))
+                    .unwrap()
+                    .selected_index = source as usize;
+            };
+            // if self.sort_popup.scroll_pos > self.sort_popup.selected_index {
+            //     self.sort_popup.scroll_pos = self.sort_popup.selected_index;
+            // }
+            // if self.sort_popup.scroll_pos + self.sort_popup.num_visible_items > self.sort_popup.model.len() {
+            //     self.sort_popup.scroll_pos = self.sort_popup.model.len() - self.sort_popup.num_visible_items;
+            // }
+            // if self.sort_popup.selected_index - self.sort_popup.scroll_pos >= self.sort_popup.num_visible_items {
+            //     self.sort_popup.scroll_pos = self.sort_popup.selected_index
+            //         .saturating_sub(self.sort_popup.num_visible_items + 1);
+            // }
+            // {
+            //     let submenu = self.sort_popup.submenus.get_mut(&<usize>::from(Sort::Rating(Default::default()))).unwrap();
+            //     submenu.selected_index = selected_rating_source;
+            //     if submenu.scroll_pos > submenu.selected_index {
+            //         submenu.scroll_pos = submenu.selected_index;
+            //     }
+            //     if submenu.scroll_pos + submenu.num_visible_items > submenu.model.len() {
+            //         submenu.scroll_pos = submenu.model.len() - submenu.num_visible_items;
+            //     }
+            //     if submenu.selected_index - submenu.scroll_pos >= submenu.num_visible_items {
+            //         submenu.scroll_pos = submenu.selected_index
+            //             .saturating_sub(submenu.num_visible_items + 1);
+            //     }
+            // }
+            let areas = self
+                .sort_popup
+                .render_dropdown(sort_area, frame, key_event_handler);
+
+            for (k, (mut mouse_area, len)) in areas {
+                if k.is_empty() {
+                    let scroll_pos = self.sort_popup.scroll_pos;
+                    for i in 0..len {
+                        let index = i + scroll_pos;
+                        key_event_handler.bind_mouse_button_down(
+                            ratatui::crossterm::event::MouseButton::Left,
+                            mouse_area,
+                            move |app, _| {
+                                if let Some(Screens::MainScreen(main_screen)) =
+                                    app.drawer.current_screen.as_mut()
+                                {
+                                    if main_screen.sort_popup.selected_index != index {
+                                        main_screen.sort = Sort::from_repr(index).unwrap();
+                                        main_screen.sort_popup.selected_index = index;
+
+                                        if !matches!(main_screen.sort, Sort::Rating(_)) {
+                                            main_screen.tab = 0;
+                                            main_screen.item = 0;
+                                        } else {
+                                            main_screen.sort_popup.open_submenu(true);
+                                        }
+                                        main_screen.filter_sort_movies(Some(true));
+                                    }
+                                }
+                            },
+                        );
+                        mouse_area = mouse_area.offset(Offset { x: 0, y: 1 });
+                    }
+                } else {
+                    let scroll_pos = self
+                        .sort_popup
+                        .submenus
+                        .get_mut(&<usize>::from(Sort::Rating(Default::default())))
+                        .unwrap()
+                        .scroll_pos;
+                    for i in 0..len {
+                        let index = i + scroll_pos;
+                        key_event_handler.bind_mouse_button_down(
+                            ratatui::crossterm::event::MouseButton::Left,
+                            mouse_area,
+                            move |app, _| {
+                                if let Some(Screens::MainScreen(main_screen)) =
+                                    app.drawer.current_screen.as_mut()
+                                {
+                                    main_screen.tab = 0;
+                                    main_screen.item = 0;
+                                    main_screen.sort =
+                                        Sort::Rating(RatingSource::from_repr(index).unwrap());
+                                    main_screen.sort_popup.reset_state();
+                                    main_screen.filter_sort_movies(Some(true));
+                                }
+                            },
+                        );
+                        mouse_area = mouse_area.offset(Offset { x: 0, y: 1 });
+                    }
+                }
             }
         }
 
@@ -1239,7 +1389,7 @@ impl MainScreen {
         area: Rect,
     ) {
         if self.filtered_movies.len() > 0 {
-            let num_visible_items = self.movies_list_num_visible_items;
+            let num_visible_items = self.movies_list.num_visible_items;
 
             key_event_handler.bind_tab((Some(0), None), "Change focus".into(), |app, data| {
                 if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
@@ -1275,31 +1425,32 @@ impl MainScreen {
                         key_event_handler::Data::Direction(true, modifiers) => {
                             if modifiers.contains(KeyModifiers::SHIFT) {
                                 main_screen.goto_index(
-                                    (main_screen.movies_list_selected_item
+                                    (main_screen.movies_list.selected_item
                                         + num_visible_items.saturating_sub(1))
                                         as isize,
                                 );
                             } else {
-                                main_screen.movies_list_selected_item =
-                                    (main_screen.movies_list_selected_item + 1)
+                                main_screen.movies_list.selected_item =
+                                    (main_screen.movies_list.selected_item + 1)
                                         .min(main_screen.filtered_movies.len().saturating_sub(1));
 
-                                if main_screen.movies_list_selected_item
-                                    < main_screen.movies_list_scroll_pos
+                                if main_screen.movies_list.selected_item
+                                    < main_screen.movies_list.scroll_pos
                                 {
-                                    main_screen.movies_list_scroll_pos = main_screen
-                                        .movies_list_selected_item
+                                    main_screen.movies_list.scroll_pos = main_screen
+                                        .movies_list
+                                        .selected_item
                                         .min(main_screen.filtered_movies.len().saturating_sub(
-                                            main_screen.movies_list_num_visible_items,
+                                            main_screen.movies_list.num_visible_items,
                                         ));
-                                } else if main_screen.movies_list_selected_item
-                                    - main_screen.movies_list_scroll_pos
-                                    >= main_screen.movies_list_num_visible_items
+                                } else if main_screen.movies_list.selected_item
+                                    - main_screen.movies_list.scroll_pos
+                                    >= main_screen.movies_list.num_visible_items
                                 {
-                                    main_screen.movies_list_scroll_pos = main_screen
-                                        .movies_list_selected_item
-                                        - main_screen.movies_list_num_visible_items
-                                        + 1;
+                                    main_screen.movies_list.scroll_pos =
+                                        main_screen.movies_list.selected_item
+                                            - main_screen.movies_list.num_visible_items
+                                            + 1;
                                 }
                             }
                         }
@@ -1307,30 +1458,32 @@ impl MainScreen {
                             if modifiers.contains(KeyModifiers::SHIFT) {
                                 main_screen.goto_index(
                                     main_screen
-                                        .movies_list_selected_item
+                                        .movies_list
+                                        .selected_item
                                         .saturating_sub(num_visible_items.saturating_sub(1))
                                         as isize,
                                 );
                             } else {
-                                main_screen.movies_list_selected_item =
-                                    main_screen.movies_list_selected_item.saturating_sub(1);
+                                main_screen.movies_list.selected_item =
+                                    main_screen.movies_list.selected_item.saturating_sub(1);
 
-                                if main_screen.movies_list_selected_item
-                                    < main_screen.movies_list_scroll_pos
+                                if main_screen.movies_list.selected_item
+                                    < main_screen.movies_list.scroll_pos
                                 {
-                                    main_screen.movies_list_scroll_pos = main_screen
-                                        .movies_list_selected_item
+                                    main_screen.movies_list.scroll_pos = main_screen
+                                        .movies_list
+                                        .selected_item
                                         .min(main_screen.filtered_movies.len().saturating_sub(
-                                            main_screen.movies_list_num_visible_items,
+                                            main_screen.movies_list.num_visible_items,
                                         ));
-                                } else if main_screen.movies_list_selected_item
-                                    - main_screen.movies_list_scroll_pos
-                                    >= main_screen.movies_list_num_visible_items
+                                } else if main_screen.movies_list.selected_item
+                                    - main_screen.movies_list.scroll_pos
+                                    >= main_screen.movies_list.num_visible_items
                                 {
-                                    main_screen.movies_list_scroll_pos = main_screen
-                                        .movies_list_selected_item
-                                        - main_screen.movies_list_num_visible_items
-                                        + 1;
+                                    main_screen.movies_list.scroll_pos =
+                                        main_screen.movies_list.selected_item
+                                            - main_screen.movies_list.num_visible_items
+                                            + 1;
                                 }
                             }
                         }
@@ -1340,26 +1493,28 @@ impl MainScreen {
             });
         }
 
-        if self.movies_list_selected_item >= self.filtered_movies.len() {
-            self.movies_list_selected_item = self.filtered_movies.len().saturating_sub(1);
-            self.movies_list_scroll_pos = self
-                .movies_list_selected_item
-                .saturating_sub(self.movies_list_num_visible_items.saturating_sub(1));
+        if self.movies_list.selected_item >= self.filtered_movies.len() {
+            self.movies_list.selected_item = self.filtered_movies.len().saturating_sub(1);
+            self.movies_list.scroll_pos = self
+                .movies_list
+                .selected_item
+                .saturating_sub(self.movies_list.num_visible_items.saturating_sub(1));
         }
 
         let num_visible_movies = area.height as usize / MOVIE_WIDGET_HEIGHT;
         let partially_visible_movie_height =
             area.height as usize - num_visible_movies * MOVIE_WIDGET_HEIGHT;
         let render_partially_visible_movie = partially_visible_movie_height > 0;
-        if self.movies_list_num_visible_items
+        if self.movies_list.num_visible_items
             != num_visible_movies + if render_partially_visible_movie { 1 } else { 0 }
-            || self.movies_list_partially_visible_item != render_partially_visible_movie
+            || self.movies_list.partially_visible_item != render_partially_visible_movie
         {
             let selected_movie_index = self
-                .movies_list_selected_item
-                .saturating_sub(self.movies_list_scroll_pos)
+                .movies_list
+                .selected_item
+                .saturating_sub(self.movies_list.scroll_pos)
                 .saturating_sub(
-                    if self.movies_list_partially_visible_item && self.movies_list_alignment_bottom
+                    if self.movies_list.partially_visible_item && self.movies_list.alignment_bottom
                     {
                         1
                     } else {
@@ -1369,57 +1524,60 @@ impl MainScreen {
                 .min(num_visible_movies.saturating_sub(1));
 
             if self
-                .movies_list_selected_item
+                .movies_list
+                .selected_item
                 .saturating_sub(selected_movie_index)
                 == 0
             {
-                self.movies_list_scroll_pos = 0;
-                self.movies_list_alignment_bottom = false;
+                self.movies_list.scroll_pos = 0;
+                self.movies_list.alignment_bottom = false;
             } else {
-                self.movies_list_scroll_pos = self
-                    .movies_list_selected_item
+                self.movies_list.scroll_pos = self
+                    .movies_list
+                    .selected_item
                     .saturating_sub(selected_movie_index)
-                    - if render_partially_visible_movie && self.movies_list_alignment_bottom {
+                    - if render_partially_visible_movie && self.movies_list.alignment_bottom {
                         1
                     } else {
                         0
                     };
             }
         }
-        self.movies_list_num_visible_items =
+        self.movies_list.num_visible_items =
             num_visible_movies + if render_partially_visible_movie { 1 } else { 0 };
-        self.movies_list_partially_visible_item = render_partially_visible_movie;
+        self.movies_list.partially_visible_item = render_partially_visible_movie;
 
-        if self.movies_list_scroll_pos + self.movies_list_num_visible_items
+        if self.movies_list.scroll_pos + self.movies_list.num_visible_items
             > self.filtered_movies.len()
         {
-            self.movies_list_scroll_pos = self
+            self.movies_list.scroll_pos = self
                 .filtered_movies
                 .len()
-                .saturating_sub(self.movies_list_num_visible_items);
-            self.movies_list_alignment_bottom = true;
+                .saturating_sub(self.movies_list.num_visible_items);
+            self.movies_list.alignment_bottom = true;
         }
-        if self.movies_list_partially_visible_item {
+        if self.movies_list.partially_visible_item {
             if self.filtered_movies.len() <= num_visible_movies {
-                self.movies_list_alignment_bottom = false;
-            } else if self.movies_list_selected_item == self.movies_list_scroll_pos {
-                self.movies_list_alignment_bottom = false;
+                self.movies_list.alignment_bottom = false;
+            } else if self.movies_list.selected_item == self.movies_list.scroll_pos {
+                self.movies_list.alignment_bottom = false;
             } else if self
-                .movies_list_selected_item
-                .saturating_sub(self.movies_list_scroll_pos)
-                == self.movies_list_num_visible_items - 1
+                .movies_list
+                .selected_item
+                .saturating_sub(self.movies_list.scroll_pos)
+                == self.movies_list.num_visible_items - 1
             {
-                self.movies_list_alignment_bottom = true;
+                self.movies_list.alignment_bottom = true;
             }
         }
 
         let [movies_area, scrollbar_area] = horizontal![>=0, ==1].areas(area);
         let mut remaining_area = movies_area;
-        for i in 0..self.movies_list_num_visible_items {
-            let [area, remaining] = if self.movies_list_partially_visible_item
-                && ((i == 0 && self.movies_list_alignment_bottom)
-                    || (i == self.movies_list_num_visible_items - 1
-                        && !self.movies_list_alignment_bottom))
+        for i in 0..self.movies_list.num_visible_items {
+            let [area, remaining] = if self.movies_list.partially_visible_item
+                && ((i == 0 && self.movies_list.alignment_bottom)
+                    || (i == self.movies_list.num_visible_items - 1
+                        && !self.movies_list.alignment_bottom))
             {
                 vertical![==partially_visible_movie_height as u16, >= 0]
             } else {
@@ -1429,7 +1587,7 @@ impl MainScreen {
             remaining_area = remaining;
 
             if !self.filtered_movies.is_empty()
-                && i + self.movies_list_scroll_pos < self.filtered_movies.len()
+                && i + self.movies_list.scroll_pos < self.filtered_movies.len()
             {
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
@@ -1441,8 +1599,8 @@ impl MainScreen {
                             main_screen.tab = 0;
                             main_screen.item = 0;
 
-                            main_screen.movies_list_selected_item =
-                                i + main_screen.movies_list_scroll_pos;
+                            main_screen.movies_list.selected_item =
+                                i + main_screen.movies_list.scroll_pos;
                         }
                     },
                 );
@@ -1456,13 +1614,13 @@ impl MainScreen {
                             main_screen.tab = 0;
                             main_screen.item = 0;
 
-                            main_screen.movies_list_selected_item =
-                                i + main_screen.movies_list_scroll_pos;
+                            main_screen.movies_list.selected_item =
+                                i + main_screen.movies_list.scroll_pos;
 
                             if let key_event_handler::Data::Mouse(mouse_event) = data {
                                 main_screen.context_menu_pos =
                                     Some(Position::new(mouse_event.column, mouse_event.row));
-                                main_screen.context_menu_selected = 0;
+                                main_screen.context_menu.reset_state();
                             }
                         }
                     },
@@ -1483,16 +1641,16 @@ impl MainScreen {
 
         if self.filtered_movies.len() > num_visible_movies {
             widgets::scroll_bar(
-                self.filtered_movies.len() + self.movies_list_partially_visible_item as usize,
-                self.movies_list_scroll_pos
-                    + (self.movies_list_partially_visible_item && self.movies_list_alignment_bottom)
+                self.filtered_movies.len() + self.movies_list.partially_visible_item as usize,
+                self.movies_list.scroll_pos
+                    + (self.movies_list.partially_visible_item && self.movies_list.alignment_bottom)
                         as usize,
-                self.movies_list_num_visible_items,
+                self.movies_list.num_visible_items,
                 frame,
                 scrollbar_area,
             );
 
-            if self.movies_list_scroll_pos > 0 {
+            if self.movies_list.scroll_pos > 0 {
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     scrollbar_area.resize(Size::new(1, 1)),
@@ -1500,16 +1658,16 @@ impl MainScreen {
                         if let Some(Screens::MainScreen(main_screen)) =
                             app.drawer.current_screen.as_mut()
                         {
-                            main_screen.movies_list_scroll_pos -= 1;
+                            main_screen.movies_list.scroll_pos -= 1;
                         }
                     },
                 );
             }
-            if self.movies_list_scroll_pos
+            if self.movies_list.scroll_pos
                 < self
                     .filtered_movies
                     .len()
-                    .saturating_sub(self.movies_list_num_visible_items - 1)
+                    .saturating_sub(self.movies_list.num_visible_items - 1)
             {
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
@@ -1520,7 +1678,7 @@ impl MainScreen {
                         if let Some(Screens::MainScreen(main_screen)) =
                             app.drawer.current_screen.as_mut()
                         {
-                            main_screen.movies_list_scroll_pos += 1;
+                            main_screen.movies_list.scroll_pos += 1;
                         }
                     },
                 );
@@ -1536,8 +1694,8 @@ impl MainScreen {
         area: Rect,
     ) {
         let is_partially_visible = MOVIE_WIDGET_HEIGHT > area.height as usize;
-        let movie_index = self.movies_list_scroll_pos + id;
-        let selected = self.movies_list_selected_item == movie_index;
+        let movie_index = self.movies_list.scroll_pos + id;
+        let selected = self.movies_list.selected_item == movie_index;
         let tab_selected = self.tab == 0;
         let alt = movie_index & 1 == 1;
         let movie = &self.filtered_movies[movie_index];
@@ -1562,8 +1720,8 @@ impl MainScreen {
                 Padding::new(
                     2,
                     2,
-                    if self.movies_list_alignment_bottom { 0 } else { 1 },
-                    if self.movies_list_alignment_bottom { 1 } else { 0 },
+                    if self.movies_list.alignment_bottom { 0 } else { 1 },
+                    if self.movies_list.alignment_bottom { 1 } else { 0 },
                 )
             } else {
                 Padding::proportional(1)
@@ -1634,7 +1792,7 @@ impl MainScreen {
             .split(description_area);
         for i in (0..description_area.height).rev() {
             let index = if is_partially_visible {
-                if self.movies_list_alignment_bottom {
+                if self.movies_list.alignment_bottom {
                     i + (MOVIE_WIDGET_HEIGHT as u16 - 1 - area.height)
                 } else {
                     i
@@ -1698,7 +1856,7 @@ impl MainScreen {
             if is_partially_visible {
                 Some(SignedPosition {
                     x: 0,
-                    y: if self.movies_list_alignment_bottom {
+                    y: if self.movies_list.alignment_bottom {
                         -(MOVIE_WIDGET_HEIGHT as i16 - 2 - poster_area.height as i16)
                     } else {
                         0
@@ -1749,12 +1907,13 @@ impl MainScreen {
             if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 match data {
                     key_event_handler::Data::Direction(true, _) => {
-                        main_screen.movies_description_selected_tab =
-                            (main_screen.movies_description_selected_tab + 1).min(TABS_COUNT - 1);
+                        main_screen.movies_description.selected_tab =
+                            (main_screen.movies_description.selected_tab + 1).min(TABS_COUNT - 1);
                     }
                     key_event_handler::Data::Direction(false, _) => {
-                        main_screen.movies_description_selected_tab = main_screen
-                            .movies_description_selected_tab
+                        main_screen.movies_description.selected_tab = main_screen
+                            .movies_description
+                            .selected_tab
                             .checked_sub(1)
                             .unwrap_or(0);
                     }
@@ -1778,7 +1937,7 @@ impl MainScreen {
         let movie = if self.filtered_movies.is_empty() {
             None
         } else {
-            Some(&self.filtered_movies[self.movies_list_selected_item].clone())
+            self.current_movie().cloned()
         };
 
         let inner = add_padding(area, Padding::proportional(1));
@@ -1838,7 +1997,7 @@ impl MainScreen {
                     .resize(Size::new(title_area.width, 1))
                     .centered(constraint!(==5), constraint!(==1)),
             );
-            self.draw_ratings(movie, frame, ratings_area);
+            self.draw_ratings(&movie, frame, ratings_area);
 
             const BGS: [Color; 2] = [material::GREEN.c600, material::LIGHT_BLUE.c600];
             const FGS: [Color; 2] = [material::BLUE.c100, material::YELLOW.c100];
@@ -1852,7 +2011,7 @@ impl MainScreen {
                         span!(format!(" {} ", x))
                             .fg(if description_selected { FGS[i] } else { _FGS[i] })
                             .bg(if description_selected { BGS[i] } else { _BGS[i] })
-                            .add_modifier(if i == self.movies_description_selected_tab {
+                            .add_modifier(if i == self.movies_description.selected_tab {
                                 Modifier::BOLD
                             } else {
                                 Modifier::empty()
@@ -1882,7 +2041,7 @@ impl MainScreen {
                         {
                             main_screen.tab = 1;
                             main_screen.item = 0;
-                            main_screen.movies_description_selected_tab = i / 2;
+                            main_screen.movies_description.selected_tab = i / 2;
                         }
                     },
                 );
@@ -1895,15 +2054,15 @@ impl MainScreen {
                 text![
                     tabs,
                     line!("🮂".repeat(title_area.width as usize)).fg(if description_selected {
-                        BGS[self.movies_description_selected_tab]
+                        BGS[self.movies_description.selected_tab]
                     } else {
-                        _BGS[self.movies_description_selected_tab]
+                        _BGS[self.movies_description.selected_tab]
                     }),
                 ],
                 tabs_area,
             );
 
-            match self.movies_description_selected_tab {
+            match self.movies_description.selected_tab {
                 0 => {
                     frame.render_widget(Block::new().bg(tailwind::SLATE.c900), description_area);
 
@@ -1954,20 +2113,20 @@ impl MainScreen {
                             .into_iter()
                             .map(|x| Line::from_iter(x).centered()),
                     );
-                    self.movies_description_overview_scroll =
-                        self.movies_description_overview_scroll.min(
+                    self.movies_description.overview_scroll =
+                        self.movies_description.overview_scroll.min(
                             overview_lines
                                 .len()
                                 .saturating_sub(description_area.height as usize),
                         );
                     let text = Text::from_iter(
-                        overview_lines.split_off(self.movies_description_overview_scroll),
+                        overview_lines.split_off(self.movies_description.overview_scroll),
                     );
 
                     frame.render_widget(text, description_area);
 
                     key_event_handler.bind_vertical(
-                        (Some(1), Some(self.movies_description_selected_tab << 9)),
+                        (Some(1), Some(self.movies_description.selected_tab << 9)),
                         "Scroll".into(),
                         move |app, data| {
                             if let Some(Screens::MainScreen(main_screen)) =
@@ -1975,13 +2134,14 @@ impl MainScreen {
                             {
                                 match data {
                                     key_event_handler::Data::Direction(false, _) => {
-                                        main_screen.movies_description_overview_scroll =
+                                        main_screen.movies_description.overview_scroll =
                                             main_screen
-                                                .movies_description_overview_scroll
+                                                .movies_description
+                                                .overview_scroll
                                                 .saturating_sub(1);
                                     }
                                     key_event_handler::Data::Direction(true, _) => {
-                                        main_screen.movies_description_overview_scroll += 1;
+                                        main_screen.movies_description.overview_scroll += 1;
                                     }
                                     _ => (),
                                 }
@@ -1989,19 +2149,19 @@ impl MainScreen {
                         },
                     );
                 }
-                1 => self.draw_plays_tab(key_event_handler, movie, frame, description_area),
+                1 => self.draw_plays_tab(key_event_handler, &movie, frame, description_area),
                 _ => (),
             };
-        }
 
+            self.drawing_images |= !image_renderer.draw_image(
+                ImageID::Movie(movie.id, true),
+                backdrop_area,
+                None,
+                &mut self.throbber_state,
+                frame,
+            );
+        }
         // frame.render_widget(Block::new().bg(tailwind::SLATE.c700), backdrop_area);
-        self.drawing_images |= !image_renderer.draw_image(
-            ImageID::Movie(self.current_movie().unwrap().id, true),
-            backdrop_area,
-            None,
-            &mut self.throbber_state,
-            frame,
-        );
     }
 
     fn draw_ratings(&self, movie: &Movie, frame: &mut Frame, area: Rect) {
@@ -2010,15 +2170,15 @@ impl MainScreen {
             Color::Black,
             Color::Rgb(250, 225, 120),
         );
-        let trakt_colors = (
-            Color::Rgb(165, 61, 185),
-            Color::White,
-            Color::Rgb(230, 140, 245),
-        );
         let letterboxd_colors = (
             Color::Rgb(0, 192, 48),
             Color::Black,
             Color::Rgb(115, 226, 122),
+        );
+        let trakt_colors = (
+            Color::Rgb(165, 61, 185),
+            Color::White,
+            Color::Rgb(230, 140, 245),
         );
         let tmdb_colors = (
             Color::Rgb(42, 187, 209),
@@ -2040,14 +2200,14 @@ impl MainScreen {
         if movie.external_ratings.imdb.0 > 0.0 {
             ratings.push(("imdb", format!("{:.1}", movie.external_ratings.imdb.0)));
         }
-        if movie.external_ratings.trakt.0 > 0 {
-            ratings.push(("trakt", movie.external_ratings.trakt.0.to_string()));
-        }
         if movie.external_ratings.letterboxd.0 > 0.0 {
             ratings.push((
                 "letterboxd",
                 format!("{:.1}", movie.external_ratings.letterboxd.0),
             ));
+        }
+        if movie.external_ratings.trakt.0 > 0 {
+            ratings.push(("trakt", movie.external_ratings.trakt.0.to_string()));
         }
         if movie.external_ratings.tmdb.0 > 0.0 {
             ratings.push(("tmdb", format!("{:.1}", movie.external_ratings.tmdb.0)));
@@ -2075,14 +2235,14 @@ impl MainScreen {
                 labels.push_span(span!("IMDB").fg(imdb_colors.2));
 
                 (imdb_colors.0, imdb_colors.1)
-            } else if name == "trakt" {
-                labels.push_span(span!("Trakt").fg(trakt_colors.2));
-
-                (trakt_colors.0, trakt_colors.1)
             } else if name == "letterboxd" {
                 labels.push_span(span!("Letterboxd").fg(letterboxd_colors.2));
 
                 (letterboxd_colors.0, letterboxd_colors.1)
+            } else if name == "trakt" {
+                labels.push_span(span!("Trakt").fg(trakt_colors.2));
+
+                (trakt_colors.0, trakt_colors.1)
             } else if name == "tmdb" {
                 labels.push_span(span!("TMDB").fg(tmdb_colors.2));
 
@@ -2125,12 +2285,12 @@ impl MainScreen {
         let num_visible_plays = area.height as usize / 3;
         let partially_visible_play_height = area.height as usize - num_visible_plays * 3;
         let render_partially_visible_play = partially_visible_play_height > 0;
-        self.movies_description_plays_tab.num_visible_items =
+        self.movies_description.plays_tab.num_visible_items =
             num_visible_plays + if render_partially_visible_play { 1 } else { 0 };
 
         if num_plays > num_visible_plays {
             key_event_handler.bind_vertical(
-                (Some(1), Some(self.movies_description_selected_tab << 9)),
+                (Some(1), Some(self.movies_description.selected_tab << 9)),
                 "Scroll".into(),
                 move |app, data| {
                     if let Some(Screens::MainScreen(main_screen)) =
@@ -2138,27 +2298,28 @@ impl MainScreen {
                     {
                         match data {
                             key_event_handler::Data::Direction(false, _) => {
-                                if main_screen.movies_description_plays_tab.alignment_bottom
+                                if main_screen.movies_description.plays_tab.alignment_bottom
                                     && render_partially_visible_play
                                 {
-                                    main_screen.movies_description_plays_tab.alignment_bottom =
+                                    main_screen.movies_description.plays_tab.alignment_bottom =
                                         false;
                                 } else {
-                                    main_screen.movies_description_plays_tab.scroll_pos =
+                                    main_screen.movies_description.plays_tab.scroll_pos =
                                         main_screen
-                                            .movies_description_plays_tab
+                                            .movies_description
+                                            .plays_tab
                                             .scroll_pos
                                             .saturating_sub(1);
                                 }
                             }
                             key_event_handler::Data::Direction(true, _) => {
-                                if !main_screen.movies_description_plays_tab.alignment_bottom
+                                if !main_screen.movies_description.plays_tab.alignment_bottom
                                     && render_partially_visible_play
                                 {
-                                    main_screen.movies_description_plays_tab.alignment_bottom =
+                                    main_screen.movies_description.plays_tab.alignment_bottom =
                                         true;
                                 } else {
-                                    main_screen.movies_description_plays_tab.scroll_pos += 1;
+                                    main_screen.movies_description.plays_tab.scroll_pos += 1;
                                 }
                             }
                             _ => (),
@@ -2167,29 +2328,29 @@ impl MainScreen {
                 },
             );
 
-            self.movies_description_plays_tab.scroll_pos =
-                0.max(self.movies_description_plays_tab.scroll_pos.min(
-                    num_plays.saturating_sub(self.movies_description_plays_tab.num_visible_items),
+            self.movies_description.plays_tab.scroll_pos =
+                0.max(self.movies_description.plays_tab.scroll_pos.min(
+                    num_plays.saturating_sub(self.movies_description.plays_tab.num_visible_items),
                 ));
-            self.movies_description_plays_tab.alignment_bottom =
-                self.movies_description_plays_tab.alignment_bottom & render_partially_visible_play;
+            self.movies_description.plays_tab.alignment_bottom =
+                self.movies_description.plays_tab.alignment_bottom & render_partially_visible_play;
         } else {
-            self.movies_description_plays_tab.scroll_pos = 0;
-            self.movies_description_plays_tab.alignment_bottom = false;
+            self.movies_description.plays_tab.scroll_pos = 0;
+            self.movies_description.plays_tab.alignment_bottom = false;
         }
 
         frame.render_widget(Block::new().bg(tailwind::SLATE.c900), area);
 
         let mut remaining_area = add_padding(area, Padding::left(1));
-        for i in 0..self.movies_description_plays_tab.num_visible_items {
+        for i in 0..self.movies_description.plays_tab.num_visible_items {
             let [area, remaining] = if render_partially_visible_play
                 && i == 0
-                && self.movies_description_plays_tab.alignment_bottom
+                && self.movies_description.plays_tab.alignment_bottom
             {
                 vertical![==partially_visible_play_height as u16, >= 0]
             } else if render_partially_visible_play
-                && i == self.movies_description_plays_tab.num_visible_items - 1
-                && !self.movies_description_plays_tab.alignment_bottom
+                && i == self.movies_description.plays_tab.num_visible_items - 1
+                && !self.movies_description.plays_tab.alignment_bottom
             {
                 vertical![==partially_visible_play_height as u16, >= 0]
             } else {
@@ -2197,14 +2358,14 @@ impl MainScreen {
             }
             .areas(remaining_area);
 
-            if self.movies_description_plays_tab.scroll_pos + i < num_plays {
+            if self.movies_description.plays_tab.scroll_pos + i < num_plays {
                 let partially_visible = area.height < 3;
                 let play =
-                    &movie_plays[num_plays - self.movies_description_plays_tab.scroll_pos - i - 1];
+                    &movie_plays[num_plays - self.movies_description.plays_tab.scroll_pos - i - 1];
 
                 let alternate = i & 1 == 1;
-                let latest = self.movies_description_plays_tab.scroll_pos + i == 0;
-                let last = self.movies_description_plays_tab.scroll_pos + i == num_plays - 1;
+                let latest = self.movies_description.plays_tab.scroll_pos + i == 0;
+                let last = self.movies_description.plays_tab.scroll_pos + i == num_plays - 1;
 
                 frame.render_widget(
                     Block::new().bg(if latest {
@@ -2248,7 +2409,7 @@ impl MainScreen {
 
                 for i in 0..area.height {
                     let index = if partially_visible {
-                        if self.movies_description_plays_tab.alignment_bottom {
+                        if self.movies_description.plays_tab.alignment_bottom {
                             i + 3 - area.height
                         } else {
                             i

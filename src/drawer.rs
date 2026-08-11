@@ -206,30 +206,30 @@ impl Drawer {
         }
     }
 
-    pub fn open_trakt_init_popup(&mut self) {
-        self.popup_queue.push(Popups::TraktInit(TraktInitPopup::new(
-            &self._home_dir,
-            true,
-        )));
-    }
+    // pub fn open_trakt_init_popup(&mut self) {
+    //     self.popup_queue.push(Popups::TraktInit(TraktInitPopup::new(
+    //         &self._home_dir,
+    //         true,
+    //     )));
+    // }
 
-    pub fn open_punch_play_init_popup(&mut self) {
-        self.popup_queue
-            .push(Popups::PunchPlayInit(PunchPlayInitPopup::new(
-                &self._home_dir,
-                true,
-            )));
-    }
+    // pub fn open_punch_play_init_popup(&mut self) {
+    //     self.popup_queue
+    //         .push(Popups::PunchPlayInit(PunchPlayInitPopup::new(
+    //             &self._home_dir,
+    //             true,
+    //         )));
+    // }
 
-    pub fn open_tmdb_init_popup(&mut self) {
-        self.popup_queue
-            .push(Popups::TMDBInit(TMDBInitPopup::new(&self._home_dir, true)));
-    }
+    // pub fn open_tmdb_init_popup(&mut self) {
+    //     self.popup_queue
+    //         .push(Popups::TMDBInit(TMDBInitPopup::new(&self._home_dir, true)));
+    // }
 
-    pub fn open_omdb_init_popup(&mut self) {
-        self.popup_queue
-            .push(Popups::OMDBInit(OMDBInitPopup::new(&self._home_dir, true)));
-    }
+    // pub fn open_omdb_init_popup(&mut self) {
+    //     self.popup_queue
+    //         .push(Popups::OMDBInit(OMDBInitPopup::new(&self._home_dir, true)));
+    // }
 
     pub fn open_add_movie_popup(
         &mut self,

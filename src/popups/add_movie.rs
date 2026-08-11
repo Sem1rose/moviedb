@@ -41,7 +41,7 @@ use crate::{
     omdb::{self, OMDBDetailsResponse},
     popups::{PopupTrait, Popups},
     tokens::{OMDBTokens, PunchPlayTokens, TMDBTokens, TraktTokens},
-    widgets::{self, Action, ActionTypes},
+    widgets::{self, Action, ActionType},
 };
 
 #[derive(Default)]
@@ -555,7 +555,7 @@ impl PopupTrait for AddMoviePopup {
                     }
                 });
 
-                let popup_area = widgets::window_popup(
+                let popup_area = widgets::window(
                     frame,
                     helpers::centered_area(28, 66, frame.area()),
                     " Add movie ",
@@ -953,7 +953,7 @@ impl PopupTrait for AddMoviePopup {
                     }
                 });
 
-                let popup_area = widgets::window_popup(
+                let popup_area = widgets::window(
                     frame,
                     helpers::centered_area(12, 44, frame.area()),
                     " Add movie ",
@@ -977,7 +977,7 @@ impl PopupTrait for AddMoviePopup {
                     .areas(helpers::add_padding(popup_area, Padding::proportional(1)));
 
                 let mouse_area = widgets::action(
-                    Action::new(" Back ", ActionTypes::Normal, self.item == 0, true),
+                    Action::new(" Back ", ActionType::Normal, self.item == 0, true),
                     HorizontalAlignment::Left,
                     false,
                     popup_area,
@@ -1001,11 +1001,11 @@ impl PopupTrait for AddMoviePopup {
                     [
                         Action::new(
                             " Confirm ",
-                            ActionTypes::Default,
+                            ActionType::Default,
                             self.item == 3,
                             rating_valid && date_valid,
                         ),
-                        Action::new(" Cancel ", ActionTypes::Critical, self.item == 4, true),
+                        Action::new(" Cancel ", ActionType::Critical, self.item == 4, true),
                     ],
                     HorizontalAlignment::Right,
                     true,
@@ -1083,7 +1083,7 @@ impl PopupTrait for AddMoviePopup {
             Phase::GettingDetails | Phase::Done => {
                 self.throbber_visible = true;
 
-                let popup_area = widgets::window_popup(
+                let popup_area = widgets::window(
                     frame,
                     helpers::centered_area(10, 50, frame.area()),
                     if self.refetch_details {
@@ -1147,7 +1147,7 @@ impl PopupTrait for AddMoviePopup {
                     }
                 });
 
-                let popup_area = widgets::window_popup(
+                let popup_area = widgets::window(
                     frame,
                     helpers::centered_area(8, 40, frame.area()),
                     " Refetch details ",
@@ -1170,8 +1170,8 @@ impl PopupTrait for AddMoviePopup {
 
                 let actions_mouse_areas = widgets::actions(
                     [
-                        Action::new(" Confirm ", ActionTypes::Normal, self.item == 0, true),
-                        Action::new(" Cancel ", ActionTypes::Critical, self.item == 1, true),
+                        Action::new(" Confirm ", ActionType::Normal, self.item == 0, true),
+                        Action::new(" Cancel ", ActionType::Critical, self.item == 1, true),
                     ],
                     HorizontalAlignment::Right,
                     true,
@@ -1198,7 +1198,7 @@ impl PopupTrait for AddMoviePopup {
                 }
             }
             Phase::Error(error) => {
-                let popup_area = widgets::window_popup(
+                let popup_area = widgets::window(
                     frame,
                     helpers::centered_area(11, 44, frame.area()),
                     " Error ",
@@ -1222,7 +1222,7 @@ impl PopupTrait for AddMoviePopup {
 
                 if self.refetch_details {
                     let mouse_area = widgets::action(
-                        Action::new(" Cancel ", ActionTypes::Normal, self.item == 0, true),
+                        Action::new(" Cancel ", ActionType::Normal, self.item == 0, true),
                         HorizontalAlignment::Center,
                         true,
                         helpers::add_padding(popup_area, Padding::right(1)),
@@ -1275,8 +1275,8 @@ impl PopupTrait for AddMoviePopup {
 
                     let actions_mouse_areas = widgets::actions(
                         [
-                            Action::new(" Back ", ActionTypes::Default, self.item == 0, true),
-                            Action::new(" Cancel ", ActionTypes::Critical, self.item == 1, true),
+                            Action::new(" Back ", ActionType::Default, self.item == 0, true),
+                            Action::new(" Cancel ", ActionType::Critical, self.item == 1, true),
                         ],
                         HorizontalAlignment::Center,
                         true,

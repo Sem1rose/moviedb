@@ -13,6 +13,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Padding, Widget},
 };
 use ratatui_textarea::{TextArea, WrapMode};
+use rustc_hash::FxHashMap;
 
 use crate::{helpers::add_padding, key_event_handler::KeyEventHandler};
 
@@ -139,132 +140,287 @@ pub fn dropdown(tab_selected: bool, selected: bool, frame: &mut Frame, area: Rec
     );
 }
 
-pub fn dropdown_popup(
-    items: Vec<Line>,
-    selected_index: usize,
-    scroll_pos: usize,
-    num_visible_items: usize,
-    dropdown_widget_area: Rect,
-    frame: &mut Frame,
-    key_event_handler: &mut KeyEventHandler,
-) -> (Rect, usize) {
-    let result = normal_popup(
-        items,
-        selected_index,
-        scroll_pos,
-        num_visible_items,
-        dropdown_widget_area.offset(Offset::new(0, 2)).as_position(),
-        dropdown_widget_area.width,
-        frame,
-        key_event_handler,
-    );
-
-    frame.render_widget(
-        Block::new().bg(material::BLUE.c600),
-        dropdown_widget_area
-            .offset(Offset::new(0, 2))
-            .resize(Size::new(dropdown_widget_area.width, 1)),
-    );
-
-    result
+#[derive(Default)]
+pub struct ContextMenu {
+    pub model:             Vec<String>,
+    pub selected_index:    usize,
+    pub scroll_pos:        usize,
+    pub num_visible_items: usize,
+    pub opened_submenu:    Option<usize>,
+    pub submenu_right:     bool,
+    pub width:             u16,
+    pub submenus:          FxHashMap<usize, ContextMenu>,
 }
 
-pub fn normal_popup(
-    items: Vec<Line>,
-    selected_index: usize,
-    scroll_pos: usize,
-    num_visible_items: usize,
-    position: Position,
-    width: u16,
-    frame: &mut Frame,
-    key_event_handler: &mut KeyEventHandler,
-) -> (Rect, usize) {
-    let items_len = items.len();
-    let mut visible_items = items
-        .into_iter()
-        .dropping(scroll_pos)
-        .take(num_visible_items)
-        .collect_vec();
-    let visible_items_len = visible_items.len();
+impl ContextMenu {
+    pub fn new(
+        model: Vec<String>,
+        num_visible_items: usize,
+        max_width: Option<u16>,
+        submenu_right: bool,
+    ) -> Self {
+        Self {
+            width: max_width.unwrap_or(model.iter().map(|x| x.len()).max().unwrap_or(0) as u16 + 4),
+            model,
+            num_visible_items,
+            submenu_right,
 
-    let selected = visible_items
-        .remove(selected_index.saturating_sub(scroll_pos))
-        .fg(material::BLUE.c100)
-        .bg(material::LIGHT_BLUE.c900);
-    visible_items.insert(selected_index.saturating_sub(scroll_pos), selected);
-
-    let area = Rect {
-        x: position.x,
-        y: position.y,
-        width,
-        height: visible_items_len as u16 + 2,
-    };
-    let mut top_colors = vec![];
-    for x in 0..area.width {
-        top_colors.push(frame.buffer_mut().cell((area.x + x, area.y)).unwrap().bg);
+            ..Default::default()
+        }
     }
-    let mut bottom_colors = vec![];
-    for x in 0..area.width {
-        bottom_colors.push(
+
+    pub fn with_submenu(
+        mut self,
+        index: usize,
+        model: Vec<String>,
+        num_visible_items: usize,
+        max_width: Option<u16>,
+    ) -> Self {
+        self.submenus.insert(
+            index,
+            Self::new(model, num_visible_items, max_width, self.submenu_right),
+        );
+
+        self
+    }
+
+    pub fn reset_state(&mut self) {
+        self.scroll_pos = 0;
+        self.selected_index = 0;
+        self.opened_submenu = None;
+
+        for submenu in self.submenus.values_mut() {
+            submenu.reset_state();
+        }
+    }
+
+    pub fn open_submenu(&mut self, reset: bool) {
+        if let Some(submenu_id) = self.opened_submenu.as_ref() {
+            self.submenus
+                .get_mut(submenu_id)
+                .unwrap()
+                .open_submenu(reset);
+        } else {
+            if self.submenus.contains_key(&self.selected_index) {
+                self.opened_submenu = Some(self.selected_index);
+
+                if reset {
+                    self.submenus
+                        .get_mut(&self.selected_index)
+                        .unwrap()
+                        .reset_state();
+                }
+            }
+        }
+    }
+
+    pub fn close_submenu(&mut self) {
+        if let Some(submenu_id) = self.opened_submenu.as_ref() {
+            self.submenus.get_mut(submenu_id).unwrap().close_submenu();
+            self.opened_submenu = None;
+        }
+    }
+
+    pub fn scroll(&mut self, direction: bool) {
+        if let Some(submenu_id) = self.opened_submenu.as_ref() {
+            self.submenus.get_mut(submenu_id).unwrap().scroll(direction);
+        } else if direction {
+            if self.selected_index < self.model.len() - 1 {
+                self.selected_index += 1;
+                if self.selected_index < self.scroll_pos
+                    || self.selected_index - self.scroll_pos >= self.num_visible_items
+                {
+                    self.scroll_pos = self
+                        .selected_index
+                        .saturating_sub(self.num_visible_items - 1)
+                }
+            }
+        } else {
+            if self.selected_index > 0 {
+                self.selected_index -= 1;
+                if self.selected_index < self.scroll_pos {
+                    self.scroll_pos -= 1
+                }
+            }
+        }
+    }
+
+    pub fn choose(&self) -> Vec<usize> {
+        if let Some(submenu_id) = self.opened_submenu.as_ref() {
+            [self.selected_index]
+                .into_iter()
+                .chain(self.submenus[submenu_id].choose())
+                .collect()
+        } else {
+            vec![self.selected_index]
+        }
+    }
+
+    pub fn render(
+        &self,
+        position: Position,
+        frame: &mut Frame,
+        key_event_handler: &mut KeyEventHandler,
+    ) -> FxHashMap<Vec<usize>, (Rect, usize)> {
+        let model_len = self.model.len();
+        let mut visible_items = self
+            .model
+            .iter()
+            .enumerate()
+            .dropping(self.scroll_pos)
+            .take(self.num_visible_items)
+            .map(|(i, x)| {
+                line!(
+                    if !self.submenu_right && self.submenus.contains_key(&i) {
+                        "<"
+                    } else {
+                        " "
+                    },
+                    x,
+                    if self.submenu_right && self.submenus.contains_key(&i) {
+                        ">"
+                    } else {
+                        " "
+                    },
+                )
+                .fg(material::INDIGO.c200)
+                .bg(material::INDIGO.c900)
+            })
+            .collect_vec();
+        let visible_items_len = visible_items.len();
+
+        visible_items
+            .get_mut(self.selected_index.saturating_sub(self.scroll_pos))
+            .map(|x| {
+                *x = x
+                    .clone() // why clone!!! :(
+                    .fg(material::BLUE.c100)
+                    .bg(material::LIGHT_BLUE.c900)
+            });
+
+        let area = Rect {
+            x:      position.x,
+            y:      position.y,
+            width:  self.width,
+            height: visible_items_len as u16 + 2,
+        };
+        let mut top_colors = vec![];
+        for x in 0..area.width {
+            top_colors.push(frame.buffer_mut().cell((area.x + x, area.y)).unwrap().bg);
+        }
+        let mut bottom_colors = vec![];
+        for x in 0..area.width {
+            bottom_colors.push(
+                frame
+                    .buffer_mut()
+                    .cell((area.x + x, area.y + area.height - 1))
+                    .unwrap()
+                    .bg,
+            );
+        }
+        frame.render_widget(Clear, area);
+        key_event_handler.bind_mouse_button_down(
+            ratatui::crossterm::event::MouseButton::Left,
+            area,
+            |_, _| {},
+        );
+
+        let sort_popup_block = Block::bordered()
+            .border_set(border::PROPORTIONAL_WIDE)
+            .fg(tailwind::INDIGO.c900);
+        let inner_area = sort_popup_block.inner(area);
+        frame.render_widget(&sort_popup_block, area);
+        frame.render_widget(Block::new().bg(material::INDIGO.c900), inner_area);
+        frame.render_widget(Text::from_iter(visible_items).left_aligned(), inner_area);
+
+        if model_len > self.num_visible_items {
+            scroll_bar(
+                model_len,
+                self.scroll_pos,
+                self.num_visible_items,
+                frame,
+                inner_area
+                    .offset(Offset::new(inner_area.width as i32, 0))
+                    .resize(Size::new(1, inner_area.height)),
+            );
+        }
+
+        for x in 0..area.width {
             frame
                 .buffer_mut()
-                .cell((area.x + x, area.y + area.height - 1))
+                .cell_mut((area.x + x, area.y))
                 .unwrap()
-                .bg,
-        );
+                .bg = top_colors[x as usize];
+        }
+        for x in 0..area.width {
+            frame
+                .buffer_mut()
+                .cell_mut((area.x + x, area.y + area.height - 1))
+                .unwrap()
+                .bg = bottom_colors[x as usize];
+        }
+
+        let mut result = FxHashMap::from_iter([(
+            vec![],
+            (
+                inner_area.resize(Size {
+                    width:  inner_area.width,
+                    height: 1,
+                }),
+                visible_items_len,
+            ),
+        )]);
+
+        if let Some(submenu_id) = self.opened_submenu.as_ref() {
+            let submenu_width = self.submenus[submenu_id].width;
+            let new_pos = position.offset(Offset::new(
+                if self.submenu_right {
+                    self.width as i32
+                } else {
+                    -(submenu_width as i32)
+                },
+                *submenu_id as i32 + 1 - self.scroll_pos as i32,
+            ));
+
+            result.extend(
+                self.submenus[submenu_id]
+                    .render(new_pos, frame, key_event_handler)
+                    .into_iter()
+                    .map(|(mut k, v)| {
+                        k.insert(0, *submenu_id);
+                        (k, v)
+                    }),
+            );
+        }
+
+        result
     }
-    frame.render_widget(Clear, area);
-    key_event_handler.bind_mouse_button_down(
-        ratatui::crossterm::event::MouseButton::Left,
-        area,
-        |_, _| {},
-    );
 
-    let sort_popup_block = Block::bordered()
-        .border_set(border::PROPORTIONAL_WIDE)
-        .fg(tailwind::INDIGO.c900);
-    let inner_area = sort_popup_block.inner(area);
-    frame.render_widget(&sort_popup_block, area);
-    frame.render_widget(Block::new().bg(material::INDIGO.c900), inner_area);
-    frame.render_widget(Text::from_iter(visible_items).left_aligned(), inner_area);
-
-    if items_len > num_visible_items {
-        scroll_bar(
-            items_len,
-            scroll_pos,
-            num_visible_items,
+    pub fn render_dropdown(
+        &mut self,
+        dropdown_widget_area: Rect,
+        frame: &mut Frame,
+        key_event_handler: &mut KeyEventHandler,
+    ) -> FxHashMap<Vec<usize>, (Rect, usize)> {
+        self.width = dropdown_widget_area.width;
+        let result = self.render(
+            dropdown_widget_area.offset(Offset::new(0, 2)).as_position(),
             frame,
-            inner_area
-                .offset(Offset::new(inner_area.width as i32, 0))
-                .resize(Size::new(1, inner_area.height)),
+            key_event_handler,
         );
-    }
 
-    for x in 0..area.width {
-        frame
-            .buffer_mut()
-            .cell_mut((area.x + x, area.y))
-            .unwrap()
-            .bg = top_colors[x as usize];
-    }
-    for x in 0..area.width {
-        frame
-            .buffer_mut()
-            .cell_mut((area.x + x, area.y + area.height - 1))
-            .unwrap()
-            .bg = bottom_colors[x as usize];
-    }
+        frame.render_widget(
+            Block::new().bg(material::BLUE.c600),
+            dropdown_widget_area
+                .offset(Offset::new(0, 2))
+                .resize(Size::new(dropdown_widget_area.width, 1)),
+        );
 
-    (
-        inner_area.resize(Size {
-            width:  inner_area.width,
-            height: 1,
-        }),
-        visible_items_len,
-    )
+        result
+    }
 }
 
-pub fn window_popup(frame: &mut Frame, area: Rect, title: &str, and_a_half: bool) -> Rect {
+pub fn window(frame: &mut Frame, area: Rect, title: &str, and_a_half: bool) -> Rect {
     let popup = Block::bordered()
         .border_set(border::PROPORTIONAL_WIDE)
         .border_style(Style::new().fg(tailwind::VIOLET.c950))
@@ -405,19 +561,20 @@ pub fn scroll_bar(
     );
 }
 
+pub enum ActionType {
+    Default,
+    Normal,
+    Critical,
+}
+
 pub struct Action {
     action:      &'static str,
-    action_type: ActionTypes,
+    action_type: ActionType,
     selected:    bool,
     valid:       bool,
 }
 impl Action {
-    pub fn new(
-        action: &'static str,
-        action_type: ActionTypes,
-        selected: bool,
-        valid: bool,
-    ) -> Self {
+    pub fn new(action: &'static str, action_type: ActionType, selected: bool, valid: bool) -> Self {
         Self {
             action,
             action_type,
@@ -434,9 +591,9 @@ impl<'a> Into<Span<'a>> for Action {
                     tailwind::SLATE.c300
                 } else {
                     match self.action_type {
-                        ActionTypes::Default => tailwind::SLATE.c300,
-                        ActionTypes::Normal => material::BLUE.c500,
-                        ActionTypes::Critical => tailwind::RED.c500,
+                        ActionType::Default => tailwind::SLATE.c300,
+                        ActionType::Normal => material::BLUE.c500,
+                        ActionType::Critical => tailwind::RED.c500,
                     }
                 }
             } else {
@@ -445,12 +602,12 @@ impl<'a> Into<Span<'a>> for Action {
             .bg(if self.valid {
                 if self.selected {
                     match self.action_type {
-                        ActionTypes::Default => material::BLUE.c600,
-                        ActionTypes::Normal => material::BLUE.c800,
-                        ActionTypes::Critical => tailwind::RED.c800,
+                        ActionType::Default => material::BLUE.c600,
+                        ActionType::Normal => material::BLUE.c800,
+                        ActionType::Critical => tailwind::RED.c800,
                     }
                 } else {
-                    if matches!(self.action_type, ActionTypes::Default) {
+                    if matches!(self.action_type, ActionType::Default) {
                         material::BLUE.c900
                     } else {
                         tailwind::SLATE.c950
@@ -464,12 +621,6 @@ impl<'a> Into<Span<'a>> for Action {
                 }
             })
     }
-}
-
-pub enum ActionTypes {
-    Default,
-    Normal,
-    Critical,
 }
 
 pub fn action(
@@ -561,30 +712,12 @@ pub fn actions<const N: usize>(
     mouse_areas
 }
 
-pub fn hyperlink<'content>(
-    text: impl Into<Text<'content>>,
-    url: &str,
-    area: Rect,
-    frame: &mut Frame,
-) {
-    frame.render_widget(&Hyperlink::new(text.into(), url), area);
+pub struct Hyperlink<'content> {
+    pub text: Text<'content>,
+    pub url:  String,
 }
 
-struct Hyperlink<'content> {
-    text: Text<'content>,
-    url:  String,
-}
-
-impl<'content> Hyperlink<'content> {
-    fn new(text: impl Into<Text<'content>>, url: impl Into<String>) -> Self {
-        Self {
-            text: text.into(),
-            url:  url.into(),
-        }
-    }
-}
-
-impl Widget for &Hyperlink<'_> {
+impl Widget for Hyperlink<'_> {
     fn render(self, area: Rect, buffer: &mut Buffer) {
         (&self.text).render(area, buffer);
 

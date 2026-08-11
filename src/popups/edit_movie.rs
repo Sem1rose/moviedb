@@ -12,7 +12,7 @@ use crate::{
     helpers,
     key_event_handler::KeyEventHandler,
     popups::{PopupTrait, Popups},
-    widgets::{self, Action, ActionTypes},
+    widgets::{self, Action, ActionType},
 };
 
 #[derive(Default)]
@@ -216,7 +216,7 @@ impl PopupTrait for EditMoviePopup {
             }
         });
 
-        let popup_area = widgets::window_popup(
+        let popup_area = widgets::window(
             frame,
             helpers::centered_area(11, 44, frame.area()),
             if self.new_play {
@@ -284,11 +284,11 @@ impl PopupTrait for EditMoviePopup {
             [
                 Action::new(
                     " Confirm ",
-                    ActionTypes::Default,
+                    ActionType::Default,
                     self.item == 2,
                     rating_valid && date_valid,
                 ),
-                Action::new(" Cancel ", ActionTypes::Critical, self.item == 3, true),
+                Action::new(" Cancel ", ActionType::Critical, self.item == 3, true),
             ],
             HorizontalAlignment::Right,
             true,

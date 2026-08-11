@@ -10,7 +10,7 @@ use crate::{
     helpers,
     key_event_handler::{self, KeyEventHandler},
     popups::{PopupTrait, Popups},
-    widgets::{self, Action, ActionTypes},
+    widgets::{self, Action, ActionType},
 };
 
 #[derive(Default)]
@@ -77,7 +77,7 @@ impl PopupTrait for DeleteMoviePopup {
             app.drawer.close_popup();
         });
 
-        let popup_area = widgets::window_popup(
+        let popup_area = widgets::window(
             frame,
             helpers::centered_area(8, 40, frame.area()),
             " Remove movie ",
@@ -100,8 +100,8 @@ impl PopupTrait for DeleteMoviePopup {
 
         let actions_mouse_areas = widgets::actions(
             [
-                Action::new(" Cancel ", ActionTypes::Critical, self.item == 1, true),
-                Action::new(" Confirm ", ActionTypes::Normal, self.item == 0, true),
+                Action::new(" Confirm ", ActionType::Normal, self.item == 0, true),
+                Action::new(" Cancel ", ActionType::Critical, self.item == 1, true),
             ],
             HorizontalAlignment::Right,
             true,
@@ -114,7 +114,7 @@ impl PopupTrait for DeleteMoviePopup {
                 ratatui::crossterm::event::MouseButton::Left,
                 mouse_area,
                 move |app, _| {
-                    if i == 1 {
+                    if i == 0 {
                         app.remove_movie();
                     }
                     app.drawer.close_popup();

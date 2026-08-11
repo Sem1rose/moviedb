@@ -324,26 +324,11 @@ impl KeyEventHandler {
                 }
             }
 
-            // let input = self
-            //     .key_binds
-            //     .iter()
-            //     .filter(|((b, s), _)| {
-            //         matches!(b, Bind::Input)
-            //             && s.0
-            //                 .map(|x| state.0.is_some() && x == state.0.unwrap())
-            //                 .unwrap_or(true)
-            //             && s.1
-            //                 .map(|x| state.1.is_some() && x == state.1.unwrap())
-            //                 .unwrap_or(true)
-            //     })
-            //     .count()
-            //     > 0;
-            // if !input {
-            let matches = self
+            let input = self
                 .key_binds
                 .iter()
-                .filter(|((bind, s), _)| {
-                    matches!(bind, Bind::Key(_))
+                .filter(|((b, s), _)| {
+                    matches!(b, Bind::Input)
                         && s.0
                             .map(|x| state.0.is_some() && x == state.0.unwrap())
                             .unwrap_or(true)
@@ -351,17 +336,34 @@ impl KeyEventHandler {
                             .map(|x| state.1.is_some() && x == state.1.unwrap())
                             .unwrap_or(true)
                 })
-                .sorted_by_key(|((_, s), _)| s.0.is_some() as usize * 2 + s.1.is_some() as usize)
-                .collect_vec();
+                .count()
+                > 0;
+            if !input {
+                let matches = self
+                    .key_binds
+                    .iter()
+                    .filter(|((bind, s), _)| {
+                        matches!(bind, Bind::Key(_))
+                            && s.0
+                                .map(|x| state.0.is_some() && x == state.0.unwrap())
+                                .unwrap_or(true)
+                            && s.1
+                                .map(|x| state.1.is_some() && x == state.1.unwrap())
+                                .unwrap_or(true)
+                    })
+                    .sorted_by_key(|((_, s), _)| {
+                        s.0.is_some() as usize * 2 + s.1.is_some() as usize
+                    })
+                    .collect_vec();
 
-            if !matches.is_empty() {
-                binds.extend(
-                    matches
-                        .iter()
-                        .map(|&((b, k), (d, _))| (b.clone(), *k, d.clone())),
-                );
+                if !matches.is_empty() {
+                    binds.extend(
+                        matches
+                            .iter()
+                            .map(|&((b, k), (d, _))| (b.clone(), *k, d.clone())),
+                    );
+                }
             }
-            // }
         }
 
         binds
@@ -454,20 +456,20 @@ impl KeyEventHandler {
                 if self.semi_bind.is_some() {
                     self.semi_bind = None;
                     None
+                } else if let Some(callback) = self.try_get_key_bind(Bind::Input, state) {
+                    Some((callback, Data::Key(event)))
                 } else if let Some(callback) = self.try_get_key_bind(Bind::Horizontal, state) {
                     Some((
                         callback,
                         Data::Direction(event.code == KeyCode::Right, event.modifiers),
                     ))
-                } else if let Some(callback) = self.try_get_key_bind(Bind::Input, state) {
-                    Some((callback, Data::Key(event)))
                 } else {
                     None
                 },
             KeyCode::Char(key) =>
-                if let Some(callback) = self.try_get_keys_bind(key, state) {
+                if let Some(callback) = self.try_get_key_bind(Bind::Input, state) {
                     Some((callback, Data::Key(event)))
-                } else if let Some(callback) = self.try_get_key_bind(Bind::Input, state) {
+                } else if let Some(callback) = self.try_get_keys_bind(key, state) {
                     Some((callback, Data::Key(event)))
                 } else {
                     None

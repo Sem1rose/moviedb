@@ -58,25 +58,43 @@ fn set_panic_hook() {
     }));
 }
 
-#[repr(usize)]
-#[derive(Default, Clone, Copy, FromRepr, EnumCount, AsRefStr, EnumIter)]
+#[derive(Default, Clone, Copy, FromRepr, EnumCount, AsRefStr, EnumIter, EnumDiscriminants)]
+#[strum_discriminants(vis())]
+#[strum_discriminants(repr(usize))]
 #[strum(serialize_all = "title_case")]
 pub enum Sort {
     #[default]
     MostRecent,
     DateAdded,
     UserRating,
-    Rating,
+    Rating(RatingSource),
     Name,
     ReleaseDate,
     Relevance,
+}
+impl From<Sort> for usize {
+    fn from(value: Sort) -> Self {
+        SortDiscriminants::from(value) as usize
+    }
+}
+
+#[repr(usize)]
+#[derive(Default, Clone, Copy, AsRefStr, FromRepr, EnumIter)]
+pub enum RatingSource {
+    #[default]
+    IMDB,
+    Letterboxd,
+    Trakt,
+    TMDB,
+    Popcorn,
+    Tomatoes,
 }
 
 #[derive(Serialize, Clone, Copy, Deserialize, Debug, Default)]
 pub struct ExternalRatings {
     pub imdb:       (f64, u32),
-    pub trakt:      (u32, u32),
     pub letterboxd: (f64, u32),
+    pub trakt:      (u32, u32),
     pub tmdb:       (f64, u32),
     pub popcorn:    (u32, u32),
     pub tomatoes:   (u32, u32),
@@ -314,14 +332,14 @@ impl Movie {
                             external_rating.value.unwrap_or(0.0),
                             external_rating.votes.unwrap_or(0),
                         );
-                    } else if source == "trakt" {
-                        self.external_ratings.trakt = (
-                            external_rating.value.unwrap_or(0.0) as u32,
-                            external_rating.votes.unwrap_or(0),
-                        );
                     } else if source == "letterboxd" {
                         self.external_ratings.letterboxd = (
                             external_rating.value.unwrap_or(0.0),
+                            external_rating.votes.unwrap_or(0),
+                        );
+                    } else if source == "trakt" {
+                        self.external_ratings.trakt = (
+                            external_rating.value.unwrap_or(0.0) as u32,
                             external_rating.votes.unwrap_or(0),
                         );
                     } else if source == "popcorn" {
@@ -356,10 +374,10 @@ impl Movie {
     pub fn get_external_rating(&self) -> f64 {
         if self.external_ratings.imdb.0 > 0.0 {
             self.external_ratings.imdb.0
-        } else if self.external_ratings.trakt.0 > 0 {
-            self.external_ratings.trakt.0 as f64 / 10.0
         } else if self.external_ratings.letterboxd.0 > 0.0 {
             self.external_ratings.letterboxd.0 * 2.0
+        } else if self.external_ratings.trakt.0 > 0 {
+            self.external_ratings.trakt.0 as f64 / 10.0
         } else if self.external_ratings.tmdb.0 > 0.0 {
             self.external_ratings.tmdb.0
         } else if self.external_ratings.popcorn.0 > 0 {
@@ -370,45 +388,54 @@ impl Movie {
             f64::NAN
         }
     }
+
+    pub fn cmp_rating(&self, other: &Self, rating: RatingSource) -> Ordering {
+        macro_rules! cmp_rating {
+            ($field:ident) => {
+                // if self.external_ratings.$field.0 as f64 != 0.0
+                //     && other.external_ratings.$field.0 as f64 != 0.0
+                // {
+                if self.external_ratings.$field.0 != other.external_ratings.$field.0 {
+                    return self
+                        .external_ratings
+                        .$field
+                        .0
+                        .partial_cmp(&other.external_ratings.$field.0)
+                        .unwrap_or(Ordering::Equal);
+                } else {
+                    return self
+                        .external_ratings
+                        .$field
+                        .1
+                        .partial_cmp(&other.external_ratings.$field.1)
+                        .unwrap_or(Ordering::Equal);
+                }
+                // }
+            };
+        }
+
+        match rating {
+            RatingSource::IMDB => cmp_rating!(imdb),
+            RatingSource::Letterboxd => cmp_rating!(letterboxd),
+            RatingSource::Trakt => cmp_rating!(trakt),
+            RatingSource::TMDB => cmp_rating!(tmdb),
+            RatingSource::Popcorn => cmp_rating!(popcorn),
+            RatingSource::Tomatoes => cmp_rating!(tomatoes),
+        }
+
+        // cmp_rating!(imdb);
+        // cmp_rating!(letterboxd);
+        // cmp_rating!(trakt);
+        // cmp_rating!(tmdb);
+        // cmp_rating!(popcorn);
+        // cmp_rating!(tomatoes);
+
+        // unreachable!()
+    }
 }
 
 impl std::cmp::PartialEq<Movie> for Movie {
     fn eq(&self, other: &Movie) -> bool {
         self.id == other.id
-    }
-}
-
-impl std::cmp::PartialOrd<Movie> for Movie {
-    fn partial_cmp(&self, other: &Movie) -> Option<Ordering> {
-        macro_rules! cmp_rating {
-            ($field:ident) => {
-                if self.external_ratings.$field.0 as f64 != 0.0
-                    && other.external_ratings.$field.0 as f64 != 0.0
-                {
-                    if self.external_ratings.$field.0 != other.external_ratings.$field.0 {
-                        return self
-                            .external_ratings
-                            .$field
-                            .0
-                            .partial_cmp(&other.external_ratings.$field.0);
-                    } else {
-                        return self
-                            .external_ratings
-                            .$field
-                            .1
-                            .partial_cmp(&other.external_ratings.$field.1);
-                    }
-                }
-            };
-        }
-
-        cmp_rating!(imdb);
-        cmp_rating!(trakt);
-        cmp_rating!(letterboxd);
-        cmp_rating!(tmdb);
-        cmp_rating!(popcorn);
-        cmp_rating!(tomatoes);
-
-        unreachable!()
     }
 }

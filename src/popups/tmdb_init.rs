@@ -26,7 +26,7 @@ use crate::{
     key_event_handler::{self, KeyEventHandler},
     popups::{PopupTrait, Popups},
     tokens::tmdb_tokens::{TMDBTokens, UserTokens},
-    widgets::{self, Action, ActionTypes},
+    widgets::{self, Action, ActionType, Hyperlink},
 };
 
 #[derive(Default, Debug, AsRefStr)]
@@ -233,7 +233,7 @@ impl PopupTrait for TMDBInitPopup {
             | Phase::Done => {
                 self.throbber_visible = true;
 
-                let popup_area = widgets::window_popup(
+                let popup_area = widgets::window(
                     frame,
                     helpers::centered_area(6, 28, frame.area()),
                     " TMDB Authentication ",
@@ -310,7 +310,7 @@ impl PopupTrait for TMDBInitPopup {
                     }
                 });
 
-                let popup_area = widgets::window_popup(
+                let popup_area = widgets::window(
                     frame,
                     helpers::centered_area(8, 40, frame.area()),
                     " TMDB Authentication ",
@@ -352,7 +352,7 @@ impl PopupTrait for TMDBInitPopup {
                 let confirm_mouse_area = widgets::action(
                     Action::new(
                         " Confirm ",
-                        ActionTypes::Default,
+                        ActionType::Default,
                         self.item == 1,
                         input_valid,
                     ),
@@ -388,7 +388,7 @@ impl PopupTrait for TMDBInitPopup {
                     }
                 });
 
-                let popup_area = widgets::window_popup(
+                let popup_area = widgets::window(
                     frame,
                     helpers::centered_area(10, 40, frame.area()),
                     " TMDB Authentication ",
@@ -401,7 +401,7 @@ impl PopupTrait for TMDBInitPopup {
                 );
 
                 let back_mouse_area = widgets::action(
-                    Action::new(" Back ", ActionTypes::Default, false, true),
+                    Action::new(" Back ", ActionType::Default, false, true),
                     HorizontalAlignment::Left,
                     false,
                     popup_area,
@@ -430,17 +430,18 @@ impl PopupTrait for TMDBInitPopup {
                 let [hyperlink_area] = horizontal![==(hyperlink_text.len() as u16)]
                     .flex(Flex::Center)
                     .areas(hyperlink_area);
-                widgets::hyperlink(
-                    text![
-                        " ".repeat(hyperlink_text.len()),
-                        hyperlink_text,
-                        " ".repeat(hyperlink_text.len())
-                    ]
-                    .fg(material::GREEN.c100)
-                    .bg(material::BLUE.c800),
-                    authorization_url,
+                frame.render_widget(
+                    Hyperlink {
+                        text: text![
+                            " ".repeat(hyperlink_text.len()),
+                            hyperlink_text,
+                            " ".repeat(hyperlink_text.len())
+                        ]
+                        .fg(material::GREEN.c100)
+                        .bg(material::BLUE.c800),
+                        url:  authorization_url.clone(),
+                    },
                     hyperlink_area,
-                    frame,
                 );
             }
             Phase::Error(error) => {
@@ -495,7 +496,7 @@ impl PopupTrait for TMDBInitPopup {
                     });
                 }
 
-                let popup_area = widgets::window_popup(
+                let popup_area = widgets::window(
                     frame,
                     helpers::centered_area(11, 44, frame.area()),
                     " Error ",
@@ -519,7 +520,7 @@ impl PopupTrait for TMDBInitPopup {
 
                 if self.status.is_some() {
                     let skip_mouse_area = widgets::action(
-                        Action::new(" Skip ", ActionTypes::Normal, self.item == 1, true),
+                        Action::new(" Skip ", ActionType::Normal, self.item == 1, true),
                         HorizontalAlignment::Right,
                         false,
                         popup_area,
@@ -539,7 +540,7 @@ impl PopupTrait for TMDBInitPopup {
                 }
 
                 let mouse_area = widgets::action(
-                    Action::new(" Back ", ActionTypes::Default, self.item == 0, true),
+                    Action::new(" Back ", ActionType::Default, self.item == 0, true),
                     HorizontalAlignment::Center,
                     true,
                     helpers::add_padding(popup_area, Padding::right(1)),

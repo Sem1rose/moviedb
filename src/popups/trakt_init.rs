@@ -26,7 +26,7 @@ use crate::{
     key_event_handler::{self, KeyEventHandler},
     popups::{PopupTrait, Popups},
     tokens::trakt_tokens::{TraktTokens, UserTokens},
-    widgets::{self, Action, ActionTypes},
+    widgets::{self, Action, ActionType, Hyperlink},
 };
 
 #[derive(Default, Debug, AsRefStr)]
@@ -274,7 +274,7 @@ impl PopupTrait for TraktInitPopup {
             | Phase::Done => {
                 self.throbber_visible = true;
 
-                let popup_area = widgets::window_popup(
+                let popup_area = widgets::window(
                     frame,
                     helpers::centered_area(6, 28, frame.area()),
                     " Trakt Authentication ",
@@ -389,7 +389,7 @@ impl PopupTrait for TraktInitPopup {
                     }
                 });
 
-                let popup_area = widgets::window_popup(
+                let popup_area = widgets::window(
                     frame,
                     helpers::centered_area(11, 44, frame.area()),
                     " Trakt Authentication ",
@@ -453,12 +453,7 @@ impl PopupTrait for TraktInitPopup {
                 );
 
                 let mouse_area = widgets::action(
-                    Action::new(
-                        " Confirm ",
-                        ActionTypes::Normal,
-                        self.item == 2,
-                        input_valid,
-                    ),
+                    Action::new(" Confirm ", ActionType::Normal, self.item == 2, input_valid),
                     HorizontalAlignment::Right,
                     true,
                     helpers::add_padding(popup_area, Padding::right(1)),
@@ -569,7 +564,7 @@ impl PopupTrait for TraktInitPopup {
                     }
                 });
 
-                let popup_area = widgets::window_popup(
+                let popup_area = widgets::window(
                     frame,
                     helpers::centered_area(12, 48, frame.area()),
                     " Trakt Authentication ",
@@ -582,7 +577,7 @@ impl PopupTrait for TraktInitPopup {
                 );
 
                 let skip_mouse_area = widgets::action(
-                    Action::new(" Skip ", ActionTypes::Normal, self.item == 2, true),
+                    Action::new(" Skip ", ActionType::Normal, self.item == 2, true),
                     HorizontalAlignment::Right,
                     false,
                     popup_area,
@@ -601,7 +596,7 @@ impl PopupTrait for TraktInitPopup {
                 );
 
                 let back_mouse_area = widgets::action(
-                    Action::new(" Back ", ActionTypes::Normal, self.item == 3, true),
+                    Action::new(" Back ", ActionType::Normal, self.item == 3, true),
                     HorizontalAlignment::Left,
                     false,
                     popup_area,
@@ -625,24 +620,25 @@ impl PopupTrait for TraktInitPopup {
                     },
                 );
 
-                let [_, message_area, _, input_area, _] = vertical![==1, ==3, >=1, ==3, ==1]
+                let [_, hyperlink_area, _, input_area, _] = vertical![==1, ==3, >=1, ==3, ==1]
                     .areas(helpers::add_padding(popup_area, Padding::proportional(1)));
 
                 let hyperlink_text = "  Click to Authorize  ";
-                let [message_area] = horizontal![==(hyperlink_text.len() as u16)]
+                let [hyperlink_area] = horizontal![==(hyperlink_text.len() as u16)]
                     .flex(Flex::Center)
-                    .areas(message_area);
-                widgets::hyperlink(
-                    text![
-                        " ".repeat(hyperlink_text.len()),
-                        hyperlink_text,
-                        " ".repeat(hyperlink_text.len())
-                    ]
-                    .fg(material::GREEN.c100)
-                    .bg(material::BLUE.c800),
-                    authorization_url,
-                    message_area,
-                    frame,
+                    .areas(hyperlink_area);
+                frame.render_widget(
+                    Hyperlink {
+                        text: text![
+                            " ".repeat(hyperlink_text.len()),
+                            hyperlink_text,
+                            " ".repeat(hyperlink_text.len())
+                        ]
+                        .fg(material::GREEN.c100)
+                        .bg(material::BLUE.c800),
+                        url:  authorization_url.clone(),
+                    },
+                    hyperlink_area,
                 );
 
                 widgets::input_field(
@@ -669,12 +665,7 @@ impl PopupTrait for TraktInitPopup {
                 );
 
                 let confirm_mouse_area = widgets::action(
-                    Action::new(
-                        " Confirm ",
-                        ActionTypes::Normal,
-                        self.item == 1,
-                        input_valid,
-                    ),
+                    Action::new(" Confirm ", ActionType::Normal, self.item == 1, input_valid),
                     HorizontalAlignment::Right,
                     true,
                     helpers::add_padding(popup_area, Padding::right(1)),
@@ -741,7 +732,7 @@ impl PopupTrait for TraktInitPopup {
                     });
                 }
 
-                let popup_area = widgets::window_popup(
+                let popup_area = widgets::window(
                     frame,
                     helpers::centered_area(11, 44, frame.area()),
                     " Error ",
@@ -765,7 +756,7 @@ impl PopupTrait for TraktInitPopup {
 
                 if self.status.is_some() {
                     let skip_mouse_area = widgets::action(
-                        Action::new(" Skip ", ActionTypes::Normal, self.item == 1, true),
+                        Action::new(" Skip ", ActionType::Normal, self.item == 1, true),
                         HorizontalAlignment::Right,
                         false,
                         popup_area,
@@ -785,7 +776,7 @@ impl PopupTrait for TraktInitPopup {
                 }
 
                 let mouse_area = widgets::action(
-                    Action::new(" Back ", ActionTypes::Default, self.item == 0, true),
+                    Action::new(" Back ", ActionType::Default, self.item == 0, true),
                     HorizontalAlignment::Center,
                     true,
                     helpers::add_padding(popup_area, Padding::right(1)),

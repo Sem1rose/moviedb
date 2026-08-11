@@ -15,7 +15,7 @@ use crate::{
     popups::{
         OMDBInitPopup, PopupTrait, Popups, PunchPlayInitPopup, TMDBInitPopup, TraktInitPopup,
     },
-    widgets::{self, Action, ActionTypes},
+    widgets::{self, Action, ActionType},
 };
 
 #[derive(Default)]
@@ -225,7 +225,7 @@ impl PopupTrait for OutOfBoxPopup {
             );
         };
 
-        let popup_area = widgets::window_popup(
+        let popup_area = widgets::window(
             frame,
             helpers::centered_area(
                 (4 + NUM_REQUIRED_CHOICES.div_ceil(COLUMNS) * 5
@@ -380,7 +380,7 @@ impl PopupTrait for OutOfBoxPopup {
         });
 
         let confirm_mouse_area = widgets::action(
-            Action::new(" Confirm ", ActionTypes::Default, self.tab == 1, true),
+            Action::new(" Confirm ", ActionType::Default, self.tab == 1, true),
             ratatui::layout::HorizontalAlignment::Right,
             true,
             helpers::add_padding(popup_area, Padding::right(1)),
