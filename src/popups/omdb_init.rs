@@ -183,6 +183,7 @@ impl PopupTrait for OMDBInitPopup {
                 input_area,
                 " Key ",
                 "Enter the Key",
+                None,
             );
             key_event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,

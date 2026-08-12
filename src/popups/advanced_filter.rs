@@ -798,6 +798,7 @@ impl Widget {
                     area,
                     title,
                     placeholder,
+                    None,
                 );
             }
             Widget::StaticText { text, .. } => {
@@ -1626,7 +1627,7 @@ impl AdvancedFilterPopup {
                     .push(FilterCriterion::Title(name, filter));
             }
 
-            main_screen.filter_sort_movies(Some(true));
+            main_screen.filter_sort_movies(true);
         }
     }
 }

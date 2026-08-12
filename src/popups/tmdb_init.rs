@@ -336,6 +336,7 @@ impl PopupTrait for TMDBInitPopup {
                     input_area,
                     " Access Token ",
                     "Enter the Access Token",
+                    None,
                 );
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,

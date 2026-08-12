@@ -170,7 +170,7 @@ impl App {
                         }],
                     });
             }
-            main_screen.filter_sort_movies(None);
+            main_screen.filter_sort_movies(false);
             main_screen.goto_index(
                 main_screen
                     .filtered_movies
@@ -263,7 +263,7 @@ impl App {
             .or_insert(movie);
 
         if let Some(Screens::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
-            main_screen.filter_sort_movies(None);
+            main_screen.filter_sort_movies(false);
             main_screen.goto_index(
                 main_screen
                     .filtered_movies
@@ -342,7 +342,7 @@ impl App {
             .and_modify(|x| *x = movie);
 
         if let Some(Screens::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
-            main_screen.filter_sort_movies(Some(true));
+            main_screen.filter_sort_movies(true);
         }
 
         self.drawer.close_popup();
@@ -383,7 +383,7 @@ impl App {
                             .sort_by(|a, b| a.date.partial_cmp(&b.date).unwrap());
                     });
             }
-            main_screen.filter_sort_movies(Some(true));
+            main_screen.filter_sort_movies(true);
         }
 
         self.save_data(false, true, false, false);
@@ -411,7 +411,7 @@ impl App {
                 -1
             };
 
-            main_screen.filter_sort_movies(None);
+            main_screen.filter_sort_movies(false);
             main_screen.goto_index(new_selected_index);
         }
 

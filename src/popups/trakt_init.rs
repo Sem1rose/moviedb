@@ -415,6 +415,7 @@ impl PopupTrait for TraktInitPopup {
                     ci_input_area,
                     " Client ID ",
                     "Enter the Client ID",
+                    None,
                 );
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
@@ -439,6 +440,7 @@ impl PopupTrait for TraktInitPopup {
                     cs_input_area,
                     " Client Secret ",
                     "Enter the Client Secret",
+                    None,
                 );
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
@@ -651,6 +653,7 @@ impl PopupTrait for TraktInitPopup {
                     helpers::add_padding(input_area, Padding::horizontal(8)),
                     " Authorization Code ",
                     "Enter the authorization code",
+                    None,
                 );
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,

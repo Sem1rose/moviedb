@@ -194,11 +194,6 @@ impl Drawer {
                             app.drawer.current_screen.as_mut()
                         {
                             main_screen.initialize(app.movies.clone(), app.watched.clone());
-
-                            app.drawer.image_renderer.preload_movies(
-                                app.movies.borrow().keys().copied().collect(),
-                                &app.config.borrow().options.image_preload_rule,
-                            );
                         }
                     });
                 }

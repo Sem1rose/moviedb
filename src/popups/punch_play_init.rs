@@ -458,6 +458,7 @@ impl PopupTrait for PunchPlayInitPopup {
                     ci_input_area,
                     " Client ID ",
                     "Enter the Client ID",
+                    None,
                 );
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
@@ -482,6 +483,7 @@ impl PopupTrait for PunchPlayInitPopup {
                     cs_input_area,
                     " Client Secret ",
                     "Enter the Client Secret",
+                    None,
                 );
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,

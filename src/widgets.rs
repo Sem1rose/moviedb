@@ -27,6 +27,7 @@ pub fn input_field(
     area: Rect,
     title: &str,
     placeholder_text: &str,
+    custom_padding: Option<Padding>,
 ) {
     input.set_style(Style::new().fg(if tab_selected && selected {
         tailwind::SLATE.c200
@@ -68,7 +69,7 @@ pub fn input_field(
             } else {
                 tailwind::STONE.c400
             }))
-            .padding(Padding::symmetric(1, 0)),
+            .padding(custom_padding.unwrap_or(Padding::symmetric(1, 0))),
     );
     input.set_placeholder_text(placeholder_text);
     input.set_placeholder_style(Style::new().fg(material::GRAY.c700));

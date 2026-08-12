@@ -245,6 +245,7 @@ impl PopupTrait for EditMoviePopup {
             rating_input_area,
             " Rating ",
             "Enter a rating",
+            None,
         );
         key_event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
@@ -268,6 +269,7 @@ impl PopupTrait for EditMoviePopup {
             date_input_area,
             " Watched At ",
             "Now",
+            None,
         );
         key_event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
