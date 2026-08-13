@@ -1,7 +1,7 @@
 use std::{cell::RefCell, fs, path::PathBuf, rc::Rc, time::Duration};
 
 use itertools::Itertools;
-use log::error;
+use log::{error, info};
 use ratatui::crossterm::event::{self, Event, KeyEvent, KeyEventState, KeyModifiers};
 
 use crate::{
@@ -255,12 +255,14 @@ impl App {
                 }],
             });
 
+        info!("{movie:#?}");
         // if the movie is already cached, remove it because the info is probably outdated.
-        self.movies
-            .borrow_mut()
-            .entry(movie_id)
-            .and_modify(|x| *x = movie.clone()) // this error is stupid the rust compiler is retarded
-            .or_insert(movie);
+        match self.movies.borrow_mut().entry(movie_id) {
+            indexmap::map::Entry::Occupied(mut occupied_entry) => *occupied_entry.get_mut() = movie,
+            indexmap::map::Entry::Vacant(vacant_entry) => {
+                vacant_entry.insert_entry(movie);
+            }
+        }
 
         if let Some(Screens::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
             main_screen.filter_sort_movies(false);
@@ -336,6 +338,7 @@ impl App {
             unreachable!()
         };
 
+        info!("{movie:#?}");
         self.movies
             .borrow_mut()
             .entry(movie.id)

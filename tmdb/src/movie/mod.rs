@@ -109,12 +109,12 @@ pub fn get_movie_details(access_token: &str, tmdb_id: u32) -> anyhow::Result<TMD
         .json()
         .map(|mut x: TMDBMovieDetails| {
             x.credits = get_movie_credits(access_token, tmdb_id).ok();
-            x.certificate = get_movie_certification(access_token, tmdb_id)
-                .or_else(|_| -> anyhow::Result<String> {
-                    Ok(if x.adult { "N" } else { "NR" }.into())
-                })
-                .ok();
-            x.recommendations = get_movie_recommendations(access_token, tmdb_id).ok();
+            // x.certificate = get_movie_certification(access_token, tmdb_id)
+            //     .or_else(|_| -> anyhow::Result<String> {
+            //         Ok(if x.adult { "N" } else { "NR" }.into())
+            //     })
+            //     .ok();
+            // x.recommendations = get_movie_recommendations(access_token, tmdb_id).ok();
 
             if let Some(collection_id) = x.belongs_to_collection.as_ref().map(|x| x.id) {
                 x.collection_details = get_collection_details(access_token, collection_id).ok();
@@ -268,7 +268,7 @@ pub fn get_movie_recommendations(access_token: &str, tmdb_id: u32) -> anyhow::Re
 pub(crate) fn get_movie_images(
     access_token: &str,
     tmdb_id: u32,
-) -> anyhow::Result<TMDBMovieImagesResponse> {
+) -> anyhow::Result<Option<TMDBMovieImagesResponse>> {
     let client = ClientBuilder::new().build()?;
 
     let mut headers = HeaderMap::new();
@@ -279,70 +279,73 @@ pub(crate) fn get_movie_images(
         format!("Bearer {}", access_token).parse().unwrap(),
     );
 
-    let mut movie_images: TMDBMovieImagesResponse = get_movie_details(access_token, tmdb_id)
-        .unwrap_or(TMDBMovieDetails::default())
-        .into();
+    let images_response = send_tmdb_request(
+        &client,
+        &format!("https://api.themoviedb.org/3/movie/{tmdb_id}/images"),
+        &headers,
+        None,
+        None,
+    )?;
 
-    if movie_images.backdrops.is_empty() || movie_images.posters.is_empty() {
-        let response = send_tmdb_request(
-            &client,
-            &format!("https://api.themoviedb.org/3/movie/{tmdb_id}/images"),
-            &headers,
-            None,
-            None,
-        );
-        if let Ok(images_response) = response {
-            if images_response.status().is_success() {
-                let result = images_response.json::<TMDBMovieImagesResponse>();
-                if let Ok(images) = result {
-                    if movie_images.backdrops.is_empty() && !images.backdrops.is_empty() {
-                        movie_images.backdrops = images
-                            .backdrops
-                            .into_iter()
-                            .sorted_by(|a, b| {
-                                b.vote_average
-                                    .partial_cmp(&a.vote_average)
-                                    .map(|x| {
-                                        matches!(x, std::cmp::Ordering::Equal)
-                                            .then_some(b.vote_count.cmp(&a.vote_count))
-                                            .or_else(|| Some(x))
-                                    })
-                                    .flatten()
-                                    .unwrap_or(std::cmp::Ordering::Equal)
-                            })
-                            .collect();
-                    }
-                    if movie_images.posters.is_empty() && !images.posters.is_empty() {
-                        movie_images.posters = images
-                            .posters
-                            .into_iter()
-                            .sorted_by(|a, b| {
-                                b.vote_average
-                                    .partial_cmp(&a.vote_average)
-                                    .map(|x| {
-                                        matches!(x, std::cmp::Ordering::Equal)
-                                            .then_some(b.vote_count.cmp(&a.vote_count))
-                                            .or_else(|| Some(x))
-                                    })
-                                    .flatten()
-                                    .unwrap_or(std::cmp::Ordering::Equal)
-                            })
-                            .collect();
-                    }
-                }
-            }
-        }
+    if images_response.status().is_success() {
+        return Ok(images_response.json::<TMDBMovieImagesResponse>().ok());
+    } else {
+        Ok(None)
     }
-
-    Ok(movie_images)
 }
 
 pub fn get_movie_artworks(
     cache_dir: &Path,
     access_token: &str,
+    tmdb_details: Option<&TMDBMovieDetails>,
     tmdb_id: u32,
 ) -> anyhow::Result<bool> {
-    let movie_images = get_movie_images(access_token, tmdb_id)?;
+    let mut movie_images: TMDBMovieImagesResponse =
+        tmdb_details.map(Into::into).unwrap_or_else(|| {
+            get_movie_details(access_token, tmdb_id)
+                .as_ref()
+                .map(Into::into)
+                .unwrap_or_default()
+        });
+    if movie_images.backdrops.is_empty() || movie_images.posters.is_empty() {
+        if let Ok(Some(images)) = get_movie_images(access_token, tmdb_id) {
+            if movie_images.backdrops.is_empty() && !images.backdrops.is_empty() {
+                movie_images.backdrops = images
+                    .backdrops
+                    .into_iter()
+                    .sorted_by(|a, b| {
+                        b.vote_average
+                            .partial_cmp(&a.vote_average)
+                            .map(|x| -> Option<std::cmp::Ordering> {
+                                matches!(x, std::cmp::Ordering::Equal)
+                                    .then_some(b.vote_count.cmp(&a.vote_count))
+                                    .or_else(|| Some(x))
+                            })
+                            .flatten()
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    })
+                    .collect();
+            }
+            if movie_images.posters.is_empty() && !images.posters.is_empty() {
+                movie_images.posters = images
+                    .posters
+                    .into_iter()
+                    .sorted_by(|a, b| {
+                        b.vote_average
+                            .partial_cmp(&a.vote_average)
+                            .map(|x| {
+                                matches!(x, std::cmp::Ordering::Equal)
+                                    .then_some(b.vote_count.cmp(&a.vote_count))
+                                    .or_else(|| Some(x))
+                            })
+                            .flatten()
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    })
+                    .collect();
+            }
+        }
+    }
+
     let try_get_artwork = |id: usize,
                            backdrop: bool,
                            path: &Path,
@@ -423,11 +426,7 @@ pub fn get_movie_artworks(
     Ok(status)
 }
 
-pub fn get_person_artwork(
-    cache_dir: &Path,
-    access_token: &str,
-    id: u32,
-) -> anyhow::Result<bool> {
+pub fn get_person_artwork(cache_dir: &Path, access_token: &str, id: u32) -> anyhow::Result<bool> {
     let client = ClientBuilder::new().build()?;
 
     let mut headers = HeaderMap::new();

@@ -68,9 +68,9 @@ struct SearchResultMovie {
     id:           u32,
 }
 struct DetailsResponses {
+    pub tmdb:       Option<TMDBMovieDetails>,
     pub trakt:      Option<TraktDetailsResponse>,
     pub punch_play: Option<PunchPlayDetailsResponse>,
-    pub tmdb:       Option<TMDBMovieDetails>,
     pub omdb:       Option<OMDBDetailsResponse>,
 }
 impl From<TraktSearchResponseMovie> for SearchResultMovie {
@@ -312,12 +312,17 @@ impl AddMoviePopup {
                     .flatten();
             }
 
-            _ = tmdb::movie::get_movie_artworks(&cache_dir, &tmdb_access_token, tmdb_id);
+            _ = tmdb::movie::get_movie_artworks(
+                &cache_dir,
+                &tmdb_access_token,
+                tmdb_result.as_ref(),
+                tmdb_id,
+            );
 
             _ = tx_details_request.send(Ok(DetailsResponses {
-                trakt:      trakt_result,
-                punch_play: punch_play_result,
                 tmdb:       tmdb_result,
+                punch_play: punch_play_result,
+                trakt:      trakt_result,
                 omdb:       omdb_result,
             }));
         });

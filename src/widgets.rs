@@ -392,7 +392,9 @@ impl ContextMenu {
             ));
 
             result.extend(
-                self.submenus.get_mut(submenu_id).unwrap()
+                self.submenus
+                    .get_mut(submenu_id)
+                    .unwrap()
                     .render(new_pos, frame, key_event_handler)
                     .into_iter()
                     .map(|(mut k, v)| {

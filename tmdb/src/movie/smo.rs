@@ -18,16 +18,17 @@ pub struct TMDBSearchResult {
     pub vote_count:        u32,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Default)]
 pub(crate) struct TMDBMovieImagesResponse {
     pub backdrops: Vec<TMDBMovieImage>,
     pub posters:   Vec<TMDBMovieImage>,
 }
-impl Into<TMDBMovieImagesResponse> for TMDBMovieDetails {
+impl Into<TMDBMovieImagesResponse> for &TMDBMovieDetails {
     fn into(self) -> TMDBMovieImagesResponse {
         TMDBMovieImagesResponse {
             posters:   self
                 .poster_path
+                .clone()
                 .and_then(|x| if x.is_empty() { None } else { Some(x) })
                 .map(|x| {
                     vec![TMDBMovieImage {
@@ -39,6 +40,7 @@ impl Into<TMDBMovieImagesResponse> for TMDBMovieDetails {
                 .unwrap_or(vec![]),
             backdrops: self
                 .backdrop_path
+                .clone()
                 .and_then(|x| if x.is_empty() { None } else { Some(x) })
                 .map(|x| {
                     vec![TMDBMovieImage {

@@ -15,7 +15,9 @@ use ratatui::{
 };
 use rustc_hash::FxBuildHasher;
 use serde::{Deserialize, Serialize};
-use strum::{AsRefStr, EnumCount, EnumDiscriminants, EnumIter, FromRepr, IntoStaticStr};
+use strum::{
+    AsRefStr, EnumCount, EnumDiscriminants, EnumIter, FromRepr, IntoEnumIterator, IntoStaticStr,
+};
 use tmdb::smo::{Person as TMDBPerson, TMDBMovieDetails};
 use trakt::smo::TraktDetailsResponse;
 
@@ -82,7 +84,7 @@ impl From<Sort> for usize {
 
 #[allow(clippy::upper_case_acronyms)]
 #[repr(usize)]
-#[derive(Default, Clone, Copy, AsRefStr, FromRepr, EnumIter)]
+#[derive(Default, Clone, Copy, EnumIter, AsRefStr, FromRepr)]
 pub enum RatingSource {
     #[default]
     IMDB,
@@ -245,6 +247,7 @@ pub struct Movie {
 impl From<TMDBMovieDetails> for Movie {
     fn from(tmdb_details: TMDBMovieDetails) -> Self {
         info!("{tmdb_details:#?}");
+
         let (cast, crew) = if let Some(credits) = tmdb_details.credits.as_ref() {
             (
                 credits
@@ -292,7 +295,7 @@ impl From<TMDBMovieDetails> for Movie {
             runtime:          tmdb_details.runtime,
             released:         tmdb_details.status == "Released",
             tagline:          tmdb_details.tagline.clone(),
-            certification:    tmdb_details.certificate.clone().unwrap(),
+            certification:    tmdb_details.certificate.clone().unwrap_or_default(),
             origin_country:   tmdb_details
                 .origin_country
                 .clone()
@@ -306,16 +309,7 @@ impl From<TMDBMovieDetails> for Movie {
 
 impl Movie {
     pub fn add_trakt_details(&mut self, _trakt_details: TraktDetailsResponse) {
-        // self.external_ratings.imdb = (
-        //     trakt_details.imdb_rating.parse().unwrap_or(0.0),
-        //     trakt_details
-        //         .imdb_votes
-        //         .chars()
-        //         .filter(|char| char.is_ascii_digit())
-        //         .collect::<String>()
-        //         .parse()
-        //         .unwrap_or(0),
-        // );
+        info!("{_trakt_details:#?}");
     }
 
     pub fn add_punch_play_details(&mut self, punch_play_details: PunchPlayDetailsResponse) {
@@ -353,45 +347,63 @@ impl Movie {
                 }
             }
         }
+
+        if self.certification.is_empty() {
+            if let Some(x) = punch_play_details.title.age_rating {
+                self.certification = x;
+            }
+        }
+        if self.recommendations.is_empty() {
+            if let Some(x) = punch_play_details.title.recommendations {
+                self.recommendations = x.into_iter().map(|x| x.tmdb_id).collect();
+            }
+        }
     }
 
     pub fn add_omdb_details(&mut self, omdb_details: OMDBDetailsResponse) {
-        self.external_ratings.imdb = (
-            omdb_details.imdb_rating.parse().unwrap_or(0.0),
-            omdb_details
-                .imdb_votes
-                .chars()
-                .filter(|char| char.is_ascii_digit())
-                .collect::<String>()
-                .parse()
-                .unwrap_or(0),
-        );
+        info!("{omdb_details:#?}");
+
+        let rating = omdb_details.imdb_rating.parse::<f64>();
+        let votes = omdb_details.imdb_votes.replace(',', "").parse::<u32>();
+        if let (Ok(rating), Ok(votes)) = (rating, votes) {
+            if votes > self.external_ratings.imdb.1 {
+                self.external_ratings.imdb = (rating, votes);
+            }
+        }
     }
 
-    pub fn get_external_rating(&self) -> f64 {
-        if self.external_ratings.imdb.0 > 0.0 {
-            self.external_ratings.imdb.0
-        } else if self.external_ratings.letterboxd.0 > 0.0 {
-            self.external_ratings.letterboxd.0 * 2.0
-        } else if self.external_ratings.trakt.0 > 0 {
-            self.external_ratings.trakt.0 as f64 / 10.0
-        } else if self.external_ratings.tmdb.0 > 0.0 {
-            self.external_ratings.tmdb.0
-        } else if self.external_ratings.popcorn.0 > 0 {
-            self.external_ratings.popcorn.0 as f64 / 10.0
-        } else if self.external_ratings.tomatoes.0 > 0 {
-            self.external_ratings.tomatoes.0 as f64 / 10.0
-        } else {
-            f64::NAN
+    pub fn get_external_rating(&self, source: RatingSource) -> Option<f64> {
+        match source {
+            RatingSource::IMDB =>
+                (self.external_ratings.imdb.1 > 0).then_some(self.external_ratings.imdb.0),
+            RatingSource::Letterboxd => (self.external_ratings.letterboxd.1 > 0)
+                .then_some(self.external_ratings.letterboxd.0),
+            RatingSource::Trakt =>
+                (self.external_ratings.trakt.1 > 0).then_some(self.external_ratings.trakt.0 as f64),
+            RatingSource::TMDB =>
+                (self.external_ratings.tmdb.1 > 0).then_some(self.external_ratings.tmdb.0),
+            RatingSource::Popcorn => (self.external_ratings.popcorn.1 > 0)
+                .then_some(self.external_ratings.popcorn.0 as f64),
+            RatingSource::Tomatoes => (self.external_ratings.tomatoes.1 > 0)
+                .then_some(self.external_ratings.tomatoes.0 as f64),
         }
+    }
+
+    pub fn get_first_external_rating(&self) -> f64 {
+        for source in RatingSource::iter() {
+            let Some(rating) = self.get_external_rating(source) else {
+                continue;
+            };
+
+            return rating;
+        }
+
+        f64::NAN
     }
 
     pub fn cmp_rating(&self, other: &Self, rating: RatingSource) -> Ordering {
         macro_rules! cmp_rating {
             ($field:ident) => {
-                // if self.external_ratings.$field.0 as f64 != 0.0
-                //     && other.external_ratings.$field.0 as f64 != 0.0
-                // {
                 if self.external_ratings.$field.0 != other.external_ratings.$field.0 {
                     return self
                         .external_ratings
@@ -407,7 +419,6 @@ impl Movie {
                         .partial_cmp(&other.external_ratings.$field.1)
                         .unwrap_or(Ordering::Equal);
                 }
-                // }
             };
         }
 
@@ -419,15 +430,6 @@ impl Movie {
             RatingSource::Popcorn => cmp_rating!(popcorn),
             RatingSource::Tomatoes => cmp_rating!(tomatoes),
         }
-
-        // cmp_rating!(imdb);
-        // cmp_rating!(letterboxd);
-        // cmp_rating!(trakt);
-        // cmp_rating!(tmdb);
-        // cmp_rating!(popcorn);
-        // cmp_rating!(tomatoes);
-
-        // unreachable!()
     }
 }
 

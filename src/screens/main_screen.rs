@@ -402,7 +402,7 @@ impl MainScreen {
                 }
                 FilterCriterion::Rating(rating, ordering, inverted) => {
                     movies.retain(|x| {
-                        (x.get_external_rating().partial_cmp(rating).unwrap() == *ordering)
+                        (x.get_first_external_rating().partial_cmp(rating).unwrap() == *ordering)
                             ^ *inverted
                     });
                 }

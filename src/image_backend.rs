@@ -163,6 +163,7 @@ impl RatatuiImage {
                                             tmdb::movie::get_movie_artworks(
                                                 &cache_dir,
                                                 tmdb_access_token.as_str(),
+                                                None,
                                                 id,
                                             ),
                                         ImageID::Collection(id, false) =>

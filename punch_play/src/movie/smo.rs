@@ -43,7 +43,7 @@ pub struct PunchPlayDetailsResponse {
 #[derive(Deserialize, Debug, Default, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct PunchPlayDetailsResponseTitle {
-    pub tmdb_id:           usize,
+    pub tmdb_id:           u32,
     // pub type:              String,
     // pub is_anime:             bool,
     pub year:              usize,
@@ -81,7 +81,7 @@ pub struct Person {
 #[derive(Deserialize, Debug, Default, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Recommendation {
-    pub tmdb_id:          usize,
+    pub tmdb_id:          u32,
     pub name:             String,
     pub year:             usize,
     pub overview:         String,

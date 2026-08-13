@@ -51,24 +51,19 @@ impl Drawer {
         let popup_queue = if _config.borrow().options.oob_done {
             let mut popups = vec![];
             if _config.borrow_mut().options.trakt_enabled {
-                popups.push(new_popup!(TraktInit, TraktInitPopup::new(
-                    home_dir, false,
-                )));
+                popups.push(new_popup!(TraktInit, TraktInitPopup::new(home_dir, false,)));
             }
             if _config.borrow_mut().options.punch_play_enabled {
-                popups.push(new_popup!(PunchPlayInit, PunchPlayInitPopup::new(
-                    home_dir, false,
-                )));
+                popups.push(new_popup!(
+                    PunchPlayInit,
+                    PunchPlayInitPopup::new(home_dir, false,)
+                ));
             }
             if _config.borrow_mut().options.tmdb_enabled {
-                popups.push(new_popup!(TMDBInit, TMDBInitPopup::new(
-                    home_dir, false,
-                )));
+                popups.push(new_popup!(TMDBInit, TMDBInitPopup::new(home_dir, false,)));
             }
             if _config.borrow_mut().options.omdb_enabled {
-                popups.push(new_popup!(OMDBInit, OMDBInitPopup::new(
-                    home_dir, false,
-                )));
+                popups.push(new_popup!(OMDBInit, OMDBInitPopup::new(home_dir, false,)));
             }
 
             popups
