@@ -58,22 +58,31 @@ impl PopupTrait for OutOfBoxPopup {
             let config = app.config.clone();
             if let Some(Popups::OutOfBox(out_of_box_popup)) = app.drawer.active_popup.as_mut() {
                 if out_of_box_popup.toggled_list[0] {
-                    popups.push(Popups::TMDBInit(TMDBInitPopup::new(&app.home_dir, false)));
+                    popups.push(crate::new_popup!(TMDBInit, TMDBInitPopup::new(
+                        &app.home_dir,
+                        false,
+                    )));
                     config.borrow_mut().options.tmdb_enabled = true;
                 }
                 if out_of_box_popup.toggled_list[1] {
-                    popups.push(Popups::PunchPlayInit(PunchPlayInitPopup::new(
+                    popups.push(crate::new_popup!(PunchPlayInit, PunchPlayInitPopup::new(
                         &app.home_dir,
                         false,
                     )));
                     config.borrow_mut().options.punch_play_enabled = true;
                 }
                 if out_of_box_popup.toggled_list[2] {
-                    popups.push(Popups::TraktInit(TraktInitPopup::new(&app.home_dir, false)));
+                    popups.push(crate::new_popup!(TraktInit, TraktInitPopup::new(
+                        &app.home_dir,
+                        false,
+                    )));
                     config.borrow_mut().options.trakt_enabled = true;
                 }
                 if out_of_box_popup.toggled_list[3] {
-                    popups.push(Popups::OMDBInit(OMDBInitPopup::new(&app.home_dir, false)));
+                    popups.push(crate::new_popup!(OMDBInit, OMDBInitPopup::new(
+                        &app.home_dir,
+                        false,
+                    )));
                     config.borrow_mut().options.omdb_enabled = true;
                 }
             }
@@ -270,13 +279,12 @@ impl PopupTrait for OutOfBoxPopup {
                 table_indices.push([None; COLUMNS]);
                 let [area, remaining] = vertical![==5, >=1].areas(remaining_area);
                 let constraints = (0..COLUMNS)
-                    .map(|_| constraints![>=1, ==2])
-                    .flatten()
+                    .flat_map(|_| constraints![>=1, ==2])
                     .dropping_back(1)
                     .collect_vec();
                 let areas = Layout::horizontal(constraints)
                     .split(area)
-                    .into_iter()
+                    .iter()
                     .enumerate()
                     .filter_map(|(n, &x)| if n & 1 == 0 { Some(x) } else { None })
                     .collect_vec();
@@ -328,13 +336,12 @@ impl PopupTrait for OutOfBoxPopup {
                                 }
                             }
                         },
-                    key_event_handler::Data::Direction(true, _) =>
-                        if col < table_indices_cloned.len() - 1 {
-                            for i in 0..=row {
-                                if let Some(index) = table_indices_cloned[col + 1][row - i] {
-                                    out_of_box_popup.item = index;
-                                    break;
-                                }
+                    key_event_handler::Data::Direction(true, _)
+                        if col < table_indices_cloned.len() - 1 =>
+                        for i in 0..=row {
+                            if let Some(index) = table_indices_cloned[col + 1][row - i] {
+                                out_of_box_popup.item = index;
+                                break;
                             }
                         },
                     _ => (),
@@ -368,11 +375,9 @@ impl PopupTrait for OutOfBoxPopup {
                         if row > 0 {
                             out_of_box_popup.item = table_indices[col][row - 1].unwrap();
                         },
-                    key_event_handler::Data::Direction(true, _) =>
-                        if row < COLUMNS - 1 {
-                            if let Some(index) = table_indices[col][row + 1] {
-                                out_of_box_popup.item = index;
-                            }
+                    key_event_handler::Data::Direction(true, _) if row < COLUMNS - 1 =>
+                        if let Some(index) = table_indices[col][row + 1] {
+                            out_of_box_popup.item = index;
                         },
                     _ => (),
                 }

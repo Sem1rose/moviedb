@@ -1,5 +1,5 @@
 use std::{
-    path::PathBuf,
+    path::Path,
     sync::mpsc::{Receiver, Sender, channel},
     thread,
 };
@@ -65,10 +65,10 @@ pub struct TraktInitPopup {
 }
 
 impl TraktInitPopup {
-    pub fn new(home_dir: &PathBuf, can_close: bool) -> Self {
+    pub fn new(home_dir: &Path, can_close: bool) -> Self {
         let (tx_init, rx_init) = channel();
-        let home_dir_cloned = home_dir.clone();
 
+        let home_dir_cloned = home_dir.to_path_buf();
         thread::spawn(move || {
             _ = tx_init.send(TraktTokens::init(&home_dir_cloned));
         });
@@ -199,11 +199,9 @@ impl PopupTrait for TraktInitPopup {
                     }
                 }
                 if let Some(rx_tokens) = self.rx_tokens.as_ref() {
-                    if let Ok(result) = rx_tokens.try_recv() {
-                        if let Err(error) = result {
-                            self.item = 0;
-                            self.phase = Phase::Error(format!("{:#}", error));
-                        }
+                    if let Ok(Err(error)) = rx_tokens.try_recv() {
+                        self.item = 0;
+                        self.phase = Phase::Error(format!("{:#}", error));
                     }
                 }
             }
@@ -368,11 +366,8 @@ impl PopupTrait for TraktInitPopup {
                     if let Some(Popups::TraktInit(trakt_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
-                        match data {
-                            key_event_handler::Data::Key(key_event) => {
-                                trakt_init_popup.input0.input(key_event);
-                            }
-                            _ => (),
+                        if let key_event_handler::Data::Key(key_event) = data {
+                            trakt_init_popup.input0.input(key_event);
                         }
                     }
                 });
@@ -380,11 +375,8 @@ impl PopupTrait for TraktInitPopup {
                     if let Some(Popups::TraktInit(trakt_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
-                        match data {
-                            key_event_handler::Data::Key(key_event) => {
-                                trakt_init_popup.input1.input(key_event);
-                            }
-                            _ => (),
+                        if let key_event_handler::Data::Key(key_event) = data {
+                            trakt_init_popup.input1.input(key_event);
                         }
                     }
                 });
@@ -557,11 +549,8 @@ impl PopupTrait for TraktInitPopup {
                     if let Some(Popups::TraktInit(trakt_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
-                        match data {
-                            key_event_handler::Data::Key(key_event) => {
-                                trakt_init_popup.input0.input(key_event);
-                            }
-                            _ => (),
+                        if let key_event_handler::Data::Key(key_event) = data {
+                            trakt_init_popup.input0.input(key_event);
                         }
                     }
                 });

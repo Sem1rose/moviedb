@@ -1,4 +1,7 @@
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, bail};
 use serde::{Deserialize, Serialize};
@@ -38,16 +41,16 @@ pub struct PunchPlayTokens {
 
 #[allow(dead_code)]
 impl PunchPlayTokens {
-    pub fn new(home_dir: &PathBuf) -> Self {
+    pub fn new(home_dir: &Path) -> Self {
         Self {
-            home_dir: home_dir.clone(),
+            home_dir: home_dir.to_path_buf(),
 
             status:      None,
             user_tokens: UserTokens::default(),
         }
     }
 
-    pub fn init(home_dir: &PathBuf) -> anyhow::Result<UserTokens> {
+    pub fn init(home_dir: &Path) -> anyhow::Result<UserTokens> {
         if home_dir.join(".punch_play_tokens").is_file() {
             Self::read_creds(home_dir)
         } else {
@@ -55,8 +58,8 @@ impl PunchPlayTokens {
         }
     }
 
-    pub fn read_creds(home_dir: &PathBuf) -> anyhow::Result<UserTokens> {
-        let encrypted_data = fs::read(&home_dir.join(".punch_play_tokens"))
+    pub fn read_creds(home_dir: &Path) -> anyhow::Result<UserTokens> {
+        let encrypted_data = fs::read(home_dir.join(".punch_play_tokens"))
             .context("PunchPlay: unable to read tokens")?;
 
         serde_json::from_str(
@@ -87,7 +90,7 @@ impl PunchPlayTokens {
         let data = serde_json::to_string(&self.user_tokens)?;
 
         fs::write(
-            &self.home_dir.join(".punch_play_tokens"),
+            self.home_dir.join(".punch_play_tokens"),
             &encrypt_bytes(data.as_bytes(), b"0123456789abcdef0123456789abcdef")
                 .context("PunchPlay: failed to encrypt user tokens")?,
         )

@@ -24,7 +24,10 @@ use crate::{
     pop_criterion,
     popups::{PopupTrait, Popups},
     screens::Screens,
-    types::{FilterCriterion, FilterCriterionDiscriminants, FxIndexMap, Movie, Person},
+    types::{
+        BoxedFn, BoxedMutFn, FilterCriterion, FilterCriterionDiscriminants, FxIndexMap, Movie,
+        Person,
+    },
     widgets::{self, Action, ActionType, ContextMenu},
 };
 
@@ -53,7 +56,7 @@ pub enum Widget {
         num_visible_items:  usize,
         placeholder_text:   String,
         search_placeholder: Option<String>,
-        visible_if:         Option<Box<dyn Fn(&AdvancedFilterPopup) -> bool>>,
+        visible_if:         Option<BoxedFn<AdvancedFilterPopup, bool>>,
     },
     TextInput {
         item:            usize,
@@ -62,12 +65,12 @@ pub enum Widget {
         placeholder:     String,
         title:           String,
         text_input:      TextArea<'static>,
-        visible_if:      Option<Box<dyn Fn(&AdvancedFilterPopup) -> bool>>,
+        visible_if:      Option<BoxedFn<AdvancedFilterPopup, bool>>,
     },
     StaticText {
         text:       String,
         constraint: Constraint,
-        visible_if: Option<Box<dyn Fn(&AdvancedFilterPopup) -> bool>>,
+        visible_if: Option<BoxedFn<AdvancedFilterPopup, bool>>,
     },
 }
 impl Widget {
@@ -180,7 +183,7 @@ impl Widget {
         }
     }
 
-    fn and_visible_if(mut self, condition: Box<dyn Fn(&AdvancedFilterPopup) -> bool>) -> Self {
+    fn and_visible_if(mut self, condition: BoxedFn<AdvancedFilterPopup, bool>) -> Self {
         match &mut self {
             Widget::Dropdown { visible_if, .. }
             | Widget::TextInput { visible_if, .. }
@@ -224,7 +227,7 @@ impl Widget {
             } => {
                 let item = *item;
                 let selected = item == selected_item;
-                let dropdown_type = dropdown_type.clone();
+                let dropdown_type = *dropdown_type;
                 let can_search = search_placeholder.is_some();
                 let input_empty = text_input.is_empty();
                 key_event_handler.bind_enter(
@@ -381,79 +384,83 @@ impl Widget {
                             if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
                                 app.drawer.active_popup.as_mut()
                             {
-                                match data {
-                                    key_event_handler::Data::Key(key_event) =>
-                                        match advanced_filter_popup.get_widget_at_mut(item).unwrap()
+                                if let key_event_handler::Data::Key(key_event) = data {
+                                    if let Widget::Dropdown {
+                                        text_input,
+                                        items,
+                                        filtered_items,
+                                        current_selected,
+                                        scroll_pos,
+                                        selected_items,
+                                        ..
+                                    } = advanced_filter_popup.get_widget_at_mut(item).unwrap()
+                                    {
+                                        if text_input.is_empty()
+                                            && matches!(dropdown_type, DropdownType::MultipleChoice)
+                                            && matches!(
+                                                key_event,
+                                                KeyEvent {
+                                                    code: KeyCode::Char(' '),
+                                                    ..
+                                                }
+                                            )
                                         {
-                                            Widget::Dropdown {
-                                                text_input,
-                                                items,
-                                                filtered_items,
-                                                current_selected,
-                                                scroll_pos,
-                                                selected_items,
-                ..
-                                            } => {
-                                                if text_input.is_empty() {
-                                                    if matches!(dropdown_type, DropdownType::MultipleChoice) && matches!(key_event, KeyEvent { code: KeyCode::Char(' '), .. }) {
-                                                        if let Some(index) = selected_items
-                                                            .iter()
-                                                            .position(|x| *x == filtered_items[*current_selected])
-                                                        {
-                                                            selected_items.remove(index);
-                                                        } else {
-                                                            selected_items.push(filtered_items[*current_selected]);
-                                                        }
-                                                        return;
-                                                    }
-                                                    // if matches!(key_event, KeyEvent { code: KeyCode::Right, .. }) {
-                                                    //     if advanced_filter_popup.get_widget_at(item + 1).is_some() {
-                                                    //         advanced_filter_popup.item += 1;
-                                                    //         return;
-                                                    //     }
-                                                    // } else if matches!(key_event, KeyEvent { code: KeyCode::Left, .. }) {
-                                                    //     if item > 0 && advanced_filter_popup.get_widget_at(item - 1).is_some() {
-                                                    //         advanced_filter_popup.item -= 1;
-                                                    //         return;
-                                                    //     }
-                                                    // }
-                                                }
-
-                                                text_input.input(key_event);
-                                                let search_text = text_input.lines()[0].trim();
-
-                                                if !search_text.is_empty() {
-                                                    let mut conf = Config::DEFAULT;
-                                                    conf.prefer_prefix = true;
-                                                    let mut matcher = Matcher::new(conf);
-                                                    let pattern = Atom::parse(
-                                                        search_text,
-                                                        nucleo_matcher::pattern::CaseMatching::Ignore,
-                                                        nucleo_matcher::pattern::Normalization::Never,
-                                                    );
-                                                    let mut scores = vec![];
-                                                    for item in items.iter().enumerate() {
-                                                        if let Some(score) = pattern.score(
-                                                            nucleo_matcher::Utf32Str::Ascii(
-                                                                item.1.as_bytes(),
-                                                            ),
-                                                            &mut matcher,
-                                                        ) {
-                                                            scores.push((score, item));
-                                                        }
-                                                    }
-
-                                                    *filtered_items =
-                                                        scores.iter().map(|&(_, (x, _))| x).collect();
-                                                } else {
-                                                    *filtered_items = (0..items.len()).collect();
-                                                }
-                                                *scroll_pos = 0;
-                                                *current_selected = 0;
+                                            if let Some(index) =
+                                                selected_items.iter().position(|x| {
+                                                    *x == filtered_items[*current_selected]
+                                                })
+                                            {
+                                                selected_items.remove(index);
+                                            } else {
+                                                selected_items
+                                                    .push(filtered_items[*current_selected]);
                                             }
-                                            _ => unreachable!(),
-                                        },
-                                    _ => (),
+                                            return;
+                                        }
+                                        // if matches!(key_event, KeyEvent { code: KeyCode::Right, .. }) {
+                                        //     if advanced_filter_popup.get_widget_at(item + 1).is_some() {
+                                        //         advanced_filter_popup.item += 1;
+                                        //         return;
+                                        //     }
+                                        // } else if matches!(key_event, KeyEvent { code: KeyCode::Left, .. }) {
+                                        //     if item > 0 && advanced_filter_popup.get_widget_at(item - 1).is_some() {
+                                        //         advanced_filter_popup.item -= 1;
+                                        //         return;
+                                        //     }
+                                        // }
+
+                                        text_input.input(key_event);
+                                        let search_text = text_input.lines()[0].trim();
+
+                                        if !search_text.is_empty() {
+                                            let mut conf = Config::DEFAULT;
+                                            conf.prefer_prefix = true;
+                                            let mut matcher = Matcher::new(conf);
+                                            let pattern = Atom::parse(
+                                                search_text,
+                                                nucleo_matcher::pattern::CaseMatching::Ignore,
+                                                nucleo_matcher::pattern::Normalization::Never,
+                                            );
+                                            let mut scores = vec![];
+                                            for item in items.iter().enumerate() {
+                                                if let Some(score) = pattern.score(
+                                                    nucleo_matcher::Utf32Str::Ascii(
+                                                        item.1.as_bytes(),
+                                                    ),
+                                                    &mut matcher,
+                                                ) {
+                                                    scores.push((score, item));
+                                                }
+                                            }
+
+                                            *filtered_items =
+                                                scores.iter().map(|&(_, (x, _))| x).collect();
+                                        } else {
+                                            *filtered_items = (0..items.len()).collect();
+                                        }
+                                        *scroll_pos = 0;
+                                        *current_selected = 0;
+                                    }
                                 }
                             }
                         },
@@ -532,7 +539,7 @@ impl Widget {
                         *scroll_pos = 0;
                         *current_selected = 0;
                     } else if can_search {
-                        *current_selected = selected_items.get(0).copied().unwrap_or(0);
+                        *current_selected = selected_items.first().copied().unwrap_or(0);
                         *scroll_pos = current_selected.saturating_sub(*num_visible_items - 1)
                     }
                 }
@@ -570,56 +577,52 @@ impl Widget {
                         if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
-                            match data {
-                                key_event_handler::Data::Key(key_event) => {
-                                    match advanced_filter_popup.get_widget_at_mut(item).unwrap() {
-                                        Widget::TextInput { text_input, .. } =>
-                                            match text_input_type {
-                                                TextInputType::Normal => {
-                                                    text_input.input(key_event);
+                            if let key_event_handler::Data::Key(key_event) = data {
+                                if let Widget::TextInput { text_input, .. } =
+                                    advanced_filter_popup.get_widget_at_mut(item).unwrap()
+                                {
+                                    match text_input_type {
+                                        TextInputType::Normal => {
+                                            text_input.input(key_event);
+                                        }
+                                        TextInputType::Number => {
+                                            if let KeyCode::Char(x) = &key_event.code {
+                                                if text_input.lines()[0].len() >= 4 {
+                                                    return;
                                                 }
-                                                TextInputType::Number => {
-                                                    if let KeyCode::Char(x) = &key_event.code {
-                                                        if text_input.lines()[0].len() >= 4 {
-                                                            return;
-                                                        }
 
-                                                        if !x.is_ascii_digit() {
-                                                            return;
-                                                        }
-                                                    }
-
-                                                    text_input.input(key_event);
-                                                    // if text_input.lines()[0].len() == 4 {
-                                                    //     text_input.scroll((0, -1));
-                                                    // }
+                                                if !x.is_ascii_digit() {
+                                                    return;
                                                 }
-                                                TextInputType::Rating => {
-                                                    let parsed = text_input.lines()[0]
-                                                        .parse::<f64>()
-                                                        .unwrap_or(0.0);
-                                                    if let KeyCode::Char(x) = &key_event.code {
-                                                        if text_input.lines()[0].len() >= 3
-                                                            || parsed >= 10.0
-                                                        {
-                                                            return;
-                                                        }
+                                            }
 
-                                                        if !x.is_ascii_digit() && *x != '.' {
-                                                            return;
-                                                        }
-                                                    }
-
-                                                    text_input.input(key_event);
-                                                    // if text_input.lines()[0].len() == 3 {
-                                                    //     text_input.scroll((0, -1));
-                                                    // }
+                                            text_input.input(key_event);
+                                            // if text_input.lines()[0].len() == 4 {
+                                            //     text_input.scroll((0, -1));
+                                            // }
+                                        }
+                                        TextInputType::Rating => {
+                                            let parsed =
+                                                text_input.lines()[0].parse::<f64>().unwrap_or(0.0);
+                                            if let KeyCode::Char(x) = &key_event.code {
+                                                if text_input.lines()[0].len() >= 3
+                                                    || parsed >= 10.0
+                                                {
+                                                    return;
                                                 }
-                                            },
-                                        _ => unreachable!(),
+
+                                                if !x.is_ascii_digit() && *x != '.' {
+                                                    return;
+                                                }
+                                            }
+
+                                            text_input.input(key_event);
+                                            // if text_input.lines()[0].len() == 3 {
+                                            //     text_input.scroll((0, -1));
+                                            // }
+                                        }
                                     }
                                 }
-                                _ => (),
                             }
                         }
                     },
@@ -675,7 +678,7 @@ impl Widget {
                         } else {
                             match dropdown_type {
                                 DropdownType::Normal => selected_items
-                                    .get(0)
+                                    .first()
                                     .map(|x| items[*x].clone())
                                     .unwrap_or(placeholder_text.clone()),
                                 DropdownType::MultipleChoice => placeholder_text.clone(),
@@ -831,8 +834,8 @@ pub struct AdvancedFilterPopup {
     available_directors: Vec<Person>,
 
     widgets:  Option<Vec<Vec<Widget>>>,
-    validate: Option<Box<dyn Fn(&Self) -> bool>>,
-    confirm:  Option<Rc<Box<dyn Fn(&mut Self)>>>,
+    validate: Option<BoxedFn<Self, bool>>,
+    confirm:  Option<Rc<BoxedMutFn<Self, ()>>>,
 }
 
 impl AdvancedFilterPopup {
@@ -857,8 +860,7 @@ impl AdvancedFilterPopup {
     pub fn initialize(&mut self, movies: &[&Movie], persons: &FxIndexMap<u32, Person>) {
         self.available_genres = movies
             .iter()
-            .map(|x| x.genres.clone())
-            .flatten()
+            .flat_map(|x| x.genres.clone())
             .unique()
             .sorted()
             .collect_vec();
@@ -870,21 +872,19 @@ impl AdvancedFilterPopup {
             .collect_vec();
         self.available_actors = movies
             .iter()
-            .map(|x| x.credits.cast.iter())
-            .flatten()
+            .flat_map(|x| x.credits.cast.iter())
             .unique_by(|x| x.id)
             .filter_map(|y| persons.get(&y.id).cloned())
             .sorted_by_key(|x| x.name.clone())
             .collect();
         self.available_directors = movies
             .iter()
-            .map(|x| {
+            .flat_map(|x| {
                 x.credits
                     .crew
                     .iter()
                     .filter(|x| x.job_or_character == "Director")
             })
-            .flatten()
             .unique_by(|x| x.id)
             .filter_map(|y| persons.get(&y.id).cloned())
             .sorted_by_key(|x| x.name.clone())
@@ -1099,7 +1099,7 @@ impl AdvancedFilterPopup {
                     !(positive_empty && negative_empty)
                 }));
 
-                let criterion_discriminant = criterion_discriminant.clone();
+                let criterion_discriminant = *criterion_discriminant;
                 self.confirm = Some(Rc::new(Box::new(move |advanced_filter_popup| {
                     let (positive, positive_contains_all) = (
                         match advanced_filter_popup.get_widget_at_mut(1).unwrap() {
@@ -1309,7 +1309,7 @@ impl AdvancedFilterPopup {
                     })
                 }));
 
-                let criterion_discriminant = criterion_discriminant.clone();
+                let criterion_discriminant = *criterion_discriminant;
                 self.confirm = Some(Rc::new(Box::new(move |advanced_filter_popup| {
                     let ordering = match advanced_filter_popup.get_widget_at(0).unwrap() {
                         Widget::Dropdown {
@@ -1345,7 +1345,7 @@ impl AdvancedFilterPopup {
                             (input0, u32::MAX - 1, true)
                         }
                         "Between" => {
-                            let input0 = lower_bound.parse().unwrap_or(u32::MIN + 1);
+                            let input0 = lower_bound.parse().unwrap_or(1);
                             let input1 = upper_bound.parse().unwrap_or(u32::MAX - 1);
 
                             (input0, input1, false)
@@ -1394,7 +1394,7 @@ impl AdvancedFilterPopup {
                     },
                 ));
 
-                let criterion_discriminant = criterion_discriminant.clone();
+                let criterion_discriminant = *criterion_discriminant;
                 self.confirm = Some(Rc::new(Box::new(move |advanced_filter_popup| {
                     let ordering = match advanced_filter_popup.get_widget_at(0).unwrap() {
                         Widget::Dropdown {
@@ -1496,7 +1496,7 @@ impl AdvancedFilterPopup {
 
                 self.validate = Some(Box::new(|_| true));
 
-                let criterion_discriminant = criterion_discriminant.clone();
+                let criterion_discriminant = *criterion_discriminant;
                 self.confirm = Some(Rc::new(Box::new(move |advanced_filter_popup| {
                     let (values, inverted) = (
                         match advanced_filter_popup.get_widget_at(1).unwrap() {
@@ -1551,9 +1551,9 @@ impl AdvancedFilterPopup {
         self.widgets
             .as_ref()
             .unwrap()
-            .into_iter()
+            .iter()
             .filter_map(|x| {
-                x.into_iter().find(|x| match x {
+                x.iter().find(|x| match x {
                     Widget::StaticText { .. } => false,
                     Widget::Dropdown {
                         item: widget_item, ..
@@ -1570,9 +1570,9 @@ impl AdvancedFilterPopup {
         self.widgets
             .as_mut()
             .unwrap()
-            .into_iter()
+            .iter_mut()
             .filter_map(|x| {
-                x.into_iter().find(|x| match x {
+                x.iter_mut().find(|x| match x {
                     Widget::StaticText { .. } => false,
                     Widget::Dropdown {
                         item: widget_item, ..
@@ -1857,7 +1857,7 @@ impl PopupTrait for AdvancedFilterPopup {
             let valid = self
                 .validate
                 .as_ref()
-                .and_then(|validate| Some(validate(self)))
+                .map(|validate| validate(self))
                 .unwrap_or(false);
             let widget_visible = self
                 .widgets
@@ -1919,10 +1919,9 @@ impl PopupTrait for AdvancedFilterPopup {
                                 advanced_filter_popup.item =
                                     advanced_filter_popup.item.saturating_sub(1);
                             }
-                            crate::key_event_handler::Data::Direction(true, _) =>
-                                if advanced_filter_popup.item < last_item {
-                                    advanced_filter_popup.item += 1;
-                                },
+                            crate::key_event_handler::Data::Direction(true, _)
+                                if advanced_filter_popup.item < last_item =>
+                                advanced_filter_popup.item += 1,
                             _ => (),
                         }
                     }
@@ -1979,7 +1978,7 @@ impl PopupTrait for AdvancedFilterPopup {
             let areas = Layout::vertical(vec![constraint!(==3); widgets.len()])
                 .split(helpers::add_padding(inner_area, Padding::new(2, 2, 0, 1)));
             for (row_area, (i, row)) in areas
-                .into_iter()
+                .iter()
                 .rev()
                 .zip_eq(widgets.into_iter().enumerate().rev())
             {
@@ -1995,7 +1994,7 @@ impl PopupTrait for AdvancedFilterPopup {
                             },
                         Widget::StaticText { .. } => None,
                     })
-                    .last()
+                    .next_back()
                     .unwrap_or(usize::MAX);
                 let areas = Layout::horizontal(
                     row.iter()
@@ -2004,10 +2003,7 @@ impl PopupTrait for AdvancedFilterPopup {
                         .collect_vec(),
                 )
                 .split(*row_area);
-                for (area, (j, widget)) in areas
-                    .into_iter()
-                    .step_by(2)
-                    .zip(row.into_iter().enumerate())
+                for (area, (j, widget)) in areas.iter().step_by(2).zip(row.into_iter().enumerate())
                 {
                     if widget_visible[i][j] {
                         widget.render(frame, key_event_handler, *area, self.item, tab_selected);

@@ -171,10 +171,10 @@ impl KeyEventHandler {
         let mut matches = self
             .mouse_binds
             .keys()
-            .cloned()
             .filter(|(_, b, rect)| b == &bind && rect.contains(position))
+            .cloned()
             .collect_vec();
-        matches.sort_by(|a, b| a.0.cmp(&b.0));
+        matches.sort_by_key(|x| x.0);
         matches.reverse();
         if !matches.is_empty() {
             return Some(self.mouse_binds.remove(&matches[0]).unwrap());
@@ -184,7 +184,7 @@ impl KeyEventHandler {
     }
 
     fn try_get_key_bind(&mut self, bind: Bind, state: State) -> Option<Callback> {
-        let Some((key, _)) = self
+        let (key, _) = self
             .key_binds
             .iter()
             .filter(|((b, s), _)| {
@@ -197,10 +197,7 @@ impl KeyEventHandler {
                         .unwrap_or(true)
             })
             .sorted_by_key(|((_, s), _)| s.0.is_some() as usize * 2 + s.1.is_some() as usize)
-            .last()
-        else {
-            return None;
-        };
+            .last()?;
 
         if let Some((_, callback)) = self.key_binds.remove(&key.clone()) {
             return Some(callback);

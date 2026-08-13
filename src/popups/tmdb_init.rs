@@ -1,5 +1,5 @@
 use std::{
-    path::PathBuf,
+    path::Path,
     sync::mpsc::{Receiver, channel},
     thread,
 };
@@ -18,7 +18,6 @@ use ratatui::{
 use ratatui_textarea::{TextArea, WrapMode};
 use strum::AsRefStr;
 use throbber_widgets_tui::{Throbber, ThrobberState};
-use tmdb;
 
 use crate::{
     app::App,
@@ -62,10 +61,10 @@ pub struct TMDBInitPopup {
 }
 
 impl TMDBInitPopup {
-    pub fn new(home_dir: &PathBuf, can_close: bool) -> Self {
+    pub fn new(home_dir: &Path, can_close: bool) -> Self {
         let (tx_init, rx_init) = channel();
-        let home_dir_cloned = home_dir.clone();
 
+        let home_dir_cloned = home_dir.to_path_buf();
         thread::spawn(move || {
             _ = tx_init.send(TMDBTokens::init(&home_dir_cloned));
         });
@@ -153,11 +152,9 @@ impl PopupTrait for TMDBInitPopup {
                     }
                 }
                 if let Some(rx_session_id) = self.rx_session_id.as_ref() {
-                    if let Ok(result) = rx_session_id.try_recv() {
-                        if let Err(error) = result {
-                            self.item = 0;
-                            self.phase = Phase::Error(format!("{:#}", error));
-                        }
+                    if let Ok(Err(error)) = rx_session_id.try_recv() {
+                        self.item = 0;
+                        self.phase = Phase::Error(format!("{:#}", error));
                     }
                 }
             }
@@ -301,11 +298,8 @@ impl PopupTrait for TMDBInitPopup {
                     if let Some(Popups::TMDBInit(tmdb_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
-                        match data {
-                            key_event_handler::Data::Key(key_event) => {
-                                tmdb_init_popup.input.input(key_event);
-                            }
-                            _ => (),
+                        if let key_event_handler::Data::Key(key_event) = data {
+                            tmdb_init_popup.input.input(key_event);
                         }
                     }
                 });

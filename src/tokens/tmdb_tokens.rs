@@ -1,4 +1,7 @@
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, bail};
 use serde::{Deserialize, Serialize};
@@ -31,16 +34,16 @@ pub struct TMDBTokens {
 
 #[allow(dead_code)]
 impl TMDBTokens {
-    pub fn new(home_dir: &PathBuf) -> Self {
+    pub fn new(home_dir: &Path) -> Self {
         Self {
             user_tokens: UserTokens::default(),
             status:      None,
 
-            home_dir: home_dir.clone(),
+            home_dir: home_dir.to_path_buf(),
         }
     }
 
-    pub fn init(home_dir: &PathBuf) -> anyhow::Result<UserTokens> {
+    pub fn init(home_dir: &Path) -> anyhow::Result<UserTokens> {
         if home_dir.join(".tmdb_tokens").is_file() {
             Self::read_creds(home_dir)
         } else {
@@ -48,9 +51,9 @@ impl TMDBTokens {
         }
     }
 
-    pub fn read_creds(home_dir: &PathBuf) -> anyhow::Result<UserTokens> {
+    pub fn read_creds(home_dir: &Path) -> anyhow::Result<UserTokens> {
         let encrypted_data =
-            fs::read(&home_dir.join(".tmdb_tokens")).context("TMDB: unable to read tokens")?;
+            fs::read(home_dir.join(".tmdb_tokens")).context("TMDB: unable to read tokens")?;
 
         serde_json::from_str(
             &String::from_utf8(
@@ -79,7 +82,7 @@ impl TMDBTokens {
         let data = serde_json::to_string(&self.user_tokens)?;
 
         fs::write(
-            &self.home_dir.join(".tmdb_tokens"),
+            self.home_dir.join(".tmdb_tokens"),
             &encrypt_bytes(data.as_bytes(), b"0123456789abcdef0123456789abcdef")
                 .context("TMDB: failed to encrypt user tokens")?,
         )

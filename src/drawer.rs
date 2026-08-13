@@ -1,4 +1,8 @@
-use std::{cell::RefCell, path::PathBuf, rc::Rc};
+use std::{
+    cell::RefCell,
+    path::{Path, PathBuf},
+    rc::Rc,
+};
 
 use itertools::Itertools;
 use ratatui::{
@@ -34,37 +38,50 @@ pub struct Drawer {
     cache_dir: PathBuf,
 }
 
+#[macro_export]
+macro_rules! new_popup {
+    ($popup_enum:ident, $T:expr) => {
+        Popups::$popup_enum(Box::new($T))
+    };
+}
+
 const MINTERMSIZE: [u32; 2] = [100, 30];
 impl Drawer {
-    pub fn new(home_dir: &PathBuf, cache_dir: &PathBuf, _config: Rc<RefCell<Config>>) -> Self {
+    pub fn new(home_dir: &Path, cache_dir: &Path, _config: Rc<RefCell<Config>>) -> Self {
         let popup_queue = if _config.borrow().options.oob_done {
             let mut popups = vec![];
             if _config.borrow_mut().options.trakt_enabled {
-                popups.push(Popups::TraktInit(TraktInitPopup::new(home_dir, false)));
+                popups.push(new_popup!(TraktInit, TraktInitPopup::new(
+                    home_dir, false,
+                )));
             }
             if _config.borrow_mut().options.punch_play_enabled {
-                popups.push(Popups::PunchPlayInit(PunchPlayInitPopup::new(
+                popups.push(new_popup!(PunchPlayInit, PunchPlayInitPopup::new(
                     home_dir, false,
                 )));
             }
             if _config.borrow_mut().options.tmdb_enabled {
-                popups.push(Popups::TMDBInit(TMDBInitPopup::new(home_dir, false)));
+                popups.push(new_popup!(TMDBInit, TMDBInitPopup::new(
+                    home_dir, false,
+                )));
             }
             if _config.borrow_mut().options.omdb_enabled {
-                popups.push(Popups::OMDBInit(OMDBInitPopup::new(home_dir, false)));
+                popups.push(new_popup!(OMDBInit, OMDBInitPopup::new(
+                    home_dir, false,
+                )));
             }
 
             popups
         } else {
-            vec![Popups::OutOfBox(OutOfBoxPopup::default())]
+            vec![Popups::OutOfBox(Box::default())]
         };
 
         Drawer {
             image_renderer: RatatuiImage::new(cache_dir),
 
             refresh_immediate: 0,
-            _home_dir: home_dir.clone(),
-            cache_dir: cache_dir.clone(),
+            _home_dir: home_dir.to_path_buf(),
+            cache_dir: cache_dir.to_path_buf(),
             show_term_size_warning: false,
 
             active_popup: None,
@@ -202,7 +219,7 @@ impl Drawer {
     }
 
     // pub fn open_trakt_init_popup(&mut self) {
-    //     self.popup_queue.push(Popups::TraktInit(TraktInitPopup::new(
+    //     self.popup_queue.push(new_popup!(TraktInit, TraktInitPopup::new(
     //         &self._home_dir,
     //         true,
     //     )));
@@ -210,7 +227,7 @@ impl Drawer {
 
     // pub fn open_punch_play_init_popup(&mut self) {
     //     self.popup_queue
-    //         .push(Popups::PunchPlayInit(PunchPlayInitPopup::new(
+    //         .push(new_popup!(PunchPlayInit, PunchPlayInitPopup::new(
     //             &self._home_dir,
     //             true,
     //         )));
@@ -218,12 +235,12 @@ impl Drawer {
 
     // pub fn open_tmdb_init_popup(&mut self) {
     //     self.popup_queue
-    //         .push(Popups::TMDBInit(TMDBInitPopup::new(&self._home_dir, true)));
+    //         .push(new_popup!(TMDBInit, TMDBInitPopup::new(&self._home_dir, true)));
     // }
 
     // pub fn open_omdb_init_popup(&mut self) {
     //     self.popup_queue
-    //         .push(Popups::OMDBInit(OMDBInitPopup::new(&self._home_dir, true)));
+    //         .push(new_popup!(OMDBInit, OMDBInitPopup::new(&self._home_dir, true)));
     // }
 
     pub fn open_add_movie_popup(
@@ -233,13 +250,14 @@ impl Drawer {
         tmdb_tokens: TMDBTokens,
         omdb_tokens: OMDBTokens,
     ) {
-        self.popup_queue.push(Popups::AddMovie(AddMoviePopup::new(
-            trakt_tokens,
-            punch_play_tokens,
-            tmdb_tokens,
-            omdb_tokens,
-            &self.cache_dir,
-        )));
+        self.popup_queue
+            .push(Popups::AddMovie(Box::new(AddMoviePopup::new(
+                trakt_tokens,
+                punch_play_tokens,
+                tmdb_tokens,
+                omdb_tokens,
+                &self.cache_dir,
+            ))));
     }
 
     pub fn open_refetch_details_popup(
@@ -250,30 +268,32 @@ impl Drawer {
         omdb_tokens: OMDBTokens,
     ) {
         if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_mut() {
-            self.popup_queue
-                .push(Popups::AddMovie(AddMoviePopup::new_refetch_details(
+            self.popup_queue.push(Popups::AddMovie(Box::new(
+                AddMoviePopup::new_refetch_details(
                     main_screen.current_movie().unwrap().id,
                     trakt_tokens,
                     punch_play_tokens,
                     tmdb_tokens,
                     omdb_tokens,
                     &self.cache_dir,
-                )));
+                ),
+            )));
         }
     }
 
     pub fn open_add_play_popup(&mut self) {
         self.popup_queue
-            .push(Popups::EditMovie(EditMoviePopup::new_add_play()));
+            .push(Popups::EditMovie(Box::new(EditMoviePopup::new_add_play())));
     }
 
     pub fn open_edit_movie_popup(&mut self) {
         if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_mut() {
             let entry = &main_screen.watched.borrow()[&main_screen.current_movie().unwrap().id];
-            self.popup_queue.push(Popups::EditMovie(EditMoviePopup::new(
-                entry.get_user_rating(),
-                entry.get_latest_play(),
-            )));
+            self.popup_queue
+                .push(Popups::EditMovie(Box::new(EditMoviePopup::new(
+                    entry.get_user_rating(),
+                    entry.get_latest_play(),
+                ))));
         }
     }
 
@@ -286,7 +306,7 @@ impl Drawer {
                 .map(|x| &x.title)
             {
                 self.popup_queue
-                    .push(Popups::DeleteMovie(DeleteMoviePopup::new(name)));
+                    .push(Popups::DeleteMovie(Box::new(DeleteMoviePopup::new(name))));
             }
         }
     }
@@ -294,9 +314,9 @@ impl Drawer {
     pub fn open_advanced_filter_popup(&mut self) {
         if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_mut() {
             self.popup_queue
-                .push(Popups::AdvancedFilter(AdvancedFilterPopup::new(
+                .push(Popups::AdvancedFilter(Box::new(AdvancedFilterPopup::new(
                     &main_screen.filter_criteria,
-                )));
+                ))));
         }
     }
 
@@ -383,11 +403,11 @@ impl Drawer {
             .floor() as u16;
 
         let verts = Layout::vertical(vec![constraint!(==1); area.height as usize]).split(area);
-        let mut areas = verts.into_iter().flat_map(|&area| {
+        let mut areas = verts.iter().flat_map(|&area| {
             Layout::horizontal(vec![constraint!(==len_item); num_items_per_row])
                 .split(area)
-                .into_iter()
-                .map(|&x| x)
+                .iter()
+                .copied()
                 .collect_vec()
         });
 

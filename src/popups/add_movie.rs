@@ -1,5 +1,5 @@
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::mpsc::{self, Receiver},
     thread,
 };
@@ -55,6 +55,7 @@ pub enum Phase {
     Done,
 }
 
+#[allow(clippy::upper_case_acronyms)]
 enum SearchResults {
     Trakt(anyhow::Result<Vec<TraktSearchResponseMovie>>),
     PunchPlay(anyhow::Result<Vec<PunchPlaySearchResult>>),
@@ -146,14 +147,14 @@ impl AddMoviePopup {
         punch_play_tokens: PunchPlayTokens,
         tmdb_tokens: TMDBTokens,
         omdb_tokens: OMDBTokens,
-        cache_dir: &PathBuf,
+        cache_dir: &Path,
     ) -> Self {
         Self {
             trakt_tokens,
             punch_play_tokens,
             tmdb_tokens,
             omdb_tokens,
-            cache_dir: cache_dir.clone(),
+            cache_dir: cache_dir.to_path_buf(),
             ..Default::default()
         }
     }
@@ -164,14 +165,14 @@ impl AddMoviePopup {
         punch_play_tokens: PunchPlayTokens,
         tmdb_tokens: TMDBTokens,
         omdb_tokens: OMDBTokens,
-        cache_dir: &PathBuf,
+        cache_dir: &Path,
     ) -> Self {
         Self {
             trakt_tokens,
             punch_play_tokens,
             tmdb_tokens,
             omdb_tokens,
-            cache_dir: cache_dir.clone(),
+            cache_dir: cache_dir.to_path_buf(),
             refetch_details: true,
             phase: Phase::ConfirmRefetchDetails(tmdb_id),
             ..Default::default()
@@ -225,7 +226,6 @@ impl AddMoviePopup {
         let cache_dir = self.cache_dir.clone();
 
         thread::spawn(move || {
-            let tmdb_result;
             let mut trakt_result = None;
             let mut punch_play_result = None;
             let mut omdb_result = None;
@@ -242,7 +242,7 @@ impl AddMoviePopup {
             } else {
                 None
             };
-            tmdb_result = match tmdb_handle.join() {
+            let tmdb_result = match tmdb_handle.join() {
                 Err(e) => {
                     _ = tx_details_request.send(Err(anyhow!("{:#?}", e)));
                     return;
@@ -483,11 +483,7 @@ impl PopupTrait for AddMoviePopup {
             app.drawer.close_popup();
         });
 
-        let num_results = if let Some(search_results) = self.search_results.as_ref() {
-            Some(search_results.len())
-        } else {
-            None
-        };
+        let num_results = self.search_results.as_ref().map(|x| x.len());
         self.throbber_visible = false;
         match &self.phase {
             Phase::SelectMovie => {
@@ -539,25 +535,21 @@ impl PopupTrait for AddMoviePopup {
                     if let Some(Popups::AddMovie(add_movie_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
-                        match data {
-                            key_event_handler::Data::Key(key_event) => {
-                                let old_query = add_movie_popup.input0.lines()[0].clone();
-                                add_movie_popup.input0.input(key_event);
-                                let input_empty =
-                                    add_movie_popup.input0.lines()[0].trim().is_empty();
+                        if let key_event_handler::Data::Key(key_event) = data {
+                            let old_query = add_movie_popup.input0.lines()[0].clone();
+                            add_movie_popup.input0.input(key_event);
+                            let input_empty = add_movie_popup.input0.lines()[0].trim().is_empty();
 
-                                if add_movie_popup.input0.lines()[0].trim() != old_query.trim()
-                                    && !input_empty
-                                {
-                                    add_movie_popup.search_results = None;
-                                    _ = add_movie_popup.rx_search_result.take();
-                                    add_movie_popup.last_input_tick = Some(add_movie_popup.tick);
-                                } else if input_empty {
-                                    add_movie_popup.search_results = None;
-                                    _ = add_movie_popup.rx_search_result.take();
-                                }
+                            if add_movie_popup.input0.lines()[0].trim() != old_query.trim()
+                                && !input_empty
+                            {
+                                add_movie_popup.search_results = None;
+                                _ = add_movie_popup.rx_search_result.take();
+                                add_movie_popup.last_input_tick = Some(add_movie_popup.tick);
+                            } else if input_empty {
+                                add_movie_popup.search_results = None;
+                                _ = add_movie_popup.rx_search_result.take();
                             }
-                            _ => (),
                         }
                     }
                 });
@@ -632,9 +624,9 @@ impl PopupTrait for AddMoviePopup {
                         .saturating_sub(self.num_visible_items + 1);
                 }
 
-                if num_results_unwrapped <= num_visible_results {
-                    self.alignment_bottom = false;
-                } else if self.selected_item - self.scroll_pos == 0 {
+                if num_results_unwrapped <= num_visible_results
+                    || self.selected_item - self.scroll_pos == 0
+                {
                     self.alignment_bottom = false;
                 } else if self.selected_item - self.scroll_pos == self.num_visible_items - 1 {
                     self.alignment_bottom = true;
@@ -642,18 +634,14 @@ impl PopupTrait for AddMoviePopup {
 
                 let mut remaining_area = results_list_area;
                 for i in 0..self.num_visible_items {
-                    let [area, remaining] =
-                        if self.partially_visible && i == 0 && self.alignment_bottom {
-                            vertical![==partially_visible_result_height as u16, >= 0]
-                        } else if self.partially_visible
-                            && i == self.num_visible_items - 1
-                            && !self.alignment_bottom
-                        {
-                            vertical![==partially_visible_result_height as u16, >= 0]
-                        } else {
-                            vertical![==5, >= 0]
-                        }
-                        .areas(remaining_area);
+                    let [area, remaining] = if self.partially_visible
+                        && i == (!self.alignment_bottom as usize * (self.num_visible_items - 1))
+                    {
+                        vertical![==partially_visible_result_height as u16, >= 0]
+                    } else {
+                        vertical![==5, >= 0]
+                    }
+                    .areas(remaining_area);
 
                     if self.scroll_pos + i < num_results_unwrapped {
                         let result = &self.search_results.as_ref().unwrap()[self.scroll_pos + i];
@@ -746,7 +734,7 @@ impl PopupTrait for AddMoviePopup {
                                 );
                             } else if index == 3 {
                                 frame.render_widget(
-                                    line![format!("{:.1}", f64::from(result.rating))]
+                                    line![format!("{:.1}", result.rating)]
                                         .fg(if selected {
                                             material::CYAN.c100
                                         } else {
@@ -841,11 +829,8 @@ impl PopupTrait for AddMoviePopup {
                     if let Some(Popups::AddMovie(add_movie_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
-                        match data {
-                            crate::key_event_handler::Data::Direction(true, _) => {
-                                add_movie_popup.item = 4;
-                            }
-                            _ => {}
+                        if let crate::key_event_handler::Data::Direction(true, _) = data {
+                            add_movie_popup.item = 4;
                         }
                     }
                 });
@@ -853,11 +838,8 @@ impl PopupTrait for AddMoviePopup {
                     if let Some(Popups::AddMovie(add_movie_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
-                        match data {
-                            crate::key_event_handler::Data::Direction(false, _) => {
-                                add_movie_popup.item = 3;
-                            }
-                            _ => {}
+                        if let crate::key_event_handler::Data::Direction(false, _) = data {
+                            add_movie_popup.item = 3;
                         }
                     }
                 });
@@ -866,11 +848,8 @@ impl PopupTrait for AddMoviePopup {
                     if let Some(Popups::AddMovie(add_movie_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
-                        match data {
-                            crate::key_event_handler::Data::Direction(true, _) => {
-                                add_movie_popup.item = 2;
-                            }
-                            _ => {}
+                        if let crate::key_event_handler::Data::Direction(true, _) = data {
+                            add_movie_popup.item = 2;
                         }
                     }
                 });
@@ -878,11 +857,8 @@ impl PopupTrait for AddMoviePopup {
                     if let Some(Popups::AddMovie(add_movie_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
-                        match data {
-                            crate::key_event_handler::Data::Direction(false, _) => {
-                                add_movie_popup.item = 1;
-                            }
-                            _ => {}
+                        if let crate::key_event_handler::Data::Direction(false, _) = data {
+                            add_movie_popup.item = 1;
                         }
                     }
                 });
@@ -939,26 +915,21 @@ impl PopupTrait for AddMoviePopup {
                     if let Some(Popups::AddMovie(add_movie_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
-                        match data {
-                            key_event_handler::Data::Key(key_event) => {
-                                let parsed = add_movie_popup.input0.lines()[0]
-                                    .parse::<f64>()
-                                    .unwrap_or(0.0);
-                                if let KeyCode::Char(x) = &key_event.code {
-                                    if add_movie_popup.input0.lines()[0].len() >= 3
-                                        || parsed >= 10.0
-                                    {
-                                        return;
-                                    }
-
-                                    if !x.is_ascii_digit() && *x != '.' {
-                                        return;
-                                    }
+                        if let key_event_handler::Data::Key(key_event) = data {
+                            let parsed = add_movie_popup.input0.lines()[0]
+                                .parse::<f64>()
+                                .unwrap_or(0.0);
+                            if let KeyCode::Char(x) = &key_event.code {
+                                if add_movie_popup.input0.lines()[0].len() >= 3 || parsed >= 10.0 {
+                                    return;
                                 }
 
-                                add_movie_popup.input0.input(key_event);
+                                if !x.is_ascii_digit() && *x != '.' {
+                                    return;
+                                }
                             }
-                            _ => (),
+
+                            add_movie_popup.input0.input(key_event);
                         }
                     }
                 });
@@ -966,11 +937,8 @@ impl PopupTrait for AddMoviePopup {
                     if let Some(Popups::AddMovie(add_movie_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
-                        match data {
-                            key_event_handler::Data::Key(key_event) => {
-                                add_movie_popup.input1.input(key_event);
-                            }
-                            _ => (),
+                        if let key_event_handler::Data::Key(key_event) = data {
+                            add_movie_popup.input1.input(key_event);
                         }
                     }
                 });
@@ -1162,11 +1130,8 @@ impl PopupTrait for AddMoviePopup {
                     if let Some(Popups::AddMovie(add_movie_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
-                        match data {
-                            crate::key_event_handler::Data::Direction(dir, _) => {
-                                add_movie_popup.item = dir as usize;
-                            }
-                            _ => {}
+                        if let crate::key_event_handler::Data::Direction(dir, _) = data {
+                            add_movie_popup.item = dir as usize;
                         }
                     }
                 });
@@ -1259,6 +1224,9 @@ impl PopupTrait for AddMoviePopup {
                             app.drawer.close_popup();
                         },
                     );
+                    key_event_handler.bind_enter((None, None), "Cancel".into(), |app, _| {
+                        app.drawer.close_popup();
+                    });
                 } else {
                     key_event_handler.bind_tab((None, None), "Navigate".into(), |app, _| {
                         if let Some(Popups::AddMovie(add_movie_popup)) =
@@ -1274,11 +1242,8 @@ impl PopupTrait for AddMoviePopup {
                             if let Some(Popups::AddMovie(add_movie_popup)) =
                                 app.drawer.active_popup.as_mut()
                             {
-                                match data {
-                                    crate::key_event_handler::Data::Direction(dir, _) => {
-                                        add_movie_popup.item = dir as usize;
-                                    }
-                                    _ => {}
+                                if let crate::key_event_handler::Data::Direction(dir, _) = data {
+                                    add_movie_popup.item = dir as usize;
                                 }
                             }
                         },

@@ -25,6 +25,8 @@ pub use crate::pop_criterion;
 pub type Term = Terminal<TermBackend>;
 type TermBackend = CrosstermBackend<std::io::Stdout>;
 pub type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
+pub type BoxedFn<T, R> = Box<dyn Fn(&T) -> R>;
+pub type BoxedMutFn<T, R> = Box<dyn Fn(&mut T) -> R>;
 
 pub fn initialize_terminal() -> anyhow::Result<Term> {
     set_panic_hook();
@@ -66,10 +68,10 @@ pub enum Sort {
     #[default]
     MostRecent,
     DateAdded,
+    ReleaseDate,
     UserRating,
     Rating(RatingSource),
     Name,
-    ReleaseDate,
     Relevance,
 }
 impl From<Sort> for usize {
@@ -78,6 +80,7 @@ impl From<Sort> for usize {
     }
 }
 
+#[allow(clippy::upper_case_acronyms)]
 #[repr(usize)]
 #[derive(Default, Clone, Copy, AsRefStr, FromRepr, EnumIter)]
 pub enum RatingSource {
@@ -176,17 +179,11 @@ impl Entry {
     }
 
     pub fn get_latest_play(&self) -> DateTime<Local> {
-        self.history
-            .last()
-            .map(|x| x.date)
-            .unwrap_or(DateTime::default())
+        self.history.last().map(|x| x.date).unwrap_or_default()
     }
 
     pub fn get_first_play(&self) -> DateTime<Local> {
-        self.history
-            .first()
-            .map(|x| x.date)
-            .unwrap_or(DateTime::default())
+        self.history.first().map(|x| x.date).unwrap_or_default()
     }
 
     pub fn add_play(&mut self, date: DateTime<Local>, rating: f64, note: Option<String>) {
@@ -299,7 +296,7 @@ impl From<TMDBMovieDetails> for Movie {
             origin_country:   tmdb_details
                 .origin_country
                 .clone()
-                .map(|x| x.get(0).unwrap_or(&"Unknown".into()).clone())
+                .map(|x| x.first().unwrap_or(&"Unknown".into()).clone())
                 .unwrap_or("Unknown".into()),
             credits:          Credits { cast, crew },
             recommendations:  tmdb_details.recommendations.clone().unwrap_or_default(),

@@ -1,4 +1,4 @@
-use std::{path::PathBuf, thread};
+use std::{path::{Path, PathBuf}, thread};
 
 use anyhow::{Context, anyhow};
 use itertools::Itertools;
@@ -79,7 +79,7 @@ pub fn get_movie_details(
 }
 
 pub fn get_movie_poster_banner(
-    cache_dir: &PathBuf,
+    cache_dir: &Path,
     access_token: &str,
     tmdb_id: u32,
 ) -> anyhow::Result<()> {

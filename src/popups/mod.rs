@@ -19,43 +19,43 @@ pub use tmdb_init::{Phase as TMDBInitPopupPhase, TMDBInitPopup};
 pub use trakt_init::{Phase as TraktInitPopupPhase, TraktInitPopup};
 
 pub enum Popups {
-    AddMovie(AddMoviePopup),
-    EditMovie(EditMoviePopup),
-    DeleteMovie(DeleteMoviePopup),
-    TraktInit(TraktInitPopup),
-    PunchPlayInit(PunchPlayInitPopup),
-    TMDBInit(TMDBInitPopup),
-    OMDBInit(OMDBInitPopup),
-    OutOfBox(OutOfBoxPopup),
-    AdvancedFilter(AdvancedFilterPopup),
+    AddMovie(Box<AddMoviePopup>),
+    EditMovie(Box<EditMoviePopup>),
+    DeleteMovie(Box<DeleteMoviePopup>),
+    TraktInit(Box<TraktInitPopup>),
+    PunchPlayInit(Box<PunchPlayInitPopup>),
+    TMDBInit(Box<TMDBInitPopup>),
+    OMDBInit(Box<OMDBInitPopup>),
+    OutOfBox(Box<OutOfBoxPopup>),
+    AdvancedFilter(Box<AdvancedFilterPopup>),
 }
 
 impl Popups {
     fn as_trait(&self) -> &dyn PopupTrait {
         match self {
-            Popups::AddMovie(add_movie_popup) => add_movie_popup,
-            Popups::EditMovie(edit_movie_popup) => edit_movie_popup,
-            Popups::DeleteMovie(delete_movie_popup) => delete_movie_popup,
-            Popups::TraktInit(trakt_init_popup) => trakt_init_popup,
-            Popups::PunchPlayInit(punch_play_init_popup) => punch_play_init_popup,
-            Popups::TMDBInit(tmdbinit_popup) => tmdbinit_popup,
-            Popups::OMDBInit(omdbinit_popup) => omdbinit_popup,
-            Popups::OutOfBox(out_of_box_popup) => out_of_box_popup,
-            Popups::AdvancedFilter(advanced_filter_popup) => advanced_filter_popup,
+            Popups::AddMovie(add_movie_popup) => &**add_movie_popup,
+            Popups::EditMovie(edit_movie_popup) => &**edit_movie_popup,
+            Popups::DeleteMovie(delete_movie_popup) => &**delete_movie_popup,
+            Popups::TraktInit(trakt_init_popup) => &**trakt_init_popup,
+            Popups::PunchPlayInit(punch_play_init_popup) => &**punch_play_init_popup,
+            Popups::TMDBInit(tmdbinit_popup) => &**tmdbinit_popup,
+            Popups::OMDBInit(omdbinit_popup) => &**omdbinit_popup,
+            Popups::OutOfBox(out_of_box_popup) => &**out_of_box_popup,
+            Popups::AdvancedFilter(advanced_filter_popup) => &**advanced_filter_popup,
         }
     }
 
     fn as_trait_mut(&mut self) -> &mut dyn PopupTrait {
         match self {
-            Popups::AddMovie(add_movie_popup) => add_movie_popup,
-            Popups::EditMovie(edit_movie_popup) => edit_movie_popup,
-            Popups::DeleteMovie(delete_movie_popup) => delete_movie_popup,
-            Popups::TraktInit(trakt_init_popup) => trakt_init_popup,
-            Popups::PunchPlayInit(punch_play_init_popup) => punch_play_init_popup,
-            Popups::TMDBInit(tmdbinit_popup) => tmdbinit_popup,
-            Popups::OMDBInit(omdbinit_popup) => omdbinit_popup,
-            Popups::OutOfBox(out_of_box_popup) => out_of_box_popup,
-            Popups::AdvancedFilter(advanced_filter_popup) => advanced_filter_popup,
+            Popups::AddMovie(add_movie_popup) => &mut **add_movie_popup,
+            Popups::EditMovie(edit_movie_popup) => &mut **edit_movie_popup,
+            Popups::DeleteMovie(delete_movie_popup) => &mut **delete_movie_popup,
+            Popups::TraktInit(trakt_init_popup) => &mut **trakt_init_popup,
+            Popups::PunchPlayInit(punch_play_init_popup) => &mut **punch_play_init_popup,
+            Popups::TMDBInit(tmdbinit_popup) => &mut **tmdbinit_popup,
+            Popups::OMDBInit(omdbinit_popup) => &mut **omdbinit_popup,
+            Popups::OutOfBox(out_of_box_popup) => &mut **out_of_box_popup,
+            Popups::AdvancedFilter(advanced_filter_popup) => &mut **advanced_filter_popup,
         }
     }
 

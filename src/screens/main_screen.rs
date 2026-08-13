@@ -1,4 +1,4 @@
-use std::{cell::RefCell, fs, path::PathBuf, rc::Rc};
+use std::{cell::RefCell, fs, path::Path, rc::Rc};
 
 use chrono::Datelike;
 use itertools::Itertools;
@@ -34,6 +34,7 @@ use crate::{
     widgets::{self, ContextMenu},
 };
 
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Serialize, Deserialize, PartialEq, Clone, Copy, Hash, Eq)]
 pub enum ListID {
     TMDB(u32),
@@ -128,7 +129,7 @@ impl MainScreen {
         )
     }
 
-    pub fn new(home_dir: &PathBuf, _config: Rc<RefCell<Config>>) -> Self {
+    pub fn new(home_dir: &Path, _config: Rc<RefCell<Config>>) -> Self {
         Self {
             tick: 0,
             tab: 0,
@@ -156,12 +157,12 @@ impl MainScreen {
 
             movies_list: MoviesList::default(),
             movies_description: MoviesDescription::default(),
-            sort_popup: ContextMenu::new(vec![], 5, None, false).with_submenu(
+            sort_popup: ContextMenu::new(vec![], 6, None, false).with_submenu(
                 <usize>::from(Sort::Rating(Default::default())),
                 RatingSource::iter()
                     .map(|x| x.as_ref().to_string())
                     .collect_vec(),
-                4,
+                6,
                 None,
             ),
             context_menu_pos: None,
@@ -270,7 +271,7 @@ impl MainScreen {
         for movie in &self.filtered_movies {
             if let Some(score) = pattern.score(
                 nucleo_matcher::Utf32Str::Ascii(
-                    (movie.title.clone() + " " + &movie.release_date.year().to_string())
+                    movie.title.clone()// + " " + &movie.release_date.year().to_string())
                         .to_string()
                         .as_bytes(),
                 ),
@@ -322,9 +323,9 @@ impl MainScreen {
                     for movie in &movies {
                         if let Some(score) = pattern.score(
                             nucleo_matcher::Utf32Str::Ascii(
-                                (movie.title.clone()
-                                    + " "
-                                    + &movie.release_date.year().to_string())
+                                movie.title.clone()
+                                    // + " "
+                                    // + &movie.release_date.year().to_string())
                                     .to_string()
                                     .as_bytes(),
                             ),
@@ -344,117 +345,87 @@ impl MainScreen {
                 }
                 FilterCriterion::Title(_, _) => (),
                 FilterCriterion::Actors(actors, contains_all, inverted) => {
-                    movies = movies.into_iter().filter(|x| if *contains_all {actors.iter().all(|y| x.credits.cast.iter().map(|x| x.id).contains(y))} else {actors.iter().any(|y| x.credits.cast.iter().map(|x| x.id).contains(y))} ^ if *inverted {true} else {false}).collect();
+                    movies.retain(|x| if *contains_all {
+                        actors.iter().all(|y| x.credits.cast.iter().map(|x| x.id).contains(y))
+                        } else {
+                            actors.iter().any(|y| x.credits.cast.iter().map(|x| x.id).contains(y))
+                            } ^ *inverted);
                 }
                 FilterCriterion::Director(director, inverted) => {
-                    movies = movies
-                        .into_iter()
-                        .filter(|x| {
-                            x.credits
-                                .crew
-                                .iter()
-                                .filter_map(|x| (x.job_or_character == "Director").then_some(x.id))
-                                .contains(director)
-                                ^ if *inverted { true } else { false }
-                        })
-                        .collect();
+                    movies.retain(|x| {
+                        x.credits
+                            .crew
+                            .iter()
+                            .filter_map(|x| (x.job_or_character == "Director").then_some(x.id))
+                            .contains(director)
+                            ^ *inverted
+                    });
                 }
                 FilterCriterion::Genres(genres, contains_all, inverted) => {
-                    movies = movies.into_iter().filter(|x| if *contains_all {genres.iter().all(|y| x.genres.contains(y))} else {genres.iter().any(|y| x.genres.contains(y))} ^ if *inverted {true} else {false}).collect();
+                    movies.retain(|x| if *contains_all {genres.iter().all(|y| x.genres.contains(y))} else {genres.iter().any(|y| x.genres.contains(y))} ^ *inverted);
                 }
                 FilterCriterion::Released(lower_bound, upper_bound, inverted) => {
-                    movies = movies
-                        .into_iter()
-                        .filter(|x| {
-                            is_between(x.release_date.year() as u32, *lower_bound, *upper_bound)
-                                ^ if *inverted { true } else { false }
-                        })
-                        .collect();
+                    movies.retain(|x| {
+                        is_between(x.release_date.year() as u32, *lower_bound, *upper_bound)
+                            ^ *inverted
+                    });
                 }
                 FilterCriterion::FirstWatched(lower_bound, upper_bound, inverted) => {
                     let watched_borrowed = self.watched.borrow();
-                    movies = movies
-                        .into_iter()
-                        .filter(|x| {
-                            watched_borrowed
-                                .get(&x.id)
-                                .map(|y| {
-                                    is_between(
-                                        y.get_first_play().year() as u32,
-                                        *lower_bound,
-                                        *upper_bound,
-                                    ) ^ if *inverted { true } else { false }
-                                })
-                                .unwrap_or(false)
-                        })
-                        .collect();
+                    movies.retain(|x| {
+                        watched_borrowed
+                            .get(&x.id)
+                            .map(|y| {
+                                is_between(
+                                    y.get_first_play().year() as u32,
+                                    *lower_bound,
+                                    *upper_bound,
+                                ) ^ *inverted
+                            })
+                            .unwrap_or(false)
+                    });
                 }
                 FilterCriterion::LastWatched(lower_bound, upper_bound, inverted) => {
                     let watched_borrowed = self.watched.borrow();
-                    movies = movies
-                        .into_iter()
-                        .filter(|x| {
-                            watched_borrowed
-                                .get(&x.id)
-                                .map(|y| {
-                                    is_between(
-                                        y.get_latest_play().year() as u32,
-                                        *lower_bound,
-                                        *upper_bound,
-                                    ) ^ if *inverted { true } else { false }
-                                })
-                                .unwrap_or(false)
-                        })
-                        .collect();
+                    movies.retain(|x| {
+                        watched_borrowed
+                            .get(&x.id)
+                            .map(|y| {
+                                is_between(
+                                    y.get_latest_play().year() as u32,
+                                    *lower_bound,
+                                    *upper_bound,
+                                ) ^ *inverted
+                            })
+                            .unwrap_or(false)
+                    });
                 }
                 FilterCriterion::Rating(rating, ordering, inverted) => {
-                    movies = movies
-                        .into_iter()
-                        .filter(|x| {
-                            (x.get_external_rating().partial_cmp(rating).unwrap() == *ordering)
-                                ^ if *inverted { true } else { false }
-                        })
-                        .collect();
+                    movies.retain(|x| {
+                        (x.get_external_rating().partial_cmp(rating).unwrap() == *ordering)
+                            ^ *inverted
+                    });
                 }
                 FilterCriterion::UserRating(rating, ordering, inverted) => {
                     let watched_borrowed = self.watched.borrow();
-                    movies = movies
-                        .into_iter()
-                        .filter(|x| {
-                            watched_borrowed
-                                .get(&x.id)
-                                .map(|y| {
-                                    (y.get_user_rating().partial_cmp(rating).unwrap() == *ordering)
-                                        ^ if *inverted { true } else { false }
-                                })
-                                .unwrap_or(false)
-                        })
-                        .collect();
+                    movies.retain(|x| {
+                        watched_borrowed
+                            .get(&x.id)
+                            .map(|y| {
+                                (y.get_user_rating().partial_cmp(rating).unwrap() == *ordering)
+                                    ^ *inverted
+                            })
+                            .unwrap_or(false)
+                    });
                 }
                 FilterCriterion::Language(language, inverted) => {
-                    movies = movies
-                        .into_iter()
-                        .filter(|x| {
-                            (*language == x.language) ^ if *inverted { true } else { false }
-                        })
-                        .collect();
+                    movies.retain(|x| (*language == x.language) ^ *inverted);
                 }
                 FilterCriterion::Country(country, inverted) => {
-                    movies = movies
-                        .into_iter()
-                        .filter(|x| {
-                            (x.origin_country == *country) ^ if *inverted { true } else { false }
-                        })
-                        .collect();
+                    movies.retain(|x| (x.origin_country == *country) ^ *inverted);
                 }
                 FilterCriterion::Certification(certifications, inverted) => {
-                    movies = movies
-                        .into_iter()
-                        .filter(|x| {
-                            certifications.contains(&x.certification)
-                                ^ if *inverted { true } else { false }
-                        })
-                        .collect();
+                    movies.retain(|x| certifications.contains(&x.certification) ^ *inverted);
                 }
             }
         }
@@ -638,7 +609,7 @@ impl MainScreen {
             if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 main_screen.tab = 2;
                 main_screen.item = 1;
-                main_screen.sort_popup.reset_state();
+                // main_screen.sort_popup.reset_state();
             }
         });
         key_event_handler.bind_key((Some(0), None), '/', "Find".into(), |app, _| {
@@ -683,7 +654,7 @@ impl MainScreen {
         // let footer_height = (((frame_area.height - 5) % 9) % num_movies as u16) + 2;
         let [header, vert, _] = vertical![==3, >=1, ==2].areas(frame_area);
 
-        let [description, list] = horizontal![==(vert.width * 3 / 8).max(0), >=0].areas(vert);
+        let [description, list] = horizontal![==vert.width * 3 / 8, >=0].areas(vert);
 
         frame.render_widget(Block::new().bg(tailwind::SLATE.c900), header);
 
@@ -786,11 +757,8 @@ impl MainScreen {
 
             key_event_handler.bind_vertical((None, None), "Navigate".into(), move |app, data| {
                 if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                    match data {
-                        key_event_handler::Data::Direction(dir, _) => {
-                            main_screen.context_menu.scroll(dir);
-                        }
-                        _ => (),
+                    if let key_event_handler::Data::Direction(dir, _) = data {
+                        main_screen.context_menu.scroll(dir);
                     }
                 }
             });
@@ -802,12 +770,12 @@ impl MainScreen {
                 .len()
                 .min(self.context_menu.num_visible_items) as u16;
 
-            let x = if pos.x + width - 1 >= frame.area().width {
+            let x = if pos.x + width > frame.area().width {
                 frame.area().width - width
             } else {
                 pos.x
             };
-            let y = if pos.y + height - 1 >= frame.area().height {
+            let y = if pos.y + height > frame.area().height {
                 frame.area().height - height
             } else {
                 pos.y
@@ -987,7 +955,7 @@ impl MainScreen {
         key_event_handler.bind_key((Some(2), Some(2)), ',', "Sort".into(), |app, _| {
             if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 main_screen.item = 1;
-                main_screen.sort_popup.reset_state();
+                // main_screen.sort_popup.reset_state();
             }
         });
         key_event_handler.bind_key(
@@ -1052,11 +1020,8 @@ impl MainScreen {
                     if let Some(Screens::MainScreen(main_screen)) =
                         app.drawer.current_screen.as_mut()
                     {
-                        match data {
-                            key_event_handler::Data::Direction(true, _) => {
-                                main_screen.item += 1;
-                            }
-                            _ => (),
+                        if let key_event_handler::Data::Direction(true, _) = data {
+                            main_screen.item += 1;
                         }
                     }
                 },
@@ -1064,11 +1029,8 @@ impl MainScreen {
         }
         key_event_handler.bind_horizontal((Some(2), Some(2)), "Navigate".into(), |app, data| {
             if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                match data {
-                    key_event_handler::Data::Direction(false, _) => {
-                        main_screen.item -= 1;
-                    }
-                    _ => (),
+                if let key_event_handler::Data::Direction(false, _) = data {
+                    main_screen.item -= 1;
                 }
             }
         });
@@ -1083,24 +1045,21 @@ impl MainScreen {
             .into(),
             |app, data| {
                 if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                    match data {
-                        key_event_handler::Data::Direction(direction, _) => {
-                            main_screen.sort_popup.scroll(direction);
+                    if let key_event_handler::Data::Direction(direction, _) = data {
+                        main_screen.sort_popup.scroll(direction);
 
-                            main_screen.sort = if let Some(submenu_id) =
-                                main_screen.sort_popup.opened_submenu.as_ref()
-                            {
-                                Sort::Rating(
-                                    RatingSource::from_repr(
-                                        main_screen.sort_popup.submenus[submenu_id].selected_index,
-                                    )
-                                    .unwrap(),
+                        main_screen.sort = if let Some(submenu_id) =
+                            main_screen.sort_popup.opened_submenu.as_ref()
+                        {
+                            Sort::Rating(
+                                RatingSource::from_repr(
+                                    main_screen.sort_popup.submenus[submenu_id].selected_index,
                                 )
-                            } else {
-                                Sort::from_repr(main_screen.sort_popup.selected_index).unwrap()
-                            };
-                        }
-                        _ => (),
+                                .unwrap(),
+                            )
+                        } else {
+                            Sort::from_repr(main_screen.sort_popup.selected_index).unwrap()
+                        };
                     }
                     main_screen.filter_sort_movies(true);
                 }
@@ -1118,11 +1077,11 @@ impl MainScreen {
                                 main_screen.filter_sort_movies(true);
                             }
                         }
-                        key_event_handler::Data::Direction(true, _) => {
-                            if main_screen.sort_ascending {
-                                main_screen.sort_ascending = false;
-                                main_screen.filter_sort_movies(true);
-                            }
+                        key_event_handler::Data::Direction(true, _)
+                            if main_screen.sort_ascending =>
+                        {
+                            main_screen.sort_ascending = false;
+                            main_screen.filter_sort_movies(true);
                         }
                         _ => (),
                     }
@@ -1132,33 +1091,30 @@ impl MainScreen {
 
         key_event_handler.bind_input_field((Some(2), Some(0)), "".into(), |app, data| {
             if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                match data {
-                    key_event_handler::Data::Key(key_event) => {
-                        main_screen.search_input.input(key_event);
+                if let key_event_handler::Data::Key(key_event) = data {
+                    main_screen.search_input.input(key_event);
 
-                        let FilterCriterion::Title(_, filter) = pop_criterion!(
-                            main_screen.filter_criteria,
-                            FilterCriterion::Title(_, _),
-                            FilterCriterion::Title(String::new(), false)
-                        ) else {
-                            unreachable!()
-                        };
-                        main_screen.sort = if filter && !main_screen.search_input.is_empty() {
-                            Sort::Relevance
-                        } else {
-                            Sort::default()
-                        };
-                        main_screen.filter_criteria.push(FilterCriterion::Title(
-                            main_screen.search_input.lines()[0].clone(),
-                            filter,
-                        ));
-                        if filter {
-                            main_screen.filter_sort_movies(false);
-                        } else {
-                            main_screen.find_and_goto_movie();
-                        }
+                    let FilterCriterion::Title(_, filter) = pop_criterion!(
+                        main_screen.filter_criteria,
+                        FilterCriterion::Title(_, _),
+                        FilterCriterion::Title(String::new(), false)
+                    ) else {
+                        unreachable!()
+                    };
+                    main_screen.sort = if filter && !main_screen.search_input.is_empty() {
+                        Sort::Relevance
+                    } else {
+                        Sort::default()
+                    };
+                    main_screen.filter_criteria.push(FilterCriterion::Title(
+                        main_screen.search_input.lines()[0].clone(),
+                        filter,
+                    ));
+                    if filter {
+                        main_screen.filter_sort_movies(false);
+                    } else {
+                        main_screen.find_and_goto_movie();
                     }
-                    _ => {}
                 }
             }
         });
@@ -1253,7 +1209,7 @@ impl MainScreen {
                 if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     main_screen.tab = 2;
                     main_screen.item = 1;
-                    main_screen.sort_popup.reset_state();
+                    // main_screen.sort_popup.reset_state();
                 }
             },
         );
@@ -1357,7 +1313,7 @@ impl MainScreen {
                                     main_screen.item = 0;
                                     main_screen.sort =
                                         Sort::Rating(RatingSource::from_repr(index).unwrap());
-                                    main_screen.sort_popup.reset_state();
+                                    // main_screen.sort_popup.reset_state();
                                     main_screen.filter_sort_movies(true);
                                 }
                             },
@@ -1417,7 +1373,7 @@ impl MainScreen {
             },
         );
 
-        return sort_area;
+        sort_area
     }
 
     fn render_movies_list(
@@ -1427,7 +1383,7 @@ impl MainScreen {
         key_event_handler: &mut KeyEventHandler,
         area: Rect,
     ) {
-        if self.filtered_movies.len() > 0 {
+        if !self.filtered_movies.is_empty() {
             let num_visible_items = self.movies_list.num_visible_items;
 
             key_event_handler.bind_tab((Some(0), None), "Change focus".into(), |app, data| {
@@ -1596,9 +1552,9 @@ impl MainScreen {
             self.movies_list.alignment_bottom = true;
         }
         if self.movies_list.partially_visible_item {
-            if self.filtered_movies.len() <= num_visible_movies {
-                self.movies_list.alignment_bottom = false;
-            } else if self.movies_list.selected_item == self.movies_list.scroll_pos {
+            if self.filtered_movies.len() <= num_visible_movies
+                || self.movies_list.selected_item == self.movies_list.scroll_pos
+            {
                 self.movies_list.alignment_bottom = false;
             } else if self
                 .movies_list
@@ -1659,7 +1615,7 @@ impl MainScreen {
                             if let key_event_handler::Data::Mouse(mouse_event) = data {
                                 main_screen.context_menu_pos =
                                     Some(Position::new(mouse_event.column, mouse_event.row));
-                                main_screen.context_menu.reset_state();
+                                // main_screen.context_menu.reset_state();
                             }
                         }
                     },
@@ -1800,14 +1756,13 @@ impl MainScreen {
             description_lines.push(title_lines.pop().unwrap().bold().into());
         }
         description_lines.push(
-            (ellipsize_string(
+            ellipsize_string(
                 &title_lines.pop().unwrap(),
                 description_area.width as usize - 5,
             )
             .bold()
                 + " ".into()
-                + movie.release_date.year().to_string().italic())
-            .into(),
+                + movie.release_date.year().to_string().italic(),
         );
 
         description_lines.push(
@@ -1953,8 +1908,7 @@ impl MainScreen {
                         main_screen.movies_description.selected_tab = main_screen
                             .movies_description
                             .selected_tab
-                            .checked_sub(1)
-                            .unwrap_or(0);
+                            .saturating_sub(1);
                     }
                     _ => (),
                 }
@@ -2301,11 +2255,7 @@ impl MainScreen {
             widgets.push(vec!["".fg(bg), rating.bg(bg).fg(fg).bold(), "".fg(bg)]);
         }
 
-        for ((widget, label), &area) in widgets
-            .into_iter()
-            .zip(labels.into_iter())
-            .zip(widget_areas.into_iter())
-        {
+        for ((widget, label), &area) in widgets.into_iter().zip(labels).zip(widget_areas.iter()) {
             frame.render_widget(label, area.offset(Offset::new(0, -1)));
             frame.render_widget(Line::from_iter(widget), area);
         }
@@ -2368,11 +2318,10 @@ impl MainScreen {
             );
 
             self.movies_description.plays_tab.scroll_pos =
-                0.max(self.movies_description.plays_tab.scroll_pos.min(
+                self.movies_description.plays_tab.scroll_pos.min(
                     num_plays.saturating_sub(self.movies_description.plays_tab.num_visible_items),
-                ));
-            self.movies_description.plays_tab.alignment_bottom =
-                self.movies_description.plays_tab.alignment_bottom & render_partially_visible_play;
+                );
+            self.movies_description.plays_tab.alignment_bottom &= render_partially_visible_play;
         } else {
             self.movies_description.plays_tab.scroll_pos = 0;
             self.movies_description.plays_tab.alignment_bottom = false;
@@ -2383,13 +2332,8 @@ impl MainScreen {
         let mut remaining_area = add_padding(area, Padding::left(1));
         for i in 0..self.movies_description.plays_tab.num_visible_items {
             let [area, remaining] = if render_partially_visible_play
-                && i == 0
-                && self.movies_description.plays_tab.alignment_bottom
-            {
-                vertical![==partially_visible_play_height as u16, >= 0]
-            } else if render_partially_visible_play
-                && i == self.movies_description.plays_tab.num_visible_items - 1
-                && !self.movies_description.plays_tab.alignment_bottom
+                && i == (!self.movies_description.plays_tab.alignment_bottom as usize
+                    * (self.movies_description.plays_tab.num_visible_items - 1))
             {
                 vertical![==partially_visible_play_height as u16, >= 0]
             } else {

@@ -1,4 +1,7 @@
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use anyhow::anyhow;
 use log::{error, info};
@@ -24,9 +27,9 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn new(home_dir: &PathBuf) -> Self {
+    pub fn new(home_dir: &Path) -> Self {
         let mut s = Self {
-            home_dir: home_dir.clone(),
+            home_dir: home_dir.to_path_buf(),
 
             ..Default::default()
         };
@@ -67,7 +70,7 @@ impl Config {
         } else {
             info!("Config file not found, creating a new one..");
             _ = fs::write(
-                &s.home_dir.join("config.toml"),
+                s.home_dir.join("config.toml"),
                 toml::to_string_pretty(&s.options).unwrap(),
             );
         }
@@ -78,11 +81,11 @@ impl Config {
     pub fn write_to_disk(&self) {
         let Some(err) = (|| -> anyhow::Result<()> {
             fs::rename(
-                &self.home_dir.join("config.toml"),
-                &self.home_dir.join("config.toml.bak"),
+                self.home_dir.join("config.toml"),
+                self.home_dir.join("config.toml.bak"),
             )?;
             fs::write(
-                &self.home_dir.join("config.toml"),
+                self.home_dir.join("config.toml"),
                 toml::to_string_pretty(&self.options)?,
             )
             .map_err(|err| anyhow!("{}", err))

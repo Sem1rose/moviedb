@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    path::PathBuf,
+    path::Path,
     sync::mpsc::{self, Receiver, Sender},
     thread,
 };
@@ -62,7 +62,7 @@ pub struct RatatuiImage {
     rx_main: Receiver<LoadResult>,
 }
 impl RatatuiImage {
-    pub fn new(cache_dir: &PathBuf) -> Self {
+    pub fn new(cache_dir: &Path) -> Self {
         let (tx_main, rx_main) = mpsc::channel();
 
         let tx_load = Self::start_load_thread(&tx_main, cache_dir);
@@ -78,7 +78,7 @@ impl RatatuiImage {
         }
     }
 
-    fn start_load_thread(tx_main: &Sender<LoadResult>, cache_dir: &PathBuf) -> Sender<Actions> {
+    fn start_load_thread(tx_main: &Sender<LoadResult>, cache_dir: &Path) -> Sender<Actions> {
         let (tx_load, rx_load) = mpsc::channel::<Actions>();
 
         let tx_main = tx_main.clone();
@@ -87,7 +87,7 @@ impl RatatuiImage {
             Picker::halfblocks()
         });
 
-        let cache_dir = cache_dir.clone();
+        let cache_dir = cache_dir.to_path_buf();
         let mut tmdb_access_token: Option<String> = None;
         let mut sizes = default_sizes();
         thread::spawn(move || {
@@ -116,8 +116,7 @@ impl RatatuiImage {
 
                         if path.is_file() {
                             let size = sizes[&image_id.into()]
-                                [matches!(image_id, ImageID::Movie(_, true)) as usize]
-                                .clone();
+                                [matches!(image_id, ImageID::Movie(_, true)) as usize];
                             // let size = match image_id {
                             //     ImageID::Movie(_, backdrop) => sizes[&image_id.into()][backdrop as usize].clone(),
                             //     ImageID::Collection(_, backdrop) => sizes[&image_id.into()][backdrop as usize].clone(),
@@ -158,7 +157,7 @@ impl RatatuiImage {
                             let cache_dir = cache_dir.clone();
                             let tmdb_access_token = tmdb_access_token.as_ref().unwrap().clone();
                             thread::spawn(move || {
-                                let result = (|| -> anyhow::Result<_> {
+                                let result = {
                                     let result = match image_id {
                                         ImageID::Movie(id, false) =>
                                             tmdb::movie::get_movie_artworks(
@@ -183,7 +182,7 @@ impl RatatuiImage {
                                     .unwrap_or(false);
 
                                     Ok(Err(result))
-                                })();
+                                };
 
                                 tx_main.send((image_id, result))
                             });
@@ -272,9 +271,7 @@ impl RatatuiImage {
             let size = self.sizes.get_mut(&image_id.into()).unwrap();
             if size[index] != area.as_size() {
                 size[index] = area.as_size();
-                _ = self
-                    .tx_load
-                    .send(Actions::Resize(image_id.into(), size.clone()));
+                _ = self.tx_load.send(Actions::Resize(image_id.into(), *size));
 
                 pop_then_hash!(
                     self.hashed_images,
@@ -282,10 +279,10 @@ impl RatatuiImage {
                         (ImageIDDiscriminants::from(*k) == image_id.into())
                             .then_some(match k {
                                 ImageID::Movie(_, backdrop) =>
-                                    (*backdrop as usize == index).then_some(k.clone()),
+                                    (*backdrop as usize == index).then_some(*k),
                                 ImageID::Collection(_, backdrop) =>
-                                    (*backdrop as usize == index).then_some(k.clone()),
-                                ImageID::Person(_) => Some(k.clone()),
+                                    (*backdrop as usize == index).then_some(*k),
+                                ImageID::Person(_) => Some(*k),
                             })
                             .flatten()
                     },
@@ -305,10 +302,10 @@ impl RatatuiImage {
                         (ImageIDDiscriminants::from(*k) == image_id.into())
                             .then_some(match k {
                                 ImageID::Movie(_, backdrop) =>
-                                    (*backdrop as usize == index).then_some(k.clone()),
+                                    (*backdrop as usize == index).then_some(*k),
                                 ImageID::Collection(_, backdrop) =>
-                                    (*backdrop as usize == index).then_some(k.clone()),
-                                ImageID::Person(_) => Some(k.clone()),
+                                    (*backdrop as usize == index).then_some(*k),
+                                ImageID::Person(_) => Some(*k),
                             })
                             .flatten()
                     },
@@ -360,11 +357,10 @@ impl RatatuiImage {
             |k| {
                 (ImageIDDiscriminants::from(*k) == image_id.into())
                     .then_some(match k {
-                        ImageID::Movie(_, backdrop) =>
-                            (*backdrop as usize == index).then_some(k.clone()),
+                        ImageID::Movie(_, backdrop) => (*backdrop as usize == index).then_some(*k),
                         ImageID::Collection(_, backdrop) =>
-                            (*backdrop as usize == index).then_some(k.clone()),
-                        ImageID::Person(_) => Some(k.clone()),
+                            (*backdrop as usize == index).then_some(*k),
+                        ImageID::Person(_) => Some(*k),
                     })
                     .flatten()
             },
@@ -378,7 +374,7 @@ impl RatatuiImage {
             }
         );
 
-        return drawn;
+        drawn
     }
 
     pub fn preload_movies(&mut self, movies: Vec<u32>, rule: &str) {

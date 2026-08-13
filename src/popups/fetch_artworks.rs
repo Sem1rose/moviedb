@@ -73,7 +73,7 @@ pub struct FetchArtworksPopup {
 }
 
 impl FetchArtworksPopup {
-    pub fn new(cache_dir: &PathBuf, fetch_persons: bool, fetch_collections: bool) -> Self {
+    pub fn new(cache_dir: &Path, fetch_persons: bool, fetch_collections: bool) -> Self {
         Self {
             cache_dir: cache_dir.clone(),
             errored: None,

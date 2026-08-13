@@ -1,4 +1,4 @@
-use std::{path::PathBuf, thread};
+use std::{path::Path, thread};
 
 use anyhow::{Context, anyhow};
 use itertools::Itertools;
@@ -338,14 +338,14 @@ pub(crate) fn get_movie_images(
 }
 
 pub fn get_movie_artworks(
-    cache_dir: &PathBuf,
+    cache_dir: &Path,
     access_token: &str,
     tmdb_id: u32,
 ) -> anyhow::Result<bool> {
     let movie_images = get_movie_images(access_token, tmdb_id)?;
     let try_get_artwork = |id: usize,
                            backdrop: bool,
-                           path: &PathBuf,
+                           path: &Path,
                            movie_images: &TMDBMovieImagesResponse|
      -> anyhow::Result<u8> {
         if id
@@ -424,7 +424,7 @@ pub fn get_movie_artworks(
 }
 
 pub fn get_person_artwork(
-    cache_dir: &PathBuf,
+    cache_dir: &Path,
     access_token: &str,
     id: u32,
 ) -> anyhow::Result<bool> {
@@ -510,7 +510,7 @@ pub fn get_collection_details(
 }
 
 pub fn get_collection_artwork(
-    cache_dir: &PathBuf,
+    cache_dir: &Path,
     access_token: &str,
     id: u32,
 ) -> anyhow::Result<bool> {

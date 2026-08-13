@@ -55,7 +55,7 @@ impl App {
             key_event_handler: KeyEventHandler::default(),
             drawer: Drawer::new(&home_dir, &cache_dir, config.clone()),
 
-            config: config,
+            config,
             movies: default_rc(),
             watched: default_rc(),
             persons: default_rc(),
@@ -110,17 +110,17 @@ impl App {
                 executed_immediate = true;
             }
 
-            if !executed_immediate {
-                if event::poll(if self.drawer.check_refresh_immediate() {
+            if !executed_immediate
+                && event::poll(if self.drawer.check_refresh_immediate() {
                     Duration::ZERO
                 } else if self.drawer.check_refresh_delayed() {
                     Duration::from_millis(15)
                 } else {
                     Duration::MAX
-                })? {
-                    if let Ok(event) = event::read() {
-                        self.handle_event(event);
-                    }
+                })?
+            {
+                if let Ok(event) = event::read() {
+                    self.handle_event(event);
                 }
             }
 
@@ -247,8 +247,8 @@ impl App {
             .entry(movie_id)
             .and_modify(|x| x.add_play(date, rating, None))
             .or_insert(Entry {
-                movie_id: movie_id,
-                history:  vec![HistoryEntry {
+                movie_id,
+                history: vec![HistoryEntry {
                     date,
                     rating,
                     note: None,
@@ -375,10 +375,10 @@ impl App {
                     .borrow_mut()
                     .entry(main_screen.current_movie().unwrap().id)
                     .and_modify(|x| {
-                        x.history.last_mut().map(|x| {
-                            x.date = date;
-                            x.rating = rating;
-                        });
+                        if let Some(latest) = x.history.last_mut() {
+                            latest.date = date;
+                            latest.rating = rating;
+                        };
                         x.history
                             .sort_by(|a, b| a.date.partial_cmp(&b.date).unwrap());
                     });

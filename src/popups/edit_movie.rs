@@ -26,10 +26,13 @@ pub struct EditMoviePopup {
 
 impl EditMoviePopup {
     pub fn new(user_rating: f64, watched_at: DateTime<Local>) -> Self {
-        let mut popup = Self::default();
+        let mut popup = Self {
+            rating_input: TextArea::from([format!("{:.1}", user_rating)]),
+            date_input: TextArea::from([watched_at.to_string()]),
 
-        popup.rating_input = TextArea::from([format!("{:.1}", user_rating)]);
-        popup.date_input = TextArea::from([watched_at.to_string()]);
+            ..Default::default()
+        };
+
         popup
             .rating_input
             .move_cursor(ratatui_textarea::CursorMove::End);
@@ -41,10 +44,10 @@ impl EditMoviePopup {
     }
 
     pub fn new_add_play() -> Self {
-        let mut popup = Self::default();
-        popup.new_play = true;
-
-        popup
+        Self {
+            new_play: true,
+            ..Default::default()
+        }
     }
 
     pub fn validate_rating(&mut self) -> bool {
@@ -141,77 +144,58 @@ impl PopupTrait for EditMoviePopup {
 
         key_event_handler.bind_vertical((None, Some(0)), "Navigate".into(), |app, data| {
             if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
-                match data {
-                    crate::key_event_handler::Data::Direction(true, _) => {
-                        edit_movie_popup.item = 1;
-                    }
-                    _ => {}
+                if let crate::key_event_handler::Data::Direction(true, _) = data {
+                    edit_movie_popup.item = 1;
                 }
             }
         });
         key_event_handler.bind_vertical((None, Some(1)), "Navigate".into(), |app, data| {
             if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
-                match data {
-                    crate::key_event_handler::Data::Direction(false, _) => {
-                        edit_movie_popup.item = 0;
-                    }
-                    _ => {}
+                if let crate::key_event_handler::Data::Direction(false, _) = data {
+                    edit_movie_popup.item = 0;
                 }
             }
         });
 
         key_event_handler.bind_horizontal((None, Some(2)), "Navigate".into(), |app, data| {
             if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
-                match data {
-                    crate::key_event_handler::Data::Direction(true, _) => {
-                        edit_movie_popup.item = 3;
-                    }
-                    _ => {}
+                if let crate::key_event_handler::Data::Direction(true, _) = data {
+                    edit_movie_popup.item = 3;
                 }
             }
         });
         key_event_handler.bind_horizontal((None, Some(3)), "Navigate".into(), |app, data| {
             if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
-                match data {
-                    crate::key_event_handler::Data::Direction(false, _) => {
-                        edit_movie_popup.item = 2;
-                    }
-                    _ => {}
+                if let crate::key_event_handler::Data::Direction(false, _) = data {
+                    edit_movie_popup.item = 2;
                 }
             }
         });
 
         key_event_handler.bind_input_field((None, Some(0)), "".into(), |app, data| {
             if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
-                match data {
-                    crate::key_event_handler::Data::Key(key_event) => {
-                        let parsed = edit_movie_popup.rating_input.lines()[0]
-                            .parse::<f64>()
-                            .unwrap_or(0.0);
-                        if let KeyCode::Char(x) = &key_event.code {
-                            if edit_movie_popup.rating_input.lines()[0].len() >= 3 || parsed >= 10.0
-                            {
-                                return;
-                            }
-
-                            if !x.is_ascii_digit() && *x != '.' {
-                                return;
-                            }
+                if let crate::key_event_handler::Data::Key(key_event) = data {
+                    let parsed = edit_movie_popup.rating_input.lines()[0]
+                        .parse::<f64>()
+                        .unwrap_or(0.0);
+                    if let KeyCode::Char(x) = &key_event.code {
+                        if edit_movie_popup.rating_input.lines()[0].len() >= 3 || parsed >= 10.0 {
+                            return;
                         }
 
-                        edit_movie_popup.rating_input.input(key_event);
+                        if !x.is_ascii_digit() && *x != '.' {
+                            return;
+                        }
                     }
-                    _ => {}
+
+                    edit_movie_popup.rating_input.input(key_event);
                 }
             }
         });
         key_event_handler.bind_input_field((None, Some(1)), "".into(), |app, data| {
             if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
-                match data {
-                    crate::key_event_handler::Data::Key(key_event) => {
-                        edit_movie_popup.date_input.input(key_event);
-                    }
-                    _ => {}
+                if let crate::key_event_handler::Data::Key(key_event) = data {
+                    edit_movie_popup.date_input.input(key_event);
                 }
             }
         });

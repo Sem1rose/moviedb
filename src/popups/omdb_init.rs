@@ -1,5 +1,5 @@
 use std::{
-    path::PathBuf,
+    path::Path,
     sync::mpsc::{Receiver, channel},
     thread,
 };
@@ -39,10 +39,10 @@ pub struct OMDBInitPopup {
 }
 
 impl OMDBInitPopup {
-    pub fn new(home_dir: &PathBuf, can_close: bool) -> Self {
+    pub fn new(home_dir: &Path, can_close: bool) -> Self {
         let (tx_init, rx_init) = channel();
-        let home_dir_cloned = home_dir.clone();
 
+        let home_dir_cloned = home_dir.to_path_buf();
         thread::spawn(move || {
             _ = tx_init.send(OMDBTokens::init(&home_dir_cloned));
         });
@@ -148,11 +148,8 @@ impl PopupTrait for OMDBInitPopup {
             });
             key_event_handler.bind_input_field((None, Some(0)), "".into(), |app, data| {
                 if let Some(Popups::OMDBInit(omdb_init_popup)) = app.drawer.active_popup.as_mut() {
-                    match data {
-                        key_event_handler::Data::Key(key_event) => {
-                            omdb_init_popup.input.input(key_event);
-                        }
-                        _ => (),
+                    if let key_event_handler::Data::Key(key_event) = data {
+                        omdb_init_popup.input.input(key_event);
                     }
                 }
             });

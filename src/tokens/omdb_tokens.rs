@@ -1,4 +1,7 @@
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, bail};
 use simple_encrypt::{decrypt_bytes, encrypt_bytes};
@@ -13,15 +16,15 @@ pub struct OMDBTokens {
 
 #[allow(dead_code)]
 impl OMDBTokens {
-    pub fn new(home_dir: &PathBuf) -> Self {
+    pub fn new(home_dir: &Path) -> Self {
         Self {
-            home_dir: home_dir.clone(),
+            home_dir: home_dir.to_path_buf(),
 
             ..Default::default()
         }
     }
 
-    pub fn init(home_dir: &PathBuf) -> anyhow::Result<String> {
+    pub fn init(home_dir: &Path) -> anyhow::Result<String> {
         if home_dir.join(".omdb_tokens").is_file() {
             Self::read_creds(home_dir)
         } else {
@@ -29,9 +32,9 @@ impl OMDBTokens {
         }
     }
 
-    pub fn read_creds(home_dir: &PathBuf) -> anyhow::Result<String> {
+    pub fn read_creds(home_dir: &Path) -> anyhow::Result<String> {
         let encrypted_data =
-            fs::read(&home_dir.join(".omdb_tokens")).context("OMDB: unable to read tokens")?;
+            fs::read(home_dir.join(".omdb_tokens")).context("OMDB: unable to read tokens")?;
 
         String::from_utf8(
             decrypt_bytes(&encrypted_data, b"0123456789abcdef0123456789abcdef")
@@ -49,7 +52,7 @@ impl OMDBTokens {
 
     fn save_creds(&self) -> anyhow::Result<()> {
         fs::write(
-            &self.home_dir.join(".omdb_tokens"),
+            self.home_dir.join(".omdb_tokens"),
             &encrypt_bytes(self.key.as_bytes(), b"0123456789abcdef0123456789abcdef")
                 .context("OMDB: failed to encrypt user tokens")?,
         )

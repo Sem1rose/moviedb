@@ -17,6 +17,7 @@ use rustc_hash::FxHashMap;
 
 use crate::{helpers::add_padding, key_event_handler::KeyEventHandler};
 
+#[allow(clippy::too_many_arguments)]
 pub fn input_field(
     tab_selected: bool,
     selected: bool,
@@ -258,12 +259,20 @@ impl ContextMenu {
     }
 
     pub fn render(
-        &self,
+        &mut self,
         position: Position,
         frame: &mut Frame,
         key_event_handler: &mut KeyEventHandler,
     ) -> FxHashMap<Vec<usize>, (Rect, usize)> {
         let model_len = self.model.len();
+        if self.selected_index < self.scroll_pos
+            || self.selected_index - self.scroll_pos >= self.num_visible_items
+        {
+            self.scroll_pos = self
+                .selected_index
+                .saturating_sub(self.num_visible_items - 1)
+        }
+
         let mut visible_items = self
             .model
             .iter()
@@ -290,14 +299,13 @@ impl ContextMenu {
             .collect_vec();
         let visible_items_len = visible_items.len();
 
-        visible_items
-            .get_mut(self.selected_index.saturating_sub(self.scroll_pos))
-            .map(|x| {
-                *x = x
+        if let Some(x) = visible_items.get_mut(self.selected_index.saturating_sub(self.scroll_pos))
+        {
+            *x = x
                     .clone() // why clone!!! :(
                     .fg(material::BLUE.c100)
                     .bg(material::LIGHT_BLUE.c900)
-            });
+        }
 
         let area = Rect {
             x:      position.x,
@@ -384,7 +392,7 @@ impl ContextMenu {
             ));
 
             result.extend(
-                self.submenus[submenu_id]
+                self.submenus.get_mut(submenu_id).unwrap()
                     .render(new_pos, frame, key_event_handler)
                     .into_iter()
                     .map(|(mut k, v)| {
@@ -584,14 +592,14 @@ impl Action {
         }
     }
 }
-impl<'a> Into<Span<'a>> for Action {
-    fn into(self) -> Span<'a> {
-        span!(self.action)
-            .fg(if self.valid {
-                if self.selected {
+impl<'a> From<Action> for Span<'a> {
+    fn from(value: Action) -> Span<'a> {
+        span!(value.action)
+            .fg(if value.valid {
+                if value.selected {
                     tailwind::SLATE.c300
                 } else {
-                    match self.action_type {
+                    match value.action_type {
                         ActionType::Default => tailwind::SLATE.c300,
                         ActionType::Normal => material::BLUE.c500,
                         ActionType::Critical => tailwind::RED.c500,
@@ -600,22 +608,22 @@ impl<'a> Into<Span<'a>> for Action {
             } else {
                 tailwind::SLATE.c500
             })
-            .bg(if self.valid {
-                if self.selected {
-                    match self.action_type {
+            .bg(if value.valid {
+                if value.selected {
+                    match value.action_type {
                         ActionType::Default => material::BLUE.c600,
                         ActionType::Normal => material::BLUE.c800,
                         ActionType::Critical => tailwind::RED.c800,
                     }
                 } else {
-                    if matches!(self.action_type, ActionType::Default) {
+                    if matches!(value.action_type, ActionType::Default) {
                         material::BLUE.c900
                     } else {
                         tailwind::SLATE.c950
                     }
                 }
             } else {
-                if self.selected {
+                if value.selected {
                     tailwind::SLATE.c700
                 } else {
                     tailwind::SLATE.c800
@@ -729,7 +737,7 @@ impl Widget for Hyperlink<'_> {
         for (j, line) in self.text.lines.clone().into_iter().enumerate() {
             // for (i, two_chars) in line.to_string().chars().chunks(2).into_iter().enumerate() {
             // let text = two_chars.collect::<String>();
-            let hyperlink = format!("\x1B]8;;{}\x07{}\x1B]8;;\x07", self.url, line.to_string());
+            let hyperlink = format!("\x1B]8;;{}\x07{}\x1B]8;;\x07", self.url, line);
             buffer[(area.x, area.y + j as u16)].set_symbol(hyperlink.as_str());
             // }
         }
