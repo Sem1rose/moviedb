@@ -19,48 +19,21 @@ use ratatui::{
 };
 use ratatui_image::sliced::SignedPosition;
 use ratatui_textarea::TextArea;
-use serde::{Deserialize, Serialize};
 use strum::IntoEnumIterator;
 use throbber_widgets_tui::ThrobberState;
 
 use crate::{
     config::Config,
-    helpers::{add_padding, default_rc, ellipsize_string, ids_to_movies, is_between, wrap_text},
+    helpers,
     image_backend::{ImageID, RatatuiImage},
     key_event_handler::{self, KeyEventHandler},
     load_file,
     screens::Screens,
-    types::{Entry, FilterCriterion, FxIndexMap, Movie, RatingSource, Sort, pop_criterion},
+    types::{
+        Entry, FilterCriterion, FxIndexMap, List, ListID, Movie, RatingSource, Sort, pop_criterion,
+    },
     widgets::{self, ContextMenu},
 };
-
-#[allow(clippy::upper_case_acronyms)]
-#[derive(Serialize, Deserialize, PartialEq, Clone, Copy, Hash, Eq)]
-pub enum ListID {
-    TMDB(u32),
-    Collection(u32),
-    Custom(u32),
-}
-impl Default for ListID {
-    fn default() -> Self {
-        Self::Custom(0)
-    }
-}
-#[derive(Serialize, Deserialize, Clone)]
-pub struct List {
-    pub id:     ListID,
-    pub name:   String,
-    pub movies: Vec<u32>,
-}
-impl From<&[Entry]> for List {
-    fn from(value: &[Entry]) -> Self {
-        Self {
-            id:     Default::default(),
-            name:   "Watched Movies".into(),
-            movies: value.iter().map(|x| x.movie_id).collect(),
-        }
-    }
-}
 
 #[derive(Default)]
 pub struct MoviesList {
@@ -78,8 +51,10 @@ pub struct PlaysTab {
     num_visible_items: usize,
 }
 
+const DESCRIPTION_TABS: [&str; 2] = ["Overview", "Plays"];
 #[derive(Default)]
 pub struct MoviesDescription {
+    pub available_tabs:  Vec<usize>,
     pub selected_tab:    usize,
     pub plays_tab:       PlaysTab,
     pub overview_scroll: usize,
@@ -97,7 +72,7 @@ pub struct MainScreen {
     throbber_state:      ThrobberState,
 
     selected_list:  ListID,
-    lists:          FxIndexMap<ListID, List>,
+    pub lists:      FxIndexMap<ListID, List>,
     list_preloaded: bool,
 
     pub _config:         Rc<RefCell<Config>>,
@@ -151,8 +126,8 @@ impl MainScreen {
             ),
             list_preloaded: false,
 
-            movies: default_rc(),
-            watched: default_rc(),
+            movies: helpers::default_rc(),
+            watched: helpers::default_rc(),
             filtered_movies: vec![],
 
             movies_list: MoviesList::default(),
@@ -203,14 +178,70 @@ impl MainScreen {
         }
     }
 
-    pub fn open_list(&mut self, id: ListID) {
+    pub fn open_list(&mut self, id: ListID, key_event_handler: &mut KeyEventHandler) -> bool {
         if self.selected_list == id {
-            return;
+            return false;
         }
 
         if matches!(id, ListID::Custom(_id) if _id == 0) || self.lists.contains_key(&id) {
             self.selected_list = id;
-            self.list_preloaded = false;
+
+            let fetch_movies = {
+                let movies_borrowed = self.movies.borrow();
+                self.get_list_ids()
+                    .iter()
+                    .any(|x| !movies_borrowed.contains_key(x))
+            };
+            if fetch_movies {
+                key_event_handler.bind_immediate(|app, _| {
+                    app.drawer.open_fetch_movies_popup(
+                        app.tmdb_tokens.clone(),
+                        app.punch_play_tokens.clone(),
+                        app.trakt_tokens.clone(),
+                        app.omdb_tokens.clone(),
+                        app.movies.clone(),
+                        app.collections.clone(),
+                        app.persons.clone(),
+                        &app.watched.borrow(),
+                    )
+                });
+
+                false
+            } else {
+                self.list_preloaded = false;
+                self.filter_sort_movies(false);
+
+                true
+            }
+        } else {
+            false
+        }
+    }
+
+    pub fn open_list_and_select_movie(
+        &mut self,
+        key_event_handler: &mut KeyEventHandler,
+        list_id: ListID,
+        movie_id: u32,
+    ) {
+        if self.open_list(list_id, key_event_handler) {
+            let pos = self.filtered_movies.iter().position(|x| x.id == movie_id);
+            if let Some(index) = pos {
+                self.movies_list.selected_item = index;
+
+                if self.movies_list.scroll_pos > index
+                    || index >= self.movies_list.scroll_pos + self.movies_list.num_visible_items
+                {
+                    self.movies_list.scroll_pos = index
+                        .saturating_sub(self.movies_list.num_visible_items / 2)
+                        .min(
+                            self.filtered_movies
+                                .len()
+                                .saturating_sub(self.movies_list.num_visible_items),
+                        );
+                    self.movies_list.alignment_bottom = false;
+                }
+            }
         }
     }
 
@@ -226,7 +257,7 @@ impl MainScreen {
     }
 
     fn get_list_movies(&self) -> Vec<Movie> {
-        ids_to_movies(&self.get_list_ids(), &self.movies.borrow())
+        helpers::ids_to_movies(&self.get_list_ids(), &self.movies.borrow())
     }
 
     pub fn current_movie(&self) -> Option<&Movie> {
@@ -311,7 +342,7 @@ impl MainScreen {
                     if name.is_empty() {
                         continue;
                     }
-                    let mut conf = MatcherConfig::DEFAULT;
+                    let mut conf: MatcherConfig = MatcherConfig::DEFAULT;
                     conf.prefer_prefix = true;
                     let mut matcher = Matcher::new(conf);
                     let pattern = Atom::parse(
@@ -366,8 +397,11 @@ impl MainScreen {
                 }
                 FilterCriterion::Released(lower_bound, upper_bound, inverted) => {
                     movies.retain(|x| {
-                        is_between(x.release_date.year() as u32, *lower_bound, *upper_bound)
-                            ^ *inverted
+                        helpers::is_between(
+                            x.release_date.year() as u32,
+                            *lower_bound,
+                            *upper_bound,
+                        ) ^ *inverted
                     });
                 }
                 FilterCriterion::FirstWatched(lower_bound, upper_bound, inverted) => {
@@ -376,7 +410,7 @@ impl MainScreen {
                         watched_borrowed
                             .get(&x.id)
                             .map(|y| {
-                                is_between(
+                                helpers::is_between(
                                     y.get_first_play().year() as u32,
                                     *lower_bound,
                                     *upper_bound,
@@ -391,7 +425,7 @@ impl MainScreen {
                         watched_borrowed
                             .get(&x.id)
                             .map(|y| {
-                                is_between(
+                                helpers::is_between(
                                     y.get_latest_play().year() as u32,
                                     *lower_bound,
                                     *upper_bound,
@@ -437,10 +471,19 @@ impl MainScreen {
         match self.sort {
             Sort::UserRating => {
                 self.filtered_movies.sort_by(|x, y| {
-                    self.watched.borrow()[&x.id]
-                        .get_user_rating()
-                        .partial_cmp(&self.watched.borrow()[&y.id].get_user_rating())
-                        .unwrap()
+                    self.watched
+                        .borrow()
+                        .get(&x.id)
+                        .map(|x| x.get_user_rating())
+                        .unwrap_or(f64::NAN)
+                        .total_cmp(
+                            &self
+                                .watched
+                                .borrow()
+                                .get(&y.id)
+                                .map(|y| y.get_user_rating())
+                                .unwrap_or(f64::NAN),
+                        )
                 });
                 if !self.sort_ascending {
                     self.filtered_movies.reverse();
@@ -466,15 +509,25 @@ impl MainScreen {
                 }
             }
             Sort::DateAdded => {
-                self.filtered_movies
-                    .sort_by_key(|x| self.watched.borrow()[&x.id].get_first_play());
+                self.filtered_movies.sort_by_key(|x| {
+                    self.watched
+                        .borrow()
+                        .get(&x.id)
+                        .map(|x| x.get_first_play())
+                        .unwrap_or_default()
+                });
                 if !self.sort_ascending {
                     self.filtered_movies.reverse();
                 }
             }
             Sort::MostRecent => {
-                self.filtered_movies
-                    .sort_by_key(|x| self.watched.borrow()[&x.id].get_latest_play());
+                self.filtered_movies.sort_by_key(|x| {
+                    self.watched
+                        .borrow()
+                        .get(&x.id)
+                        .map(|x| x.get_latest_play())
+                        .unwrap_or_default()
+                });
                 if !self.sort_ascending {
                     self.filtered_movies.reverse();
                 }
@@ -569,9 +622,9 @@ impl MainScreen {
                     "Refetch details".into(),
                     |app, _| {
                         app.drawer.open_refetch_details_popup(
-                            app.trakt_tokens.clone(),
-                            app.punch_play_tokens.clone(),
                             app.tmdb_tokens.clone(),
+                            app.punch_play_tokens.clone(),
+                            app.trakt_tokens.clone(),
                             app.omdb_tokens.clone(),
                         );
                     },
@@ -581,7 +634,7 @@ impl MainScreen {
                     'e',
                     "Edit movie".into(),
                     |app, _| {
-                        app.drawer.open_edit_movie_popup();
+                        app.drawer.open_edit_movie_popup(&app.watched.borrow());
                     },
                 );
                 key_event_handler.bind_key(
@@ -589,16 +642,16 @@ impl MainScreen {
                     'd',
                     "Delete movie".into(),
                     |app, _| {
-                        app.drawer.open_delete_movie_popup();
+                        app.drawer.open_delete_movie_popup(&app.movies.borrow());
                     },
                 );
             }
         }
         key_event_handler.bind_key((Some(0), None), 'a', "Add movie".into(), |app, _| {
             app.drawer.open_add_movie_popup(
-                app.trakt_tokens.clone(),
-                app.punch_play_tokens.clone(),
                 app.tmdb_tokens.clone(),
+                app.punch_play_tokens.clone(),
+                app.trakt_tokens.clone(),
                 app.omdb_tokens.clone(),
             );
         });
@@ -654,7 +707,7 @@ impl MainScreen {
         // let footer_height = (((frame_area.height - 5) % 9) % num_movies as u16) + 2;
         let [header, vert, _] = vertical![==3, >=1, ==2].areas(frame_area);
 
-        let [description, list] = horizontal![==vert.width * 3 / 8, >=0].areas(vert);
+        let [description, list] = horizontal![==vert.width * 3 / 8 - 1, >=0].areas(vert);
 
         frame.render_widget(Block::new().bg(tailwind::SLATE.c900), header);
 
@@ -703,15 +756,15 @@ impl MainScreen {
                         app.drawer.open_add_play_popup();
                     } else if a == 1 {
                         app.drawer.open_refetch_details_popup(
-                            app.trakt_tokens.clone(),
-                            app.punch_play_tokens.clone(),
                             app.tmdb_tokens.clone(),
+                            app.punch_play_tokens.clone(),
+                            app.trakt_tokens.clone(),
                             app.omdb_tokens.clone(),
                         );
                     } else if a == 2 {
-                        app.drawer.open_edit_movie_popup();
+                        app.drawer.open_edit_movie_popup(&app.watched.borrow());
                     } else if a == 3 {
-                        app.drawer.open_delete_movie_popup();
+                        app.drawer.open_delete_movie_popup(&app.movies.borrow());
                     }
                 }
             });
@@ -730,9 +783,9 @@ impl MainScreen {
             });
             key_event_handler.bind_key((None, None), 'R', "Refetch details".into(), |app, _| {
                 app.drawer.open_refetch_details_popup(
-                    app.trakt_tokens.clone(),
-                    app.punch_play_tokens.clone(),
                     app.tmdb_tokens.clone(),
+                    app.punch_play_tokens.clone(),
+                    app.trakt_tokens.clone(),
                     app.omdb_tokens.clone(),
                 );
 
@@ -741,14 +794,14 @@ impl MainScreen {
                 }
             });
             key_event_handler.bind_key((None, None), 'e', "Edit movie".into(), |app, _| {
-                app.drawer.open_edit_movie_popup();
+                app.drawer.open_edit_movie_popup(&app.watched.borrow());
 
                 if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     main_screen.context_menu_pos = None;
                 }
             });
             key_event_handler.bind_key((None, None), 'd', "Delete movie".into(), |app, _| {
-                app.drawer.open_delete_movie_popup();
+                app.drawer.open_delete_movie_popup(&app.movies.borrow());
 
                 if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     main_screen.context_menu_pos = None;
@@ -798,15 +851,15 @@ impl MainScreen {
                             app.drawer.open_add_play_popup();
                         } else if i == 1 {
                             app.drawer.open_refetch_details_popup(
-                                app.trakt_tokens.clone(),
-                                app.punch_play_tokens.clone(),
                                 app.tmdb_tokens.clone(),
+                                app.punch_play_tokens.clone(),
+                                app.trakt_tokens.clone(),
                                 app.omdb_tokens.clone(),
                             );
                         } else if i == 2 {
-                            app.drawer.open_edit_movie_popup();
+                            app.drawer.open_edit_movie_popup(&app.watched.borrow());
                         } else if i == 3 {
-                            app.drawer.open_delete_movie_popup();
+                            app.drawer.open_delete_movie_popup(&app.movies.borrow());
                         }
 
                         if let Some(Screens::MainScreen(main_screen)) =
@@ -822,11 +875,14 @@ impl MainScreen {
 
         if !self.list_preloaded {
             self.list_preloaded = true;
-            let list_ids = self.get_list_ids();
+
             key_event_handler.bind_immediate(move |app, _| {
-                app.drawer
-                    .image_renderer
-                    .preload_movies(list_ids, &app.config.borrow().options.image_preload_rule);
+                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                    app.drawer.image_renderer.preload_movies(
+                        main_screen.get_list_ids(),
+                        &app.config.borrow().options.image_preload_rule,
+                    );
+                }
             });
         }
     }
@@ -1200,7 +1256,7 @@ impl MainScreen {
             self.item == 1,
             frame,
             sort_area,
-            ellipsize_string(self.sort.as_ref(), sort_area.width as usize - 4),
+            helpers::ellipsize_string(self.sort.as_ref(), sort_area.width as usize - 4),
         );
         key_event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
@@ -1216,7 +1272,7 @@ impl MainScreen {
 
         if tab_selected && self.item == 1 {
             let mut items = Sort::iter()
-                .map(|x| ellipsize_string(x.as_ref(), sort_area.width as usize - 2))
+                .map(|x| helpers::ellipsize_string(x.as_ref(), sort_area.width as usize - 2))
                 .collect_vec();
             if self.search_input.is_empty() {
                 _ = items.pop();
@@ -1709,7 +1765,7 @@ impl MainScreen {
 
         frame.render_widget(Block::new().bg(background).fg(text), area);
 
-        let vert_lay = add_padding(
+        let vert_lay = helpers::add_padding(
             area,
             if is_partially_visible {
                 Padding::new(
@@ -1729,25 +1785,31 @@ impl MainScreen {
             .resize(Size::new(2, area.height.saturating_sub(2)))
             .offset(Offset::new(0, 1));
 
-        let rating = self.watched.borrow()[&movie.id].get_user_rating();
-        let rating_color = if rating >= 9.0 {
-            tailwind::SKY.c400
-        } else if rating >= 8.0 {
-            tailwind::GREEN.c500
-        } else if rating >= 7.5 {
-            tailwind::LIME.c400
-        } else if rating >= 7.0 {
-            material::AMBER.c400
-        } else if rating >= 6.0 {
-            material::DEEP_ORANGE.c300
-        } else {
-            material::RED.c400
-        };
+        let rating = self
+            .watched
+            .borrow()
+            .get(&movie.id)
+            .map(|x| x.get_user_rating());
+        let rating_color = rating.as_ref().map(|rating| {
+            if *rating >= 9.0 {
+                tailwind::SKY.c400
+            } else if *rating >= 8.0 {
+                tailwind::GREEN.c500
+            } else if *rating >= 7.5 {
+                tailwind::LIME.c400
+            } else if *rating >= 7.0 {
+                material::AMBER.c400
+            } else if *rating >= 6.0 {
+                material::DEEP_ORANGE.c300
+            } else {
+                material::RED.c400
+            }
+        });
 
         let mut description_lines: Vec<Line<'_>> = vec![];
 
         const TITLE_LINES: usize = 2;
-        let mut title_lines = wrap_text(&movie.title, description_area.width as usize - 4);
+        let mut title_lines = helpers::wrap_text(&movie.title, description_area.width as usize - 4);
         for _ in 0..(TITLE_LINES.saturating_sub(title_lines.len())) {
             description_lines.push("".into());
         }
@@ -1756,7 +1818,7 @@ impl MainScreen {
             description_lines.push(title_lines.pop().unwrap().bold().into());
         }
         description_lines.push(
-            ellipsize_string(
+            helpers::ellipsize_string(
                 &title_lines.pop().unwrap(),
                 description_area.width as usize - 5,
             )
@@ -1765,15 +1827,19 @@ impl MainScreen {
                 + movie.release_date.year().to_string().italic(),
         );
 
-        description_lines.push(
-            format!("{:.1}", rating)
-                .set_style(rating_color)
-                .bold()
-                .into(),
-        );
+        if let (Some(rating), Some(rating_color)) = &(rating, rating_color) {
+            description_lines.push(
+                format!("{:.1}", rating)
+                    .set_style(*rating_color)
+                    .bold()
+                    .into(),
+            );
+        } else {
+            description_lines.push("Not watched".fg(tailwind::LIME.c400).bold().into());
+        }
 
         const TAGLINE_LINES: usize = 2;
-        let mut tagline_lines = wrap_text(&movie.tagline, description_area.width as usize);
+        let mut tagline_lines = helpers::wrap_text(&movie.tagline, description_area.width as usize);
         for _ in 0..(TAGLINE_LINES.saturating_sub(tagline_lines.len())) {
             description_lines.push("".into());
         }
@@ -1829,19 +1895,13 @@ impl MainScreen {
         // } else {
         //     material::DEEP_ORANGE.c800
         // };
-        if tab_selected && selected {
-            frame.render_widget(
-                text![span!("▐"); highlight_area.height as usize]
-                // text!["1", "2", "3", "4", "5", "6", "7", "8", "9", "a", "b", "c"]
-                    .fg(
-                    // if tab_selected {
-                        rating_color
-                    // } else {
-                    //     unfocused_rating_color
-                    // },
-                ),
-                highlight_area,
-            );
+        if let Some(rating_color) = &rating_color {
+            if tab_selected && selected {
+                frame.render_widget(
+                    text![span!("▐"); highlight_area.height as usize].fg(*rating_color),
+                    highlight_area,
+                );
+            }
         }
 
         self.drawing_images |= !image_renderer.draw_image(
@@ -1875,9 +1935,6 @@ impl MainScreen {
         key_event_handler: &mut KeyEventHandler,
         area: Rect,
     ) {
-        const TABS: [&str; 2] = ["Overview", "Plays"];
-        const TABS_COUNT: usize = TABS.len();
-
         key_event_handler.bind_tab((Some(1), None), "Change focus".into(), |app, data| {
             if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 match data {
@@ -1894,24 +1951,6 @@ impl MainScreen {
                 }
 
                 main_screen.item = 0;
-            }
-        });
-
-        key_event_handler.bind_horizontal((Some(1), None), "Change tab".into(), |app, data| {
-            if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                match data {
-                    key_event_handler::Data::Direction(true, _) => {
-                        main_screen.movies_description.selected_tab =
-                            (main_screen.movies_description.selected_tab + 1).min(TABS_COUNT - 1);
-                    }
-                    key_event_handler::Data::Direction(false, _) => {
-                        main_screen.movies_description.selected_tab = main_screen
-                            .movies_description
-                            .selected_tab
-                            .saturating_sub(1);
-                    }
-                    _ => (),
-                }
             }
         });
 
@@ -1933,43 +1972,63 @@ impl MainScreen {
             self.current_movie().cloned()
         };
 
-        let inner = add_padding(area, Padding::proportional(1));
+        let inner = helpers::add_padding(area, Padding::proportional(1));
         let backdrop_height = (inner.width as f32 * 9.0 / 16.0).ceil() as u16 >> 1;
         let [backdrop_area, title_area, description_area] =
             vertical![==backdrop_height, ==8, >=1].areas(inner);
 
+        frame.render_widget(Block::new().bg(tailwind::GRAY.c950), backdrop_area);
         if let Some(movie) = movie {
             let [title_area, ratings_area, _, tabs_area] =
                 vertical![==3, ==2, ==1, ==2].areas(title_area);
 
             let mut name = movie.title.clone();
-            name = ellipsize_string(&name, title_area.width as usize);
+            name = helpers::ellipsize_string(&name, title_area.width as usize);
 
-            let rating = self.watched.borrow()[&movie.id].get_user_rating();
-            let user_rating_widget_bg = if rating >= 9.0 {
-                tailwind::SKY.c400
-            } else if rating >= 8.0 {
-                tailwind::GREEN.c500
-            } else if rating >= 7.5 {
-                tailwind::LIME.c400
-            } else if rating >= 7.0 {
-                material::AMBER.c400
-            } else if rating >= 6.0 {
-                tailwind::ORANGE.c500
-            } else {
-                material::RED.c400
-            };
-            let user_rating_widget_fg = if rating >= 7.0 {
-                tailwind::STONE.c950
-            } else {
-                tailwind::STONE.c200
-            };
+            let rating = self
+                .watched
+                .borrow()
+                .get(&movie.id)
+                .map(|x| x.get_user_rating());
+            let user_rating_widget_bg = rating
+                .as_ref()
+                .map(|rating| {
+                    if *rating >= 9.0 {
+                        tailwind::SKY.c400
+                    } else if *rating >= 8.0 {
+                        tailwind::GREEN.c500
+                    } else if *rating >= 7.5 {
+                        tailwind::LIME.c400
+                    } else if *rating >= 7.0 {
+                        material::AMBER.c400
+                    } else if *rating >= 6.0 {
+                        tailwind::ORANGE.c500
+                    } else {
+                        material::RED.c400
+                    }
+                })
+                .unwrap_or(tailwind::BLACK);
+            let user_rating_widget_fg = rating
+                .as_ref()
+                .map(|rating| {
+                    if *rating >= 7.0 {
+                        tailwind::STONE.c950
+                    } else {
+                        tailwind::STONE.c200
+                    }
+                })
+                .unwrap_or(tailwind::WHITE);
+
             let user_rating_widget = line![
                 span!("").fg(user_rating_widget_bg),
-                span!(format!("{rating:.1}"))
-                    .bold()
-                    .fg(user_rating_widget_fg)
-                    .bg(user_rating_widget_bg),
+                if let Some(rating) = rating {
+                    format!("{rating:.1}")
+                } else {
+                    "Not watched".into()
+                }
+                .bold()
+                .fg(user_rating_widget_fg)
+                .bg(user_rating_widget_bg),
                 span!("").fg(user_rating_widget_bg)
             ];
 
@@ -1986,24 +2045,72 @@ impl MainScreen {
             );
             frame.render_widget(
                 user_rating_widget,
-                add_padding(title_area, Padding::top(1))
+                helpers::add_padding(title_area, Padding::top(1))
                     .resize(Size::new(title_area.width, 1))
                     .centered(constraint!(==5), constraint!(==1)),
             );
             self.draw_ratings(&movie, frame, ratings_area);
 
-            const BGS: [Color; 2] = [material::GREEN.c600, material::LIGHT_BLUE.c600];
-            const FGS: [Color; 2] = [material::BLUE.c100, material::YELLOW.c100];
-            const _BGS: [Color; 2] = [material::TEAL.c800, material::INDIGO.c600];
-            const _FGS: [Color; 2] = [material::BLUE_GRAY.c200, material::BLUE_GRAY.c200];
-            let mut tabs = TABS
+            self.movies_description.available_tabs = DESCRIPTION_TABS
                 .iter()
                 .enumerate()
-                .flat_map(|(i, &x)| {
+                .filter_map(|(i, x)| {
+                    if *x == DESCRIPTION_TABS[0] {
+                        Some(i)
+                    } else if *x == DESCRIPTION_TABS[1] {
+                        self.watched.borrow().contains_key(&movie.id).then_some(i)
+                    } else {
+                        None
+                    }
+                })
+                .collect_vec();
+            let num_available_tabs = self.movies_description.available_tabs.len();
+
+            if num_available_tabs > 1 {
+                key_event_handler.bind_horizontal(
+                    (Some(1), None),
+                    "Change tab".into(),
+                    move |app, data| {
+                        if let Some(Screens::MainScreen(main_screen)) =
+                            app.drawer.current_screen.as_mut()
+                        {
+                            match data {
+                                key_event_handler::Data::Direction(true, _) => {
+                                    main_screen.movies_description.selected_tab =
+                                        (main_screen.movies_description.selected_tab + 1)
+                                            .min(num_available_tabs - 1);
+                                }
+                                key_event_handler::Data::Direction(false, _) => {
+                                    main_screen.movies_description.selected_tab = main_screen
+                                        .movies_description
+                                        .selected_tab
+                                        .saturating_sub(1);
+                                }
+                                _ => (),
+                            }
+                        }
+                    },
+                );
+            }
+
+            const BGS: [Color; DESCRIPTION_TABS.len()] =
+                [material::GREEN.c600, material::LIGHT_BLUE.c600];
+            const FGS: [Color; DESCRIPTION_TABS.len()] =
+                [material::BLUE.c100, material::YELLOW.c100];
+            const _BGS: [Color; DESCRIPTION_TABS.len()] =
+                [material::TEAL.c800, material::INDIGO.c600];
+            const _FGS: [Color; DESCRIPTION_TABS.len()] =
+                [material::BLUE_GRAY.c200, material::BLUE_GRAY.c200];
+            let mut tabs = self
+                .movies_description
+                .available_tabs
+                .iter()
+                .enumerate()
+                .flat_map(|(i, x)| {
                     [
-                        span!(format!(" {} ", x))
-                            .fg(if description_selected { FGS[i] } else { _FGS[i] })
-                            .bg(if description_selected { BGS[i] } else { _BGS[i] })
+                        format!(" {} ", DESCRIPTION_TABS[*x])
+                            .fg(if description_selected { FGS[*x] } else { _FGS[*x] })
+                            .bg(if description_selected { BGS[*x] } else { _BGS[*x] })
                             .add_modifier(if i == self.movies_description.selected_tab {
                                 Modifier::BOLD
                             } else {
@@ -2012,7 +2119,7 @@ impl MainScreen {
                         " ".into(),
                     ]
                 })
-                .take(TABS.len() * 2 - 1)
+                .dropping_back(1)
                 .collect_vec();
             let mut mouse_area = tabs_area;
             for (i, tab) in tabs.iter_mut().enumerate() {
@@ -2055,12 +2162,12 @@ impl MainScreen {
                 tabs_area,
             );
 
-            match self.movies_description.selected_tab {
+            match self.movies_description.available_tabs[self.movies_description.selected_tab] {
                 0 => {
                     frame.render_widget(Block::new().bg(tailwind::SLATE.c900), description_area);
 
                     let mut overview_lines =
-                        wrap_text(&movie.overview, description_area.width as usize)
+                        helpers::wrap_text(&movie.overview, description_area.width as usize)
                             .into_iter()
                             .map(|x| line!(x))
                             .collect_vec();
@@ -2154,7 +2261,6 @@ impl MainScreen {
                 frame,
             );
         }
-        // frame.render_widget(Block::new().bg(tailwind::SLATE.c700), backdrop_area);
     }
 
     fn draw_ratings(&self, movie: &Movie, frame: &mut Frame, area: Rect) {
@@ -2220,7 +2326,7 @@ impl MainScreen {
 
         let widget_areas = Layout::horizontal(vec![constraint!(==5); ratings.len()])
             .flex(ratatui::layout::Flex::SpaceEvenly)
-            .split(add_padding(area, Padding::top(1)));
+            .split(helpers::add_padding(area, Padding::top(1)));
         let mut widgets = vec![];
         let mut labels = line!();
         for (name, rating) in ratings {
@@ -2329,7 +2435,7 @@ impl MainScreen {
 
         frame.render_widget(Block::new().bg(tailwind::SLATE.c900), area);
 
-        let mut remaining_area = add_padding(area, Padding::left(1));
+        let mut remaining_area = helpers::add_padding(area, Padding::left(1));
         for i in 0..self.movies_description.plays_tab.num_visible_items {
             let [area, remaining] = if render_partially_visible_play
                 && i == (!self.movies_description.plays_tab.alignment_bottom as usize
@@ -2370,7 +2476,7 @@ impl MainScreen {
                             tailwind::SLATE.c800
                         }
                     }),
-                    add_padding(area, Padding::left(2)),
+                    helpers::add_padding(area, Padding::left(2)),
                 );
 
                 let areas =
@@ -2414,7 +2520,7 @@ impl MainScreen {
                                     } else {
                                         tailwind::ZINC.c600
                                     }),
-                                    add_padding(areas[i as usize], Padding::left(2)),
+                                    helpers::add_padding(areas[i as usize], Padding::left(2)),
                                 );
                             },
                         1 => {
@@ -2457,7 +2563,7 @@ impl MainScreen {
                                             }
                                         }),
                                 ],
-                                add_padding(areas[i as usize], Padding::left(4)),
+                                helpers::add_padding(areas[i as usize], Padding::left(4)),
                             );
                         }
                         2 => {
@@ -2474,7 +2580,7 @@ impl MainScreen {
                                     } else {
                                         tailwind::ZINC.c600
                                     }),
-                                    add_padding(areas[i as usize], Padding::left(2)),
+                                    helpers::add_padding(areas[i as usize], Padding::left(2)),
                                 );
                             }
                         }

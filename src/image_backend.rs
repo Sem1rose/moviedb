@@ -86,6 +86,7 @@ impl RatatuiImage {
             error!("error querying graphics capabilities");
             Picker::halfblocks()
         });
+        // let picker = Picker::halfblocks();
 
         let cache_dir = cache_dir.to_path_buf();
         let mut tmdb_access_token: Option<String> = None;
@@ -167,7 +168,7 @@ impl RatatuiImage {
                                                 id,
                                             ),
                                         ImageID::Collection(id, false) =>
-                                            tmdb::movie::get_collection_artwork(
+                                            tmdb::collection::get_collection_artwork(
                                                 &cache_dir,
                                                 tmdb_access_token.as_str(),
                                                 id,

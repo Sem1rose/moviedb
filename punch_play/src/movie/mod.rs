@@ -1,21 +1,13 @@
-use std::{path::{Path, PathBuf}, thread};
+use std::{path::Path, thread};
 
-use anyhow::{Context, anyhow};
-use itertools::Itertools;
 use reqwest::{
     blocking::{Client, ClientBuilder},
     header::{CONTENT_TYPE, HeaderMap, USER_AGENT},
 };
 
-use crate::{
-    send_punch_play_request,
-    smo::{
-        PunchPlayDetailsResponse, PunchPlaySearchResponse, PunchPlaySearchResult,
-        RequestResponseError,
-    },
-};
+use crate::smo::{PunchPlayDetailsResponse, PunchPlaySearchResponse, PunchPlaySearchResult};
 
-pub(crate) mod smo;
+pub mod smo;
 
 pub fn find_movie(name: &str) -> anyhow::Result<Vec<PunchPlaySearchResult>> {
     let client = ClientBuilder::new().build()?;
@@ -24,26 +16,15 @@ pub fn find_movie(name: &str) -> anyhow::Result<Vec<PunchPlaySearchResult>> {
     headers.insert("content-type", "application/json".parse().unwrap());
 
     let query = [("q", name), ("type", "movie")];
-    let search_response = send_punch_play_request(
+    crate::send_request_deserialized::<PunchPlaySearchResponse>(
         &client,
         "https://punchplay.tv/api/public/v1/catalog/search",
         &headers,
         None,
         Some(&query),
-    )?;
-    if !search_response.status().is_success() {
-        return Err(match search_response.json::<RequestResponseError>() {
-            Ok(err) => err.into(),
-            Err(_) => anyhow!(""),
-        })
-        .context(format!(
-            "PunchPlay: Error while searching for movie {}",
-            name
-        ));
-    }
-
-    let json = search_response.json::<PunchPlaySearchResponse>()?;
-    Ok(json.items)
+        format!("PunchPlay: Error while searching for movie {}", name),
+    )
+    .map(|x| x.items)
 }
 
 pub fn get_movie_details(
@@ -60,22 +41,14 @@ pub fn get_movie_details(
         format!("Bearer {}", access_token).parse().unwrap(),
     );
 
-    let details_response = send_punch_play_request(
+    crate::send_request_deserialized(
         &client,
         &format!("https://punchplay.tv/api/platform/v1/title/movie/{tmdb_id}"),
         &headers,
         None,
         None,
-    )?;
-    if !details_response.status().is_success() {
-        return Err(match details_response.json::<RequestResponseError>() {
-            Ok(err) => err.into(),
-            Err(_) => anyhow!(""),
-        })
-        .context("PunchPlay: Error while getting movie details");
-    }
-
-    details_response.json().map_err(Into::into)
+        "PunchPlay: Error while getting movie details",
+    )
 }
 
 pub fn get_movie_poster_banner(
@@ -89,15 +62,6 @@ pub fn get_movie_poster_banner(
     let client = Client::builder().build()?;
 
     let movie_details = get_movie_details(access_token, tmdb_id)?.title;
-    let download_image = move |client: Client, url: &str, path: PathBuf| -> anyhow::Result<()> {
-        let image_bytes = client.get(url).send()?.bytes()?.into_iter().collect_vec();
-
-        if let Ok(img) = image::load_from_memory(&image_bytes) {
-            img.save(path)?;
-        }
-
-        Ok(())
-    };
 
     let path = cache_dir
         .join("posters")
@@ -107,7 +71,7 @@ pub fn get_movie_poster_banner(
 
         thread::spawn(move || -> anyhow::Result<()> {
             if !movie_details.poster_url.is_empty() {
-                download_image(client, movie_details.poster_url.as_str(), path)?;
+                crate::download_image(client, movie_details.poster_url.as_str(), path)?;
             }
 
             Ok(())
@@ -122,7 +86,7 @@ pub fn get_movie_poster_banner(
 
         thread::spawn(move || -> anyhow::Result<()> {
             if !movie_details.backdrop_url.is_empty() {
-                download_image(client, &movie_details.backdrop_url.as_str(), path)?;
+                crate::download_image(client, &movie_details.backdrop_url.as_str(), path)?;
             }
 
             Ok(())

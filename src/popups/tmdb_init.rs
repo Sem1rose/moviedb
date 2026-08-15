@@ -55,7 +55,7 @@ pub struct TMDBInitPopup {
 
     rx_init:              Option<Receiver<anyhow::Result<UserTokens>>>,
     rx_authorization_url: Option<Receiver<String>>,
-    rx_session_id:        Option<Receiver<anyhow::Result<String>>>,
+    rx_session_id:        Option<Receiver<anyhow::Result<(String, u32)>>>,
 
     pub user_tokens: Option<UserTokens>,
 }
@@ -84,13 +84,14 @@ impl TMDBInitPopup {
 
                 self.user_tokens = Some(UserTokens {
                     access_token: access_token.clone(),
-                    session_id:   String::default(),
+
+                    ..Default::default()
                 });
 
                 let (tx_authorization_url, rx_authorization_url) = channel();
                 let (tx_session_id, rx_session_id) = channel();
                 thread::spawn(move || {
-                    _ = tx_session_id.send(tmdb::tokens::get_session_id(
+                    _ = tx_session_id.send(tmdb::tokens::get_session_account_id(
                         &access_token,
                         tx_authorization_url,
                     ));
@@ -178,9 +179,10 @@ impl PopupTrait for TMDBInitPopup {
                 if let Some(rx_session_id) = self.rx_session_id.as_ref() {
                     if let Ok(result) = rx_session_id.try_recv() {
                         match result {
-                            Ok(session_id) => {
+                            Ok((session_id, account_id)) => {
                                 if let Some(tokens) = self.user_tokens.as_mut() {
                                     tokens.session_id = session_id;
+                                    // tokens.account_id = account_id;
                                 }
                                 self.status = Some(true);
 

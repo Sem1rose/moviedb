@@ -28,7 +28,7 @@ use ratatui_textarea::{TextArea, WrapMode};
 use throbber_widgets_tui::{Throbber, ThrobberState};
 use tmdb::{
     self,
-    smo::{TMDBMovieDetails, TMDBSearchResult},
+    smo::{MovieDetails as TMDBMovieDetails, SearchResult},
 };
 use trakt::{
     self,
@@ -36,11 +36,13 @@ use trakt::{
 };
 
 use crate::{
+    app::App,
     helpers,
     key_event_handler::{self, KeyEventHandler},
     omdb::{self, OMDBDetailsResponse},
     popups::{PopupTrait, Popups},
     tokens::{OMDBTokens, PunchPlayTokens, TMDBTokens, TraktTokens},
+    types::MovieDetailsResponse,
     widgets::{self, Action, ActionType},
 };
 
@@ -59,19 +61,13 @@ pub enum Phase {
 enum SearchResults {
     Trakt(anyhow::Result<Vec<TraktSearchResponseMovie>>),
     PunchPlay(anyhow::Result<Vec<PunchPlaySearchResult>>),
-    TMDB(anyhow::Result<Vec<TMDBSearchResult>>),
+    TMDB(anyhow::Result<Vec<SearchResult>>),
 }
 struct SearchResultMovie {
     title:        String,
     release_year: String,
     rating:       f64,
     id:           u32,
-}
-struct DetailsResponses {
-    pub tmdb:       Option<TMDBMovieDetails>,
-    pub trakt:      Option<TraktDetailsResponse>,
-    pub punch_play: Option<PunchPlayDetailsResponse>,
-    pub omdb:       Option<OMDBDetailsResponse>,
 }
 impl From<TraktSearchResponseMovie> for SearchResultMovie {
     fn from(value: TraktSearchResponseMovie) -> Self {
@@ -93,8 +89,8 @@ impl From<PunchPlaySearchResult> for SearchResultMovie {
         }
     }
 }
-impl From<TMDBSearchResult> for SearchResultMovie {
-    fn from(value: TMDBSearchResult) -> Self {
+impl From<SearchResult> for SearchResultMovie {
+    fn from(value: SearchResult) -> Self {
         Self {
             title:        value.title,
             release_year: value.release_date.unwrap_or("1970".into()),
@@ -131,39 +127,39 @@ pub struct AddMoviePopup {
     pub punch_play_movie_details_result: Option<PunchPlayDetailsResponse>,
     pub tmdb_movie_details_result:       Option<TMDBMovieDetails>,
     pub omdb_movie_details_result:       Option<OMDBDetailsResponse>,
-    rx_details_response:                 Option<Receiver<anyhow::Result<DetailsResponses>>>,
+    rx_details_response:                 Option<Receiver<anyhow::Result<MovieDetailsResponse>>>,
 
-    trakt_tokens:      TraktTokens,
-    punch_play_tokens: PunchPlayTokens,
     tmdb_tokens:       TMDBTokens,
+    punch_play_tokens: PunchPlayTokens,
+    trakt_tokens:      TraktTokens,
     omdb_tokens:       OMDBTokens,
 
-    cache_dir: PathBuf,
+    _cache_dir: PathBuf,
 }
 
 impl AddMoviePopup {
     pub fn new(
-        trakt_tokens: TraktTokens,
-        punch_play_tokens: PunchPlayTokens,
         tmdb_tokens: TMDBTokens,
+        punch_play_tokens: PunchPlayTokens,
+        trakt_tokens: TraktTokens,
         omdb_tokens: OMDBTokens,
         cache_dir: &Path,
     ) -> Self {
         Self {
-            trakt_tokens,
-            punch_play_tokens,
             tmdb_tokens,
+            punch_play_tokens,
+            trakt_tokens,
             omdb_tokens,
-            cache_dir: cache_dir.to_path_buf(),
+            _cache_dir: cache_dir.to_path_buf(),
             ..Default::default()
         }
     }
 
     pub fn new_refetch_details(
         tmdb_id: u32,
-        trakt_tokens: TraktTokens,
-        punch_play_tokens: PunchPlayTokens,
         tmdb_tokens: TMDBTokens,
+        punch_play_tokens: PunchPlayTokens,
+        trakt_tokens: TraktTokens,
         omdb_tokens: OMDBTokens,
         cache_dir: &Path,
     ) -> Self {
@@ -172,7 +168,7 @@ impl AddMoviePopup {
             punch_play_tokens,
             tmdb_tokens,
             omdb_tokens,
-            cache_dir: cache_dir.to_path_buf(),
+            _cache_dir: cache_dir.to_path_buf(),
             refetch_details: true,
             phase: Phase::ConfirmRefetchDetails(tmdb_id),
             ..Default::default()
@@ -212,8 +208,8 @@ impl AddMoviePopup {
 
     pub fn request_details(&mut self, tmdb_id: u32) {
         let (tx_details_request, rx_details_response): (
-            mpsc::Sender<anyhow::Result<DetailsResponses>>,
-            Receiver<anyhow::Result<DetailsResponses>>,
+            mpsc::Sender<anyhow::Result<MovieDetailsResponse>>,
+            Receiver<anyhow::Result<MovieDetailsResponse>>,
         ) = mpsc::channel();
 
         let trakt_status = self.trakt_tokens.status;
@@ -223,108 +219,19 @@ impl AddMoviePopup {
         let trakt_client_id = self.trakt_tokens.client_id_owned();
         let punch_play_access_token = self.punch_play_tokens.access_token_owned();
         let tmdb_access_token = self.tmdb_tokens.access_token_owned();
-        let cache_dir = self.cache_dir.clone();
+        // let cache_dir = self.cache_dir.clone();
 
         thread::spawn(move || {
-            let mut trakt_result = None;
-            let mut punch_play_result = None;
-            let mut omdb_result = None;
-
-            let tmdb_handle = {
-                let access_token = tmdb_access_token.clone();
-                thread::spawn(move || tmdb::movie::get_movie_details(&access_token, tmdb_id))
-            };
-            let punch_play_handle = if punch_play_status.unwrap_or(false) {
-                let access_token = punch_play_access_token.clone();
-                Some(thread::spawn(move || {
-                    punch_play::movie::get_movie_details(&access_token, tmdb_id)
-                }))
-            } else {
-                None
-            };
-            let tmdb_result = match tmdb_handle.join() {
-                Err(e) => {
-                    _ = tx_details_request.send(Err(anyhow!("{:#?}", e)));
-                    return;
-                }
-                Ok(val) => match val {
-                    Err(error) => {
-                        _ = tx_details_request.send(Err(error));
-                        return;
-                    }
-                    Ok(val) => Some(val),
-                },
-            };
-
-            let imdb_id = tmdb_result.as_ref().unwrap().imdb_id.clone();
-            let trakt_handle = if trakt_status.is_some() {
-                Some({
-                    let imdb_id = imdb_id.clone();
-                    let client_id = trakt_client_id.clone();
-                    thread::spawn(move || trakt::movie::get_movie_details(&client_id, &imdb_id))
-                })
-            } else {
-                None
-            };
-            let omdb_handle = if omdb_status {
-                Some({
-                    let imdb_id = imdb_id.clone();
-                    thread::spawn(move || omdb::get_movie_details(&omdb_api_key, &imdb_id))
-                })
-            } else {
-                None
-            };
-
-            if let Some(handle) = trakt_handle {
-                trakt_result = handle
-                    .join()
-                    .map(|x| {
-                        x.inspect_err(|err| {
-                            error!("Trakt error while fetching movie details: {err:?}")
-                        })
-                        .ok()
-                    })
-                    .ok()
-                    .flatten();
-            }
-            if let Some(handle) = punch_play_handle {
-                punch_play_result = handle
-                    .join()
-                    .map(|x| {
-                        x.inspect_err(|err| {
-                            error!("PunchPlay error while fetching movie details: {err:?}")
-                        })
-                        .ok()
-                    })
-                    .ok()
-                    .flatten();
-            }
-            if let Some(handle) = omdb_handle {
-                omdb_result = handle
-                    .join()
-                    .map(|x| {
-                        x.inspect_err(|err| {
-                            error!("OMDB error while fetching movie details: {err:?}")
-                        })
-                        .ok()
-                    })
-                    .ok()
-                    .flatten();
-            }
-
-            _ = tmdb::movie::get_movie_artworks(
-                &cache_dir,
+            _ = tx_details_request.send(App::fetch_movie(
+                &omdb_api_key,
+                &trakt_client_id,
+                &punch_play_access_token,
                 &tmdb_access_token,
-                tmdb_result.as_ref(),
+                trakt_status,
+                punch_play_status,
+                omdb_status,
                 tmdb_id,
-            );
-
-            _ = tx_details_request.send(Ok(DetailsResponses {
-                tmdb:       tmdb_result,
-                punch_play: punch_play_result,
-                trakt:      trakt_result,
-                omdb:       omdb_result,
-            }));
+            ));
         });
 
         self.rx_details_response = Some(rx_details_response);

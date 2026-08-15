@@ -9,7 +9,10 @@ use ratatui::{
     backend::CrosstermBackend,
     crossterm::{
         self, ExecutableCommand,
-        event::{DisableMouseCapture, EnableMouseCapture},
+        event::{
+            DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+        },
+        execute,
         terminal::{EnterAlternateScreen, LeaveAlternateScreen},
     },
 };
@@ -18,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use strum::{
     AsRefStr, EnumCount, EnumDiscriminants, EnumIter, FromRepr, IntoEnumIterator, IntoStaticStr,
 };
-use tmdb::smo::{Person as TMDBPerson, TMDBMovieDetails};
+use tmdb::smo::{MovieDetails, Person as TMDBPerson};
 use trakt::smo::TraktDetailsResponse;
 
 use crate::omdb::OMDBDetailsResponse;
@@ -36,19 +39,19 @@ pub fn initialize_terminal() -> anyhow::Result<Term> {
     crossterm::terminal::enable_raw_mode()?;
 
     let mut backend = TermBackend::new(stdout());
+    backend.execute(crossterm::cursor::Hide)?;
     backend.execute(EnterAlternateScreen)?;
+    backend.execute(EnableBracketedPaste)?;
     backend.execute(EnableMouseCapture)?;
 
-    let mut term = Terminal::new(backend)?;
-    term.hide_cursor()?;
-
-    Ok(term)
+    Ok(Terminal::new(backend)?)
 }
 
-pub fn reset_terminal(term: &mut Term) -> anyhow::Result<()> {
-    term.backend_mut().execute(DisableMouseCapture)?;
-    term.show_cursor()?;
-    term.backend_mut().execute(LeaveAlternateScreen)?;
+pub fn try_restore_terminal() -> anyhow::Result<()> {
+    execute!(stdout(), DisableMouseCapture)?;
+    execute!(stdout(), DisableBracketedPaste)?;
+    execute!(stdout(), LeaveAlternateScreen)?;
+    execute!(stdout(), crossterm::cursor::Show)?;
     crossterm::terminal::disable_raw_mode()?;
 
     Ok(())
@@ -57,9 +60,47 @@ pub fn reset_terminal(term: &mut Term) -> anyhow::Result<()> {
 fn set_panic_hook() {
     let hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        ratatui::restore();
+        if let Err(err) = try_restore_terminal() {
+            eprintln!("Failed to restore terminal: {err}");
+        }
+
         hook(info);
     }));
+}
+
+pub struct MovieDetailsResponse {
+    pub tmdb:       Option<MovieDetails>,
+    pub trakt:      Option<TraktDetailsResponse>,
+    pub punch_play: Option<PunchPlayDetailsResponse>,
+    pub omdb:       Option<OMDBDetailsResponse>,
+}
+
+#[allow(clippy::upper_case_acronyms)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Copy, Hash, Eq)]
+pub enum ListID {
+    TMDB(u32),
+    Collection(u32),
+    Custom(u32),
+}
+impl Default for ListID {
+    fn default() -> Self {
+        Self::Custom(0)
+    }
+}
+#[derive(Serialize, Deserialize, Clone)]
+pub struct List {
+    pub id:     ListID,
+    pub name:   String,
+    pub movies: Vec<u32>,
+}
+impl From<&[Entry]> for List {
+    fn from(value: &[Entry]) -> Self {
+        Self {
+            id:     Default::default(),
+            name:   "Watched Movies".into(),
+            movies: value.iter().map(|x| x.movie_id).collect(),
+        }
+    }
 }
 
 #[derive(Default, Clone, Copy, FromRepr, EnumCount, AsRefStr, EnumIter, EnumDiscriminants)]
@@ -244,8 +285,8 @@ pub struct Movie {
     pub credits:          Credits,
     pub recommendations:  Vec<u32>,
 }
-impl From<TMDBMovieDetails> for Movie {
-    fn from(tmdb_details: TMDBMovieDetails) -> Self {
+impl From<MovieDetails> for Movie {
+    fn from(tmdb_details: MovieDetails) -> Self {
         info!("{tmdb_details:#?}");
 
         let (cast, crew) = if let Some(credits) = tmdb_details.credits.as_ref() {

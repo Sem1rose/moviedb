@@ -8,6 +8,7 @@ use ratatui::{
 
 use crate::{app::App, drawer::Drawer};
 
+#[derive(Clone, Copy)]
 pub enum Data {
     None,
     Direction(bool, KeyModifiers),
@@ -16,7 +17,7 @@ pub enum Data {
 }
 
 type State = (Option<usize>, Option<usize>);
-type Callback = Box<dyn FnOnce(&mut App, Data)>;
+type Callback = Box<dyn Fn(&mut App, Data)>;
 
 #[derive(PartialEq, Eq, Hash, Clone, Debug)]
 pub enum Bind {
@@ -67,7 +68,7 @@ impl KeyEventHandler {
         &mut self,
         state: State,
         description: String,
-        callback: impl FnOnce(&mut App, Data) + 'static,
+        callback: impl Fn(&mut App, Data) + 'static,
         bind: Bind,
     ) {
         _ = self
@@ -75,7 +76,7 @@ impl KeyEventHandler {
             .insert((bind, state), (description, Box::new(callback)));
     }
 
-    pub fn bind_immediate(&mut self, callback: impl FnOnce(&mut App, Data) + 'static) {
+    pub fn bind_immediate(&mut self, callback: impl Fn(&mut App, Data) + 'static) {
         self.execute_immediate.push(Box::new(callback));
     }
 
@@ -83,7 +84,7 @@ impl KeyEventHandler {
         &mut self,
         state: State,
         description: String,
-        callback: impl FnOnce(&mut App, Data) + 'static,
+        callback: impl Fn(&mut App, Data) + 'static,
     ) {
         self.add_key_bind(state, description, callback, Bind::Horizontal)
     }
@@ -92,7 +93,7 @@ impl KeyEventHandler {
         &mut self,
         state: State,
         description: String,
-        callback: impl FnOnce(&mut App, Data) + 'static,
+        callback: impl Fn(&mut App, Data) + 'static,
     ) {
         self.add_key_bind(state, description, callback, Bind::Vertical)
     }
@@ -101,7 +102,7 @@ impl KeyEventHandler {
         &mut self,
         state: State,
         description: String,
-        callback: impl FnOnce(&mut App, Data) + 'static,
+        callback: impl Fn(&mut App, Data) + 'static,
     ) {
         self.add_key_bind(state, description, callback, Bind::Tab)
     }
@@ -110,7 +111,7 @@ impl KeyEventHandler {
         &mut self,
         state: State,
         description: String,
-        callback: impl FnOnce(&mut App, Data) + 'static,
+        callback: impl Fn(&mut App, Data) + 'static,
     ) {
         self.add_key_bind(state, description, callback, Bind::Input)
     }
@@ -119,7 +120,7 @@ impl KeyEventHandler {
         &mut self,
         state: State,
         description: String,
-        callback: impl FnOnce(&mut App, Data) + 'static,
+        callback: impl Fn(&mut App, Data) + 'static,
     ) {
         self.add_key_bind(state, description, callback, Bind::Esc)
     }
@@ -128,7 +129,7 @@ impl KeyEventHandler {
         &mut self,
         state: State,
         description: String,
-        callback: impl FnOnce(&mut App, Data) + 'static,
+        callback: impl Fn(&mut App, Data) + 'static,
     ) {
         self.add_key_bind(state, description, callback, Bind::Enter)
     }
@@ -138,7 +139,7 @@ impl KeyEventHandler {
         state: State,
         keys: impl ToString,
         description: String,
-        callback: impl FnOnce(&mut App, Data) + 'static,
+        callback: impl Fn(&mut App, Data) + 'static,
     ) {
         self.add_key_bind(state, description, callback, Bind::Key(keys.to_string()))
     }
@@ -147,7 +148,7 @@ impl KeyEventHandler {
         &mut self,
         button: MouseButton,
         area: Rect,
-        callback: impl FnOnce(&mut App, Data) + 'static,
+        callback: impl Fn(&mut App, Data) + 'static,
     ) {
         _ = self.mouse_binds.insert(
             (self.mouse_binds.len(), Bind::MouseButtonDown(button), area),
@@ -159,7 +160,7 @@ impl KeyEventHandler {
     //     &mut self,
     //     button: MouseButton,
     //     area: Rect,
-    //     callback: impl FnOnce(&mut App, Data) + 'static,
+    //     callback: impl Fn(&mut App, Data) + 'static,
     // ) {
     //     _ = self.mouse_binds.insert(
     //         (self.mouse_binds.len(), Bind::MouseButtonUp(button), area),
@@ -183,7 +184,19 @@ impl KeyEventHandler {
         None
     }
 
-    fn try_get_key_bind(&mut self, bind: Bind, state: State) -> Option<Callback> {
+    pub fn get_state(&self, drawer: &Drawer) -> State {
+        if let Some(popup) = drawer.active_popup.as_ref() {
+            popup.get_state()
+        } else if let Some(screen) = drawer.current_screen.as_ref() {
+            match screen {
+                crate::screens::Screens::MainScreen(main_screen) => main_screen.get_state(),
+            }
+        } else {
+            (None, None)
+        }
+    }
+
+    pub fn try_get_key_bind(&mut self, bind: Bind, state: State) -> Option<Callback> {
         let (key, _) = self
             .key_binds
             .iter()
@@ -387,15 +400,7 @@ impl KeyEventHandler {
         event: KeyEvent,
         drawer: &Drawer,
     ) -> Option<(Callback, Data)> {
-        let state = if let Some(popup) = drawer.active_popup.as_ref() {
-            popup.get_state()
-        } else if let Some(screen) = drawer.current_screen.as_ref() {
-            match screen {
-                crate::screens::Screens::MainScreen(main_screen) => main_screen.get_state(),
-            }
-        } else {
-            (None, None)
-        };
+        let state = self.get_state(drawer);
 
         match event.code {
             KeyCode::Tab | KeyCode::BackTab =>

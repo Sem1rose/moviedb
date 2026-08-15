@@ -79,7 +79,7 @@ impl Config {
     }
 
     pub fn write_to_disk(&self) {
-        let Some(err) = (|| -> anyhow::Result<()> {
+        let Some(err) = (|| {
             fs::rename(
                 self.home_dir.join("config.toml"),
                 self.home_dir.join("config.toml.bak"),

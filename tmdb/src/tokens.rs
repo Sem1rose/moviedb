@@ -1,18 +1,16 @@
 use std::{collections::HashMap, sync::mpsc::Sender};
 
-use anyhow::{Context, anyhow, bail};
+use anyhow::bail;
 use reqwest::{blocking::ClientBuilder, header::HeaderMap};
+use serde::Deserialize;
 
-use crate::{
-    send_tmdb_request,
-    smo::{RequestResponseError, RequestSessionIDResponse, RequestTokenResponse},
-};
+use crate::smo::AccountDetails;
 
 // https://developer.themoviedb.org/docs/authentication-user
-pub fn get_session_id(
+pub fn get_session_account_id(
     access_token: &str,
     tx_authorization_url: Sender<String>,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<(String, u32)> {
     let client = ClientBuilder::new().build()?;
 
     let mut headers = HeaderMap::new();
@@ -23,35 +21,30 @@ pub fn get_session_id(
         format!("Bearer {}", access_token).parse().unwrap(),
     );
 
+    #[derive(Deserialize)]
+    struct RequestTokenResponse {
+        // success: bool,
+        // expires_at: String,
+        request_token: String,
+    }
+
     // Step 1: create a request token
-    let request_token_response = send_tmdb_request(
+    let request_token = crate::send_request_deserialized::<RequestTokenResponse>(
         &client,
         "https://api.themoviedb.org/3/authentication/token/new",
         &headers,
         None,
         None,
-    )?;
-
-    if !request_token_response.status().is_success() {
-        return Err(
-            match request_token_response.json::<RequestResponseError>() {
-                Ok(err) => err.into(),
-                Err(_) => anyhow!(""),
-            },
-        )
-        .context("TMDB: Error while getting a request token");
-    }
-
-    let request_token = request_token_response
-        .json::<RequestTokenResponse>()?
-        .request_token;
+        "TMDB: Error while getting a request token",
+    )?
+    .request_token;
 
     // Step 2: ask the user for permission
     let authorization_url = format!("https://www.themoviedb.org/authenticate/{}", request_token);
     _ = tx_authorization_url.send(authorization_url.clone());
 
     // Step 3: wait for user permission
-    let mut request_token_response = send_tmdb_request(
+    let mut request_token_response = crate::send_tmdb_request(
         &client,
         &format!(
             "https://www.themoviedb.org/authenticate/{}/allow",
@@ -69,7 +62,7 @@ pub fn get_session_id(
         }
 
         std::thread::sleep(std::time::Duration::from_secs(1));
-        request_token_response = send_tmdb_request(
+        request_token_response = crate::send_tmdb_request(
             &client,
             &format!(
                 "https://www.themoviedb.org/authenticate/{}/allow",
@@ -82,30 +75,37 @@ pub fn get_session_id(
     }
     drop(tx_authorization_url);
 
+    #[derive(Deserialize)]
+    struct RequestSessionIDResponse {
+        // success: bool,
+        session_id: String,
+    }
+
     // The request token has been approved by the user
     // Step 4: finally create a new session ID
     let mut body = HashMap::new();
     body.insert("request_token", request_token.as_str());
-    let create_session_response = send_tmdb_request(
+    let session_id = crate::send_request_deserialized::<RequestSessionIDResponse>(
         &client,
         "https://api.themoviedb.org/3/authentication/session/new",
         &headers,
-        Some(body),
+        Some(&body),
         None,
-    )?;
+        "TMDB: Error while creating a new session_id",
+    )?
+    .session_id;
 
-    if !create_session_response.status().is_success() {
-        return Err(
-            match create_session_response.json::<RequestResponseError>() {
-                Ok(err) => err.into(),
-                Err(_) => anyhow!(""),
-            },
-        )
-        .context("TMDB: Error while creating a new session ID");
-    }
+    let account_id = crate::send_request_deserialized::<AccountDetails>(
+        &client,
+        &format!(
+            "https://api.themoviedb.org/3/account?api_key={access_token}&session_id={session_id}"
+        ),
+        &headers,
+        None,
+        None,
+        "TMDB: Error while getting account details",
+    )?
+    .id;
 
-    let session_id = create_session_response
-        .json::<RequestSessionIDResponse>()?
-        .session_id;
-    Ok(session_id)
+    Ok((session_id, account_id))
 }

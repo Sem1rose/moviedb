@@ -69,11 +69,11 @@ impl PopupTrait for DeleteMoviePopup {
         key_event_handler.bind_esc((None, None), "Cancel".into(), |app, _| {
             app.drawer.close_popup();
         });
-        key_event_handler.bind_enter((None, Some(0)), "Confirm".into(), |app, _| {
-            app.remove_movie();
+        key_event_handler.bind_enter((None, Some(0)), "Cancel".into(), |app, _| {
             app.drawer.close_popup();
         });
-        key_event_handler.bind_enter((None, Some(1)), "Cancel".into(), |app, _| {
+        key_event_handler.bind_enter((None, Some(1)), "Confirm".into(), |app, _| {
+            app.remove_movie();
             app.drawer.close_popup();
         });
 
@@ -100,8 +100,8 @@ impl PopupTrait for DeleteMoviePopup {
 
         let actions_mouse_areas = widgets::actions(
             [
-                Action::new(" Confirm ", ActionType::Normal, self.item == 0, true),
-                Action::new(" Cancel ", ActionType::Critical, self.item == 1, true),
+                Action::new(" Confirm ", ActionType::Normal, self.item == 1, true),
+                Action::new(" Cancel ", ActionType::Critical, self.item == 0, true),
             ],
             HorizontalAlignment::Right,
             true,

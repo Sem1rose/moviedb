@@ -1,5 +1,6 @@
-use std::{cell::RefCell, fs, path::PathBuf, rc::Rc, time::Duration};
+use std::{cell::RefCell, fs, path::PathBuf, rc::Rc, thread, time::Duration};
 
+use anyhow::bail;
 use itertools::Itertools;
 use log::{error, info};
 use ratatui::crossterm::event::{self, Event, KeyEvent, KeyEventState, KeyModifiers};
@@ -9,13 +10,13 @@ use crate::{
     drawer::Drawer,
     helpers::{default_rc, new_rc},
     key_event_handler::KeyEventHandler,
-    load_file,
+    load_file, omdb,
     popups::Popups,
     screens::Screens,
     tokens::*,
     types::{
-        Collection, Entry, FxIndexMap, HistoryEntry, Movie, Person, Term, initialize_terminal,
-        reset_terminal,
+        Collection, Entry, FxIndexMap, HistoryEntry, Movie, MovieDetailsResponse, Person, Term,
+        initialize_terminal, try_restore_terminal,
     },
 };
 
@@ -73,7 +74,7 @@ impl App {
         .load_data()
     }
 
-    pub fn load_data(self) -> Self {
+    pub fn load_data(mut self) -> Self {
         if let Some(x) = load_file!("movies", self.home_dir) {
             *self.movies.borrow_mut() =
                 FxIndexMap::from_iter(x.into_iter().map(|x: Movie| (x.id, x)));
@@ -129,7 +130,7 @@ impl App {
             }
         }
 
-        reset_terminal(&mut self.terminal)?;
+        try_restore_terminal()?;
 
         Ok(())
     }
@@ -181,6 +182,115 @@ impl App {
         }
 
         self.save_data(false, true, false, false);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn fetch_movie(
+        omdb_api_key: &str,
+        trakt_client_id: &str,
+        punch_play_access_token: &str,
+        tmdb_access_token: &str,
+        trakt_status: Option<bool>,
+        punch_play_status: Option<bool>,
+        omdb_status: bool,
+        tmdb_id: u32,
+    ) -> anyhow::Result<MovieDetailsResponse> {
+        let mut trakt_result = None;
+        let mut punch_play_result = None;
+        let mut omdb_result = None;
+
+        thread::scope(|s| {
+            let tmdb_handle = {
+                s.spawn(move || tmdb::movie::get_movie_details(tmdb_access_token, tmdb_id, true))
+            };
+            let punch_play_handle = if punch_play_status.unwrap_or(false) {
+                Some(s.spawn(move || {
+                    punch_play::movie::get_movie_details(punch_play_access_token, tmdb_id)
+                }))
+            } else {
+                None
+            };
+            let tmdb_result = match tmdb_handle.join() {
+                Err(e) => {
+                    bail!("{:#?}", e)
+                }
+                Ok(val) => match val {
+                    Err(error) => {
+                        bail!(error);
+                    }
+                    Ok(val) => Some(val),
+                },
+            };
+
+            let imdb_id = tmdb_result.as_ref().unwrap().imdb_id.clone();
+            let trakt_handle = if trakt_status.is_some() {
+                Some({
+                    let imdb_id = imdb_id.clone();
+                    s.spawn(move || trakt::movie::get_movie_details(trakt_client_id, &imdb_id))
+                })
+            } else {
+                None
+            };
+            let omdb_handle = if omdb_status {
+                Some({
+                    let imdb_id = imdb_id.clone();
+                    s.spawn(move || omdb::get_movie_details(omdb_api_key, &imdb_id))
+                })
+            } else {
+                None
+            };
+
+            if let Some(handle) = trakt_handle {
+                trakt_result = handle
+                    .join()
+                    .map(|x| {
+                        x.inspect_err(|err| {
+                            error!("Trakt error while fetching movie details: {err:?}")
+                        })
+                        .ok()
+                    })
+                    .ok()
+                    .flatten();
+            }
+            if let Some(handle) = punch_play_handle {
+                punch_play_result = handle
+                    .join()
+                    .map(|x| {
+                        x.inspect_err(|err| {
+                            error!("PunchPlay error while fetching movie details: {err:?}")
+                        })
+                        .ok()
+                    })
+                    .ok()
+                    .flatten();
+            }
+            if let Some(handle) = omdb_handle {
+                omdb_result = handle
+                    .join()
+                    .map(|x| {
+                        x.inspect_err(|err| {
+                            error!("OMDB error while fetching movie details: {err:?}")
+                        })
+                        .ok()
+                    })
+                    .ok()
+                    .flatten();
+            }
+
+            // _ = tmdb::movie::get_movie_artworks(
+            //     &cache_dir,
+            //     &tmdb_access_token,
+            //     tmdb_result.as_ref(),
+            //     tmdb_id,
+            // );
+
+            Ok(MovieDetailsResponse {
+                tmdb:       tmdb_result,
+                punch_play: punch_play_result,
+                trakt:      trakt_result,
+                omdb:       omdb_result,
+            })
+        })
     }
 
     pub fn add_movie(&mut self) {
@@ -444,6 +554,7 @@ impl App {
     pub fn set_tmdb_user_tokens(&mut self) {
         if let Some(Popups::TMDBInit(tmdb_init_popup)) = self.drawer.active_popup.as_mut() {
             if let Some(tokens) = tmdb_init_popup.user_tokens.take() {
+                info!("{tokens:#?}");
                 self.tmdb_tokens.set_creds(tokens).unwrap();
             }
         }
@@ -456,6 +567,7 @@ impl App {
     pub fn set_omdb_user_tokens(&mut self) {
         if let Some(Popups::OMDBInit(omdb_init_popup)) = self.drawer.active_popup.as_mut() {
             if let Some(tokens) = omdb_init_popup.tokens.take() {
+                info!("{tokens}");
                 self.omdb_tokens.set_creds(tokens).unwrap();
             }
             self.drawer.close_popup();
@@ -470,7 +582,7 @@ impl App {
         save_collections: bool,
     ) {
         macro_rules! save {
-            ($name:expr, $obj:expr) => {{
+            ($name:expr, $obj:expr) => {
                 let path = &self.home_dir.join(format!("{}.json", $name));
                 match serde_json::to_string(&$obj.collect_vec()) {
                     Err(error) => {
@@ -483,7 +595,7 @@ impl App {
                         }
                     }
                 }
-            }};
+            };
         }
 
         if save_movies {
@@ -520,17 +632,20 @@ impl App {
             Event::FocusGained => (),
             Event::FocusLost => (),
             Event::Paste(string) =>
-                for c in string.chars() {
-                    if let Some((callback, data)) = self.key_event_handler.handle_key_event(
-                        KeyEvent {
-                            code:      event::KeyCode::Char(c),
-                            modifiers: KeyModifiers::NONE,
-                            kind:      event::KeyEventKind::Press,
-                            state:     KeyEventState::NONE,
-                        },
-                        &self.drawer,
-                    ) {
-                        callback(self, data);
+                if let Some(callback) = self.key_event_handler.try_get_key_bind(
+                    crate::key_event_handler::Bind::Input,
+                    self.key_event_handler.get_state(&self.drawer),
+                ) {
+                    for c in string.chars() {
+                        callback(
+                            self,
+                            crate::key_event_handler::Data::Key(KeyEvent {
+                                code:      event::KeyCode::Char(c),
+                                modifiers: KeyModifiers::NONE,
+                                kind:      event::KeyEventKind::Press,
+                                state:     KeyEventState::NONE,
+                            }),
+                        );
                     }
                 },
             Event::Resize(_, _) => (),

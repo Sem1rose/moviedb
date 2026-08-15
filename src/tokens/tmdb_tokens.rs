@@ -11,6 +11,7 @@ use simple_encrypt::{decrypt_bytes, encrypt_bytes};
 pub struct UserTokens {
     pub access_token: String,
 
+    // pub account_id: u32,
     pub session_id: String,
 }
 
@@ -58,11 +59,11 @@ impl TMDBTokens {
         serde_json::from_str(
             &String::from_utf8(
                 decrypt_bytes(&encrypted_data, b"0123456789abcdef0123456789abcdef")
-                    .context("TMDB: error decrypting user tokens")?,
+                    .context("TMDB: Error decrypting user tokens")?,
             )
-            .context("TMDB: error decoding utf8")?,
+            .context("TMDB: Error decoding utf8")?,
         )
-        .context("TMDB: error parsing user tokens")
+        .context("TMDB: Error deserializing user tokens")
     }
 
     pub fn set_creds(&mut self, user_tokens: UserTokens) -> anyhow::Result<()> {
@@ -96,6 +97,10 @@ impl TMDBTokens {
     pub fn access_token_owned(&self) -> String {
         self.user_tokens.access_token.clone()
     }
+
+    // pub fn account_id(&self) -> u32 {
+    //     self.user_tokens.account_id
+    // }
 
     pub fn session_id(&self) -> &str {
         &self.user_tokens.session_id

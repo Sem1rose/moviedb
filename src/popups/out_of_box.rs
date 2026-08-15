@@ -56,38 +56,40 @@ impl PopupTrait for OutOfBoxPopup {
         let confirm_fn = move |app: &mut App, _: Data| {
             let mut popups = vec![];
             let config = app.config.clone();
+            let mut config_mut = config.borrow_mut();
+            config_mut.options = Default::default();
             if let Some(Popups::OutOfBox(out_of_box_popup)) = app.drawer.active_popup.as_mut() {
                 if out_of_box_popup.toggled_list[0] {
                     popups.push(crate::new_popup!(
                         TMDBInit,
                         TMDBInitPopup::new(&app.home_dir, false,)
                     ));
-                    config.borrow_mut().options.tmdb_enabled = true;
+                    config_mut.options.tmdb_enabled = true;
                 }
                 if out_of_box_popup.toggled_list[1] {
                     popups.push(crate::new_popup!(
                         PunchPlayInit,
                         PunchPlayInitPopup::new(&app.home_dir, false,)
                     ));
-                    config.borrow_mut().options.punch_play_enabled = true;
+                    config_mut.options.punch_play_enabled = true;
                 }
                 if out_of_box_popup.toggled_list[2] {
                     popups.push(crate::new_popup!(
                         TraktInit,
                         TraktInitPopup::new(&app.home_dir, false,)
                     ));
-                    config.borrow_mut().options.trakt_enabled = true;
+                    config_mut.options.trakt_enabled = true;
                 }
                 if out_of_box_popup.toggled_list[3] {
                     popups.push(crate::new_popup!(
                         OMDBInit,
                         OMDBInitPopup::new(&app.home_dir, false,)
                     ));
-                    config.borrow_mut().options.omdb_enabled = true;
+                    config_mut.options.omdb_enabled = true;
                 }
             }
-            config.borrow_mut().options.oob_done = true;
-            config.borrow_mut().write_to_disk();
+            config_mut.options.oob_done = true;
+            config_mut.write_to_disk();
 
             app.drawer.popup_queue.extend(popups);
             app.drawer.close_popup();

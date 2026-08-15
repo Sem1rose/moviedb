@@ -85,7 +85,7 @@ pub fn is_between<T: PartialOrd>(v: T, lb: T, ub: T) -> bool {
 }
 
 pub fn default_rc<T: Default>() -> Rc<RefCell<T>> {
-    Rc::new(RefCell::new(T::default()))
+    Rc::new(RefCell::default())
 }
 pub fn new_rc<T>(value: T) -> Rc<RefCell<T>> {
     Rc::new(RefCell::new(value))

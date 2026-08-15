@@ -5,28 +5,33 @@ use serde::Deserialize;
 pub use crate::movie::smo::*;
 
 #[derive(Deserialize, Debug)]
-pub(crate) struct RequestTokenResponse {
-    // success: bool,
-    // expires_at: String,
-    pub request_token: String,
-}
-#[derive(Deserialize, Debug)]
-pub(crate) struct RequestSessionIDResponse {
-    // success: bool,
-    pub session_id: String,
-}
-
-#[derive(Deserialize, Debug)]
 pub struct RequestResponseError {
     pub status_code:    i32,
     pub status_message: String,
-    // success: bool,
 }
 impl Error for RequestResponseError {}
 impl Display for RequestResponseError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{}: {}", self.status_code, self.status_message)
     }
+}
+
+#[derive(Deserialize, Debug)]
+pub(crate) struct AccountDetails {
+    // pub avatar: {
+    //     gravatar: {
+    //         pub hash: "00000000000000000"
+    //     },
+    //     tmdb: {
+    //         pub avatar_path: null
+    //     }
+    // },
+    pub id: u32,
+    // pub iso_639_1:     String,
+    // pub iso_3166_1:    String,
+    // pub name:          String,
+    // pub include_adult: bool,
+    // pub username:      String,
 }
 
 // #[derive(Deserialize, Debug, Clone)]
