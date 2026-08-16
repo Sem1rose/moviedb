@@ -51,20 +51,23 @@ pub(crate) struct MovieImage {
 
 #[derive(Deserialize, Debug, PartialEq)]
 pub struct SearchResult {
+    pub id:                u32,
+    #[serde(alias = "name")]
+    pub title:             String,
+    #[serde(alias = "original_name")]
+    pub original_title:    String,
     pub adult:             bool,
     pub genre_ids:         Vec<u64>,
-    pub id:                u32,
     pub original_language: String,
-    pub original_title:    String,
     pub overview:          String,
     pub popularity:        f64,
     pub poster_path:       Option<String>,
     pub backdrop_path:     Option<String>,
     pub release_date:      Option<String>,
-    pub title:             String,
-    pub video:             bool,
+    // pub video:             bool,
     pub vote_average:      Option<f64>,
     pub vote_count:        u32,
+    pub media_type:        Option<String>,
 }
 #[derive(Deserialize, Default, Debug)]
 pub struct MovieDetails {
@@ -87,7 +90,7 @@ pub struct MovieDetails {
     pub budget:                u32,
     pub popularity:            f64,
     pub revenue:               u32,
-    pub video:                 bool,
+    // pub video:                 bool,
     pub origin_country:        Option<Vec<String>>,
     pub poster_path:           Option<String>,
     pub backdrop_path:         Option<String>,

@@ -27,7 +27,7 @@ use crate::{
     widgets,
 };
 
-const BATCH_SIZE: usize = 6;
+const BATCH_SIZE: usize = 8;
 #[derive(Default)]
 pub struct FetchMoviesPopup {
     count:    usize,
@@ -35,6 +35,7 @@ pub struct FetchMoviesPopup {
     num_sent: usize,
     errored:  Option<(u32, String)>,
     pub done: bool,
+    started:  bool,
 
     movies:           Rc<RefCell<FxIndexMap<u32, Movie>>>,
     collections:      Rc<RefCell<FxIndexMap<u32, Collection>>>,
@@ -55,6 +56,9 @@ pub struct FetchMoviesPopup {
 
 impl FetchMoviesPopup {
     fn start_thread(mut self) -> Self {
+        if self.done {
+            return self;
+        }
         let (tx_details_request, rx_details_request) = channel::<u32>();
         let (tx_details_response, rx_details_response) =
             channel::<(u32, anyhow::Result<MovieDetailsResponse>)>();
@@ -96,12 +100,14 @@ impl FetchMoviesPopup {
 
         self.tx_details_request = Some(tx_details_request);
         self.rx_details_response = Some(rx_details_response);
+        self.started = true;
 
         self
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub fn initialize(
+        &mut self,
         tmdb_tokens: TMDBTokens,
         punch_play_tokens: PunchPlayTokens,
         trakt_tokens: TraktTokens,
@@ -111,17 +117,20 @@ impl FetchMoviesPopup {
         persons: Rc<RefCell<FxIndexMap<u32, Person>>>,
         watched: &FxIndexMap<u32, Entry>,
         lists: &[&List],
-    ) -> Self {
+    ) {
         let unfetched_movies = {
             let borrowed_movies = movies.borrow();
             watched
                 .keys()
-                .chain(lists.iter().flat_map(|x| x.movies.iter()))
+                .chain(lists.iter().flat_map(|x| x.items.iter().map(|x| &x.id)))
                 .filter(|x| !borrowed_movies.contains_key(*x))
                 .copied()
                 .collect_vec()
         };
-        Self {
+
+        info!("{unfetched_movies:?}");
+
+        *self = Self {
             tmdb_tokens,
             punch_play_tokens,
             trakt_tokens,
@@ -136,7 +145,7 @@ impl FetchMoviesPopup {
 
             ..Default::default()
         }
-        .start_thread()
+        .start_thread();
     }
 }
 
@@ -146,101 +155,111 @@ impl PopupTrait for FetchMoviesPopup {
     }
 
     fn update_next_frame(&self) -> bool {
-        !self.done
+        self.started && !self.done
     }
 
     fn update(&mut self) {
+        if !self.started {
+            return;
+        }
+
         self.tick += 1;
         if self.tick & 7 == 0 {
             self.throbber_state.calc_next();
         }
 
-        for (movie_id, fetch_result) in self.rx_details_response.as_ref().unwrap().try_iter() {
-            match fetch_result {
-                Ok(mut movie_details) => {
-                    if let Some((i, _)) = self.errored {
-                        if i == movie_id {
-                            self.errored = None;
+        if let (Some(rx_details_response), Some(tx_details_request)) = (
+            self.rx_details_response.as_ref(),
+            self.tx_details_request.as_ref(),
+        ) {
+            for (movie_id, fetch_result) in rx_details_response.try_iter() {
+                match fetch_result {
+                    Ok(mut movie_details) => {
+                        if let Some((i, _)) = self.errored {
+                            if i == movie_id {
+                                self.errored = None;
+                            }
                         }
-                    }
 
-                    self.progress += 1;
+                        self.progress += 1;
 
-                    let tmdb_movie_details = movie_details.tmdb.take().unwrap();
-                    let trakt_movie_details = movie_details.trakt.take();
-                    let punch_play_movie_details = movie_details.punch_play.take();
-                    let omdb_movie_details = movie_details.omdb.take();
-                    if let Some(credits) = tmdb_movie_details.credits.as_ref() {
-                        for person in credits.cast.iter().take(14).chain(credits.crew.iter()) {
-                            self.persons
+                        let tmdb_movie_details = movie_details.tmdb.take().unwrap();
+                        let trakt_movie_details = movie_details.trakt.take();
+                        let punch_play_movie_details = movie_details.punch_play.take();
+                        let omdb_movie_details = movie_details.omdb.take();
+                        if let Some(credits) = tmdb_movie_details.credits.as_ref() {
+                            for person in credits.cast.iter().take(14).chain(credits.crew.iter()) {
+                                self.persons
+                                    .borrow_mut()
+                                    .entry(person.id)
+                                    .or_insert(person.into());
+                            }
+                        }
+                        if let Some(collection_details) =
+                            tmdb_movie_details.collection_details.as_ref()
+                        {
+                            self.collections
                                 .borrow_mut()
-                                .entry(person.id)
-                                .or_insert(person.into());
+                                .entry(collection_details.id)
+                                .and_modify(|x| {
+                                    if x.parts.is_empty() {
+                                        x.parts =
+                                            collection_details.parts.iter().map(|x| x.id).collect();
+                                    }
+                                })
+                                .or_insert(Collection {
+                                    id:    collection_details.id,
+                                    name:  collection_details.name.clone(),
+                                    parts: collection_details.parts.iter().map(|x| x.id).collect(),
+                                });
+                        } else if let Some(collection) =
+                            tmdb_movie_details.belongs_to_collection.as_ref()
+                        {
+                            self.collections
+                                .borrow_mut()
+                                .entry(collection.id)
+                                .or_insert(Collection {
+                                    id:    collection.id,
+                                    name:  collection.name.clone(),
+                                    parts: vec![],
+                                });
+                        }
+
+                        let mut movie = Movie::from(tmdb_movie_details);
+                        if let Some(trakt_details) = trakt_movie_details {
+                            movie.add_trakt_details(trakt_details);
+                        }
+                        if let Some(punch_play_details) = punch_play_movie_details {
+                            movie.add_punch_play_details(punch_play_details);
+                        }
+                        if let Some(omdb) = omdb_movie_details {
+                            movie.add_omdb_details(omdb);
+                        }
+
+                        info!("{movie:#?}");
+                        match self.movies.borrow_mut().entry(movie_id) {
+                            indexmap::map::Entry::Occupied(mut occupied_entry) =>
+                                *occupied_entry.get_mut() = movie,
+                            indexmap::map::Entry::Vacant(vacant_entry) => {
+                                vacant_entry.insert_entry(movie);
+                            }
                         }
                     }
-                    if let Some(collection_details) = tmdb_movie_details.collection_details.as_ref()
-                    {
-                        self.collections
-                            .borrow_mut()
-                            .entry(collection_details.id)
-                            .and_modify(|x| {
-                                if x.parts.is_empty() {
-                                    x.parts =
-                                        collection_details.parts.iter().map(|x| x.id).collect();
-                                }
-                            })
-                            .or_insert(Collection {
-                                id:    collection_details.id,
-                                name:  collection_details.name.clone(),
-                                parts: collection_details.parts.iter().map(|x| x.id).collect(),
-                            });
-                    } else if let Some(collection) =
-                        tmdb_movie_details.belongs_to_collection.as_ref()
-                    {
-                        self.collections
-                            .borrow_mut()
-                            .entry(collection.id)
-                            .or_insert(Collection {
-                                id:    collection.id,
-                                name:  collection.name.clone(),
-                                parts: vec![],
-                            });
+                    Err(error) => {
+                        self.errored = Some((movie_id, format!("{error:#}")));
+                        _ = tx_details_request.send(movie_id);
                     }
-
-                    let mut movie = Movie::from(tmdb_movie_details);
-                    if let Some(trakt_details) = trakt_movie_details {
-                        movie.add_trakt_details(trakt_details);
-                    }
-                    if let Some(punch_play_details) = punch_play_movie_details {
-                        movie.add_punch_play_details(punch_play_details);
-                    }
-                    if let Some(omdb) = omdb_movie_details {
-                        movie.add_omdb_details(omdb);
-                    }
-
-                    info!("{movie:#?}");
-                    match self.movies.borrow_mut().entry(movie_id) {
-                        indexmap::map::Entry::Occupied(mut occupied_entry) =>
-                            *occupied_entry.get_mut() = movie,
-                        indexmap::map::Entry::Vacant(vacant_entry) => {
-                            vacant_entry.insert_entry(movie);
-                        }
-                    }
-                }
-                Err(error) => {
-                    self.errored = Some((movie_id, format!("{error:#}")));
-                    _ = self.tx_details_request.as_ref().unwrap().send(movie_id);
                 }
             }
-        }
 
-        if self.num_sent.saturating_sub(self.progress) < BATCH_SIZE {
-            for tmdb_id in self.unfetched_movies.drain(
-                ..(BATCH_SIZE - (self.num_sent.saturating_sub(self.progress)))
-                    .min(self.unfetched_movies.len()),
-            ) {
-                _ = self.tx_details_request.as_ref().unwrap().send(tmdb_id);
-                self.num_sent += 1;
+            if self.num_sent.saturating_sub(self.progress) < BATCH_SIZE {
+                for tmdb_id in self.unfetched_movies.drain(
+                    ..(BATCH_SIZE - (self.num_sent.saturating_sub(self.progress)))
+                        .min(self.unfetched_movies.len()),
+                ) {
+                    _ = tx_details_request.send(tmdb_id);
+                    self.num_sent += 1;
+                }
             }
         }
 
@@ -250,6 +269,10 @@ impl PopupTrait for FetchMoviesPopup {
     }
 
     fn render(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
+        if !self.started {
+            return;
+        }
+
         key_event_handler.clear();
 
         let popup_area = widgets::window(

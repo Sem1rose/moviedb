@@ -2,7 +2,7 @@ use serde::Deserialize;
 
 use crate::smo::SearchResult;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct ListDetails {
     pub created_by:     Option<String>,
     pub description:    String,

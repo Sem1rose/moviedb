@@ -22,7 +22,7 @@ use crate::{
     popups::*,
     screens::{Screens, main_screen::MainScreen},
     tokens::{OMDBTokens, PunchPlayTokens, TMDBTokens, TraktTokens},
-    types::{Collection, Entry, FxIndexMap, Movie, Person},
+    types::{Entry, FxIndexMap, Movie},
 };
 
 pub struct Drawer {
@@ -32,10 +32,10 @@ pub struct Drawer {
     pub current_screen:     Option<Screens>,
     pub popup_queue:        Vec<Popups>,
     pub screen_queue:       Vec<Screens>,
-    pub config:             Rc<RefCell<Config>>,
+    pub _config:            Rc<RefCell<Config>>,
     pub image_renderer:     RatatuiImage,
 
-    home_dir:  PathBuf,
+    // home_dir:  PathBuf,
     cache_dir: PathBuf,
 }
 
@@ -44,39 +44,42 @@ macro_rules! new_popup {
     ($popup_enum:ident, $T:expr) => {
         Popups::$popup_enum(Box::new($T))
     };
+    ($popup_enum:ident) => {
+        Popups::$popup_enum(Box::default())
+    };
 }
 
 const MINTERMSIZE: [u32; 2] = [100, 30];
 impl Drawer {
-    pub fn new(home_dir: &Path, cache_dir: &Path, config: Rc<RefCell<Config>>) -> Self {
-        let popup_queue = if config.borrow().options.oob_done {
-            let mut popups = Vec::with_capacity(4);
-            if config.borrow_mut().options.tmdb_enabled {
+    pub fn new(home_dir: &Path, cache_dir: &Path, _config: Rc<RefCell<Config>>) -> Self {
+        let popup_queue = if _config.borrow().options.oob_done {
+            let mut popups = Vec::with_capacity(5);
+            if _config.borrow_mut().options.tmdb_enabled {
                 popups.push(new_popup!(TMDBInit, TMDBInitPopup::new(home_dir, false,)));
             }
-            if config.borrow_mut().options.punch_play_enabled {
+            if _config.borrow_mut().options.punch_play_enabled {
                 popups.push(new_popup!(
                     PunchPlayInit,
                     PunchPlayInitPopup::new(home_dir, false,)
                 ));
             }
-            if config.borrow_mut().options.trakt_enabled {
+            if _config.borrow_mut().options.trakt_enabled {
                 popups.push(new_popup!(TraktInit, TraktInitPopup::new(home_dir, false,)));
             }
-            if config.borrow_mut().options.omdb_enabled {
+            if _config.borrow_mut().options.omdb_enabled {
                 popups.push(new_popup!(OMDBInit, OMDBInitPopup::new(home_dir, false,)));
             }
 
             popups
         } else {
-            vec![Popups::OutOfBox(Box::default())]
+            vec![new_popup!(OutOfBox)]
         };
 
         Drawer {
             image_renderer: RatatuiImage::new(cache_dir),
 
             refresh_immediate: 0,
-            home_dir: home_dir.to_path_buf(),
+            // home_dir: home_dir.to_path_buf(),
             cache_dir: cache_dir.to_path_buf(),
             show_term_size_warning: false,
 
@@ -84,11 +87,11 @@ impl Drawer {
             current_screen: None,
             screen_queue: vec![Screens::MainScreen(MainScreen::new(
                 home_dir,
-                config.clone(),
+                _config.clone(),
             ))],
             popup_queue,
 
-            config,
+            _config,
         }
     }
 
@@ -174,11 +177,13 @@ impl Drawer {
                 Popups::FetchMovies(fetch_movies_popup) =>
                     if fetch_movies_popup.done {
                         key_event_handler.bind_immediate(|app, _| {
+                            app.save_data(true, false, true, true);
                             if let Some(Screens::MainScreen(main_screen)) =
                                 app.drawer.current_screen.as_mut()
                             {
                                 main_screen.filter_sort_movies(false);
                             }
+                            app.drawer.close_popup();
                         });
                     },
             }
@@ -207,6 +212,32 @@ impl Drawer {
                             );
                         }
                     });
+                } else if matches!(self.active_popup, Some(Popups::FetchMovies(_))) {
+                    key_event_handler.bind_immediate(|app, _| {
+                        let lists = if let Some(Screens::MainScreen(main_screen)) =
+                            app.drawer.current_screen.as_mut()
+                        {
+                            main_screen.lists.values().collect_vec()
+                        } else {
+                            vec![]
+                        };
+
+                        if let Some(Popups::FetchMovies(fetch_movies_popup)) =
+                            app.drawer.active_popup.as_mut()
+                        {
+                            fetch_movies_popup.initialize(
+                                app.tmdb_tokens.clone(),
+                                app.punch_play_tokens.clone(),
+                                app.trakt_tokens.clone(),
+                                app.omdb_tokens.clone(),
+                                app.movies.clone(),
+                                app.collections.clone(),
+                                app.persons.clone(),
+                                &app.watched.borrow(),
+                                &lists,
+                            );
+                        }
+                    });
                 }
             } else if !self.screen_queue.is_empty() {
                 self.current_screen = self.screen_queue.pop();
@@ -216,19 +247,10 @@ impl Drawer {
                         if let Some(Screens::MainScreen(main_screen)) =
                             app.drawer.current_screen.as_mut()
                         {
-                            main_screen.initialize(app.movies.clone(), app.watched.clone());
+                            if main_screen.initialize(app.movies.clone(), app.watched.clone()) {
+                                app.drawer.open_fetch_movies_popup();
+                            }
                         }
-
-                        app.drawer.open_fetch_movies_popup(
-                            app.tmdb_tokens.clone(),
-                            app.punch_play_tokens.clone(),
-                            app.trakt_tokens.clone(),
-                            app.omdb_tokens.clone(),
-                            app.movies.clone(),
-                            app.collections.clone(),
-                            app.persons.clone(),
-                            &app.watched.borrow(),
-                        );
                     });
                 }
             }
@@ -236,36 +258,8 @@ impl Drawer {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn open_fetch_movies_popup(
-        &mut self,
-        tmdb_tokens: TMDBTokens,
-        punch_play_tokens: PunchPlayTokens,
-        trakt_tokens: TraktTokens,
-        omdb_tokens: OMDBTokens,
-        movies: Rc<RefCell<FxIndexMap<u32, Movie>>>,
-        collections: Rc<RefCell<FxIndexMap<u32, Collection>>>,
-        persons: Rc<RefCell<FxIndexMap<u32, Person>>>,
-        watched: &FxIndexMap<u32, Entry>,
-    ) {
-        let lists = if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_mut() {
-            main_screen.lists.values().collect_vec()
-        } else {
-            vec![]
-        };
-        self.popup_queue.push(new_popup!(
-            FetchMovies,
-            FetchMoviesPopup::new(
-                tmdb_tokens,
-                punch_play_tokens,
-                trakt_tokens,
-                omdb_tokens,
-                movies,
-                collections,
-                persons,
-                watched,
-                &lists
-            )
-        ));
+    pub fn open_fetch_movies_popup(&mut self) {
+        self.popup_queue.push(new_popup!(FetchMovies));
     }
 
     // pub fn open_trakt_init_popup(&mut self) {
@@ -299,6 +293,7 @@ impl Drawer {
         punch_play_tokens: PunchPlayTokens,
         trakt_tokens: TraktTokens,
         omdb_tokens: OMDBTokens,
+        take_rating: bool,
     ) {
         self.popup_queue
             .push(Popups::AddMovie(Box::new(AddMoviePopup::new(
@@ -306,6 +301,7 @@ impl Drawer {
                 punch_play_tokens,
                 trakt_tokens,
                 omdb_tokens,
+                take_rating,
                 &self.cache_dir,
             ))));
     }

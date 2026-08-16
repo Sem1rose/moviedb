@@ -1,6 +1,6 @@
 use std::{cmp::Ordering, io::stdout};
 
-use chrono::{DateTime, Local, NaiveDate};
+use chrono::{DateTime, Local, NaiveDate, NaiveDateTime};
 use indexmap::IndexMap;
 use log::info;
 use punch_play::smo::PunchPlayDetailsResponse;
@@ -76,29 +76,74 @@ pub struct MovieDetailsResponse {
 }
 
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Serialize, Deserialize, PartialEq, Clone, Copy, Hash, Eq)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Copy, Hash, Eq, Default)]
 pub enum ListID {
+    #[default]
+    Watched,
+    Watchlist,
     TMDB(u32),
+    Local(u32),
+    PunchPlay(u32),
     Collection(u32),
-    Custom(u32),
 }
-impl Default for ListID {
-    fn default() -> Self {
-        Self::Custom(0)
-    }
+#[derive(Serialize, Deserialize, Clone, Copy)]
+pub struct ListItem {
+    pub id:       u32,
+    pub added_at: NaiveDateTime,
 }
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Default, Clone)]
 pub struct List {
-    pub id:     ListID,
-    pub name:   String,
-    pub movies: Vec<u32>,
+    pub id:       ListID,
+    pub name:     String,
+    pub items:    Vec<ListItem>,
+    pub readonly: bool,
 }
-impl From<&[Entry]> for List {
-    fn from(value: &[Entry]) -> Self {
+// impl From<&[Entry]> for List {
+//     fn from(value: &[Entry]) -> Self {
+//         Self {
+//             id:     Default::default(),
+//             name:   "Watched Movies".into(),
+//             items: value.iter().map(|x| x.movie_id).collect(),
+//             readonly: false
+//         }
+//     }
+// }
+impl List {
+    pub fn from_tmdb(value: tmdb::list::smo::ListDetails, readonly: bool) -> Self {
         Self {
-            id:     Default::default(),
-            name:   "Watched Movies".into(),
-            movies: value.iter().map(|x| x.movie_id).collect(),
+            id: ListID::TMDB(value.id),
+            name: value.name,
+            items: value
+                .items
+                .unwrap_or_default()
+                .iter()
+                .filter_map(|x| {
+                    (x.media_type.as_ref().unwrap() == "movie").then_some(ListItem {
+                        id:       x.id,
+                        added_at: Default::default(),
+                    })
+                })
+                .collect(),
+            readonly,
+        }
+    }
+
+    pub fn from_punch_play(value: punch_play::list::smo::ListDetails, readonly: bool) -> Self {
+        Self {
+            id: ListID::PunchPlay(value.id),
+            name: value.name,
+            items: value
+                .items
+                .unwrap_or_default()
+                .iter()
+                .filter_map(|x| {
+                    (x.item_type == "movie").then_some(ListItem {
+                        id:       x.tmdb_id,
+                        added_at: x.added_at.unwrap_or_default(),
+                    })
+                })
+                .collect(),
+            readonly,
         }
     }
 }
@@ -316,34 +361,40 @@ impl From<MovieDetails> for Movie {
         } else {
             (vec![], vec![])
         };
-        Self {
-            id:               tmdb_details.id,
-            title:            tmdb_details.title.clone(),
-            external_ratings: ExternalRatings {
+        let released = tmdb_details.status == "Released";
+        let external_ratings = if released {
+            ExternalRatings {
                 tmdb: (tmdb_details.vote_average, tmdb_details.vote_count),
                 ..Default::default()
-            },
-            release_date:     NaiveDate::parse_from_str(&tmdb_details.release_date, "%Y-%m-%d")
-                .unwrap(),
-            language:         tmdb_details.original_language.clone(),
-            genres:           tmdb_details
+            }
+        } else {
+            Default::default()
+        };
+        Self {
+            id: tmdb_details.id,
+            title: tmdb_details.title.clone(),
+            external_ratings,
+            release_date: NaiveDate::parse_from_str(&tmdb_details.release_date, "%Y-%m-%d")
+                .unwrap_or_default(),
+            language: tmdb_details.original_language.clone(),
+            genres: tmdb_details
                 .genres
                 .iter()
                 .map(|x| x.name.to_string())
                 .collect(),
-            overview:         tmdb_details.overview.clone(),
-            tmdb_collection:  tmdb_details.belongs_to_collection.clone().map(|x| x.id),
-            runtime:          tmdb_details.runtime,
-            released:         tmdb_details.status == "Released",
-            tagline:          tmdb_details.tagline.clone(),
-            certification:    tmdb_details.certificate.clone().unwrap_or_default(),
-            origin_country:   tmdb_details
+            overview: tmdb_details.overview.clone(),
+            tmdb_collection: tmdb_details.belongs_to_collection.clone().map(|x| x.id),
+            runtime: tmdb_details.runtime,
+            released: tmdb_details.status == "Released",
+            tagline: tmdb_details.tagline.clone(),
+            certification: tmdb_details.certificate.clone().unwrap_or_default(),
+            origin_country: tmdb_details
                 .origin_country
                 .clone()
                 .map(|x| x.first().unwrap_or(&"Unknown".into()).clone())
                 .unwrap_or("Unknown".into()),
-            credits:          Credits { cast, crew },
-            recommendations:  tmdb_details.recommendations.clone().unwrap_or_default(),
+            credits: Credits { cast, crew },
+            recommendations: tmdb_details.recommendations.clone().unwrap_or_default(),
         }
     }
 }
@@ -356,34 +407,36 @@ impl Movie {
     pub fn add_punch_play_details(&mut self, punch_play_details: PunchPlayDetailsResponse) {
         info!("{punch_play_details:#?}");
 
-        if let Some(external_ratings) = punch_play_details.external_ratings {
-            for external_rating in external_ratings.ratings {
-                if let Some(source) = external_rating.source.as_ref() {
-                    if source == "imdb" {
-                        self.external_ratings.imdb = (
-                            external_rating.value.unwrap_or(0.0),
-                            external_rating.votes.unwrap_or(0),
-                        );
-                    } else if source == "letterboxd" {
-                        self.external_ratings.letterboxd = (
-                            external_rating.value.unwrap_or(0.0),
-                            external_rating.votes.unwrap_or(0),
-                        );
-                    } else if source == "trakt" {
-                        self.external_ratings.trakt = (
-                            external_rating.value.unwrap_or(0.0) as u32,
-                            external_rating.votes.unwrap_or(0),
-                        );
-                    } else if source == "popcorn" {
-                        self.external_ratings.popcorn = (
-                            external_rating.value.unwrap_or(0.0) as u32,
-                            external_rating.votes.unwrap_or(0),
-                        );
-                    } else if source == "tomatoes" {
-                        self.external_ratings.tomatoes = (
-                            external_rating.value.unwrap_or(0.0) as u32,
-                            external_rating.votes.unwrap_or(0),
-                        );
+        if self.released {
+            if let Some(external_ratings) = punch_play_details.external_ratings {
+                for external_rating in external_ratings.ratings {
+                    if let Some(source) = external_rating.source.as_ref() {
+                        if source == "imdb" {
+                            self.external_ratings.imdb = (
+                                external_rating.value.unwrap_or(0.0),
+                                external_rating.votes.unwrap_or(0),
+                            );
+                        } else if source == "letterboxd" {
+                            self.external_ratings.letterboxd = (
+                                external_rating.value.unwrap_or(0.0),
+                                external_rating.votes.unwrap_or(0),
+                            );
+                        } else if source == "trakt" {
+                            self.external_ratings.trakt = (
+                                external_rating.value.unwrap_or(0.0) as u32,
+                                external_rating.votes.unwrap_or(0),
+                            );
+                        } else if source == "popcorn" {
+                            self.external_ratings.popcorn = (
+                                external_rating.value.unwrap_or(0.0) as u32,
+                                external_rating.votes.unwrap_or(0),
+                            );
+                        } else if source == "tomatoes" {
+                            self.external_ratings.tomatoes = (
+                                external_rating.value.unwrap_or(0.0) as u32,
+                                external_rating.votes.unwrap_or(0),
+                            );
+                        }
                     }
                 }
             }

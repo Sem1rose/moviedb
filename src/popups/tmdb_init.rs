@@ -182,7 +182,7 @@ impl PopupTrait for TMDBInitPopup {
                             Ok((session_id, account_id)) => {
                                 if let Some(tokens) = self.user_tokens.as_mut() {
                                     tokens.session_id = session_id;
-                                    // tokens.account_id = account_id;
+                                    tokens.account_id = account_id;
                                 }
                                 self.status = Some(true);
 
@@ -234,7 +234,7 @@ impl PopupTrait for TMDBInitPopup {
 
                 let popup_area = widgets::window(
                     frame,
-                    helpers::centered_area(6, 28, frame.area()),
+                    helpers::centered_area(7, 40, frame.area()),
                     " TMDB Authentication ",
                     true,
                 );
@@ -308,7 +308,7 @@ impl PopupTrait for TMDBInitPopup {
 
                 let popup_area = widgets::window(
                     frame,
-                    helpers::centered_area(8, 40, frame.area()),
+                    helpers::centered_area(11, 50, frame.area()),
                     " TMDB Authentication ",
                     true,
                 );
@@ -318,7 +318,7 @@ impl PopupTrait for TMDBInitPopup {
                     |_, _| {},
                 );
 
-                let [input_area, _] = vertical![==3, ==1]
+                let [input_area, _] = vertical![>=3, ==1]
                     .areas(helpers::add_padding(popup_area, Padding::proportional(1)));
 
                 let input_selected = self.item == 0;
@@ -378,7 +378,7 @@ impl PopupTrait for TMDBInitPopup {
                         app.drawer.active_popup.as_mut()
                     {
                         tmdb_init_popup.item = 0;
-                        tmdb_init_popup.input.clear();
+                        // tmdb_init_popup.input.clear();
                         tmdb_init_popup.rx_session_id = None;
                         tmdb_init_popup.rx_authorization_url = None;
                         tmdb_init_popup.phase = Phase::GetAccessToken;

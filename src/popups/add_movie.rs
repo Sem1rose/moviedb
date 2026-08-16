@@ -4,7 +4,6 @@ use std::{
     thread,
 };
 
-use anyhow::anyhow;
 use chrono::{DateTime, Local};
 use itertools::Itertools;
 use log::error;
@@ -39,7 +38,7 @@ use crate::{
     app::App,
     helpers,
     key_event_handler::{self, KeyEventHandler},
-    omdb::{self, OMDBDetailsResponse},
+    omdb::OMDBDetailsResponse,
     popups::{PopupTrait, Popups},
     tokens::{OMDBTokens, PunchPlayTokens, TMDBTokens, TraktTokens},
     types::MovieDetailsResponse,
@@ -120,6 +119,7 @@ pub struct AddMoviePopup {
     search_results:   Option<Vec<SearchResultMovie>>,
     rx_search_result: Option<Receiver<SearchResults>>,
 
+    take_rating:                         bool,
     pub refetch_details:                 bool,
     pub user_rating:                     f64,
     pub date:                            DateTime<Local>,
@@ -143,6 +143,7 @@ impl AddMoviePopup {
         punch_play_tokens: PunchPlayTokens,
         trakt_tokens: TraktTokens,
         omdb_tokens: OMDBTokens,
+        take_rating: bool,
         cache_dir: &Path,
     ) -> Self {
         Self {
@@ -150,6 +151,7 @@ impl AddMoviePopup {
             punch_play_tokens,
             trakt_tokens,
             omdb_tokens,
+            take_rating,
             _cache_dir: cache_dir.to_path_buf(),
             ..Default::default()
         }
@@ -243,7 +245,15 @@ impl AddMoviePopup {
                 self.item = 1;
                 self.input0 = TextArea::from([""]);
                 self.input1 = TextArea::from([""]);
-                Phase::GetRating
+                if self.take_rating {
+                    Phase::GetRating
+                } else {
+                    self.request_details(
+                        self.search_results.as_ref().unwrap()[self.selected_item].id,
+                    );
+
+                    Phase::GettingDetails
+                }
             }
             Phase::GetRating => {
                 self.user_rating = format!("{:.1}", self.input0.lines()[0].parse::<f64>().unwrap())

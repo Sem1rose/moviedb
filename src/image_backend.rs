@@ -6,7 +6,6 @@ use std::{
 };
 
 use anyhow::bail;
-use itertools::Itertools;
 use log::error;
 use ratatui::{
     Frame,
@@ -53,8 +52,7 @@ fn default_sizes() -> HashMap<ImageIDDiscriminants, [Size; 2]> {
 }
 
 pub struct RatatuiImage {
-    preload_images: Vec<ImageID>,
-
+    // preload_images: Vec<ImageID>,
     sizes:         HashMap<ImageIDDiscriminants, [Size; 2]>,
     hashed_images: HashMap<ImageID, Option<SlicedProtocol>>,
 
@@ -68,8 +66,7 @@ impl RatatuiImage {
         let tx_load = Self::start_load_thread(&tx_main, cache_dir);
 
         Self {
-            preload_images: vec![],
-
+            // preload_images: vec![],
             hashed_images: HashMap::new(),
             sizes: default_sizes(),
 
@@ -253,17 +250,17 @@ impl RatatuiImage {
         throbber_state: &mut ThrobberState,
         frame: &mut Frame,
     ) -> bool {
-        macro_rules! pop_then_hash {
-            ($collection:expr, $filter_map:expr, $retain:expr) => {
-                let hash = $collection.iter().filter_map($filter_map).collect_vec();
-                $collection.retain($retain);
-                for artwork_id in hash {
-                    if self.hashed_images.get(&artwork_id).is_none() {
-                        self.hash_image(artwork_id);
-                    }
-                }
-            };
-        }
+        // macro_rules! pop_then_hash {
+        //     ($collection:expr, $filter_map:expr, $retain:expr) => {
+        //         let hash = $collection.iter().filter_map($filter_map).collect_vec();
+        //         $collection.retain($retain);
+        //         for artwork_id in hash {
+        //             if self.hashed_images.get(&artwork_id).is_none() {
+        //                 self.hash_image(artwork_id);
+        //             }
+        //         }
+        //     };
+        // }
 
         let index = match image_id {
             ImageID::Movie(_, backdrop) | ImageID::Collection(_, backdrop) => backdrop as usize,
@@ -275,51 +272,59 @@ impl RatatuiImage {
                 size[index] = area.as_size();
                 _ = self.tx_load.send(Actions::Resize(image_id.into(), *size));
 
-                pop_then_hash!(
-                    self.hashed_images,
-                    |(k, _)| {
-                        (ImageIDDiscriminants::from(*k) == image_id.into())
-                            .then_some(match k {
-                                ImageID::Movie(_, backdrop) =>
-                                    (*backdrop as usize == index).then_some(*k),
-                                ImageID::Collection(_, backdrop) =>
-                                    (*backdrop as usize == index).then_some(*k),
-                                ImageID::Person(_) => Some(*k),
-                            })
-                            .flatten()
-                    },
-                    |k, _| {
-                        ImageIDDiscriminants::from(k) != image_id.into()
-                            || match k {
-                                ImageID::Movie(_, backdrop) => *backdrop as usize != index,
-                                ImageID::Collection(_, backdrop) => *backdrop as usize != index,
-                                ImageID::Person(_) => false,
-                            }
-                    }
-                );
+                self.hashed_images.retain(|k, _| {
+                    ImageIDDiscriminants::from(k) != image_id.into()
+                        || match k {
+                            ImageID::Movie(_, backdrop) => *backdrop as usize != index,
+                            ImageID::Collection(_, backdrop) => *backdrop as usize != index,
+                            ImageID::Person(_) => false,
+                        }
+                });
+                // pop_then_hash!(
+                //     self.hashed_images,
+                //     |(k, _)| {
+                //         (ImageIDDiscriminants::from(*k) == image_id.into())
+                //             .then_some(match k {
+                //                 ImageID::Movie(_, backdrop) =>
+                //                     (*backdrop as usize == index).then_some(*k),
+                //                 ImageID::Collection(_, backdrop) =>
+                //                     (*backdrop as usize == index).then_some(*k),
+                //                 ImageID::Person(_) => Some(*k),
+                //             })
+                //             .flatten()
+                //     },
+                //     |k, _| {
+                //         ImageIDDiscriminants::from(k) != image_id.into()
+                //             || match k {
+                //                 ImageID::Movie(_, backdrop) => *backdrop as usize != index,
+                //                 ImageID::Collection(_, backdrop) => *backdrop as usize != index,
+                //                 ImageID::Person(_) => false,
+                //             }
+                //     }
+                // );
 
-                pop_then_hash!(
-                    self.preload_images,
-                    |k| {
-                        (ImageIDDiscriminants::from(*k) == image_id.into())
-                            .then_some(match k {
-                                ImageID::Movie(_, backdrop) =>
-                                    (*backdrop as usize == index).then_some(*k),
-                                ImageID::Collection(_, backdrop) =>
-                                    (*backdrop as usize == index).then_some(*k),
-                                ImageID::Person(_) => Some(*k),
-                            })
-                            .flatten()
-                    },
-                    |k| {
-                        ImageIDDiscriminants::from(k) != image_id.into()
-                            || match k {
-                                ImageID::Movie(_, backdrop) => *backdrop as usize != index,
-                                ImageID::Collection(_, backdrop) => *backdrop as usize != index,
-                                ImageID::Person(_) => false,
-                            }
-                    }
-                );
+                // pop_then_hash!(
+                //     self.preload_images,
+                //     |k| {
+                //         (ImageIDDiscriminants::from(*k) == image_id.into())
+                //             .then_some(match k {
+                //                 ImageID::Movie(_, backdrop) =>
+                //                     (*backdrop as usize == index).then_some(*k),
+                //                 ImageID::Collection(_, backdrop) =>
+                //                     (*backdrop as usize == index).then_some(*k),
+                //                 ImageID::Person(_) => Some(*k),
+                //             })
+                //             .flatten()
+                //     },
+                //     |k| {
+                //         ImageIDDiscriminants::from(k) != image_id.into()
+                //             || match k {
+                //                 ImageID::Movie(_, backdrop) => *backdrop as usize != index,
+                //                 ImageID::Collection(_, backdrop) => *backdrop as usize != index,
+                //                 ImageID::Person(_) => false,
+                //             }
+                //     }
+                // );
 
                 return false;
             }
@@ -354,44 +359,44 @@ impl RatatuiImage {
             self.hash_image(image_id);
         }
 
-        pop_then_hash!(
-            self.preload_images,
-            |k| {
-                (ImageIDDiscriminants::from(*k) == image_id.into())
-                    .then_some(match k {
-                        ImageID::Movie(_, backdrop) => (*backdrop as usize == index).then_some(*k),
-                        ImageID::Collection(_, backdrop) =>
-                            (*backdrop as usize == index).then_some(*k),
-                        ImageID::Person(_) => Some(*k),
-                    })
-                    .flatten()
-            },
-            |k| {
-                ImageIDDiscriminants::from(k) != image_id.into()
-                    || match k {
-                        ImageID::Movie(_, backdrop) => *backdrop as usize != index,
-                        ImageID::Collection(_, backdrop) => *backdrop as usize != index,
-                        ImageID::Person(_) => false,
-                    }
-            }
-        );
+        // pop_then_hash!(
+        //     self.preload_images,
+        //     |k| {
+        //         (ImageIDDiscriminants::from(*k) == image_id.into())
+        //             .then_some(match k {
+        //                 ImageID::Movie(_, backdrop) => (*backdrop as usize == index).then_some(*k),
+        //                 ImageID::Collection(_, backdrop) =>
+        //                     (*backdrop as usize == index).then_some(*k),
+        //                 ImageID::Person(_) => Some(*k),
+        //             })
+        //             .flatten()
+        //     },
+        //     |k| {
+        //         ImageIDDiscriminants::from(k) != image_id.into()
+        //             || match k {
+        //                 ImageID::Movie(_, backdrop) => *backdrop as usize != index,
+        //                 ImageID::Collection(_, backdrop) => *backdrop as usize != index,
+        //                 ImageID::Person(_) => false,
+        //             }
+        //     }
+        // );
 
         drawn
     }
 
-    pub fn preload_movies(&mut self, movies: Vec<u32>, rule: &str) {
-        match rule {
-            "all" => {
-                self.preload_images = movies.iter().map(|&id| ImageID::Movie(id, false)).collect();
-                self.preload_images
-                    .extend(movies.into_iter().map(|id| ImageID::Movie(id, true)));
-            }
-            "posters" => {
-                self.preload_images = movies.iter().map(|&id| ImageID::Movie(id, false)).collect();
-            }
-            _ => (),
-        }
-    }
+    // pub fn preload_movies(&mut self, movies: Vec<u32>, rule: &str) {
+    //     match rule {
+    //         "all" => {
+    //             self.preload_images = movies.iter().map(|&id| ImageID::Movie(id, false)).collect();
+    //             self.preload_images
+    //                 .extend(movies.into_iter().map(|id| ImageID::Movie(id, true)));
+    //         }
+    //         "posters" => {
+    //             self.preload_images = movies.iter().map(|&id| ImageID::Movie(id, false)).collect();
+    //         }
+    //         _ => (),
+    //     }
+    // }
 
     pub fn update_access_token(&self, access_token: &str) {
         _ = self

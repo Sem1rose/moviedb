@@ -1,7 +1,7 @@
 use chrono::NaiveDateTime;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct PreviewPoster {
     pub poster_path: String,
@@ -10,7 +10,7 @@ pub struct PreviewPoster {
     pub poster_type: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct ListItem {
     // pub id: String,
@@ -19,15 +19,17 @@ pub struct ListItem {
     pub item_type:    String,
     // pub is_anime: bool,
     pub title:        String,
-    pub poster_path:  String,
-    pub added_at:     NaiveDateTime,
-    pub runtime:      usize,
-    pub popularity:   usize,
-    pub release_date: NaiveDateTime,
+    pub poster_path:  Option<String>,
+    #[serde(deserialize_with = "custom_deserialize")]
+    pub added_at:     Option<NaiveDateTime>,
+    // pub runtime:      Option<usize>,
+    // pub popularity:   Option<f64>,
+    #[serde(deserialize_with = "custom_deserialize")]
+    pub release_date: Option<NaiveDateTime>,
     pub watched:      bool,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct ListDetails {
     pub id:              u32,
@@ -41,10 +43,50 @@ pub struct ListDetails {
     // pub owner_username: Option<String>,
     pub item_count:      usize,
     pub preview_posters: Option<Vec<PreviewPoster>>,
+    #[serde(deserialize_with = "custom_deserialize", default)]
     pub created_at:      Option<NaiveDateTime>,
     pub items:           Option<Vec<ListItem>>,
 }
 
+fn custom_deserialize<'de, D>(d: D) -> Result<Option<NaiveDateTime>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Deserialize::deserialize(d).and_then(|x: Option<&str>| {
+        x.map_or(Ok(None), |value| {
+            NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S%.fZ")
+                .map(Option::Some)
+                .map_err(serde::de::Error::custom)
+        })
+    })
+}
+
+// fn custom_deserialize<'de, D>(deserializer: D) -> Result<Option<NaiveDateTime>, D::Error>
+// where
+//     D: serde::Deserializer<'de>,
+// {
+//     struct CustomVisitor;
+
+//     impl<'de> serde::de::Visitor<'de> for CustomVisitor {
+//         type Value = Option<NaiveDateTime>;
+//         fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+//             formatter.write_str("a datetime in the format %Y-%m-%dT%H:%M:%S%.fZ")
+//         }
+
+//         fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+//         where
+//             E: serde::de::Error,
+//         {
+//             if value == "null" {
+//                 Ok(None)
+//             } else {
+//                 NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S%.fZ").map(Option::Some).map_err(E::custom)
+//             }
+//         }
+//     }
+
+//     deserializer.deser(CustomVisitor)
+// }
 // #[derive(Deserialize)]
 // #[serde(rename_all = "camelCase")]
 // pub struct FullListDetails {

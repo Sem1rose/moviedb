@@ -178,12 +178,32 @@ impl ContextMenu {
         num_visible_items: usize,
         max_width: Option<u16>,
     ) -> Self {
+        self.add_submenu(index, model, num_visible_items, max_width);
+
+        self
+    }
+
+    pub fn change_model(&mut self, new_model: Vec<String>, max_width: Option<u16>) {
+        self.width =
+            max_width.unwrap_or(new_model.iter().map(|x| x.len()).max().unwrap_or(0) as u16 + 4);
+        self.model = new_model;
+        self.submenus.clear();
+        self.selected_index = 0;
+        self.scroll_pos = 0;
+        self.opened_submenu = None;
+    }
+
+    pub fn add_submenu(
+        &mut self,
+        index: usize,
+        model: Vec<String>,
+        num_visible_items: usize,
+        max_width: Option<u16>,
+    ) {
         self.submenus.insert(
             index,
             Self::new(model, num_visible_items, max_width, self.submenu_right),
         );
-
-        self
     }
 
     pub fn reset_state(&mut self) {
