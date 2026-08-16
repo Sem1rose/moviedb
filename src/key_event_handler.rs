@@ -468,14 +468,15 @@ impl KeyEventHandler {
                 } else {
                     None
                 },
-            KeyCode::Char(key) =>
+            KeyCode::Char(key) => {
                 if let Some(callback) = self.try_get_key_bind(Bind::Input, state) {
                     Some((callback, Data::Key(event)))
                 } else if let Some(callback) = self.try_get_keys_bind(key, state) {
                     Some((callback, Data::Key(event)))
                 } else {
                     None
-                },
+                }
+            }
             _ => None,
         }
     }

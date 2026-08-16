@@ -76,7 +76,7 @@ pub struct MovieDetailsResponse {
 }
 
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Serialize, Deserialize, PartialEq, Clone, Copy, Hash, Eq, Default)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Copy, Hash, Eq, Default, Debug)]
 pub enum ListID {
     #[default]
     Watched,
@@ -86,7 +86,7 @@ pub enum ListID {
     PunchPlay(u32),
     Collection(u32),
 }
-#[derive(Serialize, Deserialize, Clone, Copy)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct ListItem {
     pub id:       u32,
     pub added_at: NaiveDateTime,
@@ -144,6 +144,22 @@ impl List {
                 })
                 .collect(),
             readonly,
+        }
+    }
+
+    pub fn from_collection(value: tmdb::collection::smo::CollectionDetails) -> Self {
+        Self {
+            id:       ListID::PunchPlay(value.id),
+            name:     value.name,
+            items:    value
+                .parts
+                .iter()
+                .map(|x| ListItem {
+                    id:       x.id,
+                    added_at: x.release_date.and_time(Default::default()),
+                })
+                .collect(),
+            readonly: true,
         }
     }
 }

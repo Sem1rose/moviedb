@@ -1,4 +1,5 @@
-use serde::{self, Deserialize, Serialize};
+use chrono::NaiveDate;
+use serde::{self, Deserialize, Deserializer, Serialize};
 
 use crate::collection::smo::CollectionDetails;
 
@@ -49,7 +50,7 @@ pub(crate) struct MovieImage {
     // width: u32,
 }
 
-#[derive(Deserialize, Debug, PartialEq)]
+#[derive(Deserialize, Debug, PartialEq, Default)]
 pub struct SearchResult {
     pub id:                u32,
     #[serde(alias = "name")]
@@ -57,18 +58,27 @@ pub struct SearchResult {
     #[serde(alias = "original_name")]
     pub original_title:    String,
     pub adult:             bool,
-    pub genre_ids:         Vec<u64>,
+    pub genre_ids:         Vec<u32>,
     pub original_language: String,
     pub overview:          String,
     pub popularity:        f64,
     pub poster_path:       Option<String>,
     pub backdrop_path:     Option<String>,
-    pub release_date:      Option<String>,
+    #[serde(deserialize_with = "custom_deserialize")]
+    pub release_date:      NaiveDate,
     // pub video:             bool,
     pub vote_average:      Option<f64>,
     pub vote_count:        u32,
     pub media_type:        Option<String>,
 }
+fn custom_deserialize<'de, D>(d: D) -> Result<NaiveDate, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Deserialize::deserialize(d)
+        .map(|x: &str| NaiveDate::parse_from_str(x, "%Y-%m-%d").unwrap_or_default())
+}
+
 #[derive(Deserialize, Default, Debug)]
 pub struct MovieDetails {
     pub id:                    u32,

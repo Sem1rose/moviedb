@@ -15,6 +15,77 @@ use crate::smo::{
 
 pub(crate) mod smo;
 
+#[derive(Deserialize)]
+struct PaginatedResponse<T> {
+    // page:          u32,
+    results:       Vec<T>,
+    total_pages:   u32,
+    total_results: u32,
+}
+
+pub fn get_user_watchlist(
+    access_token: &str,
+    account_id: u32,
+) -> anyhow::Result<Vec<SearchResult>> {
+    let client = ClientBuilder::new().build()?;
+    let mut headers = HeaderMap::new();
+    headers.insert("accept", "application/json".parse().unwrap());
+    headers.insert("content-type", "application/json".parse().unwrap());
+    headers.insert(
+        "Authorization",
+        format!("Bearer {}", access_token).parse().unwrap(),
+    );
+
+    let first_page = crate::send_request_deserialized::<PaginatedResponse<SearchResult>>(
+        &client,
+        &format!("https://api.themoviedb.org/3/account/{account_id}/watchlist/movies"),
+        &headers,
+        None,
+        None,
+        "TMDB: Error while getting user watchlist",
+    )?;
+    if first_page.total_pages > 1 {
+        thread::scope(|s| -> anyhow::Result<Vec<SearchResult>> {
+            let mut items = Vec::with_capacity(first_page.total_results as usize);
+            items.extend(first_page.results);
+
+            let client_ref = &client;
+            let headers_ref = &headers;
+            let results = (2..=first_page.total_pages)
+                .map(|i| {
+                    s.spawn(move || {
+                        crate::send_request_deserialized::<PaginatedResponse<SearchResult>>(
+                            client_ref,
+                            &format!(
+                                "https://api.themoviedb.org/3/account/{account_id}/watchlist/movies"
+                            ),
+                            headers_ref,
+                            None,
+                            Some(&[("page", i.to_string().as_str())]),
+                            "",
+                        )
+                        .map(|x| x.results)
+                    })
+                })
+                .map(|x| {
+                    x.join()
+                        .map_err(|_| anyhow!("Error joining thread."))
+                        .flatten()
+                })
+                .collect_vec();
+
+            if results.iter().any(|x| x.is_err()) {
+                results.into_iter().find(|x| x.is_err()).unwrap()
+            } else {
+                items.extend(results.into_iter().map(|x| x.unwrap()).flatten());
+
+                Ok(items)
+            }
+        })
+    } else {
+        Ok(first_page.results)
+    }
+}
 pub fn find_movie(access_token: &str, name: &str) -> anyhow::Result<Vec<SearchResult>> {
     let client = ClientBuilder::new().build()?;
     let mut headers = HeaderMap::new();
@@ -26,24 +97,15 @@ pub fn find_movie(access_token: &str, name: &str) -> anyhow::Result<Vec<SearchRe
     );
     let query = [("query", name)];
 
-    #[derive(Deserialize)]
-    struct TMDBSearchResponse {
-        // page: u64,
-        results: Vec<SearchResult>,
-        // total_pages: u64,
-        // total_results: u64,
-    }
-
-    let results = crate::send_request_deserialized::<TMDBSearchResponse>(
+    crate::send_request_deserialized::<PaginatedResponse<_>>(
         &client,
         "https://api.themoviedb.org/3/search/movie",
         &headers,
         None,
         Some(&query),
         &format!("TMDB: Error while searching for movie {}", name),
-    )?
-    .results;
-    Ok(results)
+    )
+    .map(|x| x.results)
 }
 
 pub fn get_movie_user_interaction(
@@ -145,13 +207,8 @@ pub fn get_movie_recommendations(
     struct Recommendation {
         id: u32,
     }
-    #[derive(Deserialize)]
-    struct RecommendationsResponse {
-        // page: u32,
-        results: Vec<Recommendation>,
-    }
 
-    crate::send_request_deserialized::<RecommendationsResponse>(
+    crate::send_request_deserialized::<PaginatedResponse<Recommendation>>(
         client,
         &format!("https://api.themoviedb.org/3/movie/{movie_id}/recommendations"),
         headers,

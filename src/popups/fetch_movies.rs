@@ -128,8 +128,6 @@ impl FetchMoviesPopup {
                 .collect_vec()
         };
 
-        info!("{unfetched_movies:?}");
-
         *self = Self {
             tmdb_tokens,
             punch_play_tokens,
@@ -278,7 +276,7 @@ impl PopupTrait for FetchMoviesPopup {
         let popup_area = widgets::window(
             frame,
             helpers::centered_area(
-                if self.errored.is_some() { 11 } else { 9 },
+                if self.errored.is_some() { 13 } else { 9 },
                 60,
                 frame.area(),
             ),
@@ -322,7 +320,7 @@ impl PopupTrait for FetchMoviesPopup {
             let errored_text = format!("{id} errored: {error}");
 
             let text_area = helpers::add_padding(
-                vertical![>=1, ==2].split(popup_area)[1],
+                vertical![>=1, ==4].split(popup_area)[1],
                 Padding::horizontal(2),
             );
             frame.render_widget(

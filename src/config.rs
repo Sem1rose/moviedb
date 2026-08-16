@@ -14,8 +14,7 @@ pub struct Options {
     pub punch_play_enabled: bool,
     pub tmdb_enabled:       bool,
     pub omdb_enabled:       bool,
-
-    pub image_preload_rule: String,
+    // pub image_preload_rule: String,
 }
 
 #[derive(Default)]
@@ -27,13 +26,8 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn new(home_dir: &Path) -> Self {
-        let mut s = Self {
-            home_dir: home_dir.to_path_buf(),
-
-            ..Default::default()
-        };
-        if home_dir.join("config.toml").is_file() {
+    fn load_files(mut self) -> Self {
+        if self.home_dir.join("config.toml").is_file() {
             macro_rules! read_or_return {
                 ($exp:expr, $err:expr) => {
                     match $exp {
@@ -41,41 +35,50 @@ impl Config {
                         Err(err) => {
                             error!($err, err);
 
-                            let mut renamed = s.home_dir.join("corrupted_config.toml");
+                            let mut renamed = self.home_dir.join("corrupted_config.toml");
                             let mut i = 1;
                             while renamed.exists() {
-                                renamed = s.home_dir.join(format!("corrupted_config_{i}.toml"));
+                                renamed = self.home_dir.join(format!("corrupted_config_{i}.toml"));
                                 i += 1;
                             }
-                            _ = fs::rename(&s.home_dir.join("config.toml"), renamed);
+                            _ = fs::rename(&self.home_dir.join("config.toml"), renamed);
                             _ = fs::write(
-                                &s.home_dir.join("config.toml"),
-                                toml::to_string_pretty(&s.options).unwrap(),
+                                &self.home_dir.join("config.toml"),
+                                toml::to_string_pretty(&self.options).unwrap(),
                             );
 
-                            return s;
+                            return self;
                         }
                     }
                 };
             }
 
             let contents = read_or_return!(
-                fs::read_to_string(home_dir.join("config.toml")),
+                fs::read_to_string(self.home_dir.join("config.toml")),
                 "Error while reading configuration: {}"
             );
-            s.options = read_or_return!(
+            self.options = read_or_return!(
                 toml::from_str(&contents),
                 "Error while deserializing configuration: {}"
             );
         } else {
             info!("Config file not found, creating a new one..");
             _ = fs::write(
-                s.home_dir.join("config.toml"),
-                toml::to_string_pretty(&s.options).unwrap(),
+                self.home_dir.join("config.toml"),
+                toml::to_string_pretty(&self.options).unwrap(),
             );
         }
 
-        s
+        self
+    }
+
+    pub fn new(home_dir: &Path) -> Self {
+        Self {
+            home_dir: home_dir.to_path_buf(),
+
+            ..Default::default()
+        }
+        .load_files()
     }
 
     pub fn write_to_disk(&self) {

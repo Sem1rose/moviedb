@@ -1,4 +1,5 @@
-use serde::Deserialize;
+use chrono::NaiveDate;
+use serde::{Deserialize, Deserializer};
 
 #[derive(PartialEq, Deserialize, Debug, Default)]
 pub(crate) struct PunchPlaySearchResponse {
@@ -12,14 +13,15 @@ pub struct PunchPlaySearchResult {
     pub tmdb_id:           u32,
     // pub type:              String,
     // pub is_anime:             bool,
-    pub year:              usize,
+    // pub year:              usize,
     pub category:          String,
     pub name:              String,
     pub overview:          String,
     pub poster_url:        String,
     pub backdrop_url:      String,
     pub community_rating:  f64,
-    pub release_date:      String,
+    #[serde(deserialize_with = "custom_deserialize")]
+    pub release_date:      NaiveDate,
     // pub poster_path:          Option<String>,
     // pub backdrop_path:        Option<String>,
     pub popularity:        Option<f64>,
@@ -29,6 +31,13 @@ pub struct PunchPlaySearchResult {
     pub original_language: String,
     // pub poster_color:         String,
     // pub poster_color_is_dark: bool,
+}
+fn custom_deserialize<'de, D>(d: D) -> Result<NaiveDate, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Deserialize::deserialize(d)
+        .map(|x: &str| NaiveDate::parse_from_str(x, "%Y-%m-%d").unwrap_or_default())
 }
 
 #[derive(Deserialize, Debug, Default, Clone)]

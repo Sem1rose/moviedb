@@ -4,7 +4,7 @@ use std::{
     thread,
 };
 
-use chrono::{DateTime, Local};
+use chrono::{DateTime, Datelike, Local};
 use itertools::Itertools;
 use log::error;
 use punch_play::{
@@ -64,7 +64,7 @@ enum SearchResults {
 }
 struct SearchResultMovie {
     title:        String,
-    release_year: String,
+    release_year: u32,
     rating:       f64,
     id:           u32,
 }
@@ -72,7 +72,7 @@ impl From<TraktSearchResponseMovie> for SearchResultMovie {
     fn from(value: TraktSearchResponseMovie) -> Self {
         Self {
             title:        value.title,
-            release_year: value.year.unwrap_or(1970).to_string(),
+            release_year: value.year.unwrap_or(1970) as u32,
             rating:       value.rating,
             id:           value.ids.tmdb,
         }
@@ -82,7 +82,7 @@ impl From<PunchPlaySearchResult> for SearchResultMovie {
     fn from(value: PunchPlaySearchResult) -> Self {
         Self {
             title:        value.name,
-            release_year: value.year.to_string(),
+            release_year: value.release_date.year() as u32,
             rating:       value.community_rating,
             id:           value.tmdb_id,
         }
@@ -92,7 +92,7 @@ impl From<SearchResult> for SearchResultMovie {
     fn from(value: SearchResult) -> Self {
         Self {
             title:        value.title,
-            release_year: value.release_date.unwrap_or("1970".into()),
+            release_year: value.release_date.year() as u32,
             rating:       value.vote_average.unwrap_or(0.0),
             id:           value.id,
         }
@@ -304,7 +304,7 @@ impl PopupTrait for AddMoviePopup {
     }
 
     fn update_next_frame(&self) -> bool {
-        self.throbber_visible || self.search_results.is_none()
+        self.throbber_visible || self.last_input_tick.is_some()
     }
 
     fn update(&mut self) {
@@ -513,6 +513,7 @@ impl PopupTrait for AddMoviePopup {
                 );
 
                 if self.rx_search_result.is_some() {
+                    self.throbber_visible = true;
                     frame.render_stateful_widget(
                         Throbber::default()
                             .throbber_set(throbber_widgets_tui::BRAILLE_EIGHT_DOUBLE)

@@ -5,9 +5,41 @@ use reqwest::{
     header::{CONTENT_TYPE, HeaderMap, USER_AGENT},
 };
 
-use crate::smo::{PunchPlayDetailsResponse, PunchPlaySearchResponse, PunchPlaySearchResult};
+use crate::{
+    list::smo::ListItem,
+    smo::{PunchPlayDetailsResponse, PunchPlaySearchResponse, PunchPlaySearchResult},
+};
 
 pub mod smo;
+
+pub fn get_user_watchlist(access_token: &str) -> anyhow::Result<Vec<ListItem>> {
+    if let Some(watchlist_id) = crate::list::get_user_lists(access_token)?
+        .into_iter()
+        .find(|x| x.is_watchlist)
+        .map(|x| x.id)
+    {
+        crate::list::get_list_details(access_token, watchlist_id).map(|x| x.items.unwrap())
+    } else {
+        Ok(vec![])
+    }
+    // let client = ClientBuilder::new().build()?;
+    // let mut headers = HeaderMap::new();
+    // headers.insert("accept", "application/json".parse().unwrap());
+    // headers.insert("content-type", "application/json".parse().unwrap());
+    // headers.insert(
+    //     "Authorization",
+    //     format!("Bearer {}", access_token).parse().unwrap(),
+    // );
+
+    // crate::send_request_deserialized(
+    //     &client,
+    //     "https://punchplay.tv/api/platform/v1/me/watch-status",
+    //     &headers,
+    //     None,
+    //     None,
+    //     format!("PunchPlay: Error while getting user watchlist"),
+    // )
+}
 
 pub fn find_movie(name: &str) -> anyhow::Result<Vec<PunchPlaySearchResult>> {
     let client = ClientBuilder::new().build()?;

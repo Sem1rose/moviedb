@@ -5,7 +5,7 @@ use std::{
     rc::Rc,
 };
 
-use chrono::{Datelike, NaiveDate};
+use chrono::{Datelike, NaiveDate, NaiveTime};
 use itertools::Itertools;
 use log::error;
 use nucleo_matcher::{Config as MatcherConfig, Matcher, pattern::Atom};
@@ -19,7 +19,7 @@ use ratatui::{
         palette::{material, tailwind},
     },
     symbols::border,
-    text::{Line, Span, Text, ToLine},
+    text::{Line, Span, Text},
     widgets::{Block, Padding},
 };
 use ratatui_image::sliced::SignedPosition;
@@ -35,7 +35,8 @@ use crate::{
     load_file,
     screens::Screens,
     types::{
-        Entry, FilterCriterion, FxIndexMap, List, ListID, Movie, RatingSource, Sort, pop_criterion,
+        Entry, FilterCriterion, FxIndexMap, List, ListID, ListItem, Movie, RatingSource, Sort,
+        pop_criterion,
     },
     widgets::{self, ContextMenu},
 };
@@ -669,7 +670,7 @@ impl MainScreen {
             for tab in 0..=1 {
                 key_event_handler.bind_key(
                     (Some(tab), None),
-                    'R',
+                    'r',
                     "Refetch details".into(),
                     |app, _| {
                         app.drawer.open_refetch_details_popup(
@@ -733,60 +734,61 @@ impl MainScreen {
             );
         }
 
-        // key_event_handler.bind_key((Some(0), None), 0, "".into(), move |app, _| {
-        //     // let lists = punch_play::list::get_user_lists(app.punch_play_tokens.access_token()).unwrap();
-        //     // info!("{lists:#?}");
-        //     // info!(
-        //     //     "{:#?}",
-        //     //     tmdb::list::get_list_details(
-        //     //         app.tmdb_tokens.access_token(),
-        //     //         tmdb::list::get_user_lists(
-        //     //             app.tmdb_tokens.access_token(),
-        //     //             app.tmdb_tokens.account_id()
-        //     //         )
-        //     //         .unwrap()[0]
-        //     //             .id
-        //     //     )
-        //     //     .unwrap()
-        //     // );
-        //     // info!(
-        //     //     "{:#?}",
-        //     //     punch_play::list::get_list_details(
-        //     //         app.punch_play_tokens.access_token(),
-        //     //         punch_play::list::get_user_lists(app.punch_play_tokens.access_token()).unwrap()
-        //     //             [0]
-        //     //         .id
-        //     //     )
-        //     //     .unwrap()
-        //     // );
-        //     if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-        //         let list_info =
-        //             punch_play::list::get_list_details(app.punch_play_tokens.access_token(), 2091)
-        //                 .unwrap();
-        //             main_screen.add_list(List {id: ListID::Watchlist, items: list_info.items
-        //                 .unwrap_or_default()
-        //                 .iter()
-        //                 .filter_map(|x| {
-        //                     (x.item_type == "movie").then_some(ListItem {
-        //                         id:       x.tmdb_id,
-        //                         added_at: x.added_at.unwrap_or_default(),
-        //                     })
-        //                 })
-        //                 .collect(), ..Default::default()});
-        //             let list_info = tmdb::list::get_list_details(
-        //                 app.tmdb_tokens.access_token(),
-        //                 tmdb::list::get_user_lists(
-        //                     app.tmdb_tokens.access_token(),
-        //                     app.tmdb_tokens.account_id(),
-        //                 )
-        //                 .unwrap()[0]
-        //                 .id,
-        //             )
-        //             .unwrap();
-        //         main_screen.add_list(List::from_tmdb(list_info, false));
-        //         main_screen.open_list(1, &mut app.key_event_handler);
-        //     }
-        // });
+        if matches!(
+            self.selected_list,
+            ListID::PunchPlay(_) | ListID::TMDB(_) | ListID::Collection(_) | ListID::Watchlist
+        ) {
+            key_event_handler.bind_key(
+                (Some(0), None),
+                'R',
+                "Update list".into(),
+                |app, _| {
+                    if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                        match main_screen.selected_list {
+                            ListID::TMDB(id) => {
+                                if let Ok(list_details) = tmdb::list::get_list_details(app.tmdb_tokens.access_token(), id) {
+                                    main_screen.add_list(List::from_tmdb(list_details, false));
+                                }
+                            },
+                            ListID::PunchPlay(id) => {
+                                if let Ok(list_details) = punch_play::list::get_list_details(app.punch_play_tokens.access_token(), id) {
+                                    main_screen.add_list(List::from_punch_play(list_details, false));
+                                }
+                            },
+                            ListID::Collection(id) => {
+                                if let Ok(collection_details) = tmdb::collection::get_collection_details(app.tmdb_tokens.access_token(), id) {
+                                    main_screen.add_list(List::from_collection(collection_details));
+                                }
+                            },
+                            ListID::Watchlist => {
+                                if let (Ok(tmdb_list_items), Ok(punch_play_list_items)) = (
+                                    tmdb::movie::get_user_watchlist(app.tmdb_tokens.access_token(), app.tmdb_tokens.account_id())
+                                        .map(|x|
+                                                x.into_iter().enumerate().map(|(i, x)|
+                                                    ListItem { id: x.id, added_at: NaiveDate::default().and_time(NaiveTime::from_num_seconds_from_midnight_opt(i as u32, 0).unwrap()) }
+                                               )
+                                            ),
+                                    punch_play::movie::get_user_watchlist(app.punch_play_tokens.access_token())
+                                        .map(|x|
+                                                x.into_iter().filter_map(|x|
+                                                    (x.item_type == "movie").then_some(
+                                                        ListItem { id: x.tmdb_id, added_at: x.added_at.unwrap_or_default() }
+                                                    )
+                                                )
+                                            )
+                                    ) {
+                                        let watched_borrowed = app.watched.borrow();
+                                        main_screen.add_list(List { id: ListID::Watchlist, name: "".into(), items: punch_play_list_items.chain(tmdb_list_items).sorted_by_key(|x| x.id).dedup_by(|a, b| a.id == b.id).filter(|x| !watched_borrowed.contains_key(&x.id)).collect_vec(), readonly: false });
+                                }
+                            },
+                            _ => unreachable!()
+                        }
+
+                        app.drawer.open_fetch_movies_popup();
+                    }
+                },
+            );
+        }
 
         if self.list_editable() {
             let take_rating = self.selected_list == ListID::Watched;

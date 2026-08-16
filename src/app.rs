@@ -699,7 +699,7 @@ impl App {
             }
             Event::FocusGained => (),
             Event::FocusLost => (),
-            Event::Paste(string) =>
+            Event::Paste(string) => {
                 if let Some(callback) = self.key_event_handler.try_get_key_bind(
                     crate::key_event_handler::Bind::Input,
                     self.key_event_handler.get_state(&self.drawer),
@@ -715,7 +715,8 @@ impl App {
                             }),
                         );
                     }
-                },
+                }
+            }
             Event::Resize(_, _) => (),
         }
     }

@@ -206,7 +206,7 @@ impl PopupTrait for PunchPlayInitPopup {
                     }
                 }
             }
-            Phase::Finalizing | Phase::RefreshingTokens =>
+            Phase::Finalizing | Phase::RefreshingTokens => {
                 if let Some(rx_tokens) = self.rx_tokens.as_ref() {
                     if let Ok(result) = rx_tokens.try_recv() {
                         match result {
@@ -227,7 +227,8 @@ impl PopupTrait for PunchPlayInitPopup {
                             }
                         }
                     }
-                },
+                }
+            }
             _ => (),
         }
     }
