@@ -5,7 +5,7 @@ use std::{
     rc::Rc,
 };
 
-use chrono::{Datelike, NaiveDate, NaiveTime};
+use chrono::{Datelike, Local, NaiveDate, NaiveTime};
 use itertools::Itertools;
 use log::error;
 use nucleo_matcher::{Config as MatcherConfig, Matcher, pattern::Atom};
@@ -34,6 +34,7 @@ use crate::{
     key_event_handler::{self, KeyEventHandler},
     load_file,
     screens::Screens,
+    tokens::{PunchPlayTokens, TMDBTokens},
     types::{
         Entry, FilterCriterion, FxIndexMap, List, ListID, ListItem, Movie, RatingSource, Sort,
         pop_criterion,
@@ -313,6 +314,81 @@ impl MainScreen {
         matches!(self.selected_list, ListID::Watched | ListID::Watchlist)
             || !(matches!(self.selected_list, ListID::Collection(_))
                 || self.lists[&self.selected_list].readonly)
+    }
+
+    fn refetch_current_list(
+        &mut self,
+        watched: &FxIndexMap<u32, Entry>,
+        tmdb_tokens: &TMDBTokens,
+        punch_play_tokens: &PunchPlayTokens,
+    ) {
+        match self.selected_list {
+            ListID::Watchlist => {
+                if let (Ok(tmdb_list_items), Ok(punch_play_list_items)) = (
+                    tmdb::movie::get_user_watchlist(
+                        tmdb_tokens.access_token(),
+                        tmdb_tokens.account_id(),
+                    )
+                    .map(|x| {
+                        x.into_iter().enumerate().map(|(i, x)| ListItem {
+                            id:       x.id,
+                            added_at: NaiveDate::default()
+                                .and_time(
+                                    NaiveTime::from_num_seconds_from_midnight_opt(i as u32, 0)
+                                        .unwrap(),
+                                )
+                                .and_local_timezone(Local)
+                                .latest()
+                                .unwrap(),
+                        })
+                    }),
+                    punch_play::movie::get_user_watchlist(punch_play_tokens.access_token()).map(
+                        |x| {
+                            x.into_iter().filter_map(|x| {
+                                (x.item_type == "movie").then_some(ListItem {
+                                    id:       x.tmdb_id,
+                                    added_at: x.added_at.into(),
+                                })
+                            })
+                        },
+                    ),
+                ) {
+                    self.add_list(List {
+                        id:       ListID::Watchlist,
+                        name:     "".into(),
+                        items:    punch_play_list_items
+                            .chain(tmdb_list_items)
+                            .sorted_by_key(|x| x.id)
+                            .dedup_by(|a, b| a.id == b.id)
+                            .filter(|x| !watched.contains_key(&x.id))
+                            .collect_vec(),
+                        readonly: false,
+                    });
+                }
+            }
+            ListID::TMDB(id) => {
+                if let Ok(list_details) =
+                    tmdb::list::get_list_details(tmdb_tokens.access_token(), id)
+                {
+                    self.add_list(List::from_tmdb(list_details, false));
+                }
+            }
+            ListID::PunchPlay(id) => {
+                if let Ok(list_details) =
+                    punch_play::list::get_list_details(punch_play_tokens.access_token(), id)
+                {
+                    self.add_list(List::from_punch_play(list_details, false));
+                }
+            }
+            ListID::Collection(id) => {
+                if let Ok(collection_details) =
+                    tmdb::collection::get_collection_details(tmdb_tokens.access_token(), id)
+                {
+                    self.add_list(List::from_collection(collection_details));
+                }
+            }
+            _ => (),
+        }
     }
 
     pub fn current_movie(&self) -> Option<&Movie> {
@@ -734,60 +810,25 @@ impl MainScreen {
             );
         }
 
-        if matches!(
-            self.selected_list,
-            ListID::PunchPlay(_) | ListID::TMDB(_) | ListID::Collection(_) | ListID::Watchlist
-        ) {
-            key_event_handler.bind_key(
-                (Some(0), None),
-                'R',
-                "Update list".into(),
-                |app, _| {
-                    if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                        match main_screen.selected_list {
-                            ListID::TMDB(id) => {
-                                if let Ok(list_details) = tmdb::list::get_list_details(app.tmdb_tokens.access_token(), id) {
-                                    main_screen.add_list(List::from_tmdb(list_details, false));
-                                }
-                            },
-                            ListID::PunchPlay(id) => {
-                                if let Ok(list_details) = punch_play::list::get_list_details(app.punch_play_tokens.access_token(), id) {
-                                    main_screen.add_list(List::from_punch_play(list_details, false));
-                                }
-                            },
-                            ListID::Collection(id) => {
-                                if let Ok(collection_details) = tmdb::collection::get_collection_details(app.tmdb_tokens.access_token(), id) {
-                                    main_screen.add_list(List::from_collection(collection_details));
-                                }
-                            },
-                            ListID::Watchlist => {
-                                if let (Ok(tmdb_list_items), Ok(punch_play_list_items)) = (
-                                    tmdb::movie::get_user_watchlist(app.tmdb_tokens.access_token(), app.tmdb_tokens.account_id())
-                                        .map(|x|
-                                                x.into_iter().enumerate().map(|(i, x)|
-                                                    ListItem { id: x.id, added_at: NaiveDate::default().and_time(NaiveTime::from_num_seconds_from_midnight_opt(i as u32, 0).unwrap()) }
-                                               )
-                                            ),
-                                    punch_play::movie::get_user_watchlist(app.punch_play_tokens.access_token())
-                                        .map(|x|
-                                                x.into_iter().filter_map(|x|
-                                                    (x.item_type == "movie").then_some(
-                                                        ListItem { id: x.tmdb_id, added_at: x.added_at.unwrap_or_default() }
-                                                    )
-                                                )
-                                            )
-                                    ) {
-                                        let watched_borrowed = app.watched.borrow();
-                                        main_screen.add_list(List { id: ListID::Watchlist, name: "".into(), items: punch_play_list_items.chain(tmdb_list_items).sorted_by_key(|x| x.id).dedup_by(|a, b| a.id == b.id).filter(|x| !watched_borrowed.contains_key(&x.id)).collect_vec(), readonly: false });
-                                }
-                            },
-                            _ => unreachable!()
+        if !matches!(self.selected_list, ListID::Local(_) | ListID::Watched) {
+            key_event_handler.bind_key((Some(0), None), 'R', "Update list".into(), |app, _| {
+                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                    match main_screen.selected_list {
+                        ListID::Watched => {
+                            // app.refetch_watched();
                         }
-
-                        app.drawer.open_fetch_movies_popup();
+                        _ => {
+                            main_screen.refetch_current_list(
+                                &app.watched.borrow_mut(),
+                                &app.tmdb_tokens,
+                                &app.punch_play_tokens,
+                            );
+                        }
                     }
-                },
-            );
+
+                    app.drawer.open_fetch_movies_popup();
+                }
+            });
         }
 
         if self.list_editable() {

@@ -1,5 +1,16 @@
-use chrono::NaiveDateTime;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer};
+
+fn date_time_deserializer<'de, D>(d: D) -> Result<DateTime<Utc>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Deserialize::deserialize(d).and_then(|value: Option<&str>| {
+        value.map_or(Ok(Default::default()), |value| DateTime::parse_from_rfc3339(value)
+            .map(|x| x.with_timezone(&Utc))
+            .map_err(serde::de::Error::custom))
+    })
+}
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -20,12 +31,12 @@ pub struct ListItem {
     // pub is_anime: bool,
     pub title:        String,
     pub poster_path:  Option<String>,
-    #[serde(deserialize_with = "custom_deserialize")]
-    pub added_at:     Option<NaiveDateTime>,
+    #[serde(deserialize_with = "date_time_deserializer", default)]
+    pub added_at:     DateTime<Utc>,
     // pub runtime:      Option<usize>,
     // pub popularity:   Option<f64>,
-    #[serde(deserialize_with = "custom_deserialize")]
-    pub release_date: Option<NaiveDateTime>,
+    #[serde(deserialize_with = "date_time_deserializer", default)]
+    pub release_date: DateTime<Utc>,
     pub watched:      bool,
 }
 
@@ -43,22 +54,9 @@ pub struct ListDetails {
     // pub owner_username: Option<String>,
     pub item_count:      usize,
     pub preview_posters: Option<Vec<PreviewPoster>>,
-    #[serde(deserialize_with = "custom_deserialize", default)]
-    pub created_at:      Option<NaiveDateTime>,
+    #[serde(deserialize_with = "date_time_deserializer", default)]
+    pub created_at:      DateTime<Utc>,
     pub items:           Option<Vec<ListItem>>,
-}
-
-fn custom_deserialize<'de, D>(d: D) -> Result<Option<NaiveDateTime>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    Deserialize::deserialize(d).and_then(|x: Option<&str>| {
-        x.map_or(Ok(None), |value| {
-            NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S%.fZ")
-                .map(Option::Some)
-                .map_err(serde::de::Error::custom)
-        })
-    })
 }
 
 // fn custom_deserialize<'de, D>(deserializer: D) -> Result<Option<NaiveDateTime>, D::Error>

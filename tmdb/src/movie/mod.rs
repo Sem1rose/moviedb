@@ -316,6 +316,68 @@ pub fn get_movie_details(
     }
 }
 
+pub fn get_rated_movies(access_token: &str, account_id: u32) -> anyhow::Result<Vec<SearchResult>> {
+    let client = ClientBuilder::new().build()?;
+
+    let mut headers = HeaderMap::new();
+    headers.insert("accept", "application/json".parse().unwrap());
+    headers.insert("content-type", "application/json".parse().unwrap());
+    headers.insert(
+        "Authorization",
+        format!("Bearer {}", access_token).parse().unwrap(),
+    );
+
+    let first_page = crate::send_request_deserialized::<PaginatedResponse<SearchResult>>(
+        &client,
+        &format!("https://api.themoviedb.org/3/account/{account_id}/rated/movies"),
+        &headers,
+        None,
+        None,
+        "TMDB: Error while getting rated movies",
+    )?;
+    if first_page.total_pages <= 1 {
+        Ok(first_page.results)
+    } else {
+        thread::scope(|s| -> anyhow::Result<Vec<SearchResult>> {
+            let mut items = Vec::with_capacity(first_page.total_results as usize);
+            items.extend(first_page.results);
+
+            let client_ref = &client;
+            let headers_ref = &headers;
+            let results = (2..=first_page.total_pages)
+                .map(|i| {
+                    s.spawn(move || {
+                        crate::send_request_deserialized::<PaginatedResponse<SearchResult>>(
+                            client_ref,
+                            &format!(
+                                "https://api.themoviedb.org/3/account/{account_id}/rated/movies"
+                            ),
+                            headers_ref,
+                            None,
+                            Some(&[("page", i.to_string().as_str())]),
+                            "TMDB: Error while getting rated movies",
+                        )
+                        .map(|x| x.results)
+                    })
+                })
+                .map(|x| {
+                    x.join()
+                        .map_err(|_| anyhow!("Error joining thread."))
+                        .flatten()
+                })
+                .collect_vec();
+
+            if results.iter().any(|x| x.is_err()) {
+                results.into_iter().find(|x| x.is_err()).unwrap()
+            } else {
+                items.extend(results.into_iter().map(|x| x.unwrap()).flatten());
+
+                Ok(items)
+            }
+        })
+    }
+}
+
 pub(crate) fn get_movie_images(
     access_token: &str,
     movie_id: u32,

@@ -1,9 +1,9 @@
 use std::{cmp::Ordering, io::stdout};
 
-use chrono::{DateTime, Local, NaiveDate, NaiveDateTime};
+use chrono::{DateTime, Local, NaiveDate, TimeDelta};
 use indexmap::IndexMap;
 use log::info;
-use punch_play::smo::PunchPlayDetailsResponse;
+use punch_play::smo::{DetailsResponse, HistoryItem};
 use ratatui::{
     Terminal,
     backend::CrosstermBackend,
@@ -71,7 +71,7 @@ fn set_panic_hook() {
 pub struct MovieDetailsResponse {
     pub tmdb:       Option<MovieDetails>,
     pub trakt:      Option<TraktDetailsResponse>,
-    pub punch_play: Option<PunchPlayDetailsResponse>,
+    pub punch_play: Option<DetailsResponse>,
     pub omdb:       Option<OMDBDetailsResponse>,
 }
 
@@ -89,7 +89,7 @@ pub enum ListID {
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct ListItem {
     pub id:       u32,
-    pub added_at: NaiveDateTime,
+    pub added_at: DateTime<Local>,
 }
 #[derive(Serialize, Deserialize, Default, Clone)]
 pub struct List {
@@ -139,7 +139,7 @@ impl List {
                 .filter_map(|x| {
                     (x.item_type == "movie").then_some(ListItem {
                         id:       x.tmdb_id,
-                        added_at: x.added_at.unwrap_or_default(),
+                        added_at: x.added_at.into(),
                     })
                 })
                 .collect(),
@@ -156,7 +156,12 @@ impl List {
                 .iter()
                 .map(|x| ListItem {
                     id:       x.id,
-                    added_at: x.release_date.and_time(Default::default()),
+                    added_at: x
+                        .release_date
+                        .and_time(Default::default())
+                        .and_local_timezone(Local)
+                        .latest()
+                        .unwrap(),
                 })
                 .collect(),
             readonly: true,
@@ -277,6 +282,33 @@ pub struct Entry {
     pub movie_id: u32,
     pub history:  Vec<HistoryEntry>,
 }
+impl From<HistoryItem> for Entry {
+    fn from(value: HistoryItem) -> Self {
+        Entry {
+            movie_id: value.tmdb_id,
+            history:  vec![HistoryEntry {
+                date:   value.watched_at.into(),
+                rating: value.rating.unwrap() as f64,
+                note:   None,
+            }],
+        }
+    }
+}
+impl std::ops::Add for Entry {
+    type Output = Entry;
+
+    fn add(mut self, rhs: Self) -> Self::Output {
+        for history_entry in rhs.history {
+            self.history.push(history_entry);
+        }
+        self.history
+            .sort_by(|a, b| a.date.partial_cmp(&b.date).unwrap());
+
+        self.dedup_history();
+
+        self
+    }
+}
 impl Entry {
     pub fn get_user_rating(&self) -> f64 {
         self.history.last().map(|x| x.rating).unwrap_or(0.0)
@@ -294,6 +326,51 @@ impl Entry {
         self.history.push(HistoryEntry { date, rating, note });
         self.history
             .sort_by(|a, b| a.date.partial_cmp(&b.date).unwrap());
+    }
+
+    pub fn dedup_history(&mut self) {
+        if self.history.len() > 1 {
+            let mut new_history = vec![];
+            let mut i = 0;
+            loop {
+                if i >= self.history.len() - 1 {
+                    if i == self.history.len() - 1 {
+                        new_history.push(self.history.remove(i));
+                    }
+
+                    break;
+                }
+
+                let a = &self.history[i];
+                let b = &self.history[i + 1];
+                if b.date - a.date <= TimeDelta::days(1) {
+                    new_history.push(HistoryEntry {
+                        date:   a.date,
+                        rating: a.rating.max(b.rating),
+                        note:   None,
+                    });
+                    i += 1;
+                } else {
+                    new_history.push(HistoryEntry {
+                        date:   a.date,
+                        rating: a.rating,
+                        note:   None,
+                    });
+                }
+
+                i += 1;
+            }
+
+            // if new_history[0].date == DateTime::<Local>::default() {
+            //     let x = if new_history.len() > 2 {if new_history.last().unwrap().date >= NaiveDate::from_ymd_opt(2025, 12, 1).unwrap().and_time(Default::default()).and_local_timezone(Local).latest().unwrap() {new_history.len() - 2} else {new_history.len() - 1}} else {1} - 1;
+            //     let a = new_history.remove(0);
+            //     let b = new_history.remove(x);
+
+            //     new_history.insert(x, HistoryEntry { date: b.date, rating: a.rating.max(b.rating), note: None });
+            // }
+
+            self.history = new_history;
+        }
     }
 }
 
@@ -420,7 +497,7 @@ impl Movie {
         info!("{_trakt_details:#?}");
     }
 
-    pub fn add_punch_play_details(&mut self, punch_play_details: PunchPlayDetailsResponse) {
+    pub fn add_punch_play_details(&mut self, punch_play_details: DetailsResponse) {
         info!("{punch_play_details:#?}");
 
         if self.released {

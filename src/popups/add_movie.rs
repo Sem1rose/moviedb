@@ -9,7 +9,7 @@ use itertools::Itertools;
 use log::error;
 use punch_play::{
     self,
-    smo::{PunchPlayDetailsResponse, PunchPlaySearchResult},
+    smo::{DetailsResponse, ItemDetails as PunchPlayItemDetails},
 };
 use ratatui::{
     Frame,
@@ -59,7 +59,7 @@ pub enum Phase {
 #[allow(clippy::upper_case_acronyms)]
 enum SearchResults {
     Trakt(anyhow::Result<Vec<TraktSearchResponseMovie>>),
-    PunchPlay(anyhow::Result<Vec<PunchPlaySearchResult>>),
+    PunchPlay(anyhow::Result<Vec<PunchPlayItemDetails>>),
     TMDB(anyhow::Result<Vec<SearchResult>>),
 }
 struct SearchResultMovie {
@@ -78,8 +78,8 @@ impl From<TraktSearchResponseMovie> for SearchResultMovie {
         }
     }
 }
-impl From<PunchPlaySearchResult> for SearchResultMovie {
-    fn from(value: PunchPlaySearchResult) -> Self {
+impl From<PunchPlayItemDetails> for SearchResultMovie {
+    fn from(value: PunchPlayItemDetails) -> Self {
         Self {
             title:        value.name,
             release_year: value.release_date.year() as u32,
@@ -124,7 +124,7 @@ pub struct AddMoviePopup {
     pub user_rating:                     f64,
     pub date:                            DateTime<Local>,
     pub trakt_movie_details_result:      Option<TraktDetailsResponse>,
-    pub punch_play_movie_details_result: Option<PunchPlayDetailsResponse>,
+    pub punch_play_movie_details_result: Option<DetailsResponse>,
     pub tmdb_movie_details_result:       Option<TMDBMovieDetails>,
     pub omdb_movie_details_result:       Option<OMDBDetailsResponse>,
     rx_details_response:                 Option<Receiver<anyhow::Result<MovieDetailsResponse>>>,

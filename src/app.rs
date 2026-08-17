@@ -1,6 +1,6 @@
 use std::{cell::RefCell, fs, path::PathBuf, rc::Rc, thread, time::Duration};
 
-use anyhow::bail;
+use anyhow::{anyhow, bail};
 use itertools::Itertools;
 use log::{error, info};
 use ratatui::crossterm::event::{self, Event, KeyEvent, KeyEventState, KeyModifiers};
@@ -419,7 +419,7 @@ impl App {
                         .items
                         .push(ListItem {
                             id:       movie_id,
-                            added_at: date.naive_local(),
+                            added_at: date,
                         });
 
                     main_screen.filter_sort_movies(false);
@@ -640,6 +640,73 @@ impl App {
             }
             self.drawer.close_popup();
         }
+    }
+
+    pub fn _refetch_watched(&mut self) {
+        let punch_play_access_token = self.punch_play_tokens.access_token();
+        let (Ok(mut watch_history), Ok(mut ratings)) = thread::scope(|s| {
+            let watch_history_handle =
+                s.spawn(move || punch_play::movie::get_watch_history(punch_play_access_token));
+            let ratings_handle =
+                s.spawn(move || punch_play::movie::get_rated_movies(punch_play_access_token));
+
+            (
+                watch_history_handle
+                    .join()
+                    .map_err(|_| anyhow!("Error joining thread"))
+                    .flatten(),
+                ratings_handle
+                    .join()
+                    .map_err(|_| anyhow!("Error joining thread"))
+                    .flatten(),
+            )
+        }) else {
+            return;
+        };
+
+        ratings.retain(|x| x.kind == "movie");
+        for x in ratings.iter() {
+            info!("ratings: {} {:?} {:?}", x.tmdb_id, x.watched_at, x.rated_at);
+        }
+        let ratings = FxIndexMap::from_iter(ratings.into_iter().map(|x| (x.tmdb_id, x)));
+        watch_history.retain(|x| x.kind == "movie");
+
+        let history = watch_history
+            .into_iter()
+            .inspect(|x| info!("history: {} {:?} {:?}", x.tmdb_id, x.watched_at, x.rated_at))
+            .filter_map(|mut x| {
+                ratings.get(&x.tmdb_id).map(|y| {
+                    x.rating = y.rating;
+                    // x.rated_at = y.rated_at;
+                    // x.is_favourite = y.is_favourite;
+
+                    Entry::from(x)
+                })
+            })
+            .collect_vec()
+            .into_iter()
+            .inspect(|x| info!("consolidated: {} {:?}", x.movie_id, x.history))
+            .collect_vec();
+
+        {
+            let mut watched = self.watched.borrow_mut();
+            *watched = FxIndexMap::from_iter(
+                history
+                    .into_iter()
+                    .chain(watched.drain(..).map(|x| x.1))
+                    .sorted_by_key(|x| x.movie_id)
+                    .inspect(|x| info!("sorted: {} {:?}", x.movie_id, x.history))
+                    .chunk_by(|x| x.movie_id)
+                    .into_iter()
+                    .map(|(_, x)| x.reduce(|acc, x| acc + x).unwrap())
+                    .collect_vec()
+                    .into_iter()
+                    .inspect(|x| info!("chunked: {} {:?}", x.movie_id, x.history))
+                    .map(|x| (x.movie_id, x)),
+            );
+        }
+
+        self.save_data(false, true, false, false);
     }
 
     pub fn save_data(

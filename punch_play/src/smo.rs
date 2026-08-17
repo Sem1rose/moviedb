@@ -7,7 +7,7 @@ pub use crate::movie::smo::*;
 #[derive(Deserialize, Debug)]
 pub struct RequestResponseError {
     pub error:   Option<String>,
-    pub message: String,
+    pub message: Option<String>,
 }
 impl Error for RequestResponseError {}
 impl Display for RequestResponseError {
@@ -15,7 +15,7 @@ impl Display for RequestResponseError {
         write!(
             f,
             "{}|{}",
-            self.message,
+            self.message.as_ref().unwrap_or(&"no message".into()),
             self.error.as_ref().unwrap_or(&"no error".into())
         )
     }

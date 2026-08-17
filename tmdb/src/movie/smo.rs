@@ -62,6 +62,7 @@ pub struct SearchResult {
     pub original_language: String,
     pub overview:          String,
     pub popularity:        f64,
+    pub rating:            Option<f64>,
     pub poster_path:       Option<String>,
     pub backdrop_path:     Option<String>,
     #[serde(deserialize_with = "custom_deserialize")]

@@ -76,11 +76,7 @@ pub fn get_movie_details(client_id: &str, imdb_id: &str) -> anyhow::Result<Trakt
     Ok(details_response.json()?)
 }
 
-pub fn get_movie_artworks(
-    cache_dir: &Path,
-    client_id: &str,
-    imdb_id: &str,
-) -> anyhow::Result<()> {
+pub fn get_movie_artworks(cache_dir: &Path, client_id: &str, imdb_id: &str) -> anyhow::Result<()> {
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
     headers.insert(USER_AGENT, "reqwest/0.12.8".parse().unwrap());
