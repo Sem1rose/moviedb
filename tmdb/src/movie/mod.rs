@@ -1,17 +1,16 @@
 use std::{path::Path, thread};
 
-use anyhow::{Context, anyhow};
+use anyhow::anyhow;
 use itertools::Itertools;
 use reqwest::{
-    blocking::{Client, ClientBuilder},
+    Method,
+    blocking::{Client, ClientBuilder, Response},
     header::HeaderMap,
 };
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{Value, json};
 
-use crate::smo::{
-    Credits, MovieDetails, MovieImagesResponse, RequestResponseError, SearchResult, UserInteraction,
-};
+use crate::smo::{Credits, MovieDetails, MovieImagesResponse, SearchResult, UserInteraction};
 
 pub(crate) mod smo;
 
@@ -220,11 +219,7 @@ pub fn get_movie_recommendations(
     .map(|x| x.results.into_iter().map(|y| y.id).take(5).collect())
 }
 
-pub fn get_movie_details(
-    access_token: &str,
-    movie_id: u32,
-    extra_details: bool,
-) -> anyhow::Result<MovieDetails> {
+pub fn get_movie_details(access_token: &str, movie_id: u32) -> anyhow::Result<MovieDetails> {
     let client = ClientBuilder::new().build()?;
 
     let mut headers = HeaderMap::new();
@@ -235,85 +230,16 @@ pub fn get_movie_details(
         format!("Bearer {}", access_token).parse().unwrap(),
     );
 
-    let client_ref = &client;
-    let headers_ref = &headers;
-    if extra_details {
-        let (
-            details_response,
-            user_interaction_response,
-            credits_response,
-            certification_response,
-            recommendations_response,
-        ) = thread::scope(move |s| {
-            let details_handle = s.spawn(move || {
-                crate::send_tmdb_request(
-                    client_ref,
-                    &format!("https://api.themoviedb.org/3/movie/{movie_id}"),
-                    headers_ref,
-                    None,
-                    None,
-                )
-            });
-            let user_interaction_handle =
-                s.spawn(move || get_movie_user_interaction(client_ref, headers_ref, movie_id));
-            let credits_handle =
-                s.spawn(move || get_movie_credits(client_ref, headers_ref, movie_id));
-            let certification_handle =
-                s.spawn(move || get_movie_certification(client_ref, headers_ref, movie_id));
-            let recommendations_handle =
-                s.spawn(move || get_movie_recommendations(client_ref, headers_ref, movie_id));
-
-            let details_response = details_handle
-                .join()
-                .map_err(|x| anyhow!("TMDB: Error while joining the thread: {x:?}"))??;
-            if !details_response.status().is_success() {
-                return Err(match details_response.json::<RequestResponseError>() {
-                    Ok(err) => err.into(),
-                    Err(_) => anyhow!(""),
-                })
-                .context("TMDB: Error while getting movie details");
-            }
-
-            Ok((
-                details_response,
-                user_interaction_handle
-                    .join()
-                    .map(Result::ok)
-                    .ok()
-                    .flatten(),
-                credits_handle.join().map(Result::ok).ok().flatten(),
-                certification_handle.join().map(Result::ok).ok().flatten(),
-                recommendations_handle.join().map(Result::ok).ok().flatten(),
-            ))
-        })?;
-
-        details_response
-            .json()
-            .map(|mut x: MovieDetails| {
-                x.user_interaction = user_interaction_response;
-                x.credits = credits_response;
-                x.certificate =
-                    certification_response.or(Some(if x.adult { "N" } else { "NR" }.into()));
-                x.recommendations = recommendations_response;
-
-                if let Some(collection_id) = x.belongs_to_collection.as_ref().map(|x| x.id) {
-                    x.collection_details =
-                        crate::collection::get_collection_details(access_token, collection_id).ok();
-                }
-
-                x
-            })
-            .map_err(Into::into)
-    } else {
-        crate::send_request_deserialized(
-            client_ref,
-            &format!("https://api.themoviedb.org/3/movie/{movie_id}"),
-            headers_ref,
-            None,
-            None,
-            "TMDB: Error while getting movie details",
-        )
-    }
+    crate::send_request_deserialized(
+        &client,
+        &format!(
+            "https://api.themoviedb.org/3/movie/{movie_id}?append_to_response=account_states,credits,release_dates,recommendations,images"
+        ),
+        &headers,
+        None,
+        None,
+        "TMDB: Error while getting movie details",
+    )
 }
 
 pub fn get_rated_movies(access_token: &str, account_id: u32) -> anyhow::Result<Vec<SearchResult>> {
@@ -409,7 +335,7 @@ pub fn get_movie_artworks(
     movie_id: u32,
 ) -> anyhow::Result<bool> {
     let mut movie_images: MovieImagesResponse = tmdb_details.map(Into::into).unwrap_or_else(|| {
-        get_movie_details(access_token, movie_id, false)
+        get_movie_details(access_token, movie_id)
             .as_ref()
             .map(Into::into)
             .unwrap_or_default()
@@ -573,4 +499,87 @@ pub fn get_person_artwork(cache_dir: &Path, access_token: &str, id: u32) -> anyh
     }
 
     Ok(false)
+}
+
+pub fn add_or_edit_rating(
+    access_token: &str,
+    movie_id: u32,
+    rating: usize,
+) -> anyhow::Result<Response> {
+    let client = ClientBuilder::new().build()?;
+
+    let mut headers = HeaderMap::new();
+    headers.insert("accept", "application/json".parse().unwrap());
+    headers.insert("content-type", "application/json".parse().unwrap());
+    headers.insert(
+        "Authorization",
+        format!("Bearer {}", access_token).parse().unwrap(),
+    );
+
+    let body = json!({
+        "value": rating
+    });
+
+    crate::send_tmdb_request(
+        &client,
+        &format!("https://api.themoviedb.org/3/movie/{movie_id}/rating"),
+        &headers,
+        Some(&body),
+        None,
+        Method::POST,
+    )
+    .map_err(Into::into)
+}
+
+pub fn delete_rating(access_token: &str, movie_id: u32) -> anyhow::Result<Response> {
+    let client = ClientBuilder::new().build()?;
+
+    let mut headers = HeaderMap::new();
+    headers.insert("accept", "application/json".parse().unwrap());
+    headers.insert("content-type", "application/json".parse().unwrap());
+    headers.insert(
+        "Authorization",
+        format!("Bearer {}", access_token).parse().unwrap(),
+    );
+
+    crate::send_tmdb_request(
+        &client,
+        &format!("https://api.themoviedb.org/3/movie/{movie_id}/rating"),
+        &headers,
+        None,
+        None,
+        Method::DELETE,
+    )
+}
+
+pub fn add_or_remove_watchlist(
+    access_token: &str,
+    account_id: u32,
+    movie_id: u32,
+    watchlist: bool,
+) -> anyhow::Result<Response> {
+    let client = ClientBuilder::new().build()?;
+
+    let mut headers = HeaderMap::new();
+    headers.insert("accept", "application/json".parse().unwrap());
+    headers.insert("content-type", "application/json".parse().unwrap());
+    headers.insert(
+        "Authorization",
+        format!("Bearer {}", access_token).parse().unwrap(),
+    );
+
+    let body = json!({
+        "media_type": "movie",
+        "media_id": movie_id,
+        "watchlist": watchlist
+    });
+
+    crate::send_tmdb_request(
+        &client,
+        &format!("https://api.themoviedb.org/3/account/{account_id}/watchlist"),
+        &headers,
+        Some(&body),
+        None,
+        Method::POST,
+    )
 }

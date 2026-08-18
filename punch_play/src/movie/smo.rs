@@ -6,7 +6,9 @@ where
     D: Deserializer<'de>,
 {
     Deserialize::deserialize(d).and_then(|value: Option<&str>| {
-        value.map_or(Ok(Default::default()), |value| NaiveDate::parse_from_str(value, "%Y-%m-%d").map_err(serde::de::Error::custom))
+        value.map_or(Ok(Default::default()), |value| {
+            NaiveDate::parse_from_str(value, "%Y-%m-%d").map_err(serde::de::Error::custom)
+        })
     })
 }
 
@@ -15,9 +17,11 @@ where
     D: Deserializer<'de>,
 {
     Deserialize::deserialize(d).and_then(|value: Option<&str>| {
-        value.map_or(Ok(Default::default()), |value| DateTime::parse_from_rfc3339(value)
-            .map(|x| x.with_timezone(&Utc))
-            .map_err(serde::de::Error::custom))
+        value.map_or(Ok(Default::default()), |value| {
+            DateTime::parse_from_rfc3339(value)
+                .map(|x| x.with_timezone(&Utc))
+                .map_err(serde::de::Error::custom)
+        })
     })
 }
 
@@ -106,8 +110,9 @@ pub struct Interaction {
 #[derive(Deserialize, Debug, Default, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct WatchHistory {
-    pub id:         usize,
-    pub watched_at: String,
+    pub id:         u32,
+    #[serde(deserialize_with = "date_time_deserializer", default)]
+    pub watched_at: DateTime<Utc>,
 }
 #[derive(Deserialize, Debug, Default, Clone)]
 pub struct CommunityRating {

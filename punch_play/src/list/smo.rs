@@ -6,9 +6,11 @@ where
     D: Deserializer<'de>,
 {
     Deserialize::deserialize(d).and_then(|value: Option<&str>| {
-        value.map_or(Ok(Default::default()), |value| DateTime::parse_from_rfc3339(value)
-            .map(|x| x.with_timezone(&Utc))
-            .map_err(serde::de::Error::custom))
+        value.map_or(Ok(Default::default()), |value| {
+            DateTime::parse_from_rfc3339(value)
+                .map(|x| x.with_timezone(&Utc))
+                .map_err(serde::de::Error::custom)
+        })
     })
 }
 
@@ -24,7 +26,7 @@ pub struct PreviewPoster {
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct ListItem {
-    // pub id: String,
+    pub id:           u32,
     pub tmdb_id:      u32,
     #[serde(alias = "type")]
     pub item_type:    String,

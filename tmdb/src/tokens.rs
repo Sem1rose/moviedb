@@ -1,8 +1,9 @@
-use std::{collections::HashMap, sync::mpsc::Sender};
+use std::sync::mpsc::Sender;
 
 use anyhow::bail;
-use reqwest::{blocking::ClientBuilder, header::HeaderMap};
+use reqwest::{Method, blocking::ClientBuilder, header::HeaderMap};
 use serde::Deserialize;
+use serde_json::json;
 
 use crate::smo::AccountDetails;
 
@@ -53,6 +54,7 @@ pub fn get_session_account_id(
         &headers,
         None,
         None,
+        Method::GET,
     )?;
     let mut retries = 0;
     while !request_token_response.status().is_success() {
@@ -71,6 +73,7 @@ pub fn get_session_account_id(
             &headers,
             None,
             None,
+            Method::GET,
         )?;
     }
     drop(tx_authorization_url);
@@ -83,8 +86,10 @@ pub fn get_session_account_id(
 
     // The request token has been approved by the user
     // Step 4: finally create a new session ID
-    let mut body = HashMap::new();
-    body.insert("request_token", request_token.as_str());
+    let body = json!({
+        "request_token": request_token
+    });
+
     let session_id = crate::send_request_deserialized::<RequestSessionIDResponse>(
         &client,
         "https://api.themoviedb.org/3/authentication/session/new",

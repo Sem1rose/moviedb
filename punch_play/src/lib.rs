@@ -1,12 +1,14 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::path::PathBuf;
 
 use anyhow::{Context, anyhow};
 use itertools::Itertools;
 use reqwest::{
-    blocking::{Client, RequestBuilder, Response},
+    Method,
+    blocking::{Client, Response},
     header::HeaderMap,
 };
 use serde::Deserialize;
+use serde_json::Value;
 
 use crate::smo::RequestResponseError;
 
@@ -19,20 +21,16 @@ fn send_punch_play_request(
     client: &Client,
     url: &str,
     headers: &HeaderMap,
-    body: Option<&HashMap<&str, &str>>,
+    body: Option<&Value>,
     query: Option<&[(&str, &str)]>,
+    method: Method,
 ) -> anyhow::Result<Response> {
-    let mut request: RequestBuilder;
-    if body.is_none() {
-        request = client.get(url).headers(headers.clone());
-        if query.is_some() {
-            request = request.query(&query.unwrap());
-        }
-    } else {
-        request = client
-            .post(url)
-            .headers(headers.clone())
-            .json(&body.clone().unwrap());
+    let mut request = client.request(method, url).headers(headers.clone());
+    if query.is_some() {
+        request = request.query(&query.unwrap());
+    }
+    if body.is_some() {
+        request = request.json(&body.clone().unwrap());
     }
 
     let response = request.send()?;
@@ -53,11 +51,12 @@ fn send_request_deserialized<T: for<'a> Deserialize<'a>>(
     client: &Client,
     url: &str,
     headers: &HeaderMap,
-    body: Option<&HashMap<&str, &str>>,
+    body: Option<&Value>,
     query: Option<&[(&str, &str)]>,
     error_context: impl ToString,
 ) -> anyhow::Result<T> {
-    let response = send_punch_play_request(client, url, headers, body, query)?;
+    let method = if body.is_none() { Method::GET } else { Method::POST };
+    let response = send_punch_play_request(client, url, headers, body, query, method)?;
     if !response.status().is_success() {
         return Err(match response.json::<RequestResponseError>() {
             Ok(err) => err.into(),

@@ -480,7 +480,10 @@ impl From<MovieDetails> for Movie {
             runtime: tmdb_details.runtime,
             released: tmdb_details.status == "Released",
             tagline: tmdb_details.tagline.clone(),
-            certification: tmdb_details.certificate.clone().unwrap_or_default(),
+            certification: tmdb_details
+                .certificate
+                .clone()
+                .unwrap_or(if tmdb_details.adult { "N" } else { "NR" }.into()),
             origin_country: tmdb_details
                 .origin_country
                 .clone()

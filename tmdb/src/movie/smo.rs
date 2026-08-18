@@ -1,10 +1,21 @@
 use chrono::NaiveDate;
 use serde::{self, Deserialize, Deserializer, Serialize};
+use serde_json::Value;
 
-use crate::collection::smo::CollectionDetails;
+use crate::{collection::smo::CollectionDetails, movie::PaginatedResponse};
 
-#[derive(Deserialize, Clone, Default)]
-pub(crate) struct MovieImagesResponse {
+#[derive(Deserialize, Clone, Debug)]
+pub struct MovieImage {
+    // aspect_ratio: f32,
+    // height: u32,
+    // iso_639_1: String,
+    pub file_path:    String,
+    pub vote_average: f32,
+    pub vote_count:   u32,
+    // width: u32,
+}
+#[derive(Deserialize, Clone, Default, Debug)]
+pub struct MovieImagesResponse {
     pub backdrops: Vec<MovieImage>,
     pub posters:   Vec<MovieImage>,
 }
@@ -37,17 +48,6 @@ impl Into<MovieImagesResponse> for &MovieDetails {
                 .unwrap_or(vec![]),
         }
     }
-}
-
-#[derive(Deserialize, Clone, Debug)]
-pub(crate) struct MovieImage {
-    // aspect_ratio: f32,
-    // height: u32,
-    // iso_639_1: String,
-    pub file_path:    String,
-    pub vote_average: f32,
-    pub vote_count:   u32,
-    // width: u32,
 }
 
 #[derive(Deserialize, Debug, PartialEq, Default)]
@@ -106,11 +106,90 @@ pub struct MovieDetails {
     pub poster_path:           Option<String>,
     pub backdrop_path:         Option<String>,
     pub credits:               Option<Credits>,
+    pub images:                Option<MovieImagesResponse>,
+    #[serde(deserialize_with = "certificate_deserializer", alias = "release_dates")]
     pub certificate:           Option<String>,
+    #[serde(deserialize_with = "recommendations_deserializer")]
     pub recommendations:       Option<Vec<u32>>,
     pub collection_details:    Option<CollectionDetails>,
+    #[serde(
+        deserialize_with = "user_interaction_deserializer",
+        alias = "account_states"
+    )]
     pub user_interaction:      Option<UserInteraction>,
 }
+fn user_interaction_deserializer<'de, D>(d: D) -> Result<Option<UserInteraction>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Deserialize::deserialize(d).map(|value: Option<Value>| {
+        value.map(|x| UserInteraction {
+            favorite:  x["favorite"].as_bool().unwrap(),
+            watchlist: x["watchlist"].as_bool().unwrap(),
+            rating:    x["rated"]
+                .as_object()
+                .map(|y| y["value"].as_number().unwrap().as_u64())
+                .flatten(),
+        })
+    })
+}
+fn certificate_deserializer<'de, D>(d: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    struct ReleaseDate {
+        certification: String,
+        // descriptors: [],
+        // iso_639_1:     String,
+        // note: String,
+        // release_date:  String,
+        #[serde(alias = "type")]
+        release_type:  usize,
+    }
+    #[derive(Deserialize)]
+    struct ReleaseDatesResult {
+        iso_3166_1:    String,
+        release_dates: Vec<ReleaseDate>,
+    }
+    #[derive(Deserialize)]
+    struct ReleaseDatesResponse {
+        results: Vec<ReleaseDatesResult>,
+    }
+
+    Deserialize::deserialize(d).map(|value: Option<ReleaseDatesResponse>| {
+        value
+            .map(|x| {
+                x.results
+                    .into_iter()
+                    .filter(|y| y.iso_3166_1 == "US")
+                    .nth(0)
+                    .map(|y| {
+                        y.release_dates
+                            .into_iter()
+                            .filter(|z| z.release_type == 3)
+                            .nth(0)
+                            .map(|z| z.certification)
+                    })
+            })
+            .flatten()
+            .flatten()
+    })
+}
+fn recommendations_deserializer<'de, D>(d: D) -> Result<Option<Vec<u32>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    struct Recommendation {
+        id: u32,
+    }
+
+    Deserialize::deserialize(d).map(|value: Option<PaginatedResponse<Recommendation>>| {
+        value.map(|x| x.results.into_iter().map(|y| y.id).take(5).collect())
+    })
+}
+
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Collection {
     pub id:            u32,

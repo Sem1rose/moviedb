@@ -5,7 +5,7 @@ use std::{
     rc::Rc,
 };
 
-use chrono::{Datelike, Local, NaiveDate, NaiveTime};
+use chrono::{DateTime, Datelike, Local, NaiveDate, NaiveTime};
 use itertools::Itertools;
 use log::error;
 use nucleo_matcher::{Config as MatcherConfig, Matcher, pattern::Atom};
@@ -2135,6 +2135,13 @@ impl MainScreen {
         // }
 
         self.drawing_images |= !image_renderer.draw_image(
+            // ImageID::Person(self.movies.borrow()[&self.filtered_movies[movie_index].id].credits.cast[0].id),
+            // ImageID::Person(self.movies.borrow()[&self.filtered_movies[movie_index].id].credits.crew.iter().find(|x| x.job_or_character == "Director").unwrap().id),
+            // if let Some(collection_id) = self.movies.borrow()[&self.filtered_movies[movie_index].id].tmdb_collection {
+            //     ImageID::Collection(collection_id, false)
+            // } else {
+            //     ImageID::Movie(self.filtered_movies[movie_index].id, false)
+            // },
             ImageID::Movie(self.filtered_movies[movie_index].id, false),
             poster_area,
             if is_partially_visible {
@@ -2814,22 +2821,24 @@ impl MainScreen {
                                         if latest { Modifier::BOLD } else { Modifier::empty() }
                                     ),
                                     span!(" @ "),
-                                    play.date
-                                        .format("%d/%m/%Y %H:%M")
-                                        .to_string()
-                                        .fg(if latest {
-                                            if tab_selected {
-                                                material::YELLOW.c700
-                                            } else {
-                                                material::CYAN.c600
-                                            }
+                                    if play.date == DateTime::<Local>::default() {
+                                        "Unknown".into()
+                                    } else {
+                                        play.date.format("%d/%m/%Y %H:%M").to_string()
+                                    }
+                                    .fg(if latest {
+                                        if tab_selected {
+                                            material::YELLOW.c700
                                         } else {
-                                            if tab_selected {
-                                                material::CYAN.c500
-                                            } else {
-                                                material::CYAN.c700
-                                            }
-                                        }),
+                                            material::CYAN.c600
+                                        }
+                                    } else {
+                                        if tab_selected {
+                                            material::CYAN.c500
+                                        } else {
+                                            material::CYAN.c700
+                                        }
+                                    }),
                                 ],
                                 helpers::add_padding(areas[i as usize], Padding::left(4)),
                             );

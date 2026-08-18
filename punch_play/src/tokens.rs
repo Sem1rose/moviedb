@@ -1,7 +1,8 @@
-use std::{collections::HashMap, sync::mpsc::Sender};
+use std::sync::mpsc::Sender;
 
 use anyhow::{Context, anyhow};
-use reqwest::{blocking::ClientBuilder, header::HeaderMap};
+use reqwest::{Method, blocking::ClientBuilder, header::HeaderMap};
+use serde_json::json;
 
 use crate::smo::{AccessTokenResponse, RequestDeviceCodeResponse, RequestResponseError};
 
@@ -17,9 +18,10 @@ pub fn get_tokens(
     headers.insert("accept", "application/json".parse().unwrap());
     headers.insert("content-type", "application/json".parse().unwrap());
 
-    let mut body = HashMap::new();
-    body.insert("client_id", client_id);
-    body.insert("client_secret", client_secret);
+    let mut body = json!({
+        "client_id": client_id,
+        "client_secret": client_secret,
+    });
 
     // Step 1: request a device code
     let device_code_response = crate::send_request_deserialized::<RequestDeviceCodeResponse>(
@@ -35,8 +37,12 @@ pub fn get_tokens(
     _ = tx_authorization_url.send(device_code_response.verification_uri_complete.clone());
 
     // Step 3: wait for user permission
-    body.insert("device_code", &device_code_response.device_code);
-    body.insert("device_name", "moviedb");
+    body = json!({
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "device_code": device_code_response.device_code,
+        "device_name": "moviedb",
+    });
 
     let mut token_response = crate::send_punch_play_request(
         &client,
@@ -44,6 +50,7 @@ pub fn get_tokens(
         &headers,
         Some(&body),
         None,
+        Method::POST,
     )?;
     let mut retries = 0;
     while !token_response.status().is_success() {
@@ -63,6 +70,7 @@ pub fn get_tokens(
             &headers,
             Some(&body),
             None,
+            Method::POST,
         )?;
     }
     drop(tx_authorization_url);
@@ -83,10 +91,11 @@ pub fn refresh_tokens(
         "application/x-www-form-urlencoded".parse().unwrap(),
     );
 
-    let mut body = HashMap::new();
-    body.insert("client_id", client_id);
-    body.insert("client_secret", client_secret);
-    body.insert("refresh_token", refresh_token);
+    let body = json!({
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "refresh_token": refresh_token,
+    });
 
     crate::send_request_deserialized(
         &client,

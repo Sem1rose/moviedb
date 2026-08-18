@@ -51,8 +51,8 @@ pub fn get_collection_artwork(
             path,
         )?;
 
-        return Ok(false);
+        Ok(true)
+    } else {
+        Ok(false)
     }
-
-    Ok(false)
 }

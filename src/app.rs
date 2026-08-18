@@ -151,9 +151,8 @@ impl App {
         let mut omdb_result = None;
 
         thread::scope(|s| {
-            let tmdb_handle = {
-                s.spawn(move || tmdb::movie::get_movie_details(tmdb_access_token, tmdb_id, true))
-            };
+            let tmdb_handle =
+                { s.spawn(move || tmdb::movie::get_movie_details(tmdb_access_token, tmdb_id)) };
             let punch_play_handle = if punch_play_status.unwrap_or(false) {
                 Some(s.spawn(move || {
                     punch_play::movie::get_movie_details(punch_play_access_token, tmdb_id)
@@ -279,6 +278,15 @@ impl App {
                             note: None,
                         }],
                     });
+
+                /*
+                info!("{:?}", punch_play::movie::log_watch(self.punch_play_tokens.access_token(), movie_id, Some(date.into())));
+                info!("{:?}", punch_play::movie::add_or_edit_rating(self.punch_play_tokens.access_token(), movie_id, Some(rating.floor() as usize), Some(date.into())));
+                if let Ok(Some(list_id)) = punch_play::list::get_user_lists(self.punch_play_tokens.access_token()).map(|y| y.into_iter().find(|x| x.is_watchlist).map(|x| x.id)) {
+                    info!("{:?}", punch_play::list::remove_item_from_list(self.punch_play_tokens.access_token(), list_id, movie_id));
+                }
+                info!("{:?}", tmdb::movie::add_or_edit_rating(self.tmdb_tokens.access_token(), movie_id, rating.floor() as usize));
+                */
             }
 
             let watchlist = &mut main_screen.lists.get_mut(&ListID::Watchlist).unwrap().items;
@@ -379,11 +387,6 @@ impl App {
         }
 
         if let Some(Screens::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
-            let watchlist = &mut main_screen.lists.get_mut(&ListID::Watchlist).unwrap().items;
-            if let Some(index) = watchlist.iter().position(|x| x.id == movie_id) {
-                watchlist.swap_remove(index);
-            }
-
             if matches!(main_screen.selected_list, ListID::Watched) {
                 self.watched
                     .borrow_mut()
@@ -397,6 +400,20 @@ impl App {
                             note: None,
                         }],
                     });
+
+                let watchlist = &mut main_screen.lists.get_mut(&ListID::Watchlist).unwrap().items;
+                if let Some(index) = watchlist.iter().position(|x| x.id == movie_id) {
+                    watchlist.swap_remove(index);
+                }
+
+                /*
+                info!("{:?}", punch_play::movie::log_watch(self.punch_play_tokens.access_token(), movie_id, Some(date.into())));
+                info!("{:?}", punch_play::movie::add_or_edit_rating(self.punch_play_tokens.access_token(), movie_id, Some(rating.floor() as usize), Some(date.into())));
+                if let Ok(Some(list_id)) = punch_play::list::get_user_lists(self.punch_play_tokens.access_token()).map(|y| y.into_iter().find(|x| x.is_watchlist).map(|x| x.id)) {
+                    info!("{:?}", punch_play::list::remove_item_from_list(self.punch_play_tokens.access_token(), list_id, movie_id));
+                }
+                info!("{:?}", tmdb::movie::add_or_edit_rating(self.tmdb_tokens.access_token(), movie_id, rating.floor() as usize));
+                */
 
                 main_screen.filter_sort_movies(false);
                 main_screen.goto_index(
@@ -412,6 +429,24 @@ impl App {
                     .iter()
                     .any(|x| x.id == movie_id)
                 {
+                    /*
+                    match main_screen.selected_list {
+                        ListID::TMDB(list_id) => {
+                            info!("{:?}", punch_play::list::add_movie_to_list(self.punch_play_tokens.access_token(), list_id, movie_id));
+                        },
+                        ListID::PunchPlay(list_id) => {
+                            info!("{:?}", tmdb::list::add_item_to_list(self.tmdb_tokens.access_token(), list_id, movie_id));
+                        },
+                        ListID::Watchlist => {
+                            info!("{:?}", tmdb::movie::add_or_remove_watchlist(self.tmdb_tokens.access_token(), self.tmdb_tokens.account_id(), movie_id, true));
+                            if let Ok(Some(list_id)) = punch_play::list::get_user_lists(self.punch_play_tokens.access_token()).map(|y| y.into_iter().find(|x| x.is_watchlist).map(|x| x.id)) {
+                                info!("{:?}", punch_play::list::add_movie_to_list(self.punch_play_tokens.access_token(), list_id, movie_id));
+                            }
+                        },
+                        _ => ()
+                    }
+                    */
+
                     main_screen
                         .lists
                         .get_mut(&main_screen.selected_list)
@@ -534,17 +569,20 @@ impl App {
                     edit_movie_popup.date_input.lines()[0].parse().unwrap()
                 };
 
-                self.watched
-                    .borrow_mut()
-                    .entry(main_screen.current_movie().unwrap().id)
-                    .and_modify(|x| {
-                        if let Some(latest) = x.history.last_mut() {
-                            latest.date = date;
-                            latest.rating = rating;
-                        };
-                        x.history
-                            .sort_by(|a, b| a.date.partial_cmp(&b.date).unwrap());
-                    });
+                let movie_id = main_screen.current_movie().unwrap().id;
+                self.watched.borrow_mut().entry(movie_id).and_modify(|x| {
+                    if let Some(latest) = x.history.last_mut() {
+                        latest.date = date;
+                        latest.rating = rating;
+                    };
+                    x.history
+                        .sort_by(|a, b| a.date.partial_cmp(&b.date).unwrap());
+                });
+
+                /*
+                info!("{:?}", punch_play::movie::add_or_edit_rating(self.punch_play_tokens.access_token(), movie_id, Some(rating.floor() as usize), Some(date.into())));
+                info!("{:?}", tmdb::movie::add_or_edit_rating(self.tmdb_tokens.access_token(), movie_id, rating.floor() as usize));
+                */
             }
             main_screen.filter_sort_movies(true);
         }
@@ -559,6 +597,12 @@ impl App {
                 self.watched
                     .borrow_mut()
                     .swap_remove(&main_screen.current_movie().unwrap().id);
+
+                /*
+                info!("{:?}", punch_play::movie::clear_history(self.punch_play_tokens.access_token(), movie_id));
+                info!("{:?}", punch_play::movie::add_or_edit_rating(self.punch_play_tokens.access_token(), movie_id, None, None));
+                info!("{:?}", tmdb::movie::delete_rating(self.tmdb_tokens.access_token(), movie_id));
+                */
             } else {
                 let index = main_screen
                     .lists
@@ -576,6 +620,24 @@ impl App {
                     .remove(index);
 
                 main_screen.save_lists();
+
+                /*
+                match main_screen.selected_list {
+                    ListID::TMDB(list_id) => {
+                        info!("{:?}", punch_play::list::remove_item_from_list(self.punch_play_tokens.access_token(), list_id, movie_id));
+                    },
+                    ListID::PunchPlay(list_id) => {
+                        info!("{:?}", tmdb::list::remove_item_from_list(self.tmdb_tokens.access_token(), list_id, movie_id));
+                    },
+                    ListID::Watchlist => {
+                        info!("{:?}", tmdb::movie::add_or_remove_watchlist(self.tmdb_tokens.access_token(), self.tmdb_tokens.account_id(), movie_id, false));
+                        if let Ok(Some(list_id)) = punch_play::list::get_user_lists(self.punch_play_tokens.access_token()).map(|y| y.into_iter().find(|x| x.is_watchlist).map(|x| x.id)) {
+                            info!("{:?}", punch_play::list::remove_item_from_list(self.punch_play_tokens.access_token(), list_id, movie_id));
+                        }
+                    },
+                    _ => ()
+                }
+                */
             }
 
             let pos = main_screen.filtered_movies.iter().position(|x| {
@@ -665,15 +727,11 @@ impl App {
         };
 
         ratings.retain(|x| x.kind == "movie");
-        for x in ratings.iter() {
-            info!("ratings: {} {:?} {:?}", x.tmdb_id, x.watched_at, x.rated_at);
-        }
         let ratings = FxIndexMap::from_iter(ratings.into_iter().map(|x| (x.tmdb_id, x)));
         watch_history.retain(|x| x.kind == "movie");
 
         let history = watch_history
             .into_iter()
-            .inspect(|x| info!("history: {} {:?} {:?}", x.tmdb_id, x.watched_at, x.rated_at))
             .filter_map(|mut x| {
                 ratings.get(&x.tmdb_id).map(|y| {
                     x.rating = y.rating;
@@ -683,9 +741,6 @@ impl App {
                     Entry::from(x)
                 })
             })
-            .collect_vec()
-            .into_iter()
-            .inspect(|x| info!("consolidated: {} {:?}", x.movie_id, x.history))
             .collect_vec();
 
         {
@@ -695,14 +750,10 @@ impl App {
                     .into_iter()
                     .chain(watched.drain(..).map(|x| x.1))
                     .sorted_by_key(|x| x.movie_id)
-                    .inspect(|x| info!("sorted: {} {:?}", x.movie_id, x.history))
                     .chunk_by(|x| x.movie_id)
                     .into_iter()
                     .map(|(_, x)| x.reduce(|acc, x| acc + x).unwrap())
-                    .collect_vec()
-                    .into_iter()
-                    .inspect(|x| info!("chunked: {} {:?}", x.movie_id, x.history))
-                    .map(|x| (x.movie_id, x)),
+                    .map(|x: Entry| (x.movie_id, x)),
             );
         }
 

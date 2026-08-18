@@ -1,9 +1,12 @@
 use std::{path::Path, thread};
 
+use chrono::{DateTime, Utc};
 use reqwest::{
-    blocking::{Client, ClientBuilder},
+    Method,
+    blocking::{Client, ClientBuilder, Response},
     header::{CONTENT_TYPE, HeaderMap, USER_AGENT},
 };
+use serde_json::json;
 
 use crate::{
     list::smo::ListItem,
@@ -250,4 +253,139 @@ pub fn get_movie_poster_banner(
     backdrop_handle.join().unwrap()?;
 
     Ok(())
+}
+
+pub fn log_watch(
+    access_token: &str,
+    movie_id: u32,
+    watched_at: Option<DateTime<Utc>>,
+) -> anyhow::Result<Response> {
+    let client = ClientBuilder::new().build()?;
+
+    let mut headers = HeaderMap::new();
+    headers.insert("accept", "application/json".parse().unwrap());
+    headers.insert("content-type", "application/json".parse().unwrap());
+    headers.insert(
+        "Authorization",
+        format!("Bearer {}", access_token).parse().unwrap(),
+    );
+
+    let body = json!({
+        "title": "null",
+        "year": 123,
+        "dateUnknown": watched_at.is_none(),
+        "watchedAt": watched_at.unwrap_or_default().to_rfc3339(),
+    });
+
+    crate::send_punch_play_request(
+        &client,
+        &format!("https://punchplay.tv/api/platform/v1/title/movie/{movie_id}/history"),
+        &headers,
+        Some(&body),
+        None,
+        Method::POST,
+    )
+}
+
+pub fn delete_history_entry(access_token: &str, entry_id: u32) -> anyhow::Result<Response> {
+    let client = ClientBuilder::new().build()?;
+
+    let mut headers = HeaderMap::new();
+    headers.insert("accept", "application/json".parse().unwrap());
+    headers.insert("content-type", "application/json".parse().unwrap());
+    headers.insert(
+        "Authorization",
+        format!("Bearer {}", access_token).parse().unwrap(),
+    );
+
+    crate::send_punch_play_request(
+        &client,
+        &format!("https://punchplay.tv/api/platform/v1/watch-history/{entry_id}"),
+        &headers,
+        None,
+        None,
+        Method::DELETE,
+    )
+}
+
+pub fn clear_history(access_token: &str, movie_id: u32) -> anyhow::Result<Response> {
+    let client = ClientBuilder::new().build()?;
+
+    let mut headers = HeaderMap::new();
+    headers.insert("accept", "application/json".parse().unwrap());
+    headers.insert("content-type", "application/json".parse().unwrap());
+    headers.insert(
+        "Authorization",
+        format!("Bearer {}", access_token).parse().unwrap(),
+    );
+
+    crate::send_punch_play_request(
+        &client,
+        &format!("https://punchplay.tv/api/platform/v1/title/movie/{movie_id}/history"),
+        &headers,
+        None,
+        None,
+        Method::DELETE,
+    )
+}
+
+pub fn change_history_entry_watch_time(
+    access_token: &str,
+    entry_id: u32,
+    date: impl Into<DateTime<Utc>>,
+) -> anyhow::Result<Response> {
+    let client = ClientBuilder::new().build()?;
+
+    let mut headers = HeaderMap::new();
+    headers.insert("accept", "application/json".parse().unwrap());
+    headers.insert("content-type", "application/json".parse().unwrap());
+    headers.insert(
+        "Authorization",
+        format!("Bearer {}", access_token).parse().unwrap(),
+    );
+
+    let body = json!({
+        "watchedAt": date.into().to_rfc3339()
+    });
+
+    crate::send_punch_play_request(
+        &client,
+        &format!("https://punchplay.tv/api/platform/v1/watch-history/{entry_id}"),
+        &headers,
+        Some(&body),
+        None,
+        Method::PATCH,
+    )
+}
+
+pub fn add_or_edit_rating(
+    access_token: &str,
+    movie_id: u32,
+    rating: Option<usize>,
+    watched_at: Option<DateTime<Utc>>,
+) -> anyhow::Result<Response> {
+    let client = ClientBuilder::new().build()?;
+
+    let mut headers = HeaderMap::new();
+    headers.insert("accept", "application/json".parse().unwrap());
+    headers.insert("content-type", "application/json".parse().unwrap());
+    headers.insert(
+        "Authorization",
+        format!("Bearer {}", access_token).parse().unwrap(),
+    );
+
+    let body = json!({
+        "watchedAt": watched_at.map(|x| x.to_rfc3339()),
+        "rating": rating
+    });
+
+    crate::send_punch_play_request(
+        &client,
+        &format!("https://punchplay.tv/api/platform/v1/title/movie/{movie_id}/interact"),
+        &headers,
+        Some(&body),
+        None,
+        Method::PATCH,
+    )
+    .map_err(Into::into)
 }
