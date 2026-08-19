@@ -307,7 +307,11 @@ impl MainScreen {
     }
 
     fn get_list_movies(&self) -> Vec<Movie> {
-        helpers::ids_to_movies(&self.get_list_ids(), &self.movies.borrow())
+        let movies_borrowed = self.movies.borrow();
+        self.get_list_ids()
+            .iter()
+            .map(|id| movies_borrowed[id].clone())
+            .collect()
     }
 
     fn list_editable(&self) -> bool {

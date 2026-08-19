@@ -17,7 +17,7 @@ use throbber_widgets_tui::{Throbber, ThrobberState};
 use crate::{
     helpers,
     key_event_handler::{self, KeyEventHandler},
-    popups::{PopupTrait, Popups},
+    popups::{Popup, PopupTrait},
     tokens::omdb_tokens::OMDBTokens,
     widgets::{self, Action, ActionType},
 };
@@ -115,7 +115,7 @@ impl PopupTrait for OMDBInitPopup {
             let input_valid = !self.input.is_empty();
 
             key_event_handler.bind_tab((None, None), "".into(), |app, data| {
-                if let Some(Popups::OMDBInit(omdb_init_popup)) = app.drawer.active_popup.as_mut() {
+                if let Some(Popup::OMDBInit(omdb_init_popup)) = app.drawer.active_popup.as_mut() {
                     match data {
                         crate::key_event_handler::Data::Direction(true, _) => {
                             omdb_init_popup.item += 1;
@@ -132,8 +132,7 @@ impl PopupTrait for OMDBInitPopup {
             });
             if input_valid {
                 key_event_handler.bind_enter((None, None), "Confirm".into(), |app, _| {
-                    if let Some(Popups::OMDBInit(omdb_init_popup)) =
-                        app.drawer.active_popup.as_mut()
+                    if let Some(Popup::OMDBInit(omdb_init_popup)) = app.drawer.active_popup.as_mut()
                     {
                         omdb_init_popup.tokens = Some(omdb_init_popup.input.lines()[0].clone());
                         omdb_init_popup.done = true;
@@ -142,12 +141,12 @@ impl PopupTrait for OMDBInitPopup {
                 });
             }
             key_event_handler.bind_esc((None, Some(0)), "".into(), |app, _| {
-                if let Some(Popups::OMDBInit(omdb_init_popup)) = app.drawer.active_popup.as_mut() {
+                if let Some(Popup::OMDBInit(omdb_init_popup)) = app.drawer.active_popup.as_mut() {
                     omdb_init_popup.item = 1;
                 }
             });
             key_event_handler.bind_input_field((None, Some(0)), "".into(), |app, data| {
-                if let Some(Popups::OMDBInit(omdb_init_popup)) = app.drawer.active_popup.as_mut() {
+                if let Some(Popup::OMDBInit(omdb_init_popup)) = app.drawer.active_popup.as_mut() {
                     if let key_event_handler::Data::Key(key_event) = data {
                         omdb_init_popup.input.input(key_event);
                     }
@@ -186,8 +185,7 @@ impl PopupTrait for OMDBInitPopup {
                 ratatui::crossterm::event::MouseButton::Left,
                 helpers::add_padding(input_area, Padding::horizontal(2)),
                 |app, _| {
-                    if let Some(Popups::OMDBInit(omdb_init_popup)) =
-                        app.drawer.active_popup.as_mut()
+                    if let Some(Popup::OMDBInit(omdb_init_popup)) = app.drawer.active_popup.as_mut()
                     {
                         omdb_init_popup.item = 0;
                     }
@@ -211,7 +209,7 @@ impl PopupTrait for OMDBInitPopup {
                     ratatui::crossterm::event::MouseButton::Left,
                     confirm_mouse_area,
                     |app, _| {
-                        if let Some(Popups::OMDBInit(omdb_init_popup)) =
+                        if let Some(Popup::OMDBInit(omdb_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             omdb_init_popup.tokens = Some(omdb_init_popup.input.lines()[0].clone());

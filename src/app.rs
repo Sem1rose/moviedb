@@ -4,14 +4,17 @@ use anyhow::{anyhow, bail};
 use itertools::Itertools;
 use log::{error, info};
 use ratatui::crossterm::event::{self, Event, KeyEvent, KeyEventState, KeyModifiers};
+use serde_json::Value;
 
 use crate::{
     config::Config,
     drawer::Drawer,
     helpers::{default_rc, new_rc},
     key_event_handler::KeyEventHandler,
-    load_file, omdb,
-    popups::Popups,
+    load_file,
+    omdb,
+    popups::Popup,
+    // processors::{Processor, ProcessorDiscriminants},
     screens::Screens,
     tokens::*,
     types::{
@@ -35,10 +38,12 @@ pub struct App {
     pub key_event_handler: KeyEventHandler,
     pub config:            Rc<RefCell<Config>>,
 
-    pub trakt_tokens:      TraktTokens,
-    pub punch_play_tokens: PunchPlayTokens,
     pub tmdb_tokens:       TMDBTokens,
+    pub simkl_tokens:      SimklTokens,
+    pub punch_play_tokens: PunchPlayTokens,
+    pub trakt_tokens:      TraktTokens,
     pub omdb_tokens:       OMDBTokens,
+    // processors: FxHashMap<ProcessorDiscriminants, Processor>,
 }
 
 impl App {
@@ -62,11 +67,17 @@ impl App {
             persons: default_rc(),
             collections: default_rc(),
 
-            trakt_tokens: TraktTokens::new(&home_dir),
-            punch_play_tokens: PunchPlayTokens::new(&home_dir),
             tmdb_tokens: TMDBTokens::new(&home_dir),
+            simkl_tokens: SimklTokens::new(&home_dir),
+            punch_play_tokens: PunchPlayTokens::new(&home_dir),
+            trakt_tokens: TraktTokens::new(&home_dir),
             omdb_tokens: OMDBTokens::new(&home_dir),
 
+            // processors: FxHashMap::from_iter(
+            //     Processor::default_all()
+            //         .into_iter()
+            //         .map(|x| (x.discriminant(), x)),
+            // ),
             quit: false,
             home_dir,
             _cache_dir: cache_dir,
@@ -105,6 +116,8 @@ impl App {
                 })
                 .map(|_| ())?;
 
+            // self.update_processors();
+
             let mut executed_immediate = false;
             for callback in self.key_event_handler.get_execute_immediates() {
                 callback(self, crate::key_event_handler::Data::None);
@@ -135,8 +148,31 @@ impl App {
         Ok(())
     }
 
+    // pub fn initialize_processors(&mut self) {
+    //     for processor in self.processors.values_mut() {
+    //         match processor {
+    //             Processor::DetailsFetcher(movies_fetcher_processor) => movies_fetcher_processor
+    //                 .initialize(
+    //                     self.tmdb_tokens.clone(),
+    //                     self.punch_play_tokens.clone(),
+    //                     self.trakt_tokens.clone(),
+    //                     self.omdb_tokens.clone(),
+    //                     self.movies.clone(),
+    //                     self.collections.clone(),
+    //                     self.persons.clone(),
+    //                 ),
+    //         }
+    //     }
+    // }
+
+    // pub fn update_processors(&mut self) {
+    //     for processor in self.processors.values_mut() {
+    //         processor.update(&mut self.key_event_handler);
+    //     }
+    // }
+
     #[allow(clippy::too_many_arguments)]
-    pub fn fetch_movie(
+    pub fn fetch_movie_details(
         omdb_api_key: &str,
         trakt_client_id: &str,
         punch_play_access_token: &str,
@@ -246,7 +282,7 @@ impl App {
     pub fn add_play(&mut self) {
         if let Some(Screens::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
             let movie_id = main_screen.current_movie().unwrap().id;
-            if let Some(Popups::EditMovie(edit_movie_popup)) = self.drawer.active_popup.as_mut() {
+            if let Some(Popup::EditMovie(edit_movie_popup)) = self.drawer.active_popup.as_mut() {
                 let rating = format!(
                     "{:.1}",
                     edit_movie_popup.rating_input.lines()[0]
@@ -319,7 +355,7 @@ impl App {
     }
 
     pub fn add_movie(&mut self) {
-        let (movie, date, rating) = if let Some(Popups::AddMovie(add_movie_popup)) =
+        let (movie, date, rating) = if let Some(Popup::AddMovie(add_movie_popup)) =
             self.drawer.active_popup.as_mut()
         {
             let tmdb_movie_details = add_movie_popup.tmdb_movie_details_result.take().unwrap();
@@ -475,7 +511,7 @@ impl App {
     }
 
     pub fn update_movie_details(&mut self) {
-        let movie = if let Some(Popups::AddMovie(add_movie_popup)) =
+        let movie = if let Some(Popup::AddMovie(add_movie_popup)) =
             self.drawer.active_popup.as_mut()
         {
             let tmdb_movie_details = add_movie_popup.tmdb_movie_details_result.take().unwrap();
@@ -549,7 +585,7 @@ impl App {
 
     pub fn edit_movie(&mut self) {
         if let Some(Screens::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
-            if let Some(Popups::EditMovie(edit_movie_popup)) = self.drawer.active_popup.as_ref() {
+            if let Some(Popup::EditMovie(edit_movie_popup)) = self.drawer.active_popup.as_ref() {
                 let rating = format!(
                     "{:.1}",
                     edit_movie_popup.rating_input.lines()[0]
@@ -664,7 +700,7 @@ impl App {
     }
 
     pub fn set_tmdb_user_tokens(&mut self) {
-        if let Some(Popups::TMDBInit(tmdb_init_popup)) = self.drawer.active_popup.as_mut() {
+        if let Some(Popup::TMDBInit(tmdb_init_popup)) = self.drawer.active_popup.as_mut() {
             if let Some(tokens) = tmdb_init_popup.user_tokens.take() {
                 self.tmdb_tokens.set_creds(tokens).unwrap();
             }
@@ -675,33 +711,45 @@ impl App {
         self.drawer.close_popup();
     }
 
+    pub fn set_simkl_user_tokens(&mut self) {
+        if let Some(Popup::SimklInit(simkl_init_popup)) = self.drawer.active_popup.as_mut() {
+            if let Some(tokens) = simkl_init_popup.user_tokens.take() {
+                info!("{:#?}", tokens);
+                self.simkl_tokens.set_creds(tokens).unwrap();
+            }
+        }
+        self.drawer.close_popup();
+
+        // info!("{:#?}", simkl::external_to_simkl_id_slug(self.simkl_tokens.client_id(), self.simkl_tokens.app_name(), self.simkl_tokens.app_version(), "73", "tmdb", "movie"))
+        info!("{:#?}", simkl::movie::get_movie_details(self.simkl_tokens.client_id(), self.simkl_tokens.app_name(), self.simkl_tokens.app_version(), simkl::external_to_simkl_id_slug(self.simkl_tokens.client_id(), self.simkl_tokens.app_name(), self.simkl_tokens.app_version(), "14537", "tmdb", "movie").unwrap().0))
+    }
+
     pub fn set_punch_play_user_tokens(&mut self) {
-        if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
-            self.drawer.active_popup.as_mut()
+        if let Some(Popup::PunchPlayInit(punch_play_init_popup)) = self.drawer.active_popup.as_mut()
         {
             if let Some(tokens) = punch_play_init_popup.user_tokens.take() {
                 self.punch_play_tokens.set_creds(tokens).unwrap();
             }
-            self.drawer.close_popup();
         }
+        self.drawer.close_popup();
     }
 
     pub fn set_trakt_user_tokens(&mut self) {
-        if let Some(Popups::TraktInit(trakt_init_popup)) = self.drawer.active_popup.as_mut() {
+        if let Some(Popup::TraktInit(trakt_init_popup)) = self.drawer.active_popup.as_mut() {
             if let Some(tokens) = trakt_init_popup.user_tokens.take() {
                 self.trakt_tokens.set_creds(tokens).unwrap();
             }
-            self.drawer.close_popup();
         }
+        self.drawer.close_popup();
     }
 
     pub fn set_omdb_user_tokens(&mut self) {
-        if let Some(Popups::OMDBInit(omdb_init_popup)) = self.drawer.active_popup.as_mut() {
+        if let Some(Popup::OMDBInit(omdb_init_popup)) = self.drawer.active_popup.as_mut() {
             if let Some(tokens) = omdb_init_popup.tokens.take() {
                 self.omdb_tokens.set_creds(tokens).unwrap();
             }
-            self.drawer.close_popup();
         }
+        self.drawer.close_popup();
     }
 
     pub fn _refetch_watched(&mut self) {

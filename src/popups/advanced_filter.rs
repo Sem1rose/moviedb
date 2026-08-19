@@ -22,7 +22,7 @@ use crate::{
     helpers,
     key_event_handler::{self, KeyEventHandler},
     pop_criterion,
-    popups::{PopupTrait, Popups},
+    popups::{Popup, PopupTrait},
     screens::Screens,
     types::{
         BoxedFn, BoxedMutFn, FilterCriterion, FilterCriterionDiscriminants, FxIndexMap, Movie,
@@ -244,7 +244,7 @@ impl Widget {
                     }
                     .into(),
                     move |app, _| {
-                        if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                        if let Some(Popup::AdvancedFilter(advanced_filter_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             match advanced_filter_popup.get_widget_at_mut(item).unwrap() {
@@ -295,7 +295,7 @@ impl Widget {
                     (Some(2), Some(item)),
                     "Choose".into(),
                     move |app, data| {
-                        if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                        if let Some(Popup::AdvancedFilter(advanced_filter_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             match advanced_filter_popup.get_widget_at_mut(item).unwrap() {
@@ -337,7 +337,7 @@ impl Widget {
                         ' ',
                         "Toggle".into(),
                         move |app, _| {
-                            if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                            if let Some(Popup::AdvancedFilter(advanced_filter_popup)) =
                                 app.drawer.active_popup.as_mut()
                             {
                                 match advanced_filter_popup.get_widget_at_mut(item).unwrap() {
@@ -367,7 +367,7 @@ impl Widget {
                     ratatui::crossterm::event::MouseButton::Left,
                     area,
                     move |app, _| {
-                        if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                        if let Some(Popup::AdvancedFilter(advanced_filter_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             advanced_filter_popup.tab = 2;
@@ -381,7 +381,7 @@ impl Widget {
                         (Some(2), Some(item)),
                         "".into(),
                         move |app, data| {
-                            if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                            if let Some(Popup::AdvancedFilter(advanced_filter_popup)) =
                                 app.drawer.active_popup.as_mut()
                             {
                                 if let key_event_handler::Data::Key(key_event) = data {
@@ -479,7 +479,7 @@ impl Widget {
                             ratatui::crossterm::event::MouseButton::Left,
                             mouse_area,
                             move |app, _| {
-                                if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                                if let Some(Popup::AdvancedFilter(advanced_filter_popup)) =
                                     app.drawer.active_popup.as_mut()
                                 {
                                     match advanced_filter_popup.get_widget_at_mut(item).unwrap() {
@@ -556,7 +556,7 @@ impl Widget {
                     (Some(2), Some(item)),
                     if last_item && valid { "Confirm" } else { "Select" }.into(),
                     move |app, _| {
-                        if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                        if let Some(Popup::AdvancedFilter(advanced_filter_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             if last_item && valid {
@@ -574,7 +574,7 @@ impl Widget {
                     (Some(2), Some(item)),
                     "".into(),
                     move |app, data| {
-                        if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                        if let Some(Popup::AdvancedFilter(advanced_filter_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             if let key_event_handler::Data::Key(key_event) = data {
@@ -631,7 +631,7 @@ impl Widget {
                     ratatui::crossterm::event::MouseButton::Left,
                     area,
                     move |app, _| {
-                        if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                        if let Some(Popup::AdvancedFilter(advanced_filter_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             advanced_filter_popup.tab = 2;
@@ -1597,7 +1597,7 @@ impl AdvancedFilterPopup {
     }
 
     fn finish(app: &mut App) {
-        let filter_criteria = if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+        let filter_criteria = if let Some(Popup::AdvancedFilter(advanced_filter_popup)) =
             app.drawer.active_popup.as_mut()
         {
             advanced_filter_popup
@@ -1669,7 +1669,7 @@ impl PopupTrait for AdvancedFilterPopup {
         // key_event_handler.bind_key((Some(0), None), ' ', "Delete Criterion".into(), );
 
         key_event_handler.bind_tab((None, None), "Change focus".into(), move |app, data| {
-            if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+            if let Some(Popup::AdvancedFilter(advanced_filter_popup)) =
                 app.drawer.active_popup.as_mut()
             {
                 match data {
@@ -1785,7 +1785,7 @@ impl PopupTrait for AdvancedFilterPopup {
                 (Some(this_tab), None),
                 "Navigate".into(),
                 move |app, data| {
-                    if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                    if let Some(Popup::AdvancedFilter(advanced_filter_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
                         match data {
@@ -1845,7 +1845,7 @@ impl PopupTrait for AdvancedFilterPopup {
             let tab_selected = self.tab == this_tab;
 
             key_event_handler.bind_esc((Some(this_tab), None), "Back".into(), |app, _| {
-                if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                if let Some(Popup::AdvancedFilter(advanced_filter_popup)) =
                     app.drawer.active_popup.as_mut()
                 {
                     advanced_filter_popup.tab = 1;
@@ -1911,7 +1911,7 @@ impl PopupTrait for AdvancedFilterPopup {
                 (Some(this_tab), None),
                 "Navigate".into(),
                 move |app, data| {
-                    if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                    if let Some(Popup::AdvancedFilter(advanced_filter_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
                         match data {
@@ -1957,7 +1957,7 @@ impl PopupTrait for AdvancedFilterPopup {
                     ratatui::crossterm::event::MouseButton::Left,
                     mouse_area,
                     move |app, _| {
-                        if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                        if let Some(Popup::AdvancedFilter(advanced_filter_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             if i == 0 {
@@ -2029,7 +2029,7 @@ impl PopupTrait for AdvancedFilterPopup {
                     (Some(this_tab), Some(0)),
                     "Select".into(),
                     move |app, _| {
-                        if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                        if let Some(Popup::AdvancedFilter(advanced_filter_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             advanced_filter_popup.item = 0;
@@ -2047,7 +2047,7 @@ impl PopupTrait for AdvancedFilterPopup {
                     (Some(this_tab), Some(0)),
                     "Choose".into(),
                     move |app, data| {
-                        if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                        if let Some(Popup::AdvancedFilter(advanced_filter_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             match data {
@@ -2097,7 +2097,7 @@ impl PopupTrait for AdvancedFilterPopup {
                     (Some(this_tab), Some(0)),
                     "Open Dropdown".into(),
                     |app, _| {
-                        if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                        if let Some(Popup::AdvancedFilter(advanced_filter_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             advanced_filter_popup.dropdown_selected_item = Some(
@@ -2122,7 +2122,7 @@ impl PopupTrait for AdvancedFilterPopup {
 
             if self.dropdown_selected_item.is_some() {
                 key_event_handler.bind_esc((Some(this_tab), Some(0)), "Close".into(), |app, _| {
-                    if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                    if let Some(Popup::AdvancedFilter(advanced_filter_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
                         _ = advanced_filter_popup.dropdown_selected_item.take();
@@ -2130,7 +2130,7 @@ impl PopupTrait for AdvancedFilterPopup {
                 });
             } else if self.active_criterion.is_some() {
                 key_event_handler.bind_esc((Some(this_tab), Some(0)), "Clear".into(), |app, _| {
-                    if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                    if let Some(Popup::AdvancedFilter(advanced_filter_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
                         advanced_filter_popup.active_criterion = None;
@@ -2165,7 +2165,7 @@ impl PopupTrait for AdvancedFilterPopup {
                 ratatui::crossterm::event::MouseButton::Left,
                 dropdown_area,
                 move |app, _| {
-                    if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                    if let Some(Popup::AdvancedFilter(advanced_filter_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
                         let selected = advanced_filter_popup.tab == this_tab
@@ -2242,7 +2242,7 @@ impl PopupTrait for AdvancedFilterPopup {
                             ratatui::crossterm::event::MouseButton::Left,
                             mouse_area,
                             move |app, _| {
-                                if let Some(Popups::AdvancedFilter(advanced_filter_popup)) =
+                                if let Some(Popup::AdvancedFilter(advanced_filter_popup)) =
                                     app.drawer.active_popup.as_mut()
                                 {
                                     advanced_filter_popup.tab = 2;

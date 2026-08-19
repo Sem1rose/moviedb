@@ -39,7 +39,7 @@ use crate::{
     helpers,
     key_event_handler::{self, KeyEventHandler},
     omdb::OMDBDetailsResponse,
-    popups::{PopupTrait, Popups},
+    popups::{Popup, PopupTrait},
     tokens::{OMDBTokens, PunchPlayTokens, TMDBTokens, TraktTokens},
     types::MovieDetailsResponse,
     widgets::{self, Action, ActionType},
@@ -224,7 +224,7 @@ impl AddMoviePopup {
         // let cache_dir = self.cache_dir.clone();
 
         thread::spawn(move || {
-            _ = tx_details_request.send(App::fetch_movie(
+            _ = tx_details_request.send(App::fetch_movie_details(
                 &omdb_api_key,
                 &trakt_client_id,
                 &punch_play_access_token,
@@ -415,7 +415,7 @@ impl PopupTrait for AddMoviePopup {
                         (None, None),
                         "Scroll".into(),
                         move |app, data| {
-                            if let Some(Popups::AddMovie(add_movie_popup)) =
+                            if let Some(Popup::AddMovie(add_movie_popup)) =
                                 app.drawer.active_popup.as_mut()
                             {
                                 match data {
@@ -446,7 +446,7 @@ impl PopupTrait for AddMoviePopup {
                     );
 
                     key_event_handler.bind_enter((None, None), "Select".into(), |app, _| {
-                        if let Some(Popups::AddMovie(add_movie_popup)) =
+                        if let Some(Popup::AddMovie(add_movie_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             add_movie_popup.advance_phase();
@@ -454,8 +454,7 @@ impl PopupTrait for AddMoviePopup {
                     });
                 }
                 key_event_handler.bind_input_field((None, None), "".into(), |app, data| {
-                    if let Some(Popups::AddMovie(add_movie_popup)) =
-                        app.drawer.active_popup.as_mut()
+                    if let Some(Popup::AddMovie(add_movie_popup)) = app.drawer.active_popup.as_mut()
                     {
                         if let key_event_handler::Data::Key(key_event) = data {
                             let old_query = add_movie_popup.input0.lines()[0].clone();
@@ -587,7 +586,7 @@ impl PopupTrait for AddMoviePopup {
                             ratatui::crossterm::event::MouseButton::Left,
                             area,
                             move |app, _| {
-                                if let Some(Popups::AddMovie(add_movie_popup)) =
+                                if let Some(Popup::AddMovie(add_movie_popup)) =
                                     app.drawer.active_popup.as_mut()
                                 {
                                     if selected {
@@ -715,8 +714,7 @@ impl PopupTrait for AddMoviePopup {
                 let date_valid = self.validate_input_date();
 
                 key_event_handler.bind_tab((None, None), "".into(), |app, data| {
-                    if let Some(Popups::AddMovie(add_movie_popup)) =
-                        app.drawer.active_popup.as_mut()
+                    if let Some(Popup::AddMovie(add_movie_popup)) = app.drawer.active_popup.as_mut()
                     {
                         match data {
                             crate::key_event_handler::Data::Direction(true, _) => {
@@ -738,8 +736,7 @@ impl PopupTrait for AddMoviePopup {
                     app.drawer.close_popup();
                 });
                 key_event_handler.bind_esc((None, None), "Back".into(), |app, _| {
-                    if let Some(Popups::AddMovie(add_movie_popup)) =
-                        app.drawer.active_popup.as_mut()
+                    if let Some(Popup::AddMovie(add_movie_popup)) = app.drawer.active_popup.as_mut()
                     {
                         add_movie_popup.item = 0;
                     }
@@ -749,8 +746,7 @@ impl PopupTrait for AddMoviePopup {
                 });
 
                 key_event_handler.bind_horizontal((None, Some(3)), "".into(), |app, data| {
-                    if let Some(Popups::AddMovie(add_movie_popup)) =
-                        app.drawer.active_popup.as_mut()
+                    if let Some(Popup::AddMovie(add_movie_popup)) = app.drawer.active_popup.as_mut()
                     {
                         if let crate::key_event_handler::Data::Direction(true, _) = data {
                             add_movie_popup.item = 4;
@@ -758,8 +754,7 @@ impl PopupTrait for AddMoviePopup {
                     }
                 });
                 key_event_handler.bind_horizontal((None, Some(4)), "".into(), |app, data| {
-                    if let Some(Popups::AddMovie(add_movie_popup)) =
-                        app.drawer.active_popup.as_mut()
+                    if let Some(Popup::AddMovie(add_movie_popup)) = app.drawer.active_popup.as_mut()
                     {
                         if let crate::key_event_handler::Data::Direction(false, _) = data {
                             add_movie_popup.item = 3;
@@ -768,8 +763,7 @@ impl PopupTrait for AddMoviePopup {
                 });
 
                 key_event_handler.bind_vertical((None, Some(1)), "".into(), |app, data| {
-                    if let Some(Popups::AddMovie(add_movie_popup)) =
-                        app.drawer.active_popup.as_mut()
+                    if let Some(Popup::AddMovie(add_movie_popup)) = app.drawer.active_popup.as_mut()
                     {
                         if let crate::key_event_handler::Data::Direction(true, _) = data {
                             add_movie_popup.item = 2;
@@ -777,8 +771,7 @@ impl PopupTrait for AddMoviePopup {
                     }
                 });
                 key_event_handler.bind_vertical((None, Some(2)), "".into(), |app, data| {
-                    if let Some(Popups::AddMovie(add_movie_popup)) =
-                        app.drawer.active_popup.as_mut()
+                    if let Some(Popup::AddMovie(add_movie_popup)) = app.drawer.active_popup.as_mut()
                     {
                         if let crate::key_event_handler::Data::Direction(false, _) = data {
                             add_movie_popup.item = 1;
@@ -787,8 +780,7 @@ impl PopupTrait for AddMoviePopup {
                 });
 
                 key_event_handler.bind_enter((None, Some(0)), "Back".into(), |app, _| {
-                    if let Some(Popups::AddMovie(add_movie_popup)) =
-                        app.drawer.active_popup.as_mut()
+                    if let Some(Popup::AddMovie(add_movie_popup)) = app.drawer.active_popup.as_mut()
                     {
                         add_movie_popup.item = 0;
                         add_movie_popup.input0 = TextArea::from([""]);
@@ -797,7 +789,7 @@ impl PopupTrait for AddMoviePopup {
                 });
                 if rating_valid {
                     key_event_handler.bind_enter((None, Some(1)), "".into(), |app, _| {
-                        if let Some(Popups::AddMovie(add_movie_popup)) =
+                        if let Some(Popup::AddMovie(add_movie_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             add_movie_popup.item = 2;
@@ -808,7 +800,7 @@ impl PopupTrait for AddMoviePopup {
                             (None, Some(2)),
                             "Confirm".into(),
                             |app, _| {
-                                if let Some(Popups::AddMovie(add_movie_popup)) =
+                                if let Some(Popup::AddMovie(add_movie_popup)) =
                                     app.drawer.active_popup.as_mut()
                                 {
                                     add_movie_popup.advance_phase();
@@ -820,7 +812,7 @@ impl PopupTrait for AddMoviePopup {
                             (None, Some(3)),
                             "Confirm".into(),
                             |app, _| {
-                                if let Some(Popups::AddMovie(add_movie_popup)) =
+                                if let Some(Popup::AddMovie(add_movie_popup)) =
                                     app.drawer.active_popup.as_mut()
                                 {
                                     add_movie_popup.advance_phase();
@@ -835,8 +827,7 @@ impl PopupTrait for AddMoviePopup {
                 });
 
                 key_event_handler.bind_input_field((None, Some(1)), "".into(), |app, data| {
-                    if let Some(Popups::AddMovie(add_movie_popup)) =
-                        app.drawer.active_popup.as_mut()
+                    if let Some(Popup::AddMovie(add_movie_popup)) = app.drawer.active_popup.as_mut()
                     {
                         if let key_event_handler::Data::Key(key_event) = data {
                             let parsed = add_movie_popup.input0.lines()[0]
@@ -857,8 +848,7 @@ impl PopupTrait for AddMoviePopup {
                     }
                 });
                 key_event_handler.bind_input_field((None, Some(2)), "".into(), |app, data| {
-                    if let Some(Popups::AddMovie(add_movie_popup)) =
-                        app.drawer.active_popup.as_mut()
+                    if let Some(Popup::AddMovie(add_movie_popup)) = app.drawer.active_popup.as_mut()
                     {
                         if let key_event_handler::Data::Key(key_event) = data {
                             add_movie_popup.input1.input(key_event);
@@ -900,7 +890,7 @@ impl PopupTrait for AddMoviePopup {
                     ratatui::crossterm::event::MouseButton::Left,
                     mouse_area,
                     |app, _| {
-                        if let Some(Popups::AddMovie(add_movie_popup)) =
+                        if let Some(Popup::AddMovie(add_movie_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             add_movie_popup.item = 0;
@@ -931,7 +921,7 @@ impl PopupTrait for AddMoviePopup {
                         ratatui::crossterm::event::MouseButton::Left,
                         mouse_area,
                         move |app, _| {
-                            if let Some(Popups::AddMovie(add_movie_popup)) =
+                            if let Some(Popup::AddMovie(add_movie_popup)) =
                                 app.drawer.active_popup.as_mut()
                             {
                                 if i == 0 {
@@ -963,7 +953,7 @@ impl PopupTrait for AddMoviePopup {
                     ratatui::crossterm::event::MouseButton::Left,
                     rating_input_area,
                     |app, _| {
-                        if let Some(Popups::AddMovie(add_movie_popup)) =
+                        if let Some(Popup::AddMovie(add_movie_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             add_movie_popup.item = 1;
@@ -987,7 +977,7 @@ impl PopupTrait for AddMoviePopup {
                     ratatui::crossterm::event::MouseButton::Left,
                     date_input_area,
                     |app, _| {
-                        if let Some(Popups::AddMovie(add_movie_popup)) =
+                        if let Some(Popup::AddMovie(add_movie_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             add_movie_popup.item = 2;
@@ -1027,8 +1017,7 @@ impl PopupTrait for AddMoviePopup {
             }
             Phase::ConfirmRefetchDetails(_) => {
                 key_event_handler.bind_tab((None, None), "Navigate".into(), |app, _| {
-                    if let Some(Popups::AddMovie(add_movie_popup)) =
-                        app.drawer.active_popup.as_mut()
+                    if let Some(Popup::AddMovie(add_movie_popup)) = app.drawer.active_popup.as_mut()
                     {
                         add_movie_popup.item = (add_movie_popup.item == 0) as usize;
                     }
@@ -1039,8 +1028,7 @@ impl PopupTrait for AddMoviePopup {
                 });
 
                 key_event_handler.bind_enter((None, Some(0)), "Confirm".into(), |app, _| {
-                    if let Some(Popups::AddMovie(add_movie_popup)) =
-                        app.drawer.active_popup.as_mut()
+                    if let Some(Popup::AddMovie(add_movie_popup)) = app.drawer.active_popup.as_mut()
                     {
                         add_movie_popup.advance_phase();
                     }
@@ -1050,8 +1038,7 @@ impl PopupTrait for AddMoviePopup {
                 });
 
                 key_event_handler.bind_horizontal((None, None), "Navigate".into(), |app, data| {
-                    if let Some(Popups::AddMovie(add_movie_popup)) =
-                        app.drawer.active_popup.as_mut()
+                    if let Some(Popup::AddMovie(add_movie_popup)) = app.drawer.active_popup.as_mut()
                     {
                         if let crate::key_event_handler::Data::Direction(dir, _) = data {
                             add_movie_popup.item = dir as usize;
@@ -1097,7 +1084,7 @@ impl PopupTrait for AddMoviePopup {
                         mouse_area,
                         move |app, _| {
                             if i == 0 {
-                                if let Some(Popups::AddMovie(add_movie_popup)) =
+                                if let Some(Popup::AddMovie(add_movie_popup)) =
                                     app.drawer.active_popup.as_mut()
                                 {
                                     add_movie_popup.advance_phase();
@@ -1152,7 +1139,7 @@ impl PopupTrait for AddMoviePopup {
                     });
                 } else {
                     key_event_handler.bind_tab((None, None), "Navigate".into(), |app, _| {
-                        if let Some(Popups::AddMovie(add_movie_popup)) =
+                        if let Some(Popup::AddMovie(add_movie_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             add_movie_popup.item = (add_movie_popup.item == 0) as usize;
@@ -1162,7 +1149,7 @@ impl PopupTrait for AddMoviePopup {
                         (None, None),
                         "Navigate".into(),
                         |app, data| {
-                            if let Some(Popups::AddMovie(add_movie_popup)) =
+                            if let Some(Popup::AddMovie(add_movie_popup)) =
                                 app.drawer.active_popup.as_mut()
                             {
                                 if let crate::key_event_handler::Data::Direction(dir, _) = data {
@@ -1173,7 +1160,7 @@ impl PopupTrait for AddMoviePopup {
                     );
 
                     key_event_handler.bind_enter((None, Some(0)), "Back".into(), |app, _| {
-                        if let Some(Popups::AddMovie(add_movie_popup)) =
+                        if let Some(Popup::AddMovie(add_movie_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             add_movie_popup.item = 0;
@@ -1202,7 +1189,7 @@ impl PopupTrait for AddMoviePopup {
                             mouse_area,
                             move |app, _| {
                                 if i == 0 {
-                                    if let Some(Popups::AddMovie(add_movie_popup)) =
+                                    if let Some(Popup::AddMovie(add_movie_popup)) =
                                         app.drawer.active_popup.as_mut()
                                     {
                                         add_movie_popup.item = 0;

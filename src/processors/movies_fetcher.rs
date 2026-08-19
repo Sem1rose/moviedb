@@ -5,37 +5,23 @@ use std::{
     thread,
 };
 
-use itertools::Itertools;
 use log::info;
-use ratatui::{
-    Frame,
-    layout::Flex,
-    macros::{horizontal, vertical},
-    style::{Style, Stylize, palette::tailwind},
-    text::Text,
-    widgets::{Gauge, Padding},
-};
-use throbber_widgets_tui::{Throbber, ThrobberState};
 
 use crate::{
     app::App,
-    helpers,
     key_event_handler::KeyEventHandler,
-    popups::PopupTrait,
+    processors::ProcessorTrait,
     tokens::{OMDBTokens, PunchPlayTokens, TraktTokens, tmdb_tokens::TMDBTokens},
-    types::{Collection, Entry, FxIndexMap, List, Movie, MovieDetailsResponse, Person},
-    widgets,
+    types::{Collection, FxIndexMap, Movie, MovieDetailsResponse, Person},
 };
 
-const BATCH_SIZE: usize = 8;
+const BATCH_SIZE: usize = 12;
 #[derive(Default)]
-pub struct FetchMoviesPopup {
-    count:    usize,
-    progress: usize,
-    num_sent: usize,
-    errored:  Option<(u32, String)>,
-    pub done: bool,
-    started:  bool,
+pub struct MoviesFetcherProcessor {
+    initialized: bool,
+    progress:    usize,
+    num_sent:    usize,
+    pub idle:    bool,
 
     movies:           Rc<RefCell<FxIndexMap<u32, Movie>>>,
     collections:      Rc<RefCell<FxIndexMap<u32, Collection>>>,
@@ -49,16 +35,10 @@ pub struct FetchMoviesPopup {
 
     tx_details_request:  Option<Sender<u32>>,
     rx_details_response: Option<Receiver<(u32, anyhow::Result<MovieDetailsResponse>)>>,
-
-    tick:           u64,
-    throbber_state: ThrobberState,
 }
 
-impl FetchMoviesPopup {
+impl MoviesFetcherProcessor {
     fn start_thread(mut self) -> Self {
-        if self.done {
-            return self;
-        }
         let (tx_details_request, rx_details_request) = channel::<u32>();
         let (tx_details_response, rx_details_response) =
             channel::<(u32, anyhow::Result<MovieDetailsResponse>)>();
@@ -100,7 +80,6 @@ impl FetchMoviesPopup {
 
         self.tx_details_request = Some(tx_details_request);
         self.rx_details_response = Some(rx_details_response);
-        self.started = true;
 
         self
     }
@@ -115,20 +94,13 @@ impl FetchMoviesPopup {
         movies: Rc<RefCell<FxIndexMap<u32, Movie>>>,
         collections: Rc<RefCell<FxIndexMap<u32, Collection>>>,
         persons: Rc<RefCell<FxIndexMap<u32, Person>>>,
-        watched: &FxIndexMap<u32, Entry>,
-        lists: &[&List],
     ) {
-        let unfetched_movies = {
-            let borrowed_movies = movies.borrow();
-            watched
-                .keys()
-                .chain(lists.iter().flat_map(|x| x.items.iter().map(|x| &x.id)))
-                .filter(|x| !borrowed_movies.contains_key(*x))
-                .copied()
-                .collect_vec()
-        };
+        if self.initialized {
+            return;
+        }
 
         *self = Self {
+            initialized: true,
             tmdb_tokens,
             punch_play_tokens,
             trakt_tokens,
@@ -137,33 +109,30 @@ impl FetchMoviesPopup {
             movies,
             collections,
             persons,
-            count: unfetched_movies.len(),
-            done: unfetched_movies.is_empty(),
-            unfetched_movies,
+            unfetched_movies: Vec::with_capacity(64),
 
             ..Default::default()
         }
         .start_thread();
     }
-}
 
-impl PopupTrait for FetchMoviesPopup {
-    fn get_state(&self) -> (Option<usize>, Option<usize>) {
-        (None, None)
-    }
-
-    fn update_next_frame(&self) -> bool {
-        self.started && !self.done
-    }
-
-    fn update(&mut self) {
-        if !self.started {
+    pub fn fetch_movies(&mut self, ids: &[u32]) {
+        if !self.initialized {
             return;
         }
 
-        self.tick += 1;
-        if self.tick & 7 == 0 {
-            self.throbber_state.calc_next();
+        self.idle = false;
+
+        let movies_borrowed = self.movies.borrow();
+        self.unfetched_movies
+            .extend(ids.iter().filter(|x| !movies_borrowed.contains_key(*x)));
+    }
+}
+
+impl ProcessorTrait for MoviesFetcherProcessor {
+    fn update(&mut self, _key_event_handler: &mut KeyEventHandler) {
+        if !self.initialized {
+            return;
         }
 
         if let (Some(rx_details_response), Some(tx_details_request)) = (
@@ -173,12 +142,6 @@ impl PopupTrait for FetchMoviesPopup {
             for (movie_id, fetch_result) in rx_details_response.try_iter() {
                 match fetch_result {
                     Ok(mut movie_details) => {
-                        if let Some((i, _)) = self.errored {
-                            if i == movie_id {
-                                self.errored = None;
-                            }
-                        }
-
                         self.progress += 1;
 
                         let tmdb_movie_details = movie_details.tmdb.take().unwrap();
@@ -243,8 +206,7 @@ impl PopupTrait for FetchMoviesPopup {
                             }
                         }
                     }
-                    Err(error) => {
-                        self.errored = Some((movie_id, format!("{error:#}")));
+                    Err(_) => {
                         _ = tx_details_request.send(movie_id);
                     }
                 }
@@ -261,75 +223,10 @@ impl PopupTrait for FetchMoviesPopup {
             }
         }
 
-        if self.progress == self.count {
-            self.done = true;
-        }
-    }
-
-    fn render(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
-        if !self.started {
-            return;
-        }
-
-        key_event_handler.clear();
-
-        let popup_area = widgets::window(
-            frame,
-            helpers::centered_area(
-                if self.errored.is_some() { 13 } else { 9 },
-                60,
-                frame.area(),
-            ),
-            " Fetching Movies ",
-            self.errored.is_some(),
-        );
-
-        let [_, throbber_area, _, progress_area] = vertical![==1, ==1, ==1, ==3].areas(popup_area);
-
-        let [throbber_area] = horizontal![==1].flex(Flex::Center).areas(throbber_area);
-
-        let throbber = Throbber::default()
-            .throbber_set(throbber_widgets_tui::BRAILLE_SIX_DOUBLE)
-            .throbber_style(Style::new().bold().fg(tailwind::VIOLET.c400));
-        frame.render_stateful_widget(throbber, throbber_area, &mut self.throbber_state);
-
-        let progress_area = helpers::add_padding(progress_area, Padding::horizontal(2));
-
-        let progress_gauge = Gauge::default()
-            .ratio(if self.count == 0 {
-                0.0
-            } else {
-                self.progress as f64 / self.count as f64
-            })
-            .gauge_style(
-                Style::new()
-                    .fg(tailwind::LIME.c500)
-                    .bg(tailwind::GREEN.c900)
-                    .italic(),
-            )
-            .label(
-                format!("{}/{}", self.progress, self.count)
-                    .fg(tailwind::PINK.c500)
-                    .bold(),
-            )
-            .use_unicode(true);
-
-        frame.render_widget(progress_gauge, progress_area);
-
-        if let Some((id, error)) = self.errored.as_ref() {
-            let errored_text = format!("{id} errored: {error}");
-
-            let text_area = helpers::add_padding(
-                vertical![>=1, ==4].split(popup_area)[1],
-                Padding::horizontal(2),
-            );
-            frame.render_widget(
-                Text::from_iter(helpers::wrap_text(&errored_text, text_area.width as usize))
-                    .fg(tailwind::RED.c500)
-                    .bold()
-                    .centered(),
-                text_area,
-            );
+        if !self.idle && self.num_sent == self.progress && self.unfetched_movies.is_empty() {
+            self.idle = true;
+            self.num_sent = 0;
+            self.progress = 0;
         }
     }
 }

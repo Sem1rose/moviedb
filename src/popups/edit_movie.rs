@@ -11,7 +11,7 @@ use ratatui_textarea::{TextArea, WrapMode};
 use crate::{
     helpers,
     key_event_handler::KeyEventHandler,
-    popups::{PopupTrait, Popups},
+    popups::{Popup, PopupTrait},
     widgets::{self, Action, ActionType},
 };
 
@@ -98,13 +98,13 @@ impl PopupTrait for EditMoviePopup {
             app.drawer.close_popup();
         });
         key_event_handler.bind_esc((None, None), "Back".into(), |app, _| {
-            if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
+            if let Some(Popup::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
                 edit_movie_popup.item = 3;
             }
         });
 
         key_event_handler.bind_tab((None, None), "Navigate".into(), |app, data| {
-            if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
+            if let Some(Popup::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
                 match data {
                     crate::key_event_handler::Data::Direction(true, _) => {
                         edit_movie_popup.item += 1;
@@ -122,8 +122,7 @@ impl PopupTrait for EditMoviePopup {
 
         if rating_valid {
             key_event_handler.bind_enter((None, Some(0)), "Next".into(), |app, _| {
-                if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut()
-                {
+                if let Some(Popup::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
                     edit_movie_popup.item = 1;
                 }
             });
@@ -143,14 +142,14 @@ impl PopupTrait for EditMoviePopup {
         });
 
         key_event_handler.bind_vertical((None, Some(0)), "Navigate".into(), |app, data| {
-            if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
+            if let Some(Popup::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
                 if let crate::key_event_handler::Data::Direction(true, _) = data {
                     edit_movie_popup.item = 1;
                 }
             }
         });
         key_event_handler.bind_vertical((None, Some(1)), "Navigate".into(), |app, data| {
-            if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
+            if let Some(Popup::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
                 if let crate::key_event_handler::Data::Direction(false, _) = data {
                     edit_movie_popup.item = 0;
                 }
@@ -158,14 +157,14 @@ impl PopupTrait for EditMoviePopup {
         });
 
         key_event_handler.bind_horizontal((None, Some(2)), "Navigate".into(), |app, data| {
-            if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
+            if let Some(Popup::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
                 if let crate::key_event_handler::Data::Direction(true, _) = data {
                     edit_movie_popup.item = 3;
                 }
             }
         });
         key_event_handler.bind_horizontal((None, Some(3)), "Navigate".into(), |app, data| {
-            if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
+            if let Some(Popup::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
                 if let crate::key_event_handler::Data::Direction(false, _) = data {
                     edit_movie_popup.item = 2;
                 }
@@ -173,7 +172,7 @@ impl PopupTrait for EditMoviePopup {
         });
 
         key_event_handler.bind_input_field((None, Some(0)), "".into(), |app, data| {
-            if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
+            if let Some(Popup::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
                 if let crate::key_event_handler::Data::Key(key_event) = data {
                     let parsed = edit_movie_popup.rating_input.lines()[0]
                         .parse::<f64>()
@@ -193,7 +192,7 @@ impl PopupTrait for EditMoviePopup {
             }
         });
         key_event_handler.bind_input_field((None, Some(1)), "".into(), |app, data| {
-            if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
+            if let Some(Popup::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
                 if let crate::key_event_handler::Data::Key(key_event) = data {
                     edit_movie_popup.date_input.input(key_event);
                 }
@@ -235,8 +234,7 @@ impl PopupTrait for EditMoviePopup {
             ratatui::crossterm::event::MouseButton::Left,
             helpers::add_padding(rating_input_area, Padding::horizontal(2)),
             |app, _| {
-                if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut()
-                {
+                if let Some(Popup::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
                     edit_movie_popup.item = 0;
                 }
             },
@@ -259,8 +257,7 @@ impl PopupTrait for EditMoviePopup {
             ratatui::crossterm::event::MouseButton::Left,
             helpers::add_padding(date_input_area, Padding::horizontal(2)),
             |app, _| {
-                if let Some(Popups::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut()
-                {
+                if let Some(Popup::EditMovie(edit_movie_popup)) = app.drawer.active_popup.as_mut() {
                     edit_movie_popup.item = 1;
                 }
             },

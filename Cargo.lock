@@ -1876,6 +1876,7 @@ dependencies = [
  "rustc-hash",
  "serde",
  "serde_json",
+ "simkl",
  "simple-encrypt",
  "strum",
  "throbber-widgets-tui",
@@ -3316,6 +3317,20 @@ name = "simdutf8"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
+
+[[package]]
+name = "simkl"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "image",
+ "itertools",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "unix-ts",
+]
 
 [[package]]
 name = "simple-encrypt"

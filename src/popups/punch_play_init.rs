@@ -24,7 +24,7 @@ use crate::{
     app::App,
     helpers,
     key_event_handler::{self, KeyEventHandler},
-    popups::{PopupTrait, Popups},
+    popups::{Popup, PopupTrait},
     tokens::punch_play_tokens::{PunchPlayTokens, UserTokens},
     widgets::{self, Action, ActionType, Hyperlink},
 };
@@ -287,14 +287,14 @@ impl PopupTrait for PunchPlayInitPopup {
 
                 if matches!(self.phase, Phase::RefreshingTokens) {
                     key_event_handler.bind_enter((None, Some(1)), "Skip".into(), |app, _| {
-                        if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
+                        if let Some(Popup::PunchPlayInit(punch_play_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             punch_play_init_popup.phase = Phase::Done;
                         }
                     });
                     key_event_handler.bind_tab((None, None), "".into(), |app, data| {
-                        if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
+                        if let Some(Popup::PunchPlayInit(punch_play_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             match data {
@@ -324,7 +324,7 @@ impl PopupTrait for PunchPlayInitPopup {
                         ratatui::crossterm::event::MouseButton::Left,
                         skip_mouse_area,
                         |app, _| {
-                            if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
+                            if let Some(Popup::PunchPlayInit(punch_play_init_popup)) =
                                 app.drawer.active_popup.as_mut()
                             {
                                 punch_play_init_popup.phase = Phase::Done;
@@ -346,7 +346,7 @@ impl PopupTrait for PunchPlayInitPopup {
                     !(self.input0.lines()[0].is_empty() || self.input1.lines()[0].is_empty());
 
                 key_event_handler.bind_tab((None, None), "".into(), |app, data| {
-                    if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
+                    if let Some(Popup::PunchPlayInit(punch_play_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
                         match data {
@@ -365,7 +365,7 @@ impl PopupTrait for PunchPlayInitPopup {
                     }
                 });
                 key_event_handler.bind_esc((None, None), "".into(), |app, _| {
-                    if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
+                    if let Some(Popup::PunchPlayInit(punch_play_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
                         punch_play_init_popup.item = 2;
@@ -373,7 +373,7 @@ impl PopupTrait for PunchPlayInitPopup {
                 });
 
                 key_event_handler.bind_enter((None, None), "".into(), |app, _| {
-                    if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
+                    if let Some(Popup::PunchPlayInit(punch_play_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
                         punch_play_init_popup.item += 1;
@@ -384,7 +384,7 @@ impl PopupTrait for PunchPlayInitPopup {
                         (None, Some(1)),
                         "Confirm".into(),
                         move |app, _| {
-                            if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
+                            if let Some(Popup::PunchPlayInit(punch_play_init_popup)) =
                                 app.drawer.active_popup.as_mut()
                             {
                                 punch_play_init_popup.advance_phase();
@@ -395,7 +395,7 @@ impl PopupTrait for PunchPlayInitPopup {
                         (None, Some(2)),
                         "Confirm".into(),
                         move |app, _| {
-                            if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
+                            if let Some(Popup::PunchPlayInit(punch_play_init_popup)) =
                                 app.drawer.active_popup.as_mut()
                             {
                                 punch_play_init_popup.advance_phase();
@@ -407,7 +407,7 @@ impl PopupTrait for PunchPlayInitPopup {
                 }
 
                 key_event_handler.bind_input_field((None, Some(0)), "".into(), |app, data| {
-                    if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
+                    if let Some(Popup::PunchPlayInit(punch_play_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
                         if let key_event_handler::Data::Key(key_event) = data {
@@ -416,7 +416,7 @@ impl PopupTrait for PunchPlayInitPopup {
                     }
                 });
                 key_event_handler.bind_input_field((None, Some(1)), "".into(), |app, data| {
-                    if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
+                    if let Some(Popup::PunchPlayInit(punch_play_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
                         if let key_event_handler::Data::Key(key_event) = data {
@@ -457,7 +457,7 @@ impl PopupTrait for PunchPlayInitPopup {
                     ratatui::crossterm::event::MouseButton::Left,
                     ci_input_area,
                     |app, _| {
-                        if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
+                        if let Some(Popup::PunchPlayInit(punch_play_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             punch_play_init_popup.item = 0;
@@ -482,7 +482,7 @@ impl PopupTrait for PunchPlayInitPopup {
                     ratatui::crossterm::event::MouseButton::Left,
                     cs_input_area,
                     |app, _| {
-                        if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
+                        if let Some(Popup::PunchPlayInit(punch_play_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             punch_play_init_popup.item = 1;
@@ -502,7 +502,7 @@ impl PopupTrait for PunchPlayInitPopup {
                         ratatui::crossterm::event::MouseButton::Left,
                         mouse_area,
                         |app, _| {
-                            if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
+                            if let Some(Popup::PunchPlayInit(punch_play_init_popup)) =
                                 app.drawer.active_popup.as_mut()
                             {
                                 punch_play_init_popup.advance_phase();
@@ -513,7 +513,7 @@ impl PopupTrait for PunchPlayInitPopup {
             }
             Phase::Authorize(authorization_url) => {
                 key_event_handler.bind_esc((None, None), "".into(), |app, _| {
-                    if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
+                    if let Some(Popup::PunchPlayInit(punch_play_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
                         punch_play_init_popup.item = 0;
@@ -548,7 +548,7 @@ impl PopupTrait for PunchPlayInitPopup {
                     ratatui::crossterm::event::MouseButton::Left,
                     back_mouse_area,
                     |app, _| {
-                        if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
+                        if let Some(Popup::PunchPlayInit(punch_play_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             punch_play_init_popup.item = 0;
@@ -584,7 +584,7 @@ impl PopupTrait for PunchPlayInitPopup {
             }
             Phase::Error(error) => {
                 let back = |app: &mut App, _| {
-                    if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
+                    if let Some(Popup::PunchPlayInit(punch_play_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
                         punch_play_init_popup.item = 1;
@@ -614,14 +614,14 @@ impl PopupTrait for PunchPlayInitPopup {
                 key_event_handler.bind_esc((None, Some(0)), "Back".into(), back);
                 if self.status.is_some() {
                     key_event_handler.bind_enter((None, Some(1)), "Skip".into(), |app, _| {
-                        if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
+                        if let Some(Popup::PunchPlayInit(punch_play_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             punch_play_init_popup.phase = Phase::Done;
                         }
                     });
                     key_event_handler.bind_tab((None, None), "".into(), |app, data| {
-                        if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
+                        if let Some(Popup::PunchPlayInit(punch_play_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             match data {
@@ -675,7 +675,7 @@ impl PopupTrait for PunchPlayInitPopup {
                         ratatui::crossterm::event::MouseButton::Left,
                         skip_mouse_area,
                         |app, _| {
-                            if let Some(Popups::PunchPlayInit(punch_play_init_popup)) =
+                            if let Some(Popup::PunchPlayInit(punch_play_init_popup)) =
                                 app.drawer.active_popup.as_mut()
                             {
                                 punch_play_init_popup.phase = Phase::Done;

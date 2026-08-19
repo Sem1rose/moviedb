@@ -13,7 +13,8 @@ use crate::{
     helpers,
     key_event_handler::{self, Data, KeyEventHandler},
     popups::{
-        OMDBInitPopup, PopupTrait, Popups, PunchPlayInitPopup, TMDBInitPopup, TraktInitPopup,
+        OMDBInitPopup, Popup, PopupTrait, PunchPlayInitPopup, SimklInitPopup, TMDBInitPopup,
+        TraktInitPopup,
     },
     widgets::{self, Action, ActionType},
 };
@@ -22,7 +23,7 @@ use crate::{
 pub struct OutOfBoxPopup {
     tab:          usize,
     item:         usize,
-    toggled_list: [bool; 4],
+    toggled_list: [bool; 5],
 }
 
 const COLUMNS: usize = 2;
@@ -44,11 +45,11 @@ impl PopupTrait for OutOfBoxPopup {
             app.quit = true;
         });
         key_event_handler.bind_key((Some(0), None), 'a', "Toggle all".into(), |app, _| {
-            if let Some(Popups::OutOfBox(out_of_box_popup)) = app.drawer.active_popup.as_mut() {
+            if let Some(Popup::OutOfBox(out_of_box_popup)) = app.drawer.active_popup.as_mut() {
                 if out_of_box_popup.toggled_list.contains(&false) {
-                    out_of_box_popup.toggled_list = [true; 4];
+                    out_of_box_popup.toggled_list = [true; 5];
                 } else {
-                    out_of_box_popup.toggled_list = [false; 4];
+                    out_of_box_popup.toggled_list = [false; 5];
                 }
             }
         });
@@ -58,32 +59,39 @@ impl PopupTrait for OutOfBoxPopup {
             let config = app.config.clone();
             let mut config_mut = config.borrow_mut();
             config_mut.options = Default::default();
-            if let Some(Popups::OutOfBox(out_of_box_popup)) = app.drawer.active_popup.as_mut() {
+            if let Some(Popup::OutOfBox(out_of_box_popup)) = app.drawer.active_popup.as_mut() {
                 if out_of_box_popup.toggled_list[0] {
                     popups.push(crate::new_popup!(
                         TMDBInit,
-                        TMDBInitPopup::new(&app.home_dir, false,)
+                        TMDBInitPopup::new(&app.home_dir, false)
                     ));
                     config_mut.options.tmdb_enabled = true;
                 }
                 if out_of_box_popup.toggled_list[1] {
                     popups.push(crate::new_popup!(
-                        PunchPlayInit,
-                        PunchPlayInitPopup::new(&app.home_dir, false,)
+                        SimklInit,
+                        SimklInitPopup::new(&app.home_dir, false)
                     ));
-                    config_mut.options.punch_play_enabled = true;
+                    config_mut.options.simkl_enabled = true;
                 }
                 if out_of_box_popup.toggled_list[2] {
                     popups.push(crate::new_popup!(
-                        TraktInit,
-                        TraktInitPopup::new(&app.home_dir, false,)
+                        PunchPlayInit,
+                        PunchPlayInitPopup::new(&app.home_dir, false)
                     ));
-                    config_mut.options.trakt_enabled = true;
+                    config_mut.options.punch_play_enabled = true;
                 }
                 if out_of_box_popup.toggled_list[3] {
                     popups.push(crate::new_popup!(
+                        TraktInit,
+                        TraktInitPopup::new(&app.home_dir, false)
+                    ));
+                    config_mut.options.trakt_enabled = true;
+                }
+                if out_of_box_popup.toggled_list[4] {
+                    popups.push(crate::new_popup!(
                         OMDBInit,
-                        OMDBInitPopup::new(&app.home_dir, false,)
+                        OMDBInitPopup::new(&app.home_dir, false)
                     ));
                     config_mut.options.omdb_enabled = true;
                 }
@@ -105,7 +113,7 @@ impl PopupTrait for OutOfBoxPopup {
 
         key_event_handler.bind_enter((None, None), "Confirm".into(), confirm_fn);
         key_event_handler.bind_tab((None, None), "".into(), move |app, data| {
-            if let Some(Popups::OutOfBox(out_of_box_popup)) = app.drawer.active_popup.as_mut() {
+            if let Some(Popup::OutOfBox(out_of_box_popup)) = app.drawer.active_popup.as_mut() {
                 match data {
                     crate::key_event_handler::Data::Direction(true, _) => {
                         out_of_box_popup.tab += 1;
@@ -130,7 +138,7 @@ impl PopupTrait for OutOfBoxPopup {
                 ratatui::crossterm::event::MouseButton::Left,
                 area,
                 move |app, _| {
-                    if let Some(Popups::OutOfBox(out_of_box_popup)) =
+                    if let Some(Popup::OutOfBox(out_of_box_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
                         out_of_box_popup.tab = 0;
@@ -153,7 +161,7 @@ impl PopupTrait for OutOfBoxPopup {
                 },
             );
             key_event_handler.bind_key((Some(0), Some(i)), ' ', "Toggle".into(), move |app, _| {
-                if let Some(Popups::OutOfBox(out_of_box_popup)) = app.drawer.active_popup.as_mut() {
+                if let Some(Popup::OutOfBox(out_of_box_popup)) = app.drawer.active_popup.as_mut() {
                     out_of_box_popup.toggled_list[i] ^= true;
                     if i < NUM_REQUIRED_CHOICES
                         && !out_of_box_popup.toggled_list[..NUM_REQUIRED_CHOICES].contains(&true)
@@ -258,7 +266,7 @@ impl PopupTrait for OutOfBoxPopup {
             vertical![==1, >=1].areas(helpers::add_padding(popup_area, Padding::horizontal(2)));
 
         let mut table_indices = vec![];
-        let labels = ["TMDB", "PunchPlay", "Trakt", "OMDB"];
+        let labels = ["TMDB", "Simkl", "PunchPlay", "Trakt", "OMDB"];
         let mut required_header = false;
         let mut optional_header = false;
         let mut i = 0;
@@ -307,7 +315,7 @@ impl PopupTrait for OutOfBoxPopup {
 
         let table_indices_cloned = table_indices.clone();
         key_event_handler.bind_vertical((Some(0), None), "Scroll".into(), move |app, data| {
-            if let Some(Popups::OutOfBox(out_of_box_popup)) = app.drawer.active_popup.as_mut() {
+            if let Some(Popup::OutOfBox(out_of_box_popup)) = app.drawer.active_popup.as_mut() {
                 let row = (out_of_box_popup.item
                     - if out_of_box_popup.item >= NUM_REQUIRED_CHOICES {
                         NUM_REQUIRED_CHOICES
@@ -351,7 +359,7 @@ impl PopupTrait for OutOfBoxPopup {
             }
         });
         key_event_handler.bind_horizontal((Some(0), None), "Scroll".into(), move |app, data| {
-            if let Some(Popups::OutOfBox(out_of_box_popup)) = app.drawer.active_popup.as_mut() {
+            if let Some(Popup::OutOfBox(out_of_box_popup)) = app.drawer.active_popup.as_mut() {
                 let row = (out_of_box_popup.item
                     - if out_of_box_popup.item >= NUM_REQUIRED_CHOICES {
                         NUM_REQUIRED_CHOICES

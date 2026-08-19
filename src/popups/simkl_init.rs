@@ -7,7 +7,7 @@ use std::{
 use ratatui::{
     Frame,
     layout::{Flex, HorizontalAlignment, Margin},
-    macros::{constraint, horizontal, span, text, vertical},
+    macros::{constraint, horizontal, line, span, text, vertical},
     style::{
         Style, Stylize,
         palette::{material, tailwind},
@@ -24,7 +24,7 @@ use crate::{
     helpers,
     key_event_handler::{self, KeyEventHandler},
     popups::{Popup, PopupTrait},
-    tokens::tmdb_tokens::{TMDBTokens, UserTokens},
+    tokens::simkl_tokens::{SimklTokens, UserTokens},
     widgets::{self, Action, ActionType, Hyperlink},
 };
 
@@ -33,8 +33,8 @@ use crate::{
 pub enum Phase {
     #[default]
     Initializing,
-    GetAccessToken,
-    GettingAuthorizationUrl,
+    GetClientInfo,
+    GettingUserCode,
     Authorize(String),
     Finalizing,
     Error(String),
@@ -42,7 +42,7 @@ pub enum Phase {
 }
 
 #[derive(Default)]
-pub struct TMDBInitPopup {
+pub struct SimklInitPopup {
     pub tick:         u64,
     pub phase:        Phase,
     throbber_visible: bool,
@@ -50,23 +50,26 @@ pub struct TMDBInitPopup {
     status:           Option<bool>,
     can_close:        bool,
 
-    input:          TextArea<'static>,
-    throbber_state: ThrobberState,
+    client_id_input:     TextArea<'static>,
+    client_secret_input: TextArea<'static>,
+    app_name_input:      TextArea<'static>,
+    app_version_input:   TextArea<'static>,
+    throbber_state:      ThrobberState,
 
-    rx_init:              Option<Receiver<anyhow::Result<UserTokens>>>,
-    rx_authorization_url: Option<Receiver<String>>,
-    rx_session_id:        Option<Receiver<anyhow::Result<(String, u32)>>>,
+    rx_init:         Option<Receiver<anyhow::Result<UserTokens>>>,
+    rx_user_code:    Option<Receiver<String>>,
+    rx_access_token: Option<Receiver<anyhow::Result<String>>>,
 
     pub user_tokens: Option<UserTokens>,
 }
 
-impl TMDBInitPopup {
+impl SimklInitPopup {
     pub fn new(home_dir: &Path, can_close: bool) -> Self {
         let (tx_init, rx_init) = channel();
 
         let home_dir_cloned = home_dir.to_path_buf();
         thread::spawn(move || {
-            _ = tx_init.send(TMDBTokens::init(&home_dir_cloned));
+            _ = tx_init.send(SimklTokens::init(&home_dir_cloned));
         });
 
         Self {
@@ -78,29 +81,40 @@ impl TMDBInitPopup {
 
     pub fn advance_phase(&mut self) {
         self.phase = match self.phase {
-            Phase::Initializing => Phase::GetAccessToken,
-            Phase::GetAccessToken => {
-                let access_token = self.input.lines()[0].clone();
+            Phase::Initializing => Phase::GetClientInfo,
+            Phase::GetClientInfo => {
+                let client_id = self.client_id_input.lines()[0].clone();
+                let client_secret = self.client_secret_input.lines()[0].clone();
+                let app_name = self.app_name_input.lines()[0].clone();
+                let app_version = self.app_version_input.lines()[0].clone();
 
                 self.user_tokens = Some(UserTokens {
-                    access_token: access_token.clone(),
+                    client_id: client_id.clone(),
+                    client_secret,
+                    app_name: if app_name.is_empty() {
+                        "moviedb".into()
+                    } else {
+                        app_name
+                    },
+                    app_version: if app_version.is_empty() {
+                        "1.0".into()
+                    } else {
+                        app_version
+                    },
 
-                    ..Default::default()
+                    access_token: Default::default(),
                 });
 
-                let (tx_authorization_url, rx_authorization_url) = channel();
-                let (tx_session_id, rx_session_id) = channel();
+                let (tx_user_code, rx_user_code) = channel();
+                let (tx_access_token, rx_access_token) = channel();
                 thread::spawn(move || {
-                    _ = tx_session_id.send(tmdb::tokens::get_session_account_id(
-                        &access_token,
-                        tx_authorization_url,
-                    ));
+                    _ = tx_access_token.send(simkl::tokens::get_tokens(&client_id, tx_user_code));
                 });
 
-                self.rx_authorization_url = Some(rx_authorization_url);
-                self.rx_session_id = Some(rx_session_id);
+                self.rx_user_code = Some(rx_user_code);
+                self.rx_access_token = Some(rx_access_token);
 
-                Phase::GettingAuthorizationUrl
+                Phase::GettingUserCode
             }
             Phase::Authorize(_) => Phase::Finalizing,
             Phase::Finalizing => Phase::Done,
@@ -109,7 +123,7 @@ impl TMDBInitPopup {
     }
 }
 
-impl PopupTrait for TMDBInitPopup {
+impl PopupTrait for SimklInitPopup {
     fn get_state(&self) -> (Option<usize>, Option<usize>) {
         (None, Some(self.item))
     }
@@ -129,11 +143,18 @@ impl PopupTrait for TMDBInitPopup {
                 if let Some(rx_init_response) = self.rx_init.as_ref() {
                     if let Ok(result) = rx_init_response.try_recv() {
                         if let Ok(user_tokens) = result {
-                            if !user_tokens.has_access_token() {
+                            if !user_tokens.has_secrets() {
                                 self.advance_phase();
-                            } else if !user_tokens.has_session_id() {
+                            } else if !user_tokens.has_tokens() {
                                 self.advance_phase();
-                                self.input = TextArea::new(vec![user_tokens.access_token.clone()]);
+                                self.client_id_input =
+                                    TextArea::new(vec![user_tokens.client_id.clone()]);
+                                self.client_secret_input =
+                                    TextArea::new(vec![user_tokens.client_secret.clone()]);
+                                self.app_name_input =
+                                    TextArea::new(vec![user_tokens.app_name.clone()]);
+                                self.app_version_input =
+                                    TextArea::new(vec![user_tokens.app_version.clone()]);
                                 self.advance_phase();
                             } else {
                                 self.phase = Phase::Done;
@@ -145,44 +166,43 @@ impl PopupTrait for TMDBInitPopup {
                         }
                     }
                 },
-            Phase::GettingAuthorizationUrl => {
-                if let Some(rx_authorization_url) = self.rx_authorization_url.as_ref() {
-                    if let Ok(authorization_url) = rx_authorization_url.try_recv() {
+            Phase::GettingUserCode => {
+                if let Some(rx_user_code) = self.rx_user_code.as_ref() {
+                    if let Ok(user_code) = rx_user_code.try_recv() {
                         self.status = Some(false);
-                        self.phase = Phase::Authorize(authorization_url);
+                        self.phase = Phase::Authorize(user_code);
                     }
                 }
-                if let Some(rx_session_id) = self.rx_session_id.as_ref() {
-                    if let Ok(Err(error)) = rx_session_id.try_recv() {
+                if let Some(rx_access_token) = self.rx_access_token.as_ref() {
+                    if let Ok(Err(error)) = rx_access_token.try_recv() {
                         self.item = 0;
                         self.phase = Phase::Error(format!("{:#}", error));
                     }
                 }
             }
             Phase::Authorize(_) => 'label: {
-                if let Some(rx_authorization_url) = self.rx_authorization_url.as_ref() {
+                if let Some(rx_user_code) = self.rx_user_code.as_ref() {
                     if let Err(std::sync::mpsc::TryRecvError::Disconnected) =
-                        rx_authorization_url.try_recv()
+                        rx_user_code.try_recv()
                     {
                         self.advance_phase();
                         break 'label;
                     }
                 }
-                if let Some(rx_session_id) = self.rx_session_id.as_ref() {
-                    if let Ok(Err(error)) = rx_session_id.try_recv() {
+                if let Some(rx_access_token) = self.rx_access_token.as_ref() {
+                    if let Ok(Err(error)) = rx_access_token.try_recv() {
                         self.item = 0;
                         self.phase = Phase::Error(format!("{:#}", error));
                     }
                 }
             }
             Phase::Finalizing =>
-                if let Some(rx_session_id) = self.rx_session_id.as_ref() {
-                    if let Ok(result) = rx_session_id.try_recv() {
+                if let Some(rx_access_token) = self.rx_access_token.as_ref() {
+                    if let Ok(result) = rx_access_token.try_recv() {
                         match result {
-                            Ok((session_id, account_id)) => {
+                            Ok(access_token) => {
                                 if let Some(tokens) = self.user_tokens.as_mut() {
-                                    tokens.session_id = session_id;
-                                    tokens.account_id = account_id;
+                                    tokens.access_token = access_token;
                                 }
                                 self.status = Some(true);
 
@@ -226,16 +246,13 @@ impl PopupTrait for TMDBInitPopup {
 
         self.throbber_visible = false;
         match &self.phase {
-            Phase::Initializing
-            | Phase::GettingAuthorizationUrl
-            | Phase::Finalizing
-            | Phase::Done => {
+            Phase::Initializing | Phase::GettingUserCode | Phase::Finalizing | Phase::Done => {
                 self.throbber_visible = true;
 
                 let popup_area = widgets::window(
                     frame,
                     helpers::centered_area(7, 40, frame.area()),
-                    " TMDB Authentication ",
+                    " Simkl Authentication ",
                     true,
                 );
                 key_event_handler.bind_mouse_button_down(
@@ -258,55 +275,103 @@ impl PopupTrait for TMDBInitPopup {
                     &mut self.throbber_state,
                 );
             }
-            Phase::GetAccessToken => {
-                let input_valid = !self.input.is_empty();
+            Phase::GetClientInfo => {
+                let inputs_valid =
+                    !(self.client_id_input.is_empty() || self.client_secret_input.is_empty());
 
                 key_event_handler.bind_tab((None, None), "".into(), |app, data| {
-                    if let Some(Popup::TMDBInit(tmdb_init_popup)) = app.drawer.active_popup.as_mut()
+                    if let Some(Popup::SimklInit(simkl_init_popup)) =
+                        app.drawer.active_popup.as_mut()
                     {
                         match data {
                             crate::key_event_handler::Data::Direction(true, _) => {
-                                tmdb_init_popup.item += 1;
-                                if tmdb_init_popup.item > 1 {
-                                    tmdb_init_popup.item = 0;
+                                simkl_init_popup.item += 1;
+                                if simkl_init_popup.item > 4 {
+                                    simkl_init_popup.item = 0;
                                 }
                             }
                             crate::key_event_handler::Data::Direction(false, _) => {
-                                tmdb_init_popup.item =
-                                    tmdb_init_popup.item.checked_sub(1).unwrap_or(1);
+                                simkl_init_popup.item =
+                                    simkl_init_popup.item.checked_sub(1).unwrap_or(1);
                             }
                             _ => {}
                         }
                     }
                 });
-                key_event_handler.bind_esc((None, Some(0)), "".into(), |app, _| {
-                    if let Some(Popup::TMDBInit(tmdb_init_popup)) = app.drawer.active_popup.as_mut()
+                key_event_handler.bind_esc((None, None), "".into(), |app, _| {
+                    if let Some(Popup::SimklInit(simkl_init_popup)) =
+                        app.drawer.active_popup.as_mut()
                     {
-                        tmdb_init_popup.item = 1;
+                        simkl_init_popup.item = 4;
                     }
                 });
-                if input_valid {
-                    key_event_handler.bind_enter((None, None), "Confirm".into(), |app, _| {
-                        if let Some(Popup::TMDBInit(tmdb_init_popup)) =
+                key_event_handler.bind_enter((None, None), "Next".into(), |app, _| {
+                    if let Some(Popup::SimklInit(simkl_init_popup)) =
+                        app.drawer.active_popup.as_mut()
+                    {
+                        simkl_init_popup.item += 1;
+                    }
+                });
+                if inputs_valid {
+                    key_event_handler.bind_enter((None, Some(3)), "Confirm".into(), |app, _| {
+                        if let Some(Popup::SimklInit(simkl_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
-                            tmdb_init_popup.advance_phase();
+                            simkl_init_popup.advance_phase();
                         }
                     });
+                    key_event_handler.bind_enter((None, Some(4)), "Confirm".into(), |app, _| {
+                        if let Some(Popup::SimklInit(simkl_init_popup)) =
+                            app.drawer.active_popup.as_mut()
+                        {
+                            simkl_init_popup.advance_phase();
+                        }
+                    });
+                } else {
+                    key_event_handler.bind_enter((None, Some(4)), "".into(), |_, _| {});
                 }
+
                 key_event_handler.bind_input_field((None, Some(0)), "".into(), |app, data| {
-                    if let Some(Popup::TMDBInit(tmdb_init_popup)) = app.drawer.active_popup.as_mut()
+                    if let Some(Popup::SimklInit(simkl_init_popup)) =
+                        app.drawer.active_popup.as_mut()
                     {
                         if let key_event_handler::Data::Key(key_event) = data {
-                            tmdb_init_popup.input.input(key_event);
+                            simkl_init_popup.client_id_input.input(key_event);
+                        }
+                    }
+                });
+                key_event_handler.bind_input_field((None, Some(1)), "".into(), |app, data| {
+                    if let Some(Popup::SimklInit(simkl_init_popup)) =
+                        app.drawer.active_popup.as_mut()
+                    {
+                        if let key_event_handler::Data::Key(key_event) = data {
+                            simkl_init_popup.client_secret_input.input(key_event);
+                        }
+                    }
+                });
+                key_event_handler.bind_input_field((None, Some(2)), "".into(), |app, data| {
+                    if let Some(Popup::SimklInit(simkl_init_popup)) =
+                        app.drawer.active_popup.as_mut()
+                    {
+                        if let key_event_handler::Data::Key(key_event) = data {
+                            simkl_init_popup.app_name_input.input(key_event);
+                        }
+                    }
+                });
+                key_event_handler.bind_input_field((None, Some(3)), "".into(), |app, data| {
+                    if let Some(Popup::SimklInit(simkl_init_popup)) =
+                        app.drawer.active_popup.as_mut()
+                    {
+                        if let key_event_handler::Data::Key(key_event) = data {
+                            simkl_init_popup.app_version_input.input(key_event);
                         }
                     }
                 });
 
                 let popup_area = widgets::window(
                     frame,
-                    helpers::centered_area(11, 50, frame.area()),
-                    " TMDB Authentication ",
+                    helpers::centered_area(14, 50, frame.area()),
+                    " Simkl Authentication ",
                     true,
                 );
                 key_event_handler.bind_mouse_button_down(
@@ -315,30 +380,104 @@ impl PopupTrait for TMDBInitPopup {
                     |_, _| {},
                 );
 
-                let [input_area, _] = vertical![>=3, ==1]
-                    .areas(helpers::add_padding(popup_area, Padding::proportional(1)));
+                let [client_id_area, client_secret_area, app_info_area, _] =
+                    vertical![==3, ==3, ==3, ==1]
+                        .areas(helpers::add_padding(popup_area, Padding::proportional(1)));
 
-                let input_selected = self.item == 0;
                 widgets::input_field(
                     true,
-                    input_selected,
-                    input_valid,
-                    &mut self.input,
-                    WrapMode::Glyph,
+                    self.item == 0,
+                    !self.client_id_input.is_empty(),
+                    &mut self.client_id_input,
+                    WrapMode::None,
                     frame,
-                    input_area,
-                    " Access Token ",
-                    "Enter the Access Token",
+                    client_id_area,
+                    " Client ID ",
+                    "Enter the Client ID",
                     None,
                 );
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
-                    input_area,
+                    client_id_area,
                     |app, _| {
-                        if let Some(Popup::TMDBInit(tmdb_init_popup)) =
+                        if let Some(Popup::SimklInit(simkl_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
-                            tmdb_init_popup.item = 0;
+                            simkl_init_popup.item = 0;
+                        }
+                    },
+                );
+
+                widgets::input_field(
+                    true,
+                    self.item == 1,
+                    !self.client_secret_input.is_empty(),
+                    &mut self.client_secret_input,
+                    WrapMode::None,
+                    frame,
+                    client_secret_area,
+                    " Client Secret ",
+                    "Enter the Client Secret",
+                    None,
+                );
+                key_event_handler.bind_mouse_button_down(
+                    ratatui::crossterm::event::MouseButton::Left,
+                    client_secret_area,
+                    |app, _| {
+                        if let Some(Popup::SimklInit(simkl_init_popup)) =
+                            app.drawer.active_popup.as_mut()
+                        {
+                            simkl_init_popup.item = 1;
+                        }
+                    },
+                );
+
+                let [app_name_area, app_version_area] = horizontal![>=1, >=1].areas(app_info_area);
+
+                widgets::input_field(
+                    true,
+                    self.item == 2,
+                    true,
+                    &mut self.app_name_input,
+                    WrapMode::None,
+                    frame,
+                    app_name_area,
+                    " App name ",
+                    "moviedb",
+                    None,
+                );
+                key_event_handler.bind_mouse_button_down(
+                    ratatui::crossterm::event::MouseButton::Left,
+                    app_name_area,
+                    |app, _| {
+                        if let Some(Popup::SimklInit(simkl_init_popup)) =
+                            app.drawer.active_popup.as_mut()
+                        {
+                            simkl_init_popup.item = 2;
+                        }
+                    },
+                );
+
+                widgets::input_field(
+                    true,
+                    self.item == 3,
+                    true,
+                    &mut self.app_version_input,
+                    WrapMode::None,
+                    frame,
+                    app_version_area,
+                    " App version ",
+                    "1.0",
+                    None,
+                );
+                key_event_handler.bind_mouse_button_down(
+                    ratatui::crossterm::event::MouseButton::Left,
+                    app_version_area,
+                    |app, _| {
+                        if let Some(Popup::SimklInit(simkl_init_popup)) =
+                            app.drawer.active_popup.as_mut()
+                        {
+                            simkl_init_popup.item = 3;
                         }
                     },
                 );
@@ -347,44 +486,44 @@ impl PopupTrait for TMDBInitPopup {
                     Action::new(
                         " Confirm ",
                         ActionType::Default,
-                        self.item == 1,
-                        input_valid,
+                        self.item == 4,
+                        inputs_valid,
                     ),
                     HorizontalAlignment::Right,
                     true,
                     helpers::add_padding(popup_area, Padding::right(1)),
                     frame,
                 );
-                if input_valid {
+                if inputs_valid {
                     key_event_handler.bind_mouse_button_down(
                         ratatui::crossterm::event::MouseButton::Left,
                         confirm_mouse_area,
                         |app, _| {
-                            if let Some(Popup::TMDBInit(tmdb_init_popup)) =
+                            if let Some(Popup::SimklInit(simkl_init_popup)) =
                                 app.drawer.active_popup.as_mut()
                             {
-                                tmdb_init_popup.advance_phase();
+                                simkl_init_popup.advance_phase();
                             }
                         },
                     );
                 }
             }
-            Phase::Authorize(authorization_url) => {
+            Phase::Authorize(user_code) => {
                 key_event_handler.bind_esc((None, None), "".into(), |app, _| {
-                    if let Some(Popup::TMDBInit(tmdb_init_popup)) = app.drawer.active_popup.as_mut()
+                    if let Some(Popup::SimklInit(simkl_init_popup)) =
+                        app.drawer.active_popup.as_mut()
                     {
-                        tmdb_init_popup.item = 0;
-                        // tmdb_init_popup.input.clear();
-                        tmdb_init_popup.rx_session_id = None;
-                        tmdb_init_popup.rx_authorization_url = None;
-                        tmdb_init_popup.phase = Phase::GetAccessToken;
+                        simkl_init_popup.item = 0;
+                        simkl_init_popup.rx_access_token = None;
+                        simkl_init_popup.rx_user_code = None;
+                        simkl_init_popup.phase = Phase::GetClientInfo;
                     }
                 });
 
                 let popup_area = widgets::window(
                     frame,
                     helpers::centered_area(10, 40, frame.area()),
-                    " TMDB Authentication ",
+                    " Simkl Authentication ",
                     false,
                 );
                 key_event_handler.bind_mouse_button_down(
@@ -404,20 +543,27 @@ impl PopupTrait for TMDBInitPopup {
                     ratatui::crossterm::event::MouseButton::Left,
                     back_mouse_area,
                     |app, _| {
-                        if let Some(Popup::TMDBInit(tmdb_init_popup)) =
+                        if let Some(Popup::SimklInit(simkl_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
-                            tmdb_init_popup.item = 0;
-                            tmdb_init_popup.input.clear();
-                            tmdb_init_popup.rx_session_id = None;
-                            tmdb_init_popup.rx_authorization_url = None;
-                            tmdb_init_popup.phase = Phase::GetAccessToken;
+                            simkl_init_popup.item = 0;
+                            simkl_init_popup.rx_access_token = None;
+                            simkl_init_popup.rx_user_code = None;
+                            simkl_init_popup.phase = Phase::GetClientInfo;
                         }
                     },
                 );
 
-                let [_, hyperlink_area, _] = vertical![>=1, ==3, >=1]
+                let [_, user_code_area, hyperlink_area, _] = vertical![*=1, ==1, ==3, *=1]
                     .areas(helpers::add_padding(popup_area, Padding::proportional(1)));
+
+                frame.render_widget(
+                    line![
+                        "User Code: ",
+                        user_code.as_str().bold().fg(tailwind::VIOLET.c300)
+                    ].centered(),
+                    user_code_area,
+                );
 
                 let hyperlink_text = "  Click to Authorize  ";
                 let [hyperlink_area] = horizontal![==(hyperlink_text.len() as u16)]
@@ -432,26 +578,27 @@ impl PopupTrait for TMDBInitPopup {
                         ]
                         .fg(material::GREEN.c100)
                         .bg(material::BLUE.c800),
-                        url:  authorization_url.clone(),
+                        url:  "https://simkl.com/pin".to_string(),
                     },
                     hyperlink_area,
                 );
             }
             Phase::Error(error) => {
                 let back = |app: &mut App, _| {
-                    if let Some(Popup::TMDBInit(tmdb_init_popup)) = app.drawer.active_popup.as_mut()
+                    if let Some(Popup::SimklInit(simkl_init_popup)) =
+                        app.drawer.active_popup.as_mut()
                     {
-                        tmdb_init_popup.item = 0;
-                        tmdb_init_popup.input.clear();
-                        tmdb_init_popup.rx_session_id = None;
-                        tmdb_init_popup.rx_authorization_url = None;
-                        tmdb_init_popup.phase = Phase::GetAccessToken;
-                        if let Some(false) = tmdb_init_popup.status {
-                            if let Some(user_tokens) = tmdb_init_popup.user_tokens.as_ref() {
-                                tmdb_init_popup.input =
+                        simkl_init_popup.item = 0;
+                        simkl_init_popup.client_id_input.clear();
+                        simkl_init_popup.rx_access_token = None;
+                        simkl_init_popup.rx_user_code = None;
+                        simkl_init_popup.phase = Phase::GetClientInfo;
+                        if let Some(false) = simkl_init_popup.status {
+                            if let Some(user_tokens) = simkl_init_popup.user_tokens.as_ref() {
+                                simkl_init_popup.client_id_input =
                                     TextArea::new(vec![user_tokens.access_token.clone()]);
-                                tmdb_init_popup
-                                    .input
+                                simkl_init_popup
+                                    .client_id_input
                                     .move_cursor(ratatui_textarea::CursorMove::End);
                             }
                         }
@@ -461,26 +608,26 @@ impl PopupTrait for TMDBInitPopup {
                 key_event_handler.bind_esc((None, Some(0)), "Back".into(), back);
                 if self.status.is_some() {
                     key_event_handler.bind_enter((None, Some(1)), "Skip".into(), |app, _| {
-                        if let Some(Popup::TMDBInit(tmdb_init_popup)) =
+                        if let Some(Popup::SimklInit(simkl_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
-                            tmdb_init_popup.phase = Phase::Done;
+                            simkl_init_popup.phase = Phase::Done;
                         }
                     });
                     key_event_handler.bind_tab((None, None), "".into(), |app, data| {
-                        if let Some(Popup::TMDBInit(tmdb_init_popup)) =
+                        if let Some(Popup::SimklInit(simkl_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             match data {
                                 crate::key_event_handler::Data::Direction(true, _) => {
-                                    tmdb_init_popup.item += 1;
-                                    if tmdb_init_popup.item > 1 {
-                                        tmdb_init_popup.item = 0;
+                                    simkl_init_popup.item += 1;
+                                    if simkl_init_popup.item > 1 {
+                                        simkl_init_popup.item = 0;
                                     }
                                 }
                                 crate::key_event_handler::Data::Direction(false, _) => {
-                                    tmdb_init_popup.item =
-                                        tmdb_init_popup.item.checked_sub(1).unwrap_or(1);
+                                    simkl_init_popup.item =
+                                        simkl_init_popup.item.checked_sub(1).unwrap_or(1);
                                 }
                                 _ => {}
                             }
@@ -522,10 +669,10 @@ impl PopupTrait for TMDBInitPopup {
                         ratatui::crossterm::event::MouseButton::Left,
                         skip_mouse_area,
                         |app, _| {
-                            if let Some(Popup::TMDBInit(tmdb_init_popup)) =
+                            if let Some(Popup::SimklInit(simkl_init_popup)) =
                                 app.drawer.active_popup.as_mut()
                             {
-                                tmdb_init_popup.phase = Phase::Done;
+                                simkl_init_popup.phase = Phase::Done;
                             }
                         },
                     );

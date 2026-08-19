@@ -7,8 +7,6 @@ use ratatui::{
     widgets::{Block, Padding},
 };
 
-use crate::types::{FxIndexMap, Movie};
-
 pub fn wrap_text(line: &str, width: usize) -> Vec<String> {
     if line.chars().count() <= width {
         return vec![line.to_string()];
@@ -74,10 +72,6 @@ pub fn ellipsize_string(string: &str, max_width: usize) -> String {
     }
 
     new_string
-}
-
-pub fn ids_to_movies(ids: &[u32], movies: &FxIndexMap<u32, Movie>) -> Vec<Movie> {
-    ids.iter().map(|id| movies[id].clone()).collect()
 }
 
 pub fn is_between<T: PartialOrd>(v: T, lb: T, ub: T) -> bool {

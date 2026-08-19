@@ -24,7 +24,7 @@ use crate::{
     app::App,
     helpers,
     key_event_handler::{self, KeyEventHandler},
-    popups::{PopupTrait, Popups},
+    popups::{Popup, PopupTrait},
     tokens::trakt_tokens::{TraktTokens, UserTokens},
     widgets::{self, Action, ActionType, Hyperlink},
 };
@@ -304,7 +304,7 @@ impl PopupTrait for TraktInitPopup {
                     !(self.input0.lines()[0].is_empty() || self.input1.lines()[0].is_empty());
 
                 key_event_handler.bind_tab((None, None), "".into(), |app, data| {
-                    if let Some(Popups::TraktInit(trakt_init_popup)) =
+                    if let Some(Popup::TraktInit(trakt_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
                         match data {
@@ -323,14 +323,14 @@ impl PopupTrait for TraktInitPopup {
                     }
                 });
                 key_event_handler.bind_esc((None, None), "".into(), |app, _| {
-                    if let Some(Popups::TraktInit(trakt_init_popup)) =
+                    if let Some(Popup::TraktInit(trakt_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
                         trakt_init_popup.item = 2;
                     }
                 });
                 key_event_handler.bind_enter((None, None), "".into(), |app, _| {
-                    if let Some(Popups::TraktInit(trakt_init_popup)) =
+                    if let Some(Popup::TraktInit(trakt_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
                         trakt_init_popup.item += 1;
@@ -341,7 +341,7 @@ impl PopupTrait for TraktInitPopup {
                         (None, Some(1)),
                         "Confirm".into(),
                         move |app, _| {
-                            if let Some(Popups::TraktInit(trakt_init_popup)) =
+                            if let Some(Popup::TraktInit(trakt_init_popup)) =
                                 app.drawer.active_popup.as_mut()
                             {
                                 trakt_init_popup.advance_phase();
@@ -352,7 +352,7 @@ impl PopupTrait for TraktInitPopup {
                         (None, Some(2)),
                         "Confirm".into(),
                         move |app, _| {
-                            if let Some(Popups::TraktInit(trakt_init_popup)) =
+                            if let Some(Popup::TraktInit(trakt_init_popup)) =
                                 app.drawer.active_popup.as_mut()
                             {
                                 trakt_init_popup.advance_phase();
@@ -364,7 +364,7 @@ impl PopupTrait for TraktInitPopup {
                 }
 
                 key_event_handler.bind_input_field((None, Some(0)), "".into(), |app, data| {
-                    if let Some(Popups::TraktInit(trakt_init_popup)) =
+                    if let Some(Popup::TraktInit(trakt_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
                         if let key_event_handler::Data::Key(key_event) = data {
@@ -373,7 +373,7 @@ impl PopupTrait for TraktInitPopup {
                     }
                 });
                 key_event_handler.bind_input_field((None, Some(1)), "".into(), |app, data| {
-                    if let Some(Popups::TraktInit(trakt_init_popup)) =
+                    if let Some(Popup::TraktInit(trakt_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
                         if let key_event_handler::Data::Key(key_event) = data {
@@ -414,7 +414,7 @@ impl PopupTrait for TraktInitPopup {
                     ratatui::crossterm::event::MouseButton::Left,
                     ci_input_area,
                     |app, _| {
-                        if let Some(Popups::TraktInit(trakt_init_popup)) =
+                        if let Some(Popup::TraktInit(trakt_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             trakt_init_popup.item = 0;
@@ -439,7 +439,7 @@ impl PopupTrait for TraktInitPopup {
                     ratatui::crossterm::event::MouseButton::Left,
                     cs_input_area,
                     |app, _| {
-                        if let Some(Popups::TraktInit(trakt_init_popup)) =
+                        if let Some(Popup::TraktInit(trakt_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             trakt_init_popup.item = 1;
@@ -459,7 +459,7 @@ impl PopupTrait for TraktInitPopup {
                         ratatui::crossterm::event::MouseButton::Left,
                         mouse_area,
                         |app, _| {
-                            if let Some(Popups::TraktInit(trakt_init_popup)) =
+                            if let Some(Popup::TraktInit(trakt_init_popup)) =
                                 app.drawer.active_popup.as_mut()
                             {
                                 trakt_init_popup.advance_phase();
@@ -472,7 +472,7 @@ impl PopupTrait for TraktInitPopup {
                 let input_valid = !self.input0.is_empty();
 
                 key_event_handler.bind_tab((None, None), "".into(), |app, data| {
-                    if let Some(Popups::TraktInit(trakt_init_popup)) =
+                    if let Some(Popup::TraktInit(trakt_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
                         match data {
@@ -491,14 +491,14 @@ impl PopupTrait for TraktInitPopup {
                     }
                 });
                 key_event_handler.bind_esc((None, None), "".into(), |app, _| {
-                    if let Some(Popups::TraktInit(trakt_init_popup)) =
+                    if let Some(Popup::TraktInit(trakt_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
                         trakt_init_popup.item = 3;
                     }
                 });
                 key_event_handler.bind_esc((None, Some(3)), "".into(), |app, _| {
-                    if let Some(Popups::TraktInit(trakt_init_popup)) =
+                    if let Some(Popup::TraktInit(trakt_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
                         trakt_init_popup.item = 0;
@@ -511,7 +511,7 @@ impl PopupTrait for TraktInitPopup {
                     }
                 });
                 key_event_handler.bind_enter((None, Some(0)), "".into(), |app, _| {
-                    if let Some(Popups::TraktInit(trakt_init_popup)) =
+                    if let Some(Popup::TraktInit(trakt_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
                         trakt_init_popup.item = 1;
@@ -519,7 +519,7 @@ impl PopupTrait for TraktInitPopup {
                 });
                 if input_valid {
                     key_event_handler.bind_enter((None, Some(1)), "Confirm".into(), |app, _| {
-                        if let Some(Popups::TraktInit(trakt_init_popup)) =
+                        if let Some(Popup::TraktInit(trakt_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             trakt_init_popup.advance_phase();
@@ -527,14 +527,14 @@ impl PopupTrait for TraktInitPopup {
                     });
                 }
                 key_event_handler.bind_enter((None, Some(2)), "Skip".into(), |app, _| {
-                    if let Some(Popups::TraktInit(trakt_init_popup)) =
+                    if let Some(Popup::TraktInit(trakt_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
                         trakt_init_popup.phase = Phase::Done;
                     }
                 });
                 key_event_handler.bind_enter((None, Some(3)), "Back".into(), |app, _| {
-                    if let Some(Popups::TraktInit(trakt_init_popup)) =
+                    if let Some(Popup::TraktInit(trakt_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
                         trakt_init_popup.item = 0;
@@ -547,7 +547,7 @@ impl PopupTrait for TraktInitPopup {
                     }
                 });
                 key_event_handler.bind_input_field((None, Some(0)), "".into(), |app, data| {
-                    if let Some(Popups::TraktInit(trakt_init_popup)) =
+                    if let Some(Popup::TraktInit(trakt_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
                         if let key_event_handler::Data::Key(key_event) = data {
@@ -579,7 +579,7 @@ impl PopupTrait for TraktInitPopup {
                     ratatui::crossterm::event::MouseButton::Left,
                     skip_mouse_area,
                     |app, _| {
-                        if let Some(Popups::TraktInit(trakt_init_popup)) =
+                        if let Some(Popup::TraktInit(trakt_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             trakt_init_popup.phase = Phase::Done;
@@ -598,7 +598,7 @@ impl PopupTrait for TraktInitPopup {
                     ratatui::crossterm::event::MouseButton::Left,
                     back_mouse_area,
                     |app, _| {
-                        if let Some(Popups::TraktInit(trakt_init_popup)) =
+                        if let Some(Popup::TraktInit(trakt_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             trakt_init_popup.item = 0;
@@ -649,7 +649,7 @@ impl PopupTrait for TraktInitPopup {
                     ratatui::crossterm::event::MouseButton::Left,
                     input_area,
                     |app, _| {
-                        if let Some(Popups::TraktInit(trakt_init_popup)) =
+                        if let Some(Popup::TraktInit(trakt_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             trakt_init_popup.item = 0;
@@ -669,7 +669,7 @@ impl PopupTrait for TraktInitPopup {
                         ratatui::crossterm::event::MouseButton::Left,
                         confirm_mouse_area,
                         |app, _| {
-                            if let Some(Popups::TraktInit(trakt_init_popup)) =
+                            if let Some(Popup::TraktInit(trakt_init_popup)) =
                                 app.drawer.active_popup.as_mut()
                             {
                                 trakt_init_popup.advance_phase();
@@ -680,7 +680,7 @@ impl PopupTrait for TraktInitPopup {
             }
             Phase::Error(error) => {
                 let back = |app: &mut App, _| {
-                    if let Some(Popups::TraktInit(trakt_init_popup)) =
+                    if let Some(Popup::TraktInit(trakt_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
                         trakt_init_popup.item = 0;
@@ -698,14 +698,14 @@ impl PopupTrait for TraktInitPopup {
                 key_event_handler.bind_enter((None, Some(0)), "Back".into(), back);
                 if self.status.is_some() {
                     key_event_handler.bind_enter((None, Some(1)), "Skip".into(), |app, _| {
-                        if let Some(Popups::TraktInit(trakt_init_popup)) =
+                        if let Some(Popup::TraktInit(trakt_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             trakt_init_popup.phase = Phase::Done;
                         }
                     });
                     key_event_handler.bind_tab((None, None), "".into(), |app, data| {
-                        if let Some(Popups::TraktInit(trakt_init_popup)) =
+                        if let Some(Popup::TraktInit(trakt_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             match data {
@@ -759,7 +759,7 @@ impl PopupTrait for TraktInitPopup {
                         ratatui::crossterm::event::MouseButton::Left,
                         skip_mouse_area,
                         |app, _| {
-                            if let Some(Popups::TraktInit(trakt_init_popup)) =
+                            if let Some(Popup::TraktInit(trakt_init_popup)) =
                                 app.drawer.active_popup.as_mut()
                             {
                                 trakt_init_popup.phase = Phase::Done;
