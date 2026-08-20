@@ -1,10 +1,37 @@
+use chrono::{DateTime, Utc};
+use itertools::Itertools;
 use reqwest::{
     blocking::ClientBuilder,
     header::{AUTHORIZATION, HeaderMap, USER_AGENT},
 };
-use serde_json::Value;
+use serde::Serialize;
+use serde_json::{Value, json};
 
-use crate::smo::MovieDetails;
+mod smo;
+
+use smo::MovieDetails;
+
+use crate::smo::Item;
+
+pub fn search_movies(
+    client_id: &str,
+    app_name: &str,
+    app_version: &str,
+    name: &str,
+) -> anyhow::Result<Vec<Item>> {
+    let client = ClientBuilder::new().build()?;
+    let headers = headers!(client_id, app_name, app_version);
+    let query = query!(app_name, app_version, ("q", name), ("extended", "full"));
+
+    crate::send_request_deserialized(
+        &client,
+        &format!("https://api.simkl.com/search/movie"),
+        Some(&headers),
+        None,
+        Some(&query),
+        "Simkl: Error while getting movie details",
+    )
+}
 
 pub fn get_movie_details(
     client_id: &str,
@@ -13,22 +40,166 @@ pub fn get_movie_details(
     simkl_id: u32,
 ) -> anyhow::Result<MovieDetails> {
     let client = ClientBuilder::new().build()?;
-
-    let mut headers = HeaderMap::new();
-    headers.insert("simkl-api-key", client_id.parse().unwrap());
-    headers.insert(
-        USER_AGENT,
-        format!("{app_name}/{app_version}").parse().unwrap(),
-    );
+    let headers = headers!(client_id, app_name, app_version);
+    let query = query!(app_name, app_version);
 
     crate::send_request_deserialized(
         &client,
-        &format!(
-            "https://api.simkl.com/movies/{simkl_id}?app-name={app_name}&app-version={app_version}"
-        ),
+        &format!("https://api.simkl.com/movies/{simkl_id}"),
         Some(&headers),
         None,
-        None,
+        Some(&query),
         "Simkl: Error while getting movie details",
+    )
+}
+
+pub fn add_movies_to_watchlist(
+    access_token: &str,
+    client_id: &str,
+    app_name: &str,
+    app_version: &str,
+    ids_added_at: &[(u32, DateTime<Utc>)],
+) -> anyhow::Result<Value> {
+    #[derive(Serialize)]
+    struct Id {
+        tmdb: u32,
+    }
+    #[derive(Serialize)]
+    struct WatchlistItem {
+        ids:      Id,
+        added_at: DateTime<Utc>,
+        to:       String,
+    }
+
+    let client = ClientBuilder::new().build()?;
+    let headers = headers!(client_id, app_name, app_version, access_token: access_token);
+    let query = query!(app_name, app_version);
+    let body = json!({
+        "movies": ids_added_at.into_iter().map(|&(id, added_at)| WatchlistItem {
+            ids: Id { tmdb: id },
+            added_at,
+            to: "plantowatch".to_string()
+        }).collect_vec(),
+    });
+
+    crate::send_request_deserialized(
+        &client,
+        &format!("https://api.simkl.com/sync/add-to-list"),
+        Some(&headers),
+        Some(&body),
+        Some(&query),
+        "Simkl: Error while adding movies to watchlist",
+    )
+}
+pub fn remove_movies_history_or_from_watchlist(
+    access_token: &str,
+    client_id: &str,
+    app_name: &str,
+    app_version: &str,
+    ids: &[u32],
+) -> anyhow::Result<Value> {
+    #[derive(Serialize)]
+    struct Id {
+        tmdb: u32,
+    }
+    #[derive(Serialize)]
+    struct WatchlistItem {
+        ids: Id,
+    }
+
+    let client = ClientBuilder::new().build()?;
+    let headers = headers!(client_id, app_name, app_version, access_token: access_token);
+    let query = query!(app_name, app_version);
+    let body = json!({
+        "movies": ids.into_iter().map(|&id| WatchlistItem {
+            ids: Id { tmdb: id },
+        }).collect_vec(),
+    });
+
+    crate::send_request_deserialized(
+        &client,
+        &format!("https://api.simkl.com/sync/history/remove"),
+        Some(&headers),
+        Some(&body),
+        Some(&query),
+        "Simkl: Error while removing movies history/from watchlist",
+    )
+}
+
+pub fn log_or_edit_watched(
+    access_token: &str,
+    client_id: &str,
+    app_name: &str,
+    app_version: &str,
+    items: &[(u32, usize, DateTime<Utc>)],
+) -> anyhow::Result<Value> {
+    #[derive(Serialize)]
+    struct Id {
+        tmdb: u32,
+    }
+    #[derive(Serialize)]
+    struct WatchlistItem {
+        ids:        Id,
+        watched_at: DateTime<Utc>,
+        status:     String,
+        rating:     usize,
+    }
+
+    let client = ClientBuilder::new().build()?;
+    let headers = headers!(client_id, app_name, app_version, access_token: access_token);
+    let query = query!(app_name, app_version);
+    let body = json!({
+        "movies": items.into_iter().map(|&(id, rating, watched_at)| WatchlistItem {
+            ids: Id { tmdb: id },
+            watched_at: watched_at.into(),
+            status: "completed".to_string(),
+            rating,
+        }).collect_vec(),
+    });
+
+    crate::send_request_deserialized(
+        &client,
+        &format!("https://api.simkl.com/sync/history"),
+        Some(&headers),
+        Some(&body),
+        Some(&query),
+        "Simkl: Error while logging movies watches",
+    )
+}
+
+pub fn edit_rating(
+    access_token: &str,
+    client_id: &str,
+    app_name: &str,
+    app_version: &str,
+    items: &[(u32, usize)],
+) -> anyhow::Result<Value> {
+    #[derive(Serialize)]
+    struct Id {
+        tmdb: u32,
+    }
+    #[derive(Serialize)]
+    struct WatchlistItem {
+        ids:    Id,
+        rating: usize,
+    }
+
+    let client = ClientBuilder::new().build()?;
+    let headers = headers!(client_id, app_name, app_version, access_token: access_token);
+    let query = query!(app_name, app_version);
+    let body = json!({
+        "movies": items.into_iter().map(|&(id, rating)| WatchlistItem {
+            ids: Id { tmdb: id },
+            rating,
+        }).collect_vec(),
+    });
+
+    crate::send_request_deserialized(
+        &client,
+        &format!("https://api.simkl.com/sync/history"),
+        Some(&headers),
+        Some(&body),
+        Some(&query),
+        "Simkl: Error while editing movies ratings",
     )
 }

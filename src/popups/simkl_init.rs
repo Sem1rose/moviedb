@@ -561,7 +561,8 @@ impl PopupTrait for SimklInitPopup {
                     line![
                         "User Code: ",
                         user_code.as_str().bold().fg(tailwind::VIOLET.c300)
-                    ].centered(),
+                    ]
+                    .centered(),
                     user_code_area,
                 );
 

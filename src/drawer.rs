@@ -348,7 +348,7 @@ impl Drawer {
             self.popup_queue
                 .push(Popup::EditMovie(Box::new(EditMoviePopup::new(
                     entry.get_user_rating(),
-                    entry.get_latest_play(),
+                    entry.get_latest_play().into(),
                 ))));
         }
     }

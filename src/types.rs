@@ -1,9 +1,9 @@
 use std::{cmp::Ordering, io::stdout};
 
-use chrono::{DateTime, Local, NaiveDate, TimeDelta};
+use chrono::{DateTime, NaiveDate, TimeDelta, Utc};
 use indexmap::IndexMap;
 use log::info;
-use punch_play::smo::{DetailsResponse, HistoryItem};
+use punch_play::smo::{DetailsResponse, HistoryItem as PunchPlayHistoryItem};
 use ratatui::{
     Terminal,
     backend::CrosstermBackend,
@@ -89,7 +89,7 @@ pub enum ListID {
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct ListItem {
     pub id:       u32,
-    pub added_at: DateTime<Local>,
+    pub added_at: DateTime<Utc>,
 }
 #[derive(Serialize, Deserialize, Default, Clone)]
 pub struct List {
@@ -139,7 +139,7 @@ impl List {
                 .filter_map(|x| {
                     (x.item_type == "movie").then_some(ListItem {
                         id:       x.tmdb_id,
-                        added_at: x.added_at.into(),
+                        added_at: x.added_at,
                     })
                 })
                 .collect(),
@@ -156,12 +156,7 @@ impl List {
                 .iter()
                 .map(|x| ListItem {
                     id:       x.id,
-                    added_at: x
-                        .release_date
-                        .and_time(Default::default())
-                        .and_local_timezone(Local)
-                        .latest()
-                        .unwrap(),
+                    added_at: x.release_date.and_time(Default::default()).and_utc(),
                 })
                 .collect(),
             readonly: true,
@@ -273,7 +268,7 @@ macro_rules! pop_criterion(
 #[derive(Serialize, Clone, Deserialize, Debug)]
 pub struct HistoryEntry {
     #[serde(alias = "watched_at")]
-    pub date:   DateTime<Local>,
+    pub date:   DateTime<Utc>,
     pub rating: f64,
     pub note:   Option<String>,
 }
@@ -282,12 +277,12 @@ pub struct Entry {
     pub movie_id: u32,
     pub history:  Vec<HistoryEntry>,
 }
-impl From<HistoryItem> for Entry {
-    fn from(value: HistoryItem) -> Self {
+impl From<PunchPlayHistoryItem> for Entry {
+    fn from(value: PunchPlayHistoryItem) -> Self {
         Entry {
             movie_id: value.tmdb_id,
             history:  vec![HistoryEntry {
-                date:   value.watched_at.into(),
+                date:   value.watched_at,
                 rating: value.rating.unwrap() as f64,
                 note:   None,
             }],
@@ -314,15 +309,15 @@ impl Entry {
         self.history.last().map(|x| x.rating).unwrap_or(0.0)
     }
 
-    pub fn get_latest_play(&self) -> DateTime<Local> {
+    pub fn get_latest_play(&self) -> DateTime<Utc> {
         self.history.last().map(|x| x.date).unwrap_or_default()
     }
 
-    pub fn get_first_play(&self) -> DateTime<Local> {
+    pub fn get_first_play(&self) -> DateTime<Utc> {
         self.history.first().map(|x| x.date).unwrap_or_default()
     }
 
-    pub fn add_play(&mut self, date: DateTime<Local>, rating: f64, note: Option<String>) {
+    pub fn add_play(&mut self, date: DateTime<Utc>, rating: f64, note: Option<String>) {
         self.history.push(HistoryEntry { date, rating, note });
         self.history
             .sort_by(|a, b| a.date.partial_cmp(&b.date).unwrap());

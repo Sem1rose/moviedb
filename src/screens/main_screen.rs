@@ -5,7 +5,7 @@ use std::{
     rc::Rc,
 };
 
-use chrono::{DateTime, Datelike, Local, NaiveDate, NaiveTime};
+use chrono::{DateTime, Datelike, Local, NaiveDate, NaiveTime, Utc};
 use itertools::Itertools;
 use log::error;
 use nucleo_matcher::{Config as MatcherConfig, Matcher, pattern::Atom};
@@ -341,9 +341,7 @@ impl MainScreen {
                                     NaiveTime::from_num_seconds_from_midnight_opt(i as u32, 0)
                                         .unwrap(),
                                 )
-                                .and_local_timezone(Local)
-                                .latest()
-                                .unwrap(),
+                                .and_utc(),
                         })
                     }),
                     punch_play::movie::get_user_watchlist(punch_play_tokens.access_token()).map(
@@ -351,7 +349,7 @@ impl MainScreen {
                             x.into_iter().filter_map(|x| {
                                 (x.item_type == "movie").then_some(ListItem {
                                     id:       x.tmdb_id,
-                                    added_at: x.added_at.into(),
+                                    added_at: x.added_at,
                                 })
                             })
                         },
@@ -2775,6 +2773,7 @@ impl MainScreen {
                     material::RED.c400
                 };
 
+                let local_date = play.date.with_timezone(&Local);
                 for i in 0..area.height {
                     let index = if partially_visible {
                         if self.movies_description.plays_tab.alignment_bottom {
@@ -2825,10 +2824,10 @@ impl MainScreen {
                                         if latest { Modifier::BOLD } else { Modifier::empty() }
                                     ),
                                     span!(" @ "),
-                                    if play.date == DateTime::<Local>::default() {
+                                    if play.date == DateTime::<Utc>::default() {
                                         "Unknown".into()
                                     } else {
-                                        play.date.format("%d/%m/%Y %H:%M").to_string()
+                                        local_date.format("%d/%m/%Y %H:%M").to_string()
                                     }
                                     .fg(if latest {
                                         if tab_selected {

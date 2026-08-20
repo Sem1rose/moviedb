@@ -4,7 +4,6 @@ use anyhow::{anyhow, bail};
 use itertools::Itertools;
 use log::{error, info};
 use ratatui::crossterm::event::{self, Event, KeyEvent, KeyEventState, KeyModifiers};
-use serde_json::Value;
 
 use crate::{
     config::Config,
@@ -299,8 +298,9 @@ impl App {
                 ) {
                     chrono::Local::now()
                 } else {
-                    edit_movie_popup.rating_input.lines()[0].parse().unwrap()
-                };
+                    edit_movie_popup.date_input.lines()[0].parse().unwrap()
+                }
+                .into();
 
                 self.watched
                     .borrow_mut()
@@ -315,6 +315,16 @@ impl App {
                         }],
                     });
 
+                info!(
+                    "{:?}",
+                    simkl::movie::log_or_edit_watched(
+                        self.simkl_tokens.access_token(),
+                        self.simkl_tokens.client_id(),
+                        self.simkl_tokens.app_name(),
+                        self.simkl_tokens.app_version(),
+                        &[(movie_id, rating.trunc() as usize, date)]
+                    )
+                );
                 /*
                 info!("{:?}", punch_play::movie::log_watch(self.punch_play_tokens.access_token(), movie_id, Some(date.into())));
                 info!("{:?}", punch_play::movie::add_or_edit_rating(self.punch_play_tokens.access_token(), movie_id, Some(rating.floor() as usize), Some(date.into())));
@@ -407,7 +417,11 @@ impl App {
                 movie.add_omdb_details(omdb);
             }
 
-            (movie, add_movie_popup.date, add_movie_popup.user_rating)
+            (
+                movie,
+                add_movie_popup.date.into(),
+                add_movie_popup.user_rating,
+            )
         } else {
             unreachable!()
         };
@@ -442,6 +456,16 @@ impl App {
                     watchlist.swap_remove(index);
                 }
 
+                info!(
+                    "{:?}",
+                    simkl::movie::log_or_edit_watched(
+                        self.simkl_tokens.access_token(),
+                        self.simkl_tokens.client_id(),
+                        self.simkl_tokens.app_name(),
+                        self.simkl_tokens.app_version(),
+                        &[(movie_id, rating.trunc() as usize, date)]
+                    )
+                );
                 /*
                 info!("{:?}", punch_play::movie::log_watch(self.punch_play_tokens.access_token(), movie_id, Some(date.into())));
                 info!("{:?}", punch_play::movie::add_or_edit_rating(self.punch_play_tokens.access_token(), movie_id, Some(rating.floor() as usize), Some(date.into())));
@@ -465,23 +489,33 @@ impl App {
                     .iter()
                     .any(|x| x.id == movie_id)
                 {
-                    /*
                     match main_screen.selected_list {
+                        /*
                         ListID::TMDB(list_id) => {
                             info!("{:?}", punch_play::list::add_movie_to_list(self.punch_play_tokens.access_token(), list_id, movie_id));
                         },
                         ListID::PunchPlay(list_id) => {
                             info!("{:?}", tmdb::list::add_item_to_list(self.tmdb_tokens.access_token(), list_id, movie_id));
                         },
+                        */
                         ListID::Watchlist => {
-                            info!("{:?}", tmdb::movie::add_or_remove_watchlist(self.tmdb_tokens.access_token(), self.tmdb_tokens.account_id(), movie_id, true));
-                            if let Ok(Some(list_id)) = punch_play::list::get_user_lists(self.punch_play_tokens.access_token()).map(|y| y.into_iter().find(|x| x.is_watchlist).map(|x| x.id)) {
-                                info!("{:?}", punch_play::list::add_movie_to_list(self.punch_play_tokens.access_token(), list_id, movie_id));
-                            }
-                        },
-                        _ => ()
+                            // info!("{:?}", tmdb::movie::add_or_remove_watchlist(self.tmdb_tokens.access_token(), self.tmdb_tokens.account_id(), movie_id, true));
+                            // if let Ok(Some(list_id)) = punch_play::list::get_user_lists(self.punch_play_tokens.access_token()).map(|y| y.into_iter().find(|x| x.is_watchlist).map(|x| x.id)) {
+                            //     info!("{:?}", punch_play::list::add_movie_to_list(self.punch_play_tokens.access_token(), list_id, movie_id));
+                            // }
+                            info!(
+                                "{:?}",
+                                simkl::movie::add_movies_to_watchlist(
+                                    self.simkl_tokens.access_token(),
+                                    self.simkl_tokens.client_id(),
+                                    self.simkl_tokens.app_name(),
+                                    self.simkl_tokens.app_version(),
+                                    &[(movie_id, date)]
+                                )
+                            );
+                        }
+                        _ => (),
                     }
-                    */
 
                     main_screen
                         .lists
@@ -603,7 +637,8 @@ impl App {
                     chrono::Local::now()
                 } else {
                     edit_movie_popup.date_input.lines()[0].parse().unwrap()
-                };
+                }
+                .into();
 
                 let movie_id = main_screen.current_movie().unwrap().id;
                 self.watched.borrow_mut().entry(movie_id).and_modify(|x| {
@@ -615,6 +650,16 @@ impl App {
                         .sort_by(|a, b| a.date.partial_cmp(&b.date).unwrap());
                 });
 
+                info!(
+                    "{:?}",
+                    simkl::movie::log_or_edit_watched(
+                        self.simkl_tokens.access_token(),
+                        self.simkl_tokens.client_id(),
+                        self.simkl_tokens.app_name(),
+                        self.simkl_tokens.app_version(),
+                        &[(movie_id, rating.trunc() as usize, date)]
+                    )
+                );
                 /*
                 info!("{:?}", punch_play::movie::add_or_edit_rating(self.punch_play_tokens.access_token(), movie_id, Some(rating.floor() as usize), Some(date.into())));
                 info!("{:?}", tmdb::movie::add_or_edit_rating(self.tmdb_tokens.access_token(), movie_id, rating.floor() as usize));
@@ -634,6 +679,16 @@ impl App {
                     .borrow_mut()
                     .swap_remove(&main_screen.current_movie().unwrap().id);
 
+                info!(
+                    "{:?}",
+                    simkl::movie::remove_movies_history_or_from_watchlist(
+                        self.simkl_tokens.access_token(),
+                        self.simkl_tokens.client_id(),
+                        self.simkl_tokens.app_name(),
+                        self.simkl_tokens.app_version(),
+                        &[movie_id]
+                    )
+                );
                 /*
                 info!("{:?}", punch_play::movie::clear_history(self.punch_play_tokens.access_token(), movie_id));
                 info!("{:?}", punch_play::movie::add_or_edit_rating(self.punch_play_tokens.access_token(), movie_id, None, None));
@@ -657,23 +712,33 @@ impl App {
 
                 main_screen.save_lists();
 
-                /*
                 match main_screen.selected_list {
+                    /*
                     ListID::TMDB(list_id) => {
                         info!("{:?}", punch_play::list::remove_item_from_list(self.punch_play_tokens.access_token(), list_id, movie_id));
                     },
                     ListID::PunchPlay(list_id) => {
                         info!("{:?}", tmdb::list::remove_item_from_list(self.tmdb_tokens.access_token(), list_id, movie_id));
                     },
+                    */
                     ListID::Watchlist => {
-                        info!("{:?}", tmdb::movie::add_or_remove_watchlist(self.tmdb_tokens.access_token(), self.tmdb_tokens.account_id(), movie_id, false));
-                        if let Ok(Some(list_id)) = punch_play::list::get_user_lists(self.punch_play_tokens.access_token()).map(|y| y.into_iter().find(|x| x.is_watchlist).map(|x| x.id)) {
-                            info!("{:?}", punch_play::list::remove_item_from_list(self.punch_play_tokens.access_token(), list_id, movie_id));
-                        }
-                    },
-                    _ => ()
+                        // info!("{:?}", tmdb::movie::add_or_remove_watchlist(self.tmdb_tokens.access_token(), self.tmdb_tokens.account_id(), movie_id, false));
+                        // if let Ok(Some(list_id)) = punch_play::list::get_user_lists(self.punch_play_tokens.access_token()).map(|y| y.into_iter().find(|x| x.is_watchlist).map(|x| x.id)) {
+                        // info!("{:?}", punch_play::list::remove_item_from_list(self.punch_play_tokens.access_token(), list_id, movie_id));
+                        // }
+                        info!(
+                            "{:?}",
+                            simkl::movie::remove_movies_history_or_from_watchlist(
+                                self.simkl_tokens.access_token(),
+                                self.simkl_tokens.client_id(),
+                                self.simkl_tokens.app_name(),
+                                self.simkl_tokens.app_version(),
+                                &[movie_id]
+                            )
+                        );
+                    }
+                    _ => (),
                 }
-                */
             }
 
             let pos = main_screen.filtered_movies.iter().position(|x| {
@@ -714,14 +779,23 @@ impl App {
     pub fn set_simkl_user_tokens(&mut self) {
         if let Some(Popup::SimklInit(simkl_init_popup)) = self.drawer.active_popup.as_mut() {
             if let Some(tokens) = simkl_init_popup.user_tokens.take() {
-                info!("{:#?}", tokens);
                 self.simkl_tokens.set_creds(tokens).unwrap();
             }
         }
         self.drawer.close_popup();
 
-        // info!("{:#?}", simkl::external_to_simkl_id_slug(self.simkl_tokens.client_id(), self.simkl_tokens.app_name(), self.simkl_tokens.app_version(), "73", "tmdb", "movie"))
-        info!("{:#?}", simkl::movie::get_movie_details(self.simkl_tokens.client_id(), self.simkl_tokens.app_name(), self.simkl_tokens.app_version(), simkl::external_to_simkl_id_slug(self.simkl_tokens.client_id(), self.simkl_tokens.app_name(), self.simkl_tokens.app_version(), "14537", "tmdb", "movie").unwrap().0))
+        // info!("{:#?}", simkl::movie::search_movies(self.simkl_tokens.client_id(), self.simkl_tokens.app_name(), self.simkl_tokens.app_version(), "The Joker"))
+        // info!("{:#?}", simkl::movie::add_movies_to_watchlist(self.simkl_tokens.access_token(), self.simkl_tokens.client_id(), self.simkl_tokens.app_name(), self.simkl_tokens.app_version(), vec![(762, DateTime::<Local>::from_timestamp(1, 0).unwrap())]))
+        // info!(
+        //     "{:#?}",
+        //     simkl::movie::remove_movies_from_watchlist(
+        //         self.simkl_tokens.access_token(),
+        //         self.simkl_tokens.client_id(),
+        //         self.simkl_tokens.app_name(),
+        //         self.simkl_tokens.app_version(),
+        //         &[762]
+        //     )
+        // )
     }
 
     pub fn set_punch_play_user_tokens(&mut self) {
