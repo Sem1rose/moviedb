@@ -1,17 +1,18 @@
 use std::{fmt::Display, str::FromStr};
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer};
 
-fn parse_string<'de, D: Deserializer<'de>, T: Default + FromStr>(d: D) -> Result<T, D::Error>
-where
-    <T as FromStr>::Err: std::fmt::Display,
-{
-    Deserialize::deserialize(d).and_then(|value: Option<&str>| {
-        value.map_or(Ok(Default::default()), |value| {
-            value.parse().map_err(serde::de::Error::custom)
-        })
-    })
-}
+// fn parse_string<'de, D: Deserializer<'de>, T: Default + FromStr>(d: D) -> Result<T, D::Error>
+// where
+//     <T as FromStr>::Err: std::fmt::Display,
+// {
+//     Deserialize::deserialize(d).and_then(|value: Option<&str>| {
+//         value.map_or(Ok(Default::default()), |value| {
+//             value.parse().map_err(serde::de::Error::custom)
+//         })
+//     })
+// }
 fn parse_nullable_string<'de, D: Deserializer<'de>, T: FromStr>(d: D) -> Result<Option<T>, D::Error>
 where
     <T as FromStr>::Err: std::fmt::Display,
@@ -101,8 +102,24 @@ pub struct Item {
     pub ids:       Ids,
     pub poster:    String,
     pub title:     String,
-    #[serde(alias = "type", alias = "endpoint_type")]
-    pub item_type: String,
     pub year:      u32,
     pub ratings:   Option<Ratings>,
+    #[serde(alias = "type", alias = "endpoint_type")]
+    pub item_type: Option<String>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct WatchlistBucketItem {
+    pub added_to_watchlist_at: DateTime<Utc>,
+    pub last_watched_at: Option<DateTime<Utc>>,
+    pub user_rating: Option<usize>,
+    pub status: String,
+    #[serde(alias = "show")]
+    pub show_or_movie: Item
+}
+
+#[derive(Deserialize, Debug, Default)]
+pub struct WatchlistBucket {
+    pub movies: Option<Vec<WatchlistBucketItem>>,
+    pub shows: Option<Vec<WatchlistBucketItem>>,
 }

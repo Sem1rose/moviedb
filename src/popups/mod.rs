@@ -1,8 +1,8 @@
 mod add_movie;
 mod advanced_filter;
 mod delete_movie;
-mod edit_movie;
 mod fetch_movies;
+mod manage_plays;
 mod omdb_init;
 mod out_of_box;
 mod punch_play_init;
@@ -13,8 +13,8 @@ mod trakt_init;
 pub use add_movie::{AddMoviePopup, Phase as AddMoviePopupPhase};
 pub use advanced_filter::AdvancedFilterPopup;
 pub use delete_movie::DeleteMoviePopup;
-pub use edit_movie::EditMoviePopup;
 pub use fetch_movies::FetchMoviesPopup;
+pub use manage_plays::ManagePlaysPopup;
 pub use omdb_init::OMDBInitPopup;
 pub use out_of_box::OutOfBoxPopup;
 pub use punch_play_init::{Phase as PunchPlayInitPopupPhase, PunchPlayInitPopup};
@@ -24,7 +24,7 @@ pub use trakt_init::{Phase as TraktInitPopupPhase, TraktInitPopup};
 
 pub enum Popup {
     AddMovie(Box<AddMoviePopup>),
-    EditMovie(Box<EditMoviePopup>),
+    ManagePlays(Box<ManagePlaysPopup>),
     DeleteMovie(Box<DeleteMoviePopup>),
     TMDBInit(Box<TMDBInitPopup>),
     SimklInit(Box<SimklInitPopup>),
@@ -40,7 +40,7 @@ impl Popup {
     fn as_trait(&self) -> &dyn PopupTrait {
         match self {
             Popup::AddMovie(add_movie_popup) => &**add_movie_popup,
-            Popup::EditMovie(edit_movie_popup) => &**edit_movie_popup,
+            Popup::ManagePlays(manage_plays_popup) => &**manage_plays_popup,
             Popup::DeleteMovie(delete_movie_popup) => &**delete_movie_popup,
             Popup::TMDBInit(tmdbinit_popup) => &**tmdbinit_popup,
             Popup::SimklInit(simkl_popup) => &**simkl_popup,
@@ -56,7 +56,7 @@ impl Popup {
     fn as_trait_mut(&mut self) -> &mut dyn PopupTrait {
         match self {
             Popup::AddMovie(add_movie_popup) => &mut **add_movie_popup,
-            Popup::EditMovie(edit_movie_popup) => &mut **edit_movie_popup,
+            Popup::ManagePlays(manage_plays_popup) => &mut **manage_plays_popup,
             Popup::DeleteMovie(delete_movie_popup) => &mut **delete_movie_popup,
             Popup::TMDBInit(tmdbinit_popup) => &mut **tmdbinit_popup,
             Popup::SimklInit(simkl_popup) => &mut **simkl_popup,

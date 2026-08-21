@@ -5,7 +5,7 @@ use std::{
     rc::Rc,
 };
 
-use chrono::{DateTime, Datelike, Local, NaiveDate, NaiveTime, Utc};
+use chrono::{DateTime, Datelike, TimeDelta, Utc};
 use itertools::Itertools;
 use log::error;
 use nucleo_matcher::{Config as MatcherConfig, Matcher, pattern::Atom};
@@ -29,12 +29,12 @@ use throbber_widgets_tui::ThrobberState;
 
 use crate::{
     config::Config,
-    helpers,
+    helpers::{self, SuperOrd},
     image_backend::{ImageID, RatatuiImage},
     key_event_handler::{self, KeyEventHandler},
     load_file,
     screens::Screens,
-    tokens::{PunchPlayTokens, TMDBTokens},
+    tokens::{PunchPlayTokens, SimklTokens, TMDBTokens},
     types::{
         Entry, FilterCriterion, FxIndexMap, List, ListID, ListItem, Movie, RatingSource, Sort,
         pop_criterion,
@@ -67,7 +67,13 @@ pub struct MoviesDescription {
     pub overview_scroll: usize,
 }
 
-const CONTEXT_MENU_MODEL: [&str; 4] = ["Add play", "Refetch details", "Edit", "Delete"];
+const CONTEXT_MENU_MODEL: [&str; 5] = [
+    "Add play",
+    "Edit",
+    "Manage plays",
+    "Refetch details",
+    "Delete",
+];
 pub struct MainScreen {
     tick:                u64,
     tab:                 usize,
@@ -225,6 +231,29 @@ impl MainScreen {
         self.save_lists();
     }
 
+    pub fn update_list(
+        &mut self,
+        id: ListID,
+        items: Vec<ListItem>,
+        deleted_items: Option<Vec<u32>>,
+        overwrite: bool,
+    ) {
+        self.lists.entry(id).and_modify(|x| {
+            if overwrite {
+                x.items = items;
+            } else {
+                let keys = x.items.iter().map(|x| x.id).collect_vec();
+                x.items
+                    .extend(items.into_iter().filter(|y| !keys.contains(&y.id)));
+                if let Some(deleted_items) = deleted_items {
+                    x.items.retain(|x| !deleted_items.contains(&x.id));
+                }
+            }
+        });
+
+        self.save_lists();
+    }
+
     pub fn open_list(&mut self, index: usize, key_event_handler: &mut KeyEventHandler) -> bool {
         if index > self.lists.len() {
             return false;
@@ -324,49 +353,68 @@ impl MainScreen {
         &mut self,
         watched: &FxIndexMap<u32, Entry>,
         tmdb_tokens: &TMDBTokens,
+        simkl_tokens: &SimklTokens,
         punch_play_tokens: &PunchPlayTokens,
     ) {
         match self.selected_list {
             ListID::Watchlist => {
-                if let (Ok(tmdb_list_items), Ok(punch_play_list_items)) = (
+                let default_utc = DateTime::<Utc>::default();
+                let items = [
+                    simkl::movie::get_user_watchlist(
+                        simkl_tokens.access_token(),
+                        simkl_tokens.client_id(),
+                        simkl_tokens.app_name(),
+                        simkl_tokens.app_version(),
+                    )
+                    .unwrap_or_default()
+                    .movies
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|x| ListItem {
+                        id:       x.show_or_movie.ids.tmdb.unwrap(),
+                        added_at: x.added_to_watchlist_at,
+                    })
+                    .collect_vec(),
+                    punch_play::movie::get_user_watchlist(punch_play_tokens.access_token())
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter_map(|x| {
+                            if x.item_type == "movie" {
+                                Some(ListItem {
+                                    id:       x.tmdb_id,
+                                    added_at: x.added_at,
+                                })
+                            } else {
+                                None
+                            }
+                        })
+                        .collect_vec(),
                     tmdb::movie::get_user_watchlist(
                         tmdb_tokens.access_token(),
                         tmdb_tokens.account_id(),
                     )
-                    .map(|x| {
-                        x.into_iter().enumerate().map(|(i, x)| ListItem {
-                            id:       x.id,
-                            added_at: NaiveDate::default()
-                                .and_time(
-                                    NaiveTime::from_num_seconds_from_midnight_opt(i as u32, 0)
-                                        .unwrap(),
-                                )
-                                .and_utc(),
-                        })
-                    }),
-                    punch_play::movie::get_user_watchlist(punch_play_tokens.access_token()).map(
-                        |x| {
-                            x.into_iter().filter_map(|x| {
-                                (x.item_type == "movie").then_some(ListItem {
-                                    id:       x.tmdb_id,
-                                    added_at: x.added_at,
-                                })
-                            })
-                        },
-                    ),
-                ) {
-                    self.add_list(List {
-                        id:       ListID::Watchlist,
-                        name:     "".into(),
-                        items:    punch_play_list_items
-                            .chain(tmdb_list_items)
-                            .sorted_by_key(|x| x.id)
-                            .dedup_by(|a, b| a.id == b.id)
-                            .filter(|x| !watched.contains_key(&x.id))
-                            .collect_vec(),
-                        readonly: false,
-                    });
-                }
+                    .unwrap_or_default()
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, x)| ListItem {
+                        id:       x.id,
+                        added_at: default_utc + TimeDelta::seconds(i as i64),
+                    })
+                    .collect_vec(),
+                ]
+                .into_iter()
+                .flatten();
+
+                self.update_list(
+                    ListID::Watchlist,
+                    items
+                        .sorted_by_key(|x| x.id)
+                        .dedup_by(|a, b| a.id == b.id)
+                        .filter(|x| !watched.contains_key(&x.id))
+                        .collect_vec(),
+                    None,
+                    false,
+                );
             }
             ListID::TMDB(id) => {
                 if let Ok(list_details) =
@@ -530,11 +578,8 @@ impl MainScreen {
                 }
                 FilterCriterion::Released(lower_bound, upper_bound, inverted) => {
                     movies.retain(|x| {
-                        helpers::is_between(
-                            x.release_date.year() as u32,
-                            *lower_bound,
-                            *upper_bound,
-                        ) ^ *inverted
+                        (x.release_date.year() as u32).is_between(lower_bound, upper_bound)
+                            ^ *inverted
                     });
                 }
                 FilterCriterion::FirstWatched(lower_bound, upper_bound, inverted) => {
@@ -543,11 +588,9 @@ impl MainScreen {
                         watched_borrowed
                             .get(&x.id)
                             .map(|y| {
-                                helpers::is_between(
-                                    y.get_first_play().year() as u32,
-                                    *lower_bound,
-                                    *upper_bound,
-                                ) ^ *inverted
+                                (y.get_first_play().year() as u32)
+                                    .is_between(lower_bound, upper_bound)
+                                    ^ *inverted
                             })
                             .unwrap_or(false)
                     });
@@ -558,11 +601,9 @@ impl MainScreen {
                         watched_borrowed
                             .get(&x.id)
                             .map(|y| {
-                                helpers::is_between(
-                                    y.get_latest_play().year() as u32,
-                                    *lower_bound,
-                                    *upper_bound,
-                                ) ^ *inverted
+                                (y.get_latest_play().year() as u32)
+                                    .is_between(lower_bound, upper_bound)
+                                    ^ *inverted
                             })
                             .unwrap_or(false)
                     });
@@ -768,6 +809,14 @@ impl MainScreen {
                             app.drawer.open_add_play_popup();
                         },
                     );
+                    key_event_handler.bind_key(
+                        (Some(tab), None),
+                        'E',
+                        "Manage plays".into(),
+                        |app, _| {
+                            app.drawer.open_manage_plays_popup(&app.watched.borrow());
+                        },
+                    );
 
                     if self
                         .watched
@@ -823,6 +872,7 @@ impl MainScreen {
                             main_screen.refetch_current_list(
                                 &app.watched.borrow_mut(),
                                 &app.tmdb_tokens,
+                                &app.simkl_tokens,
                                 &app.punch_play_tokens,
                             );
                         }
@@ -907,100 +957,21 @@ impl MainScreen {
         self.render_header(frame, header, key_event_handler);
 
         if let Some(pos) = self.context_menu_pos {
-            key_event_handler.clear();
-
-            key_event_handler.bind_mouse_button_down(
-                ratatui::crossterm::event::MouseButton::Left,
-                frame.area(),
-                |app, _| {
-                    if let Some(Screens::MainScreen(main_screen)) =
-                        app.drawer.current_screen.as_mut()
-                    {
-                        main_screen.context_menu_pos = None;
-                    }
-                },
-            );
-            key_event_handler.bind_mouse_button_down(
-                ratatui::crossterm::event::MouseButton::Right,
-                frame.area(),
-                |app, _| {
-                    if let Some(Screens::MainScreen(main_screen)) =
-                        app.drawer.current_screen.as_mut()
-                    {
-                        main_screen.context_menu_pos = None;
-                    }
-                },
-            );
-
-            key_event_handler.bind_esc((None, None), "Cancel".into(), |app, _| {
-                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                    main_screen.context_menu_pos = None;
-                }
-            });
-
-            key_event_handler.bind_key((None, None), 'q', "Cancel".into(), |app, _| {
-                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                    main_screen.context_menu_pos = None;
-                }
-            });
-            key_event_handler.bind_key((None, None), 'A', "Add play".into(), |app, _| {
-                app.drawer.open_add_play_popup();
-
-                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                    main_screen.context_menu_pos = None;
-                }
-            });
-            key_event_handler.bind_key((None, None), 'R', "Refetch details".into(), |app, _| {
-                app.drawer.open_refetch_details_popup(
-                    app.tmdb_tokens.clone(),
-                    app.punch_play_tokens.clone(),
-                    app.trakt_tokens.clone(),
-                    app.omdb_tokens.clone(),
-                );
-
-                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                    main_screen.context_menu_pos = None;
-                }
-            });
-            key_event_handler.bind_key((None, None), 'e', "Edit movie".into(), |app, _| {
-                app.drawer.open_edit_movie_popup(&app.watched.borrow());
-
-                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                    main_screen.context_menu_pos = None;
-                }
-            });
-            key_event_handler.bind_key((None, None), 'd', "Delete movie".into(), |app, _| {
-                app.drawer.open_delete_movie_popup(&app.movies.borrow());
-
-                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                    main_screen.context_menu_pos = None;
-                }
-            });
-
-            key_event_handler.bind_vertical((None, None), "Navigate".into(), move |app, data| {
-                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                    if let key_event_handler::Data::Direction(dir, _) = data {
-                        main_screen.context_menu.scroll(dir);
-                    }
-                }
-            });
-
             self.context_menu_model = (0..CONTEXT_MENU_MODEL.len())
                 .filter(|x| match x {
-                    0 => {
+                    0 | 2 => {
                         matches!(self.current_movie(), Some(movie) if movie.released)
                     }
-                    2 =>
+                    1 =>
                         matches!(self.current_movie(), Some(movie) if movie.released)
                             && self
                                 .watched
                                 .borrow()
                                 .contains_key(&self.current_movie().unwrap().id),
-                    3 => self.list_editable(),
+                    4 => self.list_editable(),
                     _ => true,
                 })
                 .collect_vec();
-
             if self.context_menu_model
                 != self
                     .context_menu
@@ -1018,75 +989,14 @@ impl MainScreen {
                 );
             }
 
-            let width = self.context_menu.width;
-            let height = self
-                .context_menu
-                .model
-                .len()
-                .min(self.context_menu.num_visible_items) as u16;
-
-            let x = if pos.x + width > frame.area().width {
-                frame.area().width - width
+            if self.context_menu_model.is_empty() {
             } else {
-                pos.x
-            };
-            let y = if pos.y + height > frame.area().height {
-                frame.area().height - height
-            } else {
-                pos.y
-            };
+                key_event_handler.clear();
 
-            key_event_handler.bind_enter((None, None), "Choose".into(), |app, _| {
-                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                    main_screen.context_menu_pos = None;
-                    let i = main_screen.context_menu_model
-                        [*main_screen.context_menu.choose().first().unwrap()];
-                    if i == 0 {
-                        app.drawer.open_add_play_popup();
-                    } else if i == 1 {
-                        app.drawer.open_refetch_details_popup(
-                            app.tmdb_tokens.clone(),
-                            app.punch_play_tokens.clone(),
-                            app.trakt_tokens.clone(),
-                            app.omdb_tokens.clone(),
-                        );
-                    } else if i == 2 {
-                        app.drawer.open_edit_movie_popup(&app.watched.borrow());
-                    } else if i == 3 {
-                        app.drawer.open_delete_movie_popup(&app.movies.borrow());
-                    }
-                }
-            });
-
-            let (mut mouse_area, len) = self
-                .context_menu
-                .render(Position { x, y }, frame, key_event_handler)
-                .into_iter()
-                .nth(0)
-                .unwrap()
-                .1;
-
-            for i in 0..len {
-                let option_index = self.context_menu_model[i];
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
-                    mouse_area,
-                    move |app, _| {
-                        if option_index == 0 {
-                            app.drawer.open_add_play_popup();
-                        } else if option_index == 1 {
-                            app.drawer.open_refetch_details_popup(
-                                app.tmdb_tokens.clone(),
-                                app.punch_play_tokens.clone(),
-                                app.trakt_tokens.clone(),
-                                app.omdb_tokens.clone(),
-                            );
-                        } else if option_index == 2 {
-                            app.drawer.open_edit_movie_popup(&app.watched.borrow());
-                        } else if option_index == 3 {
-                            app.drawer.open_delete_movie_popup(&app.movies.borrow());
-                        }
-
+                    frame.area(),
+                    |app, _| {
                         if let Some(Screens::MainScreen(main_screen)) =
                             app.drawer.current_screen.as_mut()
                         {
@@ -1094,7 +1004,216 @@ impl MainScreen {
                         }
                     },
                 );
-                mouse_area = mouse_area.offset(Offset { x: 0, y: 1 });
+                key_event_handler.bind_mouse_button_down(
+                    ratatui::crossterm::event::MouseButton::Right,
+                    frame.area(),
+                    |app, _| {
+                        if let Some(Screens::MainScreen(main_screen)) =
+                            app.drawer.current_screen.as_mut()
+                        {
+                            main_screen.context_menu_pos = None;
+                        }
+                    },
+                );
+
+                key_event_handler.bind_esc((None, None), "Cancel".into(), |app, _| {
+                    if let Some(Screens::MainScreen(main_screen)) =
+                        app.drawer.current_screen.as_mut()
+                    {
+                        main_screen.context_menu_pos = None;
+                    }
+                });
+
+                key_event_handler.bind_key((None, None), 'q', "Cancel".into(), |app, _| {
+                    if let Some(Screens::MainScreen(main_screen)) =
+                        app.drawer.current_screen.as_mut()
+                    {
+                        main_screen.context_menu_pos = None;
+                    }
+                });
+
+                key_event_handler.bind_vertical(
+                    (None, None),
+                    "Navigate".into(),
+                    move |app, data| {
+                        if let Some(Screens::MainScreen(main_screen)) =
+                            app.drawer.current_screen.as_mut()
+                        {
+                            if let key_event_handler::Data::Direction(dir, _) = data {
+                                main_screen.context_menu.scroll(dir);
+                            }
+                        }
+                    },
+                );
+
+                for &i in &self.context_menu_model {
+                    if i == 0 {
+                        key_event_handler.bind_key(
+                            (None, None),
+                            'A',
+                            "Add play".into(),
+                            |app, _| {
+                                app.drawer.open_add_play_popup();
+
+                                if let Some(Screens::MainScreen(main_screen)) =
+                                    app.drawer.current_screen.as_mut()
+                                {
+                                    main_screen.context_menu_pos = None;
+                                }
+                            },
+                        );
+                    } else if i == 1 {
+                        key_event_handler.bind_key(
+                            (None, None),
+                            'e',
+                            "Edit movie".into(),
+                            |app, _| {
+                                app.drawer.open_edit_movie_popup(&app.watched.borrow());
+
+                                if let Some(Screens::MainScreen(main_screen)) =
+                                    app.drawer.current_screen.as_mut()
+                                {
+                                    main_screen.context_menu_pos = None;
+                                }
+                            },
+                        );
+                    } else if i == 2 {
+                        key_event_handler.bind_key(
+                            (None, None),
+                            'E',
+                            "Manage plays".into(),
+                            |app, _| {
+                                app.drawer.open_add_play_popup();
+
+                                if let Some(Screens::MainScreen(main_screen)) =
+                                    app.drawer.current_screen.as_mut()
+                                {
+                                    main_screen.context_menu_pos = None;
+                                }
+                            },
+                        );
+                    } else if i == 3 {
+                        key_event_handler.bind_key(
+                            (None, None),
+                            'R',
+                            "Refetch details".into(),
+                            |app, _| {
+                                app.drawer.open_refetch_details_popup(
+                                    app.tmdb_tokens.clone(),
+                                    app.punch_play_tokens.clone(),
+                                    app.trakt_tokens.clone(),
+                                    app.omdb_tokens.clone(),
+                                );
+
+                                if let Some(Screens::MainScreen(main_screen)) =
+                                    app.drawer.current_screen.as_mut()
+                                {
+                                    main_screen.context_menu_pos = None;
+                                }
+                            },
+                        );
+                    } else if i == 4 {
+                        key_event_handler.bind_key(
+                            (None, None),
+                            'd',
+                            "Delete movie".into(),
+                            |app, _| {
+                                app.drawer.open_delete_movie_popup(&app.movies.borrow());
+
+                                if let Some(Screens::MainScreen(main_screen)) =
+                                    app.drawer.current_screen.as_mut()
+                                {
+                                    main_screen.context_menu_pos = None;
+                                }
+                            },
+                        );
+                    }
+                }
+
+                let width = self.context_menu.width;
+                let height = self
+                    .context_menu
+                    .model
+                    .len()
+                    .min(self.context_menu.num_visible_items) as u16;
+
+                let x = if pos.x + width > frame.area().width {
+                    frame.area().width - width
+                } else {
+                    pos.x
+                };
+                let y = if pos.y + height > frame.area().height {
+                    frame.area().height - height
+                } else {
+                    pos.y
+                };
+
+                key_event_handler.bind_enter((None, None), "Choose".into(), |app, _| {
+                    if let Some(Screens::MainScreen(main_screen)) =
+                        app.drawer.current_screen.as_mut()
+                    {
+                        main_screen.context_menu_pos = None;
+                        let i = main_screen.context_menu_model
+                            [*main_screen.context_menu.choose().first().unwrap()];
+                        if i == 0 {
+                            app.drawer.open_add_play_popup();
+                        } else if i == 1 {
+                            app.drawer.open_edit_movie_popup(&app.watched.borrow());
+                        } else if i == 2 {
+                            app.drawer.open_manage_plays_popup(&app.watched.borrow());
+                        } else if i == 3 {
+                            app.drawer.open_refetch_details_popup(
+                                app.tmdb_tokens.clone(),
+                                app.punch_play_tokens.clone(),
+                                app.trakt_tokens.clone(),
+                                app.omdb_tokens.clone(),
+                            );
+                        } else if i == 4 {
+                            app.drawer.open_delete_movie_popup(&app.movies.borrow());
+                        }
+                    }
+                });
+
+                let (mut mouse_area, len) = self
+                    .context_menu
+                    .render(Position { x, y }, frame, key_event_handler)
+                    .into_iter()
+                    .nth(0)
+                    .unwrap()
+                    .1;
+
+                for i in 0..len {
+                    let option_index = self.context_menu_model[i];
+                    key_event_handler.bind_mouse_button_down(
+                        ratatui::crossterm::event::MouseButton::Left,
+                        mouse_area,
+                        move |app, _| {
+                            if option_index == 0 {
+                                app.drawer.open_add_play_popup();
+                            } else if option_index == 1 {
+                                app.drawer.open_edit_movie_popup(&app.watched.borrow());
+                            } else if option_index == 2 {
+                                app.drawer.open_manage_plays_popup(&app.watched.borrow());
+                            } else if option_index == 3 {
+                                app.drawer.open_refetch_details_popup(
+                                    app.tmdb_tokens.clone(),
+                                    app.punch_play_tokens.clone(),
+                                    app.trakt_tokens.clone(),
+                                    app.omdb_tokens.clone(),
+                                );
+                            } else if option_index == 4 {
+                                app.drawer.open_delete_movie_popup(&app.movies.borrow());
+                            }
+
+                            if let Some(Screens::MainScreen(main_screen)) =
+                                app.drawer.current_screen.as_mut()
+                            {
+                                main_screen.context_menu_pos = None;
+                            }
+                        },
+                    );
+                    mouse_area = mouse_area.offset(Offset { x: 0, y: 1 });
+                }
             }
         }
 
@@ -1896,6 +2015,7 @@ impl MainScreen {
                             if let key_event_handler::Data::Mouse(mouse_event) = data {
                                 main_screen.context_menu_pos =
                                     Some(Position::new(mouse_event.column, mouse_event.row));
+                                main_screen.context_menu.reset_state();
                                 // main_screen.context_menu.reset_state();
                             }
                         }
@@ -2288,7 +2408,7 @@ impl MainScreen {
             if movie.released {
                 self.draw_ratings(&movie, frame, ratings_area);
             } else {
-                if movie.release_date > NaiveDate::default() {
+                if movie.release_date > Default::default() {
                     frame.render_widget(
                         text![
                             line!(
@@ -2724,14 +2844,14 @@ impl MainScreen {
             }
             .areas(remaining_area);
 
-            if self.movies_description.plays_tab.scroll_pos + i < num_plays {
+            let index = self.movies_description.plays_tab.scroll_pos + i;
+            if index < num_plays {
                 let partially_visible = area.height < 3;
-                let play =
-                    &movie_plays[num_plays - self.movies_description.plays_tab.scroll_pos - i - 1];
+                let play = &movie_plays[num_plays - 1 - index];
 
                 let alternate = i & 1 == 1;
-                let latest = self.movies_description.plays_tab.scroll_pos + i == 0;
-                let last = self.movies_description.plays_tab.scroll_pos + i == num_plays - 1;
+                let latest = index == 0;
+                let last = index == num_plays - 1;
 
                 frame.render_widget(
                     Block::new().bg(if latest {
@@ -2773,7 +2893,7 @@ impl MainScreen {
                     material::RED.c400
                 };
 
-                let local_date = play.date.with_timezone(&Local);
+                let local_date = play.date.with_timezone(&chrono::Local);
                 for i in 0..area.height {
                     let index = if partially_visible {
                         if self.movies_description.plays_tab.alignment_bottom {

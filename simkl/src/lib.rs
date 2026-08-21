@@ -134,7 +134,7 @@ fn send_request_deserialized<T: for<'a> Deserialize<'a>>(
     response.json().map_err(Into::into)
 }
 
-fn fetch_paginated_source(
+fn _fetch_paginated_source(
     client: &Client,
     url: &str,
     headers: Option<&HeaderMap>,

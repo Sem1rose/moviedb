@@ -272,7 +272,7 @@ pub struct HistoryEntry {
     pub rating: f64,
     pub note:   Option<String>,
 }
-#[derive(Serialize, Clone, Deserialize, Debug)]
+#[derive(Serialize, Clone, Deserialize, Debug, Default)]
 pub struct Entry {
     pub movie_id: u32,
     pub history:  Vec<HistoryEntry>,
@@ -367,6 +367,10 @@ impl Entry {
             self.history = new_history;
         }
     }
+
+    // pub fn replace_history(&mut self, new_history: Vec<HistoryEntry>) {
+    //     self.history = new_history;
+    // }
 }
 
 #[derive(Serialize, Clone, Deserialize, Debug)]

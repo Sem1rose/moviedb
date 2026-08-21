@@ -135,7 +135,7 @@ impl Drawer {
             popup.update();
 
             match popup {
-                Popup::EditMovie(_) => {}
+                Popup::ManagePlays(_) => {}
                 Popup::DeleteMovie(_) => {}
                 Popup::AddMovie(add_movie_popup) => {
                     if let AddMoviePopupPhase::Done = add_movie_popup.phase {
@@ -338,17 +338,26 @@ impl Drawer {
     }
 
     pub fn open_add_play_popup(&mut self) {
-        self.popup_queue
-            .push(Popup::EditMovie(Box::new(EditMoviePopup::new_add_play())));
+        self.popup_queue.push(Popup::ManagePlays(Box::new(
+            ManagePlaysPopup::new_add_play(),
+        )));
     }
 
     pub fn open_edit_movie_popup(&mut self, watched: &FxIndexMap<u32, Entry>) {
         if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_mut() {
             let entry = &watched[&main_screen.current_movie().unwrap().id];
+            self.popup_queue.push(Popup::ManagePlays(Box::new(
+                ManagePlaysPopup::new_edit_rating(entry),
+            )));
+        }
+    }
+
+    pub fn open_manage_plays_popup(&mut self, watched: &FxIndexMap<u32, Entry>) {
+        if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_mut() {
+            let entry = watched.get(&main_screen.current_movie().unwrap().id);
             self.popup_queue
-                .push(Popup::EditMovie(Box::new(EditMoviePopup::new(
-                    entry.get_user_rating(),
-                    entry.get_latest_play().into(),
+                .push(Popup::ManagePlays(Box::new(ManagePlaysPopup::new(
+                    entry.cloned(),
                 ))));
         }
     }
@@ -383,14 +392,15 @@ impl Drawer {
     }
 
     pub fn check_refresh_delayed(&mut self) -> bool {
-        if let Some(active_popup) = self.active_popup.as_ref() {
-            return active_popup.update_next_frame();
+        (if let Some(active_popup) = self.active_popup.as_ref() {
+            active_popup.update_next_frame()
+        } else {
+            false
+        }) | if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_ref() {
+            main_screen.drawing_images
+        } else {
+            false
         }
-        if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_ref() {
-            return main_screen.drawing_images;
-        }
-
-        false
     }
 
     fn check_term_size(&mut self, frame: &Frame) {

@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeDelta, Utc};
 use itertools::Itertools;
 use reqwest::{
     blocking::ClientBuilder,
@@ -11,7 +11,7 @@ mod smo;
 
 use smo::MovieDetails;
 
-use crate::smo::Item;
+use crate::smo::{Item, WatchlistBucket};
 
 pub fn search_movies(
     client_id: &str,
@@ -46,6 +46,26 @@ pub fn get_movie_details(
     crate::send_request_deserialized(
         &client,
         &format!("https://api.simkl.com/movies/{simkl_id}"),
+        Some(&headers),
+        None,
+        Some(&query),
+        "Simkl: Error while getting movie details",
+    )
+}
+
+pub fn get_user_watchlist(
+    access_token: &str,
+    client_id: &str,
+    app_name: &str,
+    app_version: &str,
+) -> anyhow::Result<WatchlistBucket> {
+    let client = ClientBuilder::new().build()?;
+    let headers = headers!(client_id, app_name, app_version, access_token: access_token);
+    let query = query!(app_name, app_version, ("extended", "full"), ("memos", "no"));
+
+    crate::send_request_deserialized(
+        &client,
+        &format!("https://api.simkl.com/sync/all-items/movies/plantowatch"),
         Some(&headers),
         None,
         Some(&query),
@@ -126,7 +146,7 @@ pub fn remove_movies_history_or_from_watchlist(
     )
 }
 
-pub fn log_or_edit_watched(
+pub fn log_watched(
     access_token: &str,
     client_id: &str,
     app_name: &str,
@@ -151,7 +171,7 @@ pub fn log_or_edit_watched(
     let body = json!({
         "movies": items.into_iter().map(|&(id, rating, watched_at)| WatchlistItem {
             ids: Id { tmdb: id },
-            watched_at: watched_at.into(),
+            watched_at: watched_at.to_utc() + TimeDelta::seconds(1),
             status: "completed".to_string(),
             rating,
         }).collect_vec(),
@@ -163,7 +183,50 @@ pub fn log_or_edit_watched(
         Some(&headers),
         Some(&body),
         Some(&query),
-        "Simkl: Error while logging movies watches",
+        "Simkl: Error while logging movies watch times",
+    )
+}
+
+pub fn edit_watched(
+    access_token: &str,
+    client_id: &str,
+    app_name: &str,
+    app_version: &str,
+    items: &[(u32, usize, DateTime<Utc>)],
+) -> anyhow::Result<Value> {
+    _ = remove_movies_history_or_from_watchlist(access_token, client_id, app_name, app_version, &items.iter().map(|&(x, _, _)| x).collect_vec())?;
+
+    #[derive(Serialize)]
+    struct Id {
+        tmdb: u32,
+    }
+    #[derive(Serialize)]
+    struct WatchlistItem {
+        ids:        Id,
+        watched_at: DateTime<Utc>,
+        status:     String,
+        rating:     usize,
+    }
+
+    let client = ClientBuilder::new().build()?;
+    let headers = headers!(client_id, app_name, app_version, access_token: access_token);
+    let query = query!(app_name, app_version);
+    let body = json!({
+        "movies": items.into_iter().map(|&(id, rating, watched_at)| WatchlistItem {
+            ids: Id { tmdb: id },
+            watched_at: watched_at.to_utc() + TimeDelta::seconds(1),
+            status: "completed".to_string(),
+            rating,
+        }).collect_vec(),
+    });
+
+    crate::send_request_deserialized(
+        &client,
+        &format!("https://api.simkl.com/sync/history"),
+        Some(&headers),
+        Some(&body),
+        Some(&query),
+        "Simkl: Error while editing movies watch times",
     )
 }
 

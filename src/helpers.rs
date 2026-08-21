@@ -74,8 +74,14 @@ pub fn ellipsize_string(string: &str, max_width: usize) -> String {
     new_string
 }
 
-pub fn is_between<T: PartialOrd>(v: T, lb: T, ub: T) -> bool {
-    v >= lb && v <= ub
+pub trait SuperOrd {
+    fn is_between(&self, lb: &Self, ub: &Self) -> bool;
+}
+
+impl<T: Ord> SuperOrd for T {
+    fn is_between(&self, lb: &Self, ub: &Self) -> bool {
+        self >= lb && self <= ub
+    }
 }
 
 pub fn default_rc<T: Default>() -> Rc<RefCell<T>> {

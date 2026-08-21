@@ -4,7 +4,7 @@ use std::{
     thread,
 };
 
-use chrono::{DateTime, Datelike, Local};
+use chrono::{DateTime, Datelike, Local, Utc};
 use itertools::Itertools;
 use log::error;
 use punch_play::{
@@ -122,7 +122,7 @@ pub struct AddMoviePopup {
     take_rating:                         bool,
     pub refetch_details:                 bool,
     pub user_rating:                     f64,
-    pub date:                            DateTime<Local>,
+    pub date:                            DateTime<Utc>,
     pub trakt_movie_details_result:      Option<TraktDetailsResponse>,
     pub punch_play_movie_details_result: Option<DetailsResponse>,
     pub tmdb_movie_details_result:       Option<TMDBMovieDetails>,
@@ -259,13 +259,15 @@ impl AddMoviePopup {
                 self.user_rating = format!("{:.1}", self.input0.lines()[0].parse::<f64>().unwrap())
                     .parse()
                     .unwrap();
-                self.date = if ["now", ""]
-                    .contains(&self.input1.lines()[0].trim().to_lowercase().as_str())
-                {
-                    Local::now()
+                let input = self.input1.lines()[0].to_lowercase();
+                self.date = if ["now", ""].contains(&input.trim()) {
+                    chrono::Local::now()
+                } else if input.trim() == "unknown" {
+                    Default::default()
                 } else {
                     self.input1.lines()[0].parse().unwrap()
-                };
+                }
+                .to_utc();
 
                 self.request_details(self.search_results.as_ref().unwrap()[self.selected_item].id);
 
@@ -293,7 +295,7 @@ impl AddMoviePopup {
     }
 
     pub fn validate_input_date(&mut self) -> bool {
-        ["now", ""].contains(&self.input1.lines()[0].trim().to_lowercase().as_str())
+        ["now", "unknown", ""].contains(&self.input1.lines()[0].trim().to_lowercase().as_str())
             || self.input1.lines()[0].parse::<DateTime<Local>>().is_ok()
     }
 }
@@ -410,7 +412,7 @@ impl PopupTrait for AddMoviePopup {
         match &self.phase {
             Phase::SelectMovie => {
                 if matches!(num_results, Some(x) if x > 0) {
-                    let num_results = num_results.as_ref().cloned().unwrap();
+                    let num_results = *num_results.as_ref().unwrap();
                     key_event_handler.bind_vertical(
                         (None, None),
                         "Scroll".into(),
