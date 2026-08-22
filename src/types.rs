@@ -78,6 +78,7 @@ pub struct MovieDetailsResponse {
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Serialize, Deserialize, PartialEq, Clone, Copy, Hash, Eq, Default, Debug)]
 pub enum ListID {
+    All,
     #[default]
     Watched,
     Watchlist,

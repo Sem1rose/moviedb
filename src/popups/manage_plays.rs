@@ -18,7 +18,7 @@ use crate::{
     key_event_handler::{self, KeyEventHandler},
     popups::{Popup, PopupTrait},
     types::Entry,
-    widgets::{self, Action, ActionType},
+    widgets::{self, Action, ActionType, ScrollView},
 };
 
 #[derive(Default)]
@@ -30,18 +30,14 @@ pub enum Phase {
 
 #[derive(Default)]
 pub struct ManagePlaysPopup {
-    tab:               usize,
-    item:              usize,
-    phase:             Phase,
-    confirm_delete:    bool,
-    one_shot:          bool,
-    new_play:          bool,
-    entry:             Option<Entry>,
-    scroll_pos:        usize,
-    pub selected_item: usize,
-    alignment_bottom:  bool,
-    num_visible_items: usize,
-    partially_visible: bool,
+    tab:            usize,
+    item:           usize,
+    phase:          Phase,
+    confirm_delete: bool,
+    one_shot:       bool,
+    new_play:       bool,
+    entry:          Option<Entry>,
+    pub scrollview: ScrollView,
 
     pub rating_input: TextArea<'static>,
     pub date_input:   TextArea<'static>,
@@ -51,6 +47,7 @@ impl ManagePlaysPopup {
     pub fn new(entry: Option<Entry>) -> Self {
         Self {
             entry: entry.or_else(|| Some(Default::default())),
+            scrollview: ScrollView::new(3),
 
             ..Default::default()
         }
@@ -124,8 +121,8 @@ impl ManagePlaysPopup {
 
         if let Some(entry) = self.entry.as_mut() {
             let len = entry.history.len();
-            entry.history[len - 1 - self.selected_item].date = date;
-            entry.history[len - 1 - self.selected_item].rating = rating;
+            entry.history[len - 1 - self.scrollview.selected_index].date = date;
+            entry.history[len - 1 - self.scrollview.selected_index].rating = rating;
 
             entry
                 .history
@@ -137,7 +134,7 @@ impl ManagePlaysPopup {
         if let Some(entry) = self.entry.as_mut() {
             entry
                 .history
-                .remove(entry.history.len() - 1 - self.selected_item);
+                .remove(entry.history.len() - 1 - self.scrollview.selected_index);
         }
     }
 
@@ -193,6 +190,8 @@ impl PopupTrait for ManagePlaysPopup {
                         app.drawer.active_popup.as_mut()
                     {
                         manage_plays_popup.tab = 2;
+                        manage_plays_popup.item = 0;
+                        manage_plays_popup.confirm_delete = false;
                     }
                 });
                 key_event_handler.bind_esc((Some(2), None), "Back".into(), move |app, _| {
@@ -203,6 +202,8 @@ impl PopupTrait for ManagePlaysPopup {
                         app.drawer.active_popup.as_mut()
                     {
                         manage_plays_popup.item = 0;
+                        manage_plays_popup.confirm_delete = false;
+
                         match data {
                             key_event_handler::Data::Direction(true, _) => {
                                 manage_plays_popup.tab += 1;
@@ -232,28 +233,9 @@ impl PopupTrait for ManagePlaysPopup {
                             {
                                 manage_plays_popup.item = 0;
                                 manage_plays_popup.confirm_delete = false;
-                                match data {
-                                    key_event_handler::Data::Direction(true, _) => {
-                                        manage_plays_popup.selected_item =
-                                            (manage_plays_popup.selected_item + 1)
-                                                .min(num_entries.saturating_sub(1));
-                                        if manage_plays_popup.selected_item
-                                            - manage_plays_popup.scroll_pos
-                                            >= manage_plays_popup.num_visible_items
-                                        {
-                                            manage_plays_popup.scroll_pos += 1;
-                                        }
-                                    }
-                                    key_event_handler::Data::Direction(false, _) => {
-                                        manage_plays_popup.selected_item =
-                                            manage_plays_popup.selected_item.saturating_sub(1);
-                                        if manage_plays_popup.selected_item
-                                            < manage_plays_popup.scroll_pos
-                                        {
-                                            manage_plays_popup.scroll_pos -= 1;
-                                        }
-                                    }
-                                    _ => (),
+
+                                if let key_event_handler::Data::Direction(direction, _) = data {
+                                    manage_plays_popup.scrollview.scroll(direction, num_entries);
                                 }
                             }
                         },
@@ -287,7 +269,9 @@ impl PopupTrait for ManagePlaysPopup {
                                 manage_plays_popup.confirm_delete = false;
 
                                 let entry = &manage_plays_popup.entry.as_ref().unwrap().history
-                                    [num_entries - 1 - manage_plays_popup.selected_item];
+                                    [num_entries
+                                        - 1
+                                        - manage_plays_popup.scrollview.selected_index];
 
                                 manage_plays_popup.phase = Phase::EnterDetails;
                                 manage_plays_popup.rating_input =
@@ -340,7 +324,9 @@ impl PopupTrait for ManagePlaysPopup {
                                 manage_plays_popup.confirm_delete = false;
 
                                 let entry = &manage_plays_popup.entry.as_ref().unwrap().history
-                                    [num_entries - 1 - manage_plays_popup.selected_item];
+                                    [num_entries
+                                        - 1
+                                        - manage_plays_popup.scrollview.selected_index];
 
                                 manage_plays_popup.phase = Phase::EnterDetails;
                                 manage_plays_popup.rating_input =
@@ -453,67 +439,23 @@ impl PopupTrait for ManagePlaysPopup {
                         .fg(tailwind::SLATE.c900);
                     frame.render_widget(&list_block, list_area);
                     let list_block_inner = list_block.inner(list_area);
+                    let scrollbar_area = list_area
+                        .offset(Offset::new(list_area.width as i32 - 1, 1))
+                        .resize(Size::new(1, list_area.height - 2));
 
-                    let num_visible_results = list_block_inner.height as usize / 3;
-                    let partially_visible_result_height =
-                        list_block_inner.height as usize - num_visible_results * 3;
-                    self.partially_visible = partially_visible_result_height > 0;
-                    self.num_visible_items =
-                        num_visible_results + if self.partially_visible { 1 } else { 0 };
-
-                    if self.selected_item < self.scroll_pos {
-                        self.selected_item =
-                            (self.selected_item + 1).min(num_entries.saturating_sub(1));
-                    } else if self.selected_item >= num_entries {
-                        self.selected_item = num_entries.saturating_sub(1);
-                        self.scroll_pos = self
-                            .selected_item
-                            .saturating_sub(self.num_visible_items + 1);
-                    } else if self.selected_item - self.scroll_pos >= self.num_visible_items {
-                        self.scroll_pos = self
-                            .selected_item
-                            .saturating_sub(self.num_visible_items + 1);
-                    }
-
-                    if num_entries <= num_visible_results
-                        || self.selected_item - self.scroll_pos == 0
-                    {
-                        self.alignment_bottom = false;
-                    } else if self.selected_item - self.scroll_pos == self.num_visible_items - 1 {
-                        self.alignment_bottom = true;
-                    }
-
-                    let mut remaining_area = list_block_inner;
-                    for i in 0..self.num_visible_items {
-                        let [area, remaining] = if self.partially_visible
-                            && i == (!self.alignment_bottom as usize * (self.num_visible_items - 1))
-                        {
-                            vertical![==partially_visible_result_height as u16, >= 0]
-                        } else {
-                            vertical![==3, >= 0]
-                        }
-                        .areas(remaining_area);
-
-                        let index = self.scroll_pos + i;
-                        if index < num_entries {
-                            let entry = &history_entries[num_entries - 1 - index];
-                            let partially_visible = area.height < 3;
-
-                            let alternate = i & 1 == 1;
-                            let latest = index == 0;
-                            let selected = self.selected_item == i + self.scroll_pos;
-                            let local_date = entry.date.with_timezone(&chrono::Local);
-
-                            frame.render_widget(
-                                Block::new().bg(if selected {
-                                    tailwind::TEAL.c600
-                                } else if !alternate {
-                                    tailwind::GRAY.c600
-                                } else {
-                                    tailwind::SLATE.c700
-                                }),
-                                area,
-                            );
+                    self.scrollview.render(
+                        num_entries,
+                        list_block_inner,
+                        scrollbar_area,
+                        frame,
+                        key_event_handler,
+                        |scroll_view,
+                         area,
+                         index,
+                         selected,
+                         alternate,
+                         frame,
+                         key_event_handler| {
                             key_event_handler.bind_mouse_button_down(
                                 ratatui::crossterm::event::MouseButton::Left,
                                 area,
@@ -524,35 +466,57 @@ impl PopupTrait for ManagePlaysPopup {
                                         manage_plays_popup.tab = 0;
                                         manage_plays_popup.item = 0;
                                         manage_plays_popup.confirm_delete = false;
-                                        manage_plays_popup.selected_item =
-                                            manage_plays_popup.scroll_pos + i;
+                                        manage_plays_popup.scrollview.goto_index(
+                                            index,
+                                            false,
+                                            num_entries,
+                                        );
                                     }
                                 },
                             );
+
+                            frame.render_widget(
+                                Block::new().bg(if selected {
+                                    if tab_selected {
+                                        tailwind::TEAL.c700
+                                    } else {
+                                        tailwind::TEAL.c900
+                                    }
+                                } else if !alternate {
+                                    tailwind::GRAY.c800
+                                } else {
+                                    tailwind::SLATE.c700
+                                }),
+                                area,
+                            );
+
+                            let entry = &history_entries[num_entries - 1 - index];
+                            let latest = index == 0;
+                            let local_date = entry.date.with_timezone(&chrono::Local);
 
                             let areas =
                                 Layout::vertical(vec![constraint!(==1); area.height as usize])
                                     .split(area);
 
                             for i in 0..area.height {
-                                let index = if partially_visible {
-                                    if self.alignment_bottom {
-                                        i + (3 - area.height)
+                                let index = if area.height < scroll_view.item_height {
+                                    if scroll_view.alignment_bottom {
+                                        i + (scroll_view.item_height - area.height)
                                     } else {
                                         i
                                     }
                                 } else {
                                     i
                                 };
-                                if index == 0 {
+                                if index == 0 && selected {
                                     frame.render_widget(
-                                        line!("▔".repeat(area.width as usize)).fg(if selected {
-                                            tailwind::EMERALD.c700
-                                        } else if !alternate {
-                                            tailwind::GRAY.c600
-                                        } else {
-                                            tailwind::SLATE.c600
-                                        }),
+                                        line!("▔".repeat(area.width as usize)).fg(
+                                            if tab_selected {
+                                                tailwind::EMERALD.c800
+                                            } else {
+                                                tailwind::SLATE.c700
+                                            },
+                                        ),
                                         areas[i as usize],
                                     );
                                 } else if index == 1 {
@@ -582,7 +546,7 @@ impl PopupTrait for ManagePlaysPopup {
                                                 } else {
                                                     Modifier::empty()
                                                 }),
-                                            " @ ".not_bold(),
+                                            " @ ".white().bold(),
                                             if entry.date == DateTime::<Utc>::default() {
                                                 "Unknown".into()
                                             } else {
@@ -590,16 +554,20 @@ impl PopupTrait for ManagePlaysPopup {
                                             }
                                             .fg(
                                                 if latest {
-                                                    if tab_selected {
-                                                        material::YELLOW.c700
+                                                    if selected && tab_selected {
+                                                        tailwind::YELLOW.c500
+                                                    } else if tab_selected {
+                                                        tailwind::YELLOW.c600
                                                     } else {
-                                                        material::CYAN.c600
+                                                        tailwind::AMBER.c600
                                                     }
                                                 } else {
-                                                    if tab_selected {
-                                                        material::CYAN.c500
+                                                    if selected && tab_selected {
+                                                        tailwind::INDIGO.c200
+                                                    } else if tab_selected {
+                                                        tailwind::INDIGO.c300
                                                     } else {
-                                                        material::CYAN.c700
+                                                        tailwind::INDIGO.c400
                                                     }
                                                 }
                                             ),
@@ -640,13 +608,6 @@ impl PopupTrait for ManagePlaysPopup {
                                                 ratatui::crossterm::event::MouseButton::Left,
                                                 mouse_area,
                                                 move |app, _| {
-                                                    if let Some(Popup::ManagePlays(
-                                                        manage_plays_popup,
-                                                    )) = app.drawer.active_popup.as_mut()
-                                                    {
-                                                        manage_plays_popup.item = i;
-                                                    }
-
                                                     if i == 0 {
                                                         if let Some(Popup::ManagePlays(
                                                             manage_plays_popup,
@@ -661,6 +622,8 @@ impl PopupTrait for ManagePlaysPopup {
                                                             manage_plays_popup,
                                                         )) = app.drawer.active_popup.as_mut()
                                                         {
+                                                            manage_plays_popup.item = 1;
+
                                                             if manage_plays_popup.confirm_delete {
                                                                 manage_plays_popup.item = 0;
                                                                 manage_plays_popup.delete_play();
@@ -673,13 +636,17 @@ impl PopupTrait for ManagePlaysPopup {
                                                             manage_plays_popup,
                                                         )) = app.drawer.active_popup.as_mut()
                                                         {
+                                                            manage_plays_popup.item = 0;
+
                                                             let entry = &manage_plays_popup
                                                                 .entry
                                                                 .as_ref()
                                                                 .unwrap()
                                                                 .history[num_entries
                                                                 - 1
-                                                                - manage_plays_popup.selected_item];
+                                                                - manage_plays_popup
+                                                                    .scrollview
+                                                                    .selected_index];
 
                                                             manage_plays_popup.phase =
                                                                 Phase::EnterDetails;
@@ -710,45 +677,62 @@ impl PopupTrait for ManagePlaysPopup {
                                             );
                                         }
                                     }
-                                } else if index == 2 {
+                                } else if index == 2 && selected {
                                     frame.render_widget(
-                                        line!("▁".repeat(area.width as usize)).fg(if selected {
-                                            tailwind::EMERALD.c700
-                                        } else if !alternate {
-                                            tailwind::GRAY.c600
-                                        } else {
-                                            tailwind::SLATE.c600
-                                        }),
+                                        line!("▁".repeat(area.width as usize)).fg(
+                                            if tab_selected {
+                                                tailwind::EMERALD.c800
+                                            } else {
+                                                tailwind::SLATE.c700
+                                            },
+                                        ),
                                         areas[i as usize],
                                     );
                                 }
                             }
-                        } else {
-                            frame.render_widget(
-                                Block::new().bg(if i & 1 == 0 {
-                                    tailwind::SLATE.c950
-                                } else {
-                                    tailwind::BLACK
-                                }),
-                                area,
-                            );
-                        }
+                        },
+                    );
 
-                        remaining_area = remaining;
-                    }
-
-                    if num_entries + self.partially_visible as usize > self.num_visible_items {
-                        widgets::scroll_bar(
-                            num_entries + self.partially_visible as usize,
-                            self.scroll_pos
-                                + (self.partially_visible && self.alignment_bottom) as usize,
-                            self.num_visible_items,
-                            frame,
-                            list_area
-                                .offset(Offset::new(list_area.width as i32 - 1, 1))
-                                .resize(Size::new(1, list_area.height - 2)),
-                        );
-                    }
+                    key_event_handler.bind_mouse_button_down(
+                        ratatui::crossterm::event::MouseButton::Left,
+                        scrollbar_area.resize(Size::new(1, 1)),
+                        move |app, _| {
+                            if let Some(Popup::ManagePlays(manage_plays_popup)) =
+                                app.drawer.active_popup.as_mut()
+                            {
+                                if manage_plays_popup.scrollview.alignment_bottom
+                                    && manage_plays_popup.scrollview.partially_visible
+                                {
+                                    manage_plays_popup.scrollview.alignment_bottom = false;
+                                } else if manage_plays_popup.scrollview.scroll_pos > 0 {
+                                    manage_plays_popup.scrollview.scroll_pos -= 1;
+                                }
+                            }
+                        },
+                    );
+                    key_event_handler.bind_mouse_button_down(
+                        ratatui::crossterm::event::MouseButton::Left,
+                        scrollbar_area
+                            .resize(Size::new(1, 1))
+                            .offset(Offset::new(0, scrollbar_area.height as i32 - 1)),
+                        move |app, _| {
+                            if let Some(Popup::ManagePlays(manage_plays_popup)) =
+                                app.drawer.active_popup.as_mut()
+                            {
+                                if !manage_plays_popup.scrollview.alignment_bottom
+                                    && manage_plays_popup.scrollview.partially_visible
+                                {
+                                    manage_plays_popup.scrollview.alignment_bottom = true;
+                                } else if manage_plays_popup.scrollview.scroll_pos
+                                    < num_entries.saturating_sub(
+                                        manage_plays_popup.scrollview.num_visible_items,
+                                    )
+                                {
+                                    manage_plays_popup.scrollview.scroll_pos += 1;
+                                }
+                            }
+                        },
+                    );
                 }
 
                 let add_mouse_area = widgets::action(

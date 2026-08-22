@@ -39,17 +39,8 @@ use crate::{
         Entry, FilterCriterion, FxIndexMap, List, ListID, ListItem, Movie, RatingSource, Sort,
         pop_criterion,
     },
-    widgets::{self, ContextMenu},
+    widgets::{self, ContextMenu, ScrollView},
 };
-
-#[derive(Default)]
-pub struct MoviesList {
-    pub scroll_pos:             usize,
-    pub selected_item:          usize,
-    pub alignment_bottom:       bool,
-    pub partially_visible_item: bool,
-    pub num_visible_items:      usize,
-}
 
 #[derive(Default)]
 pub struct PlaysTab {
@@ -88,13 +79,12 @@ pub struct MainScreen {
     pub selected_list: ListID,
     pub lists:         FxIndexMap<ListID, List>,
 
-    // list_preloaded: bool,
     pub _config:         Rc<RefCell<Config>>,
     pub movies:          Rc<RefCell<FxIndexMap<u32, Movie>>>,
     pub watched:         Rc<RefCell<FxIndexMap<u32, Entry>>>,
     pub filtered_movies: Vec<Movie>,
 
-    movies_list:        MoviesList,
+    movies_list:        ScrollView,
     movies_description: MoviesDescription,
     sort_popup:         ContextMenu,
     context_menu_pos:   Option<Position>,
@@ -141,12 +131,11 @@ impl MainScreen {
                     .into_iter()
                     .map(|x: List| (x.id, x)),
             ),
-            // list_preloaded: false,
             movies: helpers::default_rc(),
             watched: helpers::default_rc(),
             filtered_movies: vec![],
 
-            movies_list: MoviesList::default(),
+            movies_list: ScrollView::new(MOVIE_WIDGET_HEIGHT as u16),
             movies_description: MoviesDescription::default(),
             sort_popup: ContextMenu::new(vec![], 6, None, false).with_submenu(
                 <usize>::from(Sort::Rating(Default::default())),
@@ -255,15 +244,17 @@ impl MainScreen {
     }
 
     pub fn open_list(&mut self, index: usize, key_event_handler: &mut KeyEventHandler) -> bool {
-        if index > self.lists.len() {
+        if index > self.lists.len() + 1 {
             return false;
         }
 
         self.open_list_by_id(
             if index == 0 {
+                ListID::All
+            } else if index == 1 {
                 ListID::Watched
             } else {
-                self.lists[index - 1].id
+                self.lists[index - 2].id
             },
             key_event_handler,
         )
@@ -274,7 +265,7 @@ impl MainScreen {
             return false;
         }
 
-        if matches!(id, ListID::Watched) || self.lists.contains_key(&id) {
+        if matches!(id, ListID::Watched | ListID::All) || self.lists.contains_key(&id) {
             self.selected_list = id;
 
             let fetch_movies = {
@@ -306,27 +297,17 @@ impl MainScreen {
         if self.open_list_by_id(list_id, key_event_handler) {
             let pos = self.filtered_movies.iter().position(|x| x.id == movie_id);
             if let Some(index) = pos {
-                self.movies_list.selected_item = index;
-
-                if self.movies_list.scroll_pos > index
-                    || index >= self.movies_list.scroll_pos + self.movies_list.num_visible_items
-                {
-                    self.movies_list.scroll_pos = index
-                        .saturating_sub(self.movies_list.num_visible_items / 2)
-                        .min(
-                            self.filtered_movies
-                                .len()
-                                .saturating_sub(self.movies_list.num_visible_items),
-                        );
-                    self.movies_list.alignment_bottom = false;
-                }
+                self.movies_list
+                    .goto_index(index, true, self.filtered_movies.len());
             }
         }
     }
 
     pub fn get_list_ids(&self) -> Vec<u32> {
         if matches!(&self.selected_list, ListID::Watched) {
-            self.watched.borrow().values().map(|x| x.movie_id).collect()
+            self.watched.borrow().keys().copied().collect()
+        } else if matches!(&self.selected_list, ListID::All) {
+            self.movies.borrow().keys().copied().collect()
         } else {
             self.lists
                 .get(&self.selected_list)
@@ -345,7 +326,7 @@ impl MainScreen {
 
     fn list_editable(&self) -> bool {
         matches!(self.selected_list, ListID::Watched | ListID::Watchlist)
-            || !(matches!(self.selected_list, ListID::Collection(_))
+            || !(matches!(self.selected_list, ListID::Collection(_) | ListID::All)
                 || self.lists[&self.selected_list].readonly)
     }
 
@@ -442,7 +423,7 @@ impl MainScreen {
     }
 
     pub fn current_movie(&self) -> Option<&Movie> {
-        self.filtered_movies.get(self.movies_list.selected_item)
+        self.filtered_movies.get(self.movies_list.selected_index)
     }
 
     pub fn goto_index(&mut self, index: isize) {
@@ -452,17 +433,8 @@ impl MainScreen {
             (index as usize).min(self.filtered_movies.len() - 1)
         };
 
-        self.movies_list.selected_item = index;
-        self.movies_list.scroll_pos = self
-            .movies_list
-            .scroll_pos
-            .min(self.movies_list.selected_item);
-        if self.movies_list.selected_item - self.movies_list.scroll_pos
-            >= self.movies_list.num_visible_items
-        {
-            self.movies_list.scroll_pos =
-                self.movies_list.selected_item - self.movies_list.num_visible_items + 1;
-        }
+        self.movies_list
+            .goto_index(index, false, self.filtered_movies.len());
     }
 
     fn find_and_goto_movie(&mut self) {
@@ -503,15 +475,8 @@ impl MainScreen {
                 .position(|x| x == movie)
                 .unwrap();
 
-            self.movies_list.selected_item = index;
-            self.movies_list.scroll_pos = index
-                .saturating_sub(self.movies_list.num_visible_items / 2)
-                .min(
-                    self.filtered_movies
-                        .len()
-                        .saturating_sub(self.movies_list.num_visible_items),
-                );
-            self.movies_list.alignment_bottom = false;
+            self.movies_list
+                .goto_index(index, true, self.filtered_movies.len());
         }
     }
 
@@ -728,27 +693,13 @@ impl MainScreen {
                 .iter()
                 .position(|x| x.id == selected_movie_id);
             if let Some(index) = pos {
-                self.movies_list.selected_item = index;
-
-                if self.movies_list.scroll_pos > index
-                    || index >= self.movies_list.scroll_pos + self.movies_list.num_visible_items
-                {
-                    self.movies_list.scroll_pos = index
-                        .saturating_sub(self.movies_list.num_visible_items / 2)
-                        .min(
-                            self.filtered_movies
-                                .len()
-                                .saturating_sub(self.movies_list.num_visible_items),
-                        );
-                    self.movies_list.alignment_bottom = false;
-                }
+                self.movies_list
+                    .goto_index(index, true, self.filtered_movies.len());
             } else {
-                self.movies_list.selected_item = 0;
-                self.movies_list.scroll_pos = 0;
+                self.movies_list.reset();
             }
         } else {
-            self.movies_list.selected_item = 0;
-            self.movies_list.scroll_pos = 0;
+            self.movies_list.reset();
         }
     }
 
@@ -846,10 +797,10 @@ impl MainScreen {
             }
         }
 
-        for i in 0..=(9.min(self.lists.len())) {
+        for i in 0..=(9.min(self.lists.len() + 2)) {
             key_event_handler.bind_key(
                 (Some(0), None),
-                if i + 1 == 10 { 0 } else { i + 1 },
+                i,
                 "".into(),
                 move |app, _| {
                     if let Some(Screens::MainScreen(main_screen)) =
@@ -1216,19 +1167,6 @@ impl MainScreen {
                 }
             }
         }
-
-        // if !self.list_preloaded {
-        //     self.list_preloaded = true;
-
-        //     key_event_handler.bind_immediate(move |app, _| {
-        //         if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-        //             app.drawer.image_renderer.preload_movies(
-        //                 main_screen.get_list_ids(),
-        //                 &app.config.borrow().options.image_preload_rule,
-        //             );
-        //         }
-        //     });
-        // }
     }
 
     fn render_header(
@@ -1636,30 +1574,7 @@ impl MainScreen {
                     .unwrap()
                     .selected_index = source as usize;
             };
-            // if self.sort_popup.scroll_pos > self.sort_popup.selected_index {
-            //     self.sort_popup.scroll_pos = self.sort_popup.selected_index;
-            // }
-            // if self.sort_popup.scroll_pos + self.sort_popup.num_visible_items > self.sort_popup.model.len() {
-            //     self.sort_popup.scroll_pos = self.sort_popup.model.len() - self.sort_popup.num_visible_items;
-            // }
-            // if self.sort_popup.selected_index - self.sort_popup.scroll_pos >= self.sort_popup.num_visible_items {
-            //     self.sort_popup.scroll_pos = self.sort_popup.selected_index
-            //         .saturating_sub(self.sort_popup.num_visible_items + 1);
-            // }
-            // {
-            //     let submenu = self.sort_popup.submenus.get_mut(&<usize>::from(Sort::Rating(Default::default()))).unwrap();
-            //     submenu.selected_index = selected_rating_source;
-            //     if submenu.scroll_pos > submenu.selected_index {
-            //         submenu.scroll_pos = submenu.selected_index;
-            //     }
-            //     if submenu.scroll_pos + submenu.num_visible_items > submenu.model.len() {
-            //         submenu.scroll_pos = submenu.model.len() - submenu.num_visible_items;
-            //     }
-            //     if submenu.selected_index - submenu.scroll_pos >= submenu.num_visible_items {
-            //         submenu.scroll_pos = submenu.selected_index
-            //             .saturating_sub(submenu.num_visible_items + 1);
-            //     }
-            // }
+
             let areas = self
                 .sort_popup
                 .render_dropdown(sort_area, frame, key_event_handler);
@@ -1783,6 +1698,8 @@ impl MainScreen {
         key_event_handler: &mut KeyEventHandler,
         area: Rect,
     ) {
+        let num_items = self.filtered_movies.len();
+
         if !self.filtered_movies.is_empty() {
             let num_visible_items = self.movies_list.num_visible_items;
 
@@ -1816,174 +1733,49 @@ impl MainScreen {
 
             key_event_handler.bind_vertical((Some(0), None), "Scroll".into(), move |app, data| {
                 if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                    match data {
-                        key_event_handler::Data::Direction(true, modifiers) => {
-                            if modifiers.contains(KeyModifiers::SHIFT) {
+                    if let key_event_handler::Data::Direction(direction, modifiers) = data {
+                        if modifiers.contains(KeyModifiers::SHIFT) {
+                            if direction {
                                 main_screen.goto_index(
-                                    (main_screen.movies_list.selected_item
+                                    (main_screen.movies_list.selected_index
                                         + num_visible_items.saturating_sub(1))
                                         as isize,
                                 );
                             } else {
-                                main_screen.movies_list.selected_item =
-                                    (main_screen.movies_list.selected_item + 1)
-                                        .min(main_screen.filtered_movies.len().saturating_sub(1));
-
-                                if main_screen.movies_list.selected_item
-                                    < main_screen.movies_list.scroll_pos
-                                {
-                                    main_screen.movies_list.scroll_pos = main_screen
-                                        .movies_list
-                                        .selected_item
-                                        .min(main_screen.filtered_movies.len().saturating_sub(
-                                            main_screen.movies_list.num_visible_items,
-                                        ));
-                                } else if main_screen.movies_list.selected_item
-                                    - main_screen.movies_list.scroll_pos
-                                    >= main_screen.movies_list.num_visible_items
-                                {
-                                    main_screen.movies_list.scroll_pos =
-                                        main_screen.movies_list.selected_item
-                                            - main_screen.movies_list.num_visible_items
-                                            + 1;
-                                }
-                            }
-                        }
-                        key_event_handler::Data::Direction(false, modifiers) => {
-                            if modifiers.contains(KeyModifiers::SHIFT) {
                                 main_screen.goto_index(
                                     main_screen
                                         .movies_list
-                                        .selected_item
+                                        .selected_index
                                         .saturating_sub(num_visible_items.saturating_sub(1))
                                         as isize,
                                 );
-                            } else {
-                                main_screen.movies_list.selected_item =
-                                    main_screen.movies_list.selected_item.saturating_sub(1);
-
-                                if main_screen.movies_list.selected_item
-                                    < main_screen.movies_list.scroll_pos
-                                {
-                                    main_screen.movies_list.scroll_pos = main_screen
-                                        .movies_list
-                                        .selected_item
-                                        .min(main_screen.filtered_movies.len().saturating_sub(
-                                            main_screen.movies_list.num_visible_items,
-                                        ));
-                                } else if main_screen.movies_list.selected_item
-                                    - main_screen.movies_list.scroll_pos
-                                    >= main_screen.movies_list.num_visible_items
-                                {
-                                    main_screen.movies_list.scroll_pos =
-                                        main_screen.movies_list.selected_item
-                                            - main_screen.movies_list.num_visible_items
-                                            + 1;
-                                }
                             }
+                        } else {
+                            main_screen.movies_list.scroll(direction, num_items);
                         }
-                        _ => (),
                     }
                 }
             });
         }
 
-        if self.movies_list.selected_item >= self.filtered_movies.len() {
-            self.movies_list.selected_item = self.filtered_movies.len().saturating_sub(1);
+        if self.movies_list.selected_index >= num_items {
+            self.movies_list.selected_index = num_items.saturating_sub(1);
             self.movies_list.scroll_pos = self
                 .movies_list
-                .selected_item
+                .selected_index
                 .saturating_sub(self.movies_list.num_visible_items.saturating_sub(1));
         }
 
-        let num_visible_movies = area.height as usize / MOVIE_WIDGET_HEIGHT;
-        let partially_visible_movie_height =
-            area.height as usize - num_visible_movies * MOVIE_WIDGET_HEIGHT;
-        let render_partially_visible_movie = partially_visible_movie_height > 0;
-        if self.movies_list.num_visible_items
-            != num_visible_movies + if render_partially_visible_movie { 1 } else { 0 }
-            || self.movies_list.partially_visible_item != render_partially_visible_movie
-        {
-            let selected_movie_index = self
-                .movies_list
-                .selected_item
-                .saturating_sub(self.movies_list.scroll_pos)
-                .saturating_sub(
-                    if self.movies_list.partially_visible_item && self.movies_list.alignment_bottom
-                    {
-                        1
-                    } else {
-                        0
-                    },
-                )
-                .min(num_visible_movies.saturating_sub(1));
-
-            if self
-                .movies_list
-                .selected_item
-                .saturating_sub(selected_movie_index)
-                == 0
-            {
-                self.movies_list.scroll_pos = 0;
-                self.movies_list.alignment_bottom = false;
-            } else {
-                self.movies_list.scroll_pos = self
-                    .movies_list
-                    .selected_item
-                    .saturating_sub(selected_movie_index)
-                    - if render_partially_visible_movie && self.movies_list.alignment_bottom {
-                        1
-                    } else {
-                        0
-                    };
-            }
-        }
-        self.movies_list.num_visible_items =
-            num_visible_movies + if render_partially_visible_movie { 1 } else { 0 };
-        self.movies_list.partially_visible_item = render_partially_visible_movie;
-
-        if self.movies_list.scroll_pos + self.movies_list.num_visible_items
-            > self.filtered_movies.len()
-        {
-            self.movies_list.scroll_pos = self
-                .filtered_movies
-                .len()
-                .saturating_sub(self.movies_list.num_visible_items);
-            self.movies_list.alignment_bottom = true;
-        }
-        if self.movies_list.partially_visible_item {
-            if self.filtered_movies.len() <= num_visible_movies
-                || self.movies_list.selected_item == self.movies_list.scroll_pos
-            {
-                self.movies_list.alignment_bottom = false;
-            } else if self
-                .movies_list
-                .selected_item
-                .saturating_sub(self.movies_list.scroll_pos)
-                == self.movies_list.num_visible_items - 1
-            {
-                self.movies_list.alignment_bottom = true;
-            }
-        }
-
         let [movies_area, scrollbar_area] = horizontal![>=0, ==1].areas(area);
-        let mut remaining_area = movies_area;
-        for i in 0..self.movies_list.num_visible_items {
-            let [area, remaining] = if self.movies_list.partially_visible_item
-                && ((i == 0 && self.movies_list.alignment_bottom)
-                    || (i == self.movies_list.num_visible_items - 1
-                        && !self.movies_list.alignment_bottom))
-            {
-                vertical![==partially_visible_movie_height as u16, >= 0]
-            } else {
-                vertical![==MOVIE_WIDGET_HEIGHT as u16, >= 0]
-            }
-            .areas(remaining_area);
-            remaining_area = remaining;
 
-            if !self.filtered_movies.is_empty()
-                && i + self.movies_list.scroll_pos < self.filtered_movies.len()
-            {
+        let mut areas = vec![];
+        self.movies_list.render(
+            num_items,
+            movies_area,
+            scrollbar_area,
+            frame,
+            key_event_handler,
+            |_scroll_view, area, index, _selected, _alternate, _frame, key_event_handler| {
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     area,
@@ -1994,8 +1786,7 @@ impl MainScreen {
                             main_screen.tab = 0;
                             main_screen.item = 0;
 
-                            main_screen.movies_list.selected_item =
-                                i + main_screen.movies_list.scroll_pos;
+                            main_screen.movies_list.goto_index(index, false, num_items);
                         }
                     },
                 );
@@ -2009,89 +1800,70 @@ impl MainScreen {
                             main_screen.tab = 0;
                             main_screen.item = 0;
 
-                            main_screen.movies_list.selected_item =
-                                i + main_screen.movies_list.scroll_pos;
+                            main_screen.movies_list.goto_index(index, false, num_items);
 
                             if let key_event_handler::Data::Mouse(mouse_event) = data {
                                 main_screen.context_menu_pos =
                                     Some(Position::new(mouse_event.column, mouse_event.row));
                                 main_screen.context_menu.reset_state();
-                                // main_screen.context_menu.reset_state();
                             }
                         }
                     },
                 );
 
-                self.draw_movie_widget(i, frame, image_renderer, area);
-            } else {
-                frame.render_widget(
-                    Block::new().bg(if i & 1 == 1 {
-                        tailwind::NEUTRAL.c900
-                    } else {
-                        tailwind::STONE.c900
-                    }),
-                    area,
-                );
-            }
-        }
+                areas.push((index, area));
+            },
+        );
 
-        if self.filtered_movies.len() > num_visible_movies {
-            widgets::scroll_bar(
-                self.filtered_movies.len() + self.movies_list.partially_visible_item as usize,
-                self.movies_list.scroll_pos
-                    + (self.movies_list.partially_visible_item && self.movies_list.alignment_bottom)
-                        as usize,
-                self.movies_list.num_visible_items,
-                frame,
-                scrollbar_area,
-            );
+        key_event_handler.bind_mouse_button_down(
+            ratatui::crossterm::event::MouseButton::Left,
+            scrollbar_area.resize(Size::new(1, 1)),
+            move |app, _| {
+                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                    if main_screen.movies_list.alignment_bottom
+                        && main_screen.movies_list.partially_visible
+                    {
+                        main_screen.movies_list.alignment_bottom = false;
+                    } else if main_screen.movies_list.scroll_pos > 0 {
+                        main_screen.movies_list.scroll_pos -= 1;
+                    }
+                }
+            },
+        );
+        key_event_handler.bind_mouse_button_down(
+            ratatui::crossterm::event::MouseButton::Left,
+            scrollbar_area
+                .resize(Size::new(1, 1))
+                .offset(Offset::new(0, scrollbar_area.height as i32 - 1)),
+            move |app, _| {
+                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                    if !main_screen.movies_list.alignment_bottom
+                        && main_screen.movies_list.partially_visible
+                    {
+                        main_screen.movies_list.alignment_bottom = true;
+                    } else if main_screen.movies_list.scroll_pos
+                        < num_items.saturating_sub(main_screen.movies_list.num_visible_items)
+                    {
+                        main_screen.movies_list.scroll_pos += 1;
+                    }
+                }
+            },
+        );
 
-            if self.movies_list.scroll_pos > 0 {
-                key_event_handler.bind_mouse_button_down(
-                    ratatui::crossterm::event::MouseButton::Left,
-                    scrollbar_area.resize(Size::new(1, 1)),
-                    move |app, _| {
-                        if let Some(Screens::MainScreen(main_screen)) =
-                            app.drawer.current_screen.as_mut()
-                        {
-                            main_screen.movies_list.scroll_pos -= 1;
-                        }
-                    },
-                );
-            }
-            if self.movies_list.scroll_pos
-                < self
-                    .filtered_movies
-                    .len()
-                    .saturating_sub(self.movies_list.num_visible_items - 1)
-            {
-                key_event_handler.bind_mouse_button_down(
-                    ratatui::crossterm::event::MouseButton::Left,
-                    scrollbar_area
-                        .resize(Size::new(1, 1))
-                        .offset(Offset::new(0, scrollbar_area.height as i32 - 1)),
-                    move |app, _| {
-                        if let Some(Screens::MainScreen(main_screen)) =
-                            app.drawer.current_screen.as_mut()
-                        {
-                            main_screen.movies_list.scroll_pos += 1;
-                        }
-                    },
-                );
-            }
+        for (index, area) in areas {
+            self.draw_movie_widget(index, frame, image_renderer, area);
         }
     }
 
     fn draw_movie_widget(
         &mut self,
-        id: usize,
+        movie_index: usize,
         frame: &mut Frame,
         image_renderer: &mut RatatuiImage,
         area: Rect,
     ) {
         let is_partially_visible = MOVIE_WIDGET_HEIGHT > area.height as usize;
-        let movie_index = self.movies_list.scroll_pos + id;
-        let selected = self.movies_list.selected_item == movie_index;
+        let selected = self.movies_list.selected_index == movie_index;
         let tab_selected = self.tab == 0;
         let alt = movie_index & 1 == 1;
         let movie = &self.filtered_movies[movie_index];

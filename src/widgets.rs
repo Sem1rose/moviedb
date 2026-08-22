@@ -451,6 +451,172 @@ impl ContextMenu {
     }
 }
 
+#[derive(Default)]
+pub struct ScrollView {
+    // pub num_items:      usize,
+    pub item_height:       u16,
+    pub selected_index:    usize,
+    pub scroll_pos:        usize,
+    pub alignment_bottom:  bool,
+    pub num_visible_items: usize,
+    pub partially_visible: bool,
+}
+
+impl ScrollView {
+    pub fn new(item_height: u16) -> Self {
+        Self {
+            item_height,
+
+            ..Default::default()
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.selected_index = 0;
+        self.scroll_pos = 0;
+    }
+
+    fn ensure_view_in_bounds(&mut self, num_items: usize) {
+        if self.selected_index >= num_items {
+            self.selected_index = num_items.saturating_sub(1);
+            self.scroll_pos = self
+                .selected_index
+                .saturating_sub(self.num_visible_items + 1);
+        }
+        if self.scroll_pos > num_items.saturating_sub(self.num_visible_items) {
+            self.scroll_pos = num_items.saturating_sub(self.num_visible_items);
+        }
+
+        if self.selected_index < self.scroll_pos {
+            self.scroll_pos = self.selected_index;
+        } else if self.selected_index.saturating_sub(self.scroll_pos) >= self.num_visible_items - 1
+        {
+            self.scroll_pos = self
+                .selected_index
+                .saturating_sub(self.num_visible_items - 1);
+        }
+
+        if num_items < self.num_visible_items
+            || self.selected_index.saturating_sub(self.scroll_pos) == 0
+        {
+            self.alignment_bottom = false;
+        } else if self.selected_index.saturating_sub(self.scroll_pos) == self.num_visible_items - 1
+        {
+            self.alignment_bottom = true;
+        }
+    }
+
+    pub fn goto_index(&mut self, index: usize, centered: bool, num_items: usize) {
+        self.selected_index = index;
+        if centered {
+            if self.scroll_pos > index || index >= self.scroll_pos + self.num_visible_items {
+                self.scroll_pos = index
+                    .saturating_sub(self.num_visible_items / 2)
+                    .min(num_items.saturating_sub(self.num_visible_items));
+                self.alignment_bottom = false;
+            }
+        } else {
+            self.scroll_pos = self.scroll_pos.min(self.selected_index);
+            if self.selected_index - self.scroll_pos >= self.num_visible_items {
+                self.scroll_pos = self.selected_index - self.num_visible_items + 1;
+            }
+        }
+        self.ensure_view_in_bounds(num_items);
+    }
+
+    pub fn scroll(&mut self, direction: bool, num_items: usize) {
+        if direction {
+            self.selected_index = (self.selected_index + 1).min(num_items.saturating_sub(1));
+            if self.selected_index.saturating_sub(self.scroll_pos) >= self.num_visible_items {
+                self.scroll_pos = self
+                    .selected_index
+                    .saturating_sub(self.num_visible_items - 1);
+            }
+        } else {
+            self.selected_index = self.selected_index.saturating_sub(1);
+            if self.selected_index < self.scroll_pos {
+                self.scroll_pos = self.selected_index;
+            }
+        }
+        self.ensure_view_in_bounds(num_items);
+    }
+
+    pub fn render(
+        &mut self,
+        num_items: usize,
+        area: Rect,
+        scrollbar_area: Rect,
+        frame: &mut Frame,
+        key_event_handler: &mut KeyEventHandler,
+        mut render_callback: impl FnMut(
+            &Self,
+            Rect,
+            usize,
+            bool,
+            bool,
+            &mut Frame,
+            &mut KeyEventHandler,
+        ),
+    ) {
+        let num_visible_results = area.height as usize / self.item_height as usize;
+        let partially_visible_result_height =
+            area.height as usize - num_visible_results * self.item_height as usize;
+        self.partially_visible = partially_visible_result_height > 0;
+        self.num_visible_items = num_visible_results + if self.partially_visible { 1 } else { 0 };
+
+        self.ensure_view_in_bounds(num_items);
+
+        let mut remaining_area = area;
+        for i in 0..self.num_visible_items {
+            let [area, remaining] = if self.partially_visible
+                && i == (!self.alignment_bottom as usize * (self.num_visible_items - 1))
+            {
+                vertical![==partially_visible_result_height as u16, >= 0]
+            } else {
+                vertical![==self.item_height, >= 0]
+            }
+            .areas(remaining_area);
+
+            let index = self.scroll_pos + i;
+            if index < num_items {
+                let alternate = i & 1 == 1;
+                let selected = self.selected_index == i + self.scroll_pos;
+
+                render_callback(
+                    self,
+                    area,
+                    index,
+                    selected,
+                    alternate,
+                    frame,
+                    key_event_handler,
+                );
+            } else {
+                frame.render_widget(
+                    Block::new().bg(if i & 1 == 0 {
+                        tailwind::SLATE.c950
+                    } else {
+                        tailwind::BLACK
+                    }),
+                    area,
+                );
+            }
+
+            remaining_area = remaining;
+        }
+
+        if num_items + self.partially_visible as usize > self.num_visible_items {
+            scroll_bar(
+                num_items + self.partially_visible as usize,
+                self.scroll_pos + (self.partially_visible && self.alignment_bottom) as usize,
+                self.num_visible_items,
+                frame,
+                scrollbar_area,
+            );
+        }
+    }
+}
+
 pub fn window(frame: &mut Frame, area: Rect, title: &str, and_a_half: bool) -> Rect {
     let popup = Block::bordered()
         .border_set(border::PROPORTIONAL_WIDE)

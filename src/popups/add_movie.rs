@@ -42,7 +42,7 @@ use crate::{
     popups::{Popup, PopupTrait},
     tokens::{OMDBTokens, PunchPlayTokens, TMDBTokens, TraktTokens},
     types::MovieDetailsResponse,
-    widgets::{self, Action, ActionType},
+    widgets::{self, Action, ActionType, ScrollView},
 };
 
 #[derive(Default)]
@@ -101,15 +101,11 @@ impl From<SearchResult> for SearchResultMovie {
 
 #[derive(Default)]
 pub struct AddMoviePopup {
-    pub tick:          u64,
-    pub phase:         Phase,
-    throbber_visible:  bool,
-    item:              usize,
-    scroll_pos:        usize,
-    selected_item:     usize,
-    alignment_bottom:  bool,
-    num_visible_items: usize,
-    partially_visible: bool,
+    pub tick:         u64,
+    pub phase:        Phase,
+    throbber_visible: bool,
+    item:             usize,
+    scrollview:       ScrollView,
 
     input0:         TextArea<'static>,
     input1:         TextArea<'static>,
@@ -152,6 +148,8 @@ impl AddMoviePopup {
             trakt_tokens,
             omdb_tokens,
             take_rating,
+            scrollview: ScrollView::new(5),
+
             _cache_dir: cache_dir.to_path_buf(),
             ..Default::default()
         }
@@ -249,7 +247,7 @@ impl AddMoviePopup {
                     Phase::GetRating
                 } else {
                     self.request_details(
-                        self.search_results.as_ref().unwrap()[self.selected_item].id,
+                        self.search_results.as_ref().unwrap()[self.scrollview.selected_index].id,
                     );
 
                     Phase::GettingDetails
@@ -269,7 +267,9 @@ impl AddMoviePopup {
                 }
                 .to_utc();
 
-                self.request_details(self.search_results.as_ref().unwrap()[self.selected_item].id);
+                self.request_details(
+                    self.search_results.as_ref().unwrap()[self.scrollview.selected_index].id,
+                );
 
                 Phase::GettingDetails
             }
@@ -319,8 +319,7 @@ impl PopupTrait for AddMoviePopup {
                 if self.tick - last_tick > 20 {
                     self.last_input_tick = None;
 
-                    self.selected_item = 0;
-                    self.scroll_pos = 0;
+                    self.scrollview.reset();
                     self.search_results = None;
                     if self.input0.lines()[0].trim().is_empty() {
                         _ = self.rx_search_result.take();
@@ -411,8 +410,8 @@ impl PopupTrait for AddMoviePopup {
         self.throbber_visible = false;
         match &self.phase {
             Phase::SelectMovie => {
-                if matches!(num_results, Some(x) if x > 0) {
-                    let num_results = *num_results.as_ref().unwrap();
+                let num_results = num_results.unwrap_or_default();
+                if num_results > 0 {
                     key_event_handler.bind_vertical(
                         (None, None),
                         "Scroll".into(),
@@ -420,28 +419,8 @@ impl PopupTrait for AddMoviePopup {
                             if let Some(Popup::AddMovie(add_movie_popup)) =
                                 app.drawer.active_popup.as_mut()
                             {
-                                match data {
-                                    key_event_handler::Data::Direction(true, _) => {
-                                        add_movie_popup.selected_item =
-                                            (add_movie_popup.selected_item + 1)
-                                                .min(num_results.saturating_sub(1));
-                                        if add_movie_popup.selected_item
-                                            - add_movie_popup.scroll_pos
-                                            >= add_movie_popup.num_visible_items
-                                        {
-                                            add_movie_popup.scroll_pos += 1;
-                                        }
-                                    }
-                                    key_event_handler::Data::Direction(false, _) => {
-                                        add_movie_popup.selected_item =
-                                            add_movie_popup.selected_item.saturating_sub(1);
-                                        if add_movie_popup.selected_item
-                                            < add_movie_popup.scroll_pos
-                                        {
-                                            add_movie_popup.scroll_pos -= 1;
-                                        }
-                                    }
-                                    _ => (),
+                                if let key_event_handler::Data::Direction(direction, _) = data {
+                                    add_movie_popup.scrollview.scroll(direction, num_results);
                                 }
                             }
                         },
@@ -526,53 +505,32 @@ impl PopupTrait for AddMoviePopup {
                     );
                 }
 
-                let num_visible_results = results_list_area.height as usize / 5;
-                let partially_visible_result_height =
-                    results_list_area.height as usize - num_visible_results * 5;
-                self.partially_visible = partially_visible_result_height > 0;
-                self.num_visible_items =
-                    num_visible_results + if self.partially_visible { 1 } else { 0 };
-
-                let num_results_unwrapped = num_results.unwrap_or(0);
-                if self.selected_item < self.scroll_pos {
-                    self.selected_item =
-                        (self.selected_item + 1).min(num_results_unwrapped.saturating_sub(1));
-                } else if self.selected_item >= num_results_unwrapped {
-                    self.selected_item = num_results_unwrapped.saturating_sub(1);
-                    self.scroll_pos = self
-                        .selected_item
-                        .saturating_sub(self.num_visible_items + 1);
-                } else if self.selected_item - self.scroll_pos >= self.num_visible_items {
-                    self.scroll_pos = self
-                        .selected_item
-                        .saturating_sub(self.num_visible_items + 1);
-                }
-
-                if num_results_unwrapped <= num_visible_results
-                    || self.selected_item - self.scroll_pos == 0
-                {
-                    self.alignment_bottom = false;
-                } else if self.selected_item - self.scroll_pos == self.num_visible_items - 1 {
-                    self.alignment_bottom = true;
-                }
-
-                let mut remaining_area = results_list_area;
-                for i in 0..self.num_visible_items {
-                    let [area, remaining] = if self.partially_visible
-                        && i == (!self.alignment_bottom as usize * (self.num_visible_items - 1))
-                    {
-                        vertical![==partially_visible_result_height as u16, >= 0]
-                    } else {
-                        vertical![==5, >= 0]
-                    }
-                    .areas(remaining_area);
-
-                    if self.scroll_pos + i < num_results_unwrapped {
-                        let result = &self.search_results.as_ref().unwrap()[self.scroll_pos + i];
-                        let partially_visible = area.height < 5;
-
-                        let alternate = i & 1 == 1;
-                        let selected = self.selected_item == i + self.scroll_pos;
+                self.scrollview.render(
+                    num_results,
+                    results_list_area,
+                    scrollbar_area,
+                    frame,
+                    key_event_handler,
+                    |scroll_view, area, index, selected, alternate, frame, key_event_handler| {
+                        key_event_handler.bind_mouse_button_down(
+                            ratatui::crossterm::event::MouseButton::Left,
+                            area,
+                            move |app, _| {
+                                if let Some(Popup::AddMovie(add_movie_popup)) =
+                                    app.drawer.active_popup.as_mut()
+                                {
+                                    if selected {
+                                        add_movie_popup.advance_phase();
+                                    } else {
+                                        add_movie_popup.scrollview.goto_index(
+                                            index,
+                                            false,
+                                            num_results,
+                                        );
+                                    }
+                                }
+                            },
+                        );
 
                         frame.render_widget(
                             Block::new().bg(if selected {
@@ -584,30 +542,14 @@ impl PopupTrait for AddMoviePopup {
                             }),
                             area,
                         );
-                        key_event_handler.bind_mouse_button_down(
-                            ratatui::crossterm::event::MouseButton::Left,
-                            area,
-                            move |app, _| {
-                                if let Some(Popup::AddMovie(add_movie_popup)) =
-                                    app.drawer.active_popup.as_mut()
-                                {
-                                    if selected {
-                                        add_movie_popup.advance_phase();
-                                    } else {
-                                        add_movie_popup.selected_item =
-                                            add_movie_popup.scroll_pos + i;
-                                    }
-                                }
-                            },
-                        );
 
+                        let result = &self.search_results.as_ref().unwrap()[index];
                         let areas = Layout::vertical(vec![constraint!(==1); area.height as usize])
                             .split(area);
-
                         for i in 0..area.height {
-                            let index = if partially_visible {
-                                if self.alignment_bottom {
-                                    i + (5 - area.height)
+                            let index = if area.height < scroll_view.item_height {
+                                if scroll_view.alignment_bottom {
+                                    i + (scroll_view.item_height - area.height)
                                 } else {
                                     i
                                 }
@@ -618,8 +560,8 @@ impl PopupTrait for AddMoviePopup {
                                 frame.render_widget(
                                     line!("▔".repeat(area.width as usize)).fg(if selected {
                                         tailwind::EMERALD.c700
-                                    } else if !alternate {
-                                        tailwind::GRAY.c600
+                                    // } else if !alternate {
+                                    //     tailwind::GRAY.c600
                                     } else {
                                         tailwind::SLATE.c600
                                     }),
@@ -676,8 +618,8 @@ impl PopupTrait for AddMoviePopup {
                                 frame.render_widget(
                                     line!("▁".repeat(area.width as usize)).fg(if selected {
                                         tailwind::EMERALD.c700
-                                    } else if !alternate {
-                                        tailwind::GRAY.c600
+                                    // } else if !alternate {
+                                    //     tailwind::GRAY.c600
                                     } else {
                                         tailwind::SLATE.c600
                                     }),
@@ -685,31 +627,48 @@ impl PopupTrait for AddMoviePopup {
                                 );
                             }
                         }
-                    } else {
-                        frame.render_widget(
-                            Block::new().bg(if i & 1 == 0 {
-                                tailwind::SLATE.c950
-                            } else {
-                                tailwind::BLACK
-                            }),
-                            area,
-                        );
-                    }
+                    },
+                );
 
-                    remaining_area = remaining;
-                }
-
-                if num_results_unwrapped + self.partially_visible as usize > self.num_visible_items
-                {
-                    widgets::scroll_bar(
-                        num_results_unwrapped + self.partially_visible as usize,
-                        self.scroll_pos
-                            + (self.partially_visible && self.alignment_bottom) as usize,
-                        self.num_visible_items,
-                        frame,
-                        scrollbar_area,
-                    );
-                }
+                key_event_handler.bind_mouse_button_down(
+                    ratatui::crossterm::event::MouseButton::Left,
+                    scrollbar_area.resize(Size::new(1, 1)),
+                    move |app, _| {
+                        if let Some(Popup::AddMovie(add_movie_popup)) =
+                            app.drawer.active_popup.as_mut()
+                        {
+                            if add_movie_popup.scrollview.alignment_bottom
+                                && add_movie_popup.scrollview.partially_visible
+                            {
+                                add_movie_popup.scrollview.alignment_bottom = false;
+                            } else if add_movie_popup.scrollview.scroll_pos > 0 {
+                                add_movie_popup.scrollview.scroll_pos -= 1;
+                            }
+                        }
+                    },
+                );
+                key_event_handler.bind_mouse_button_down(
+                    ratatui::crossterm::event::MouseButton::Left,
+                    scrollbar_area
+                        .resize(Size::new(1, 1))
+                        .offset(Offset::new(0, scrollbar_area.height as i32 - 1)),
+                    move |app, _| {
+                        if let Some(Popup::AddMovie(add_movie_popup)) =
+                            app.drawer.active_popup.as_mut()
+                        {
+                            if !add_movie_popup.scrollview.alignment_bottom
+                                && add_movie_popup.scrollview.partially_visible
+                            {
+                                add_movie_popup.scrollview.alignment_bottom = true;
+                            } else if add_movie_popup.scrollview.scroll_pos
+                                < num_results
+                                    .saturating_sub(add_movie_popup.scrollview.num_visible_items)
+                            {
+                                add_movie_popup.scrollview.scroll_pos += 1;
+                            }
+                        }
+                    },
+                );
             }
             Phase::GetRating => {
                 let rating_valid = self.validate_input_rating();

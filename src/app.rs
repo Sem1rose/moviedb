@@ -936,8 +936,9 @@ impl App {
 
                 self.watched.borrow_mut().entry(movie_id).and_modify(|x| {
                     let len = x.history.len();
-                    x.history[len - 1 - manage_plays_popup.selected_item].date = date;
-                    x.history[len - 1 - manage_plays_popup.selected_item].rating = rating;
+                    x.history[len - 1 - manage_plays_popup.scrollview.selected_index].date = date;
+                    x.history[len - 1 - manage_plays_popup.scrollview.selected_index].rating =
+                        rating;
 
                     x.history
                         .sort_by(|a, b| a.date.partial_cmp(&b.date).unwrap());
@@ -961,7 +962,7 @@ impl App {
             let mut empty = false;
             self.watched.borrow_mut().entry(movie_id).and_modify(|x| {
                 x.history
-                    .remove(x.history.len() - 1 - manage_plays_popup.selected_item);
+                    .remove(x.history.len() - 1 - manage_plays_popup.scrollview.selected_index);
                 empty = x.history.is_empty();
             });
 
