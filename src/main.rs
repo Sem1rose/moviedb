@@ -6,6 +6,7 @@ mod image_backend;
 mod key_event_handler;
 mod omdb;
 mod popups;
+mod processors;
 mod screens;
 mod tokens;
 mod types;

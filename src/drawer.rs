@@ -20,6 +20,7 @@ use crate::{
     image_backend::RatatuiImage,
     key_event_handler::{self, KeyEventHandler},
     popups::*,
+    processors::Processor,
     screens::{Screens, main_screen::MainScreen},
     tokens::{OMDBTokens, PunchPlayTokens, TMDBTokens, TraktTokens},
     types::{Entry, FxIndexMap, Movie},
@@ -98,7 +99,12 @@ impl Drawer {
         }
     }
 
-    pub fn render_app(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
+    pub fn render_app<'a>(
+        &mut self,
+        frame: &mut Frame,
+        key_event_handler: &mut KeyEventHandler,
+        mut processors: impl Iterator<Item = &'a Processor>,
+    ) {
         self.refresh_immediate = self.refresh_immediate.saturating_sub(1);
 
         self.check_term_size(frame);
@@ -109,7 +115,9 @@ impl Drawer {
         self.try_pop_queues(key_event_handler);
         self.check_popups(key_event_handler);
         if !self.show_term_size_warning {
-            if self.active_popup.is_some() {
+            if let Some(processor) = processors.next() {
+                processor.render(frame, key_event_handler);
+            } else if self.active_popup.is_some() {
                 self.draw_popup(frame, key_event_handler);
             }
             self.render_footer(frame, key_event_handler);
@@ -135,8 +143,9 @@ impl Drawer {
             popup.update();
 
             match popup {
-                Popup::ManagePlays(_) => {}
-                Popup::DeleteMovie(_) => {}
+                Popup::ManagePlays(_) => (),
+                Popup::ManageLists(_) => (),
+                Popup::DeleteMovie(_) => (),
                 Popup::AddMovie(add_movie_popup) => {
                     if let AddMoviePopupPhase::Done = add_movie_popup.phase {
                         let refetch_details = add_movie_popup.refetch_details;
@@ -181,8 +190,8 @@ impl Drawer {
                             app.set_omdb_user_tokens();
                         });
                     },
-                Popup::OutOfBox(_) => {}
-                Popup::AdvancedFilter(_) => {}
+                Popup::OutOfBox(_) => (),
+                Popup::AdvancedFilter(_) => (),
                 Popup::FetchMovies(fetch_movies_popup) =>
                     if fetch_movies_popup.done {
                         key_event_handler.bind_immediate(|app, _| {
@@ -253,7 +262,7 @@ impl Drawer {
 
                 if matches!(self.current_screen, Some(Screens::MainScreen(_))) {
                     key_event_handler.bind_immediate(|app, _| {
-                        // app.initialize_processors();
+                        app.initialize_processors();
                         if let Some(Screens::MainScreen(main_screen)) =
                             app.drawer.current_screen.as_mut()
                         {
@@ -337,6 +346,16 @@ impl Drawer {
         }
     }
 
+    pub fn open_manage_plays_popup(&mut self, watched: &FxIndexMap<u32, Entry>) {
+        if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_mut() {
+            let entry = watched.get(&main_screen.current_movie().unwrap().id);
+            self.popup_queue
+                .push(Popup::ManagePlays(Box::new(ManagePlaysPopup::new(
+                    entry.cloned(),
+                ))));
+        }
+    }
+
     pub fn open_add_play_popup(&mut self) {
         self.popup_queue.push(Popup::ManagePlays(Box::new(
             ManagePlaysPopup::new_add_play(),
@@ -349,16 +368,6 @@ impl Drawer {
             self.popup_queue.push(Popup::ManagePlays(Box::new(
                 ManagePlaysPopup::new_edit_rating(entry),
             )));
-        }
-    }
-
-    pub fn open_manage_plays_popup(&mut self, watched: &FxIndexMap<u32, Entry>) {
-        if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_mut() {
-            let entry = watched.get(&main_screen.current_movie().unwrap().id);
-            self.popup_queue
-                .push(Popup::ManagePlays(Box::new(ManagePlaysPopup::new(
-                    entry.cloned(),
-                ))));
         }
     }
 
@@ -381,6 +390,11 @@ impl Drawer {
                     &main_screen.filter_criteria,
                 ))));
         }
+    }
+
+    pub fn open_manage_lists_popup(&mut self) {
+        self.popup_queue
+            .push(Popup::ManageLists(Box::new(ManageListsPopup::new())));
     }
 
     pub fn close_popup(&mut self) {

@@ -741,8 +741,13 @@ impl Widget {
                     let (mut mouse_area, len) = ContextMenu {
                         model: filtered_items
                             .iter()
-                            .map(|x| helpers::ellipsize_string(&items[*x], area.width as usize - 4))
-                            .collect_vec(),
+                            .map(|&x| {
+                                (
+                                    x,
+                                    helpers::ellipsize_string(&items[x], area.width as usize - 4),
+                                )
+                            })
+                            .collect(),
                         selected_index: *current_selected,
                         scroll_pos: *scroll_pos,
                         num_visible_items: *num_visible_items,
@@ -989,6 +994,7 @@ impl AdvancedFilterPopup {
                     advanced_filter_popup
                         .filter_criteria
                         .push(FilterCriterion::Director(director, inverted));
+                    advanced_filter_popup.recalculate_available_criteria();
 
                     advanced_filter_popup.tab = 1;
                     advanced_filter_popup.item = 0;
@@ -1179,6 +1185,7 @@ impl AdvancedFilterPopup {
                             },
                         );
                     }
+                    advanced_filter_popup.recalculate_available_criteria();
 
                     advanced_filter_popup.tab = 1;
                     advanced_filter_popup.item = 0;
@@ -1239,6 +1246,7 @@ impl AdvancedFilterPopup {
                     advanced_filter_popup
                         .filter_criteria
                         .push(FilterCriterion::Certification(certificaions, inverted));
+                    advanced_filter_popup.recalculate_available_criteria();
 
                     advanced_filter_popup.tab = 1;
                     advanced_filter_popup.item = 0;
@@ -1363,6 +1371,7 @@ impl AdvancedFilterPopup {
                                 FilterCriterion::LastWatched(lower_bound, upper_bound, inverted),
                             _ => unreachable!(),
                         });
+                    advanced_filter_popup.recalculate_available_criteria();
 
                     advanced_filter_popup.tab = 1;
                     advanced_filter_popup.item = 0;
@@ -1446,6 +1455,7 @@ impl AdvancedFilterPopup {
                                 FilterCriterion::UserRating(rating, ordering, inverted),
                             _ => unreachable!(),
                         });
+                    advanced_filter_popup.recalculate_available_criteria();
 
                     advanced_filter_popup.tab = 1;
                     advanced_filter_popup.item = 0;
@@ -1537,6 +1547,7 @@ impl AdvancedFilterPopup {
                             FilterCriterion::Country(values, inverted)
                         },
                     );
+                    advanced_filter_popup.recalculate_available_criteria();
 
                     advanced_filter_popup.tab = 1;
                     advanced_filter_popup.item = 0;
@@ -2221,12 +2232,15 @@ impl PopupTrait for AdvancedFilterPopup {
                             .available_criteria
                             .iter()
                             .map(|x| {
-                                helpers::ellipsize_string(
-                                    x.into(),
-                                    dropdown_area.width as usize - 2,
+                                (
+                                    *x as usize,
+                                    helpers::ellipsize_string(
+                                        x.into(),
+                                        dropdown_area.width as usize - 2,
+                                    ),
                                 )
                             })
-                            .collect_vec(),
+                            .collect(),
                         selected_index: *index,
                         scroll_pos: self.dropdown_scroll_pos,
                         num_visible_items: self.dropdown_num_visible_items,

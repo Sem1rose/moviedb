@@ -15,7 +15,6 @@ use crate::smo::ResponseError;
 
 #[macro_use]
 pub mod smo;
-pub mod list;
 pub mod movie;
 pub mod tokens;
 

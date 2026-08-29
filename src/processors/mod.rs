@@ -1,7 +1,7 @@
-mod movies_fetcher;
+mod history_syncer;
 
+use history_syncer::HistorySyncerProcessor;
 use itertools::Itertools;
-use movies_fetcher::MoviesFetcherProcessor;
 use strum::{EnumCount, EnumDiscriminants, EnumIter, IntoEnumIterator};
 
 use crate::key_event_handler::KeyEventHandler;
@@ -9,7 +9,7 @@ use crate::key_event_handler::KeyEventHandler;
 #[derive(EnumDiscriminants, EnumCount, EnumIter)]
 #[strum_discriminants(derive(Hash))]
 pub enum Processor {
-    DetailsFetcher(Box<MoviesFetcherProcessor>),
+    HistorySyncer(Box<HistorySyncerProcessor>),
 }
 
 #[macro_export]
@@ -29,22 +29,31 @@ impl Processor {
 
     fn as_trait(&self) -> &dyn ProcessorTrait {
         match self {
-            Processor::DetailsFetcher(movies_fetcher_processsor) => &**movies_fetcher_processsor,
+            Processor::HistorySyncer(history_syncer_processsor) => &**history_syncer_processsor,
         }
     }
 
     fn as_trait_mut(&mut self) -> &mut dyn ProcessorTrait {
         match self {
-            Processor::DetailsFetcher(movies_fetcher_processsor) =>
-                &mut **movies_fetcher_processsor,
+            Processor::HistorySyncer(history_syncer_processsor) => &mut **history_syncer_processsor,
         }
     }
 
     pub fn update(&mut self, key_event_handler: &mut KeyEventHandler) {
         self.as_trait_mut().update(key_event_handler)
     }
+
+    pub fn needs_render(&self) -> bool {
+        self.as_trait().needs_render()
+    }
+
+    pub fn render(&self, frame: &mut ratatui::Frame, key_event_handler: &mut KeyEventHandler) {
+        self.as_trait().render(frame, key_event_handler)
+    }
 }
 
 pub trait ProcessorTrait {
     fn update(&mut self, key_event_handler: &mut KeyEventHandler);
+    fn needs_render(&self) -> bool;
+    fn render(&self, frame: &mut ratatui::Frame, key_event_handler: &mut KeyEventHandler);
 }

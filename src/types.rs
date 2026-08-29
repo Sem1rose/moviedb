@@ -2,6 +2,7 @@ use std::{cmp::Ordering, io::stdout};
 
 use chrono::{DateTime, NaiveDate, TimeDelta, Utc};
 use indexmap::IndexMap;
+use itertools::Itertools;
 use log::info;
 use punch_play::smo::{DetailsResponse, HistoryItem as PunchPlayHistoryItem};
 use ratatui::{
@@ -17,7 +18,7 @@ use ratatui::{
     },
 };
 use rustc_hash::FxBuildHasher;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use strum::{
     AsRefStr, EnumCount, EnumDiscriminants, EnumIter, FromRepr, IntoEnumIterator, IntoStaticStr,
 };
@@ -87,6 +88,23 @@ pub enum ListID {
     PunchPlay(u32),
     Collection(u32),
 }
+
+fn indexmap_deserializer<'de, D>(d: D) -> Result<FxIndexMap<u32, ListItem>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Deserialize::deserialize(d)
+        .map(|value: Vec<ListItem>| value.into_iter().map(|x| (x.id, x)).collect())
+}
+fn indexmap_serializer<S, K, V: Serialize>(
+    values: &IndexMap<K, V, FxBuildHasher>,
+    s: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    values.values().collect_vec().serialize(s)
+}
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct ListItem {
     pub id:       u32,
@@ -96,19 +114,13 @@ pub struct ListItem {
 pub struct List {
     pub id:       ListID,
     pub name:     String,
-    pub items:    Vec<ListItem>,
+    #[serde(
+        deserialize_with = "indexmap_deserializer",
+        serialize_with = "indexmap_serializer"
+    )]
+    pub items:    FxIndexMap<u32, ListItem>,
     pub readonly: bool,
 }
-// impl From<&[Entry]> for List {
-//     fn from(value: &[Entry]) -> Self {
-//         Self {
-//             id:     Default::default(),
-//             name:   "Watched Movies".into(),
-//             items: value.iter().map(|x| x.movie_id).collect(),
-//             readonly: false
-//         }
-//     }
-// }
 impl List {
     pub fn from_tmdb(value: tmdb::list::smo::ListDetails, readonly: bool) -> Self {
         Self {
@@ -119,10 +131,13 @@ impl List {
                 .unwrap_or_default()
                 .iter()
                 .filter_map(|x| {
-                    (x.media_type.as_ref().unwrap() == "movie").then_some(ListItem {
-                        id:       x.id,
-                        added_at: Default::default(),
-                    })
+                    (x.media_type.as_ref().unwrap() == "movie").then_some((
+                        x.id,
+                        ListItem {
+                            id:       x.id,
+                            added_at: Default::default(),
+                        },
+                    ))
                 })
                 .collect(),
             readonly,
@@ -138,10 +153,13 @@ impl List {
                 .unwrap_or_default()
                 .iter()
                 .filter_map(|x| {
-                    (x.item_type == "movie").then_some(ListItem {
-                        id:       x.tmdb_id,
-                        added_at: x.added_at,
-                    })
+                    (x.item_type == "movie").then_some((
+                        x.tmdb_id,
+                        ListItem {
+                            id:       x.tmdb_id,
+                            added_at: x.added_at,
+                        },
+                    ))
                 })
                 .collect(),
             readonly,
@@ -155,9 +173,14 @@ impl List {
             items:    value
                 .parts
                 .iter()
-                .map(|x| ListItem {
-                    id:       x.id,
-                    added_at: x.release_date.and_time(Default::default()).and_utc(),
+                .map(|x| {
+                    (
+                        x.id,
+                        ListItem {
+                            id:       x.id,
+                            added_at: x.release_date.and_time(Default::default()).and_utc(),
+                        },
+                    )
                 })
                 .collect(),
             readonly: true,
@@ -165,14 +188,15 @@ impl List {
     }
 }
 
-#[derive(Default, Clone, Copy, FromRepr, EnumCount, AsRefStr, EnumIter, EnumDiscriminants)]
-#[strum_discriminants(vis())]
-#[strum_discriminants(repr(usize))]
+#[derive(
+    Default, Clone, Debug, Copy, FromRepr, EnumCount, AsRefStr, EnumIter, EnumDiscriminants,
+)]
+#[strum_discriminants(vis(), repr(usize))]
 #[strum(serialize_all = "title_case")]
 pub enum Sort {
     #[default]
     MostRecent,
-    DateAdded,
+    FirstWatched,
     ReleaseDate,
     UserRating,
     Rating(RatingSource),
@@ -187,7 +211,7 @@ impl From<Sort> for usize {
 
 #[allow(clippy::upper_case_acronyms)]
 #[repr(usize)]
-#[derive(Default, Clone, Copy, EnumIter, AsRefStr, FromRepr)]
+#[derive(Default, Debug, Clone, Copy, EnumIter, AsRefStr, FromRepr)]
 pub enum RatingSource {
     #[default]
     IMDB,
@@ -209,8 +233,8 @@ pub struct ExternalRatings {
 }
 
 #[derive(Clone, EnumDiscriminants, Debug)]
-#[strum_discriminants(derive(EnumIter, IntoStaticStr, EnumCount))]
 #[strum_discriminants(repr(usize))]
+#[strum_discriminants(derive(EnumIter, IntoStaticStr, EnumCount))]
 pub enum FilterCriterion {
     Title(String, bool /*filter*/),
     Director(u32, bool /*inverted*/),
@@ -626,5 +650,74 @@ impl Movie {
 impl std::cmp::PartialEq<Movie> for Movie {
     fn eq(&self, other: &Movie) -> bool {
         self.id == other.id
+    }
+}
+
+#[derive(Debug, Clone, Copy, EnumIter, AsRefStr)]
+pub enum SyncSource {
+    TMDB,
+    Simkl,
+    PunchPlay,
+    // Trakt
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum SyncItem {
+    AddToWatched {
+        movie_id: u32,
+        date:     DateTime<Utc>,
+        rating:   f64,
+    },
+    AddToList {
+        list:     ListID,
+        date:     DateTime<Utc>,
+        movie_id: u32,
+    },
+    AddPlay {
+        movie_id: u32,
+        date:     DateTime<Utc>,
+        rating:   f64,
+    },
+    Edit {
+        movie_id: u32,
+        date:     DateTime<Utc>,
+        rating:   f64,
+    },
+    RemoveFromWatched {
+        movie_id: u32,
+    },
+    RemoveFromList {
+        list:     ListID,
+        movie_id: u32,
+    },
+    // EditPlay,
+    // RemovePlay
+}
+impl SyncItem {
+    pub fn movie_id(&self) -> u32 {
+        match self {
+            SyncItem::AddToWatched {
+                movie_id,
+                date: _,
+                rating: _,
+            } => *movie_id,
+            SyncItem::AddToList {
+                list: _,
+                date: _,
+                movie_id,
+            } => *movie_id,
+            SyncItem::AddPlay {
+                movie_id,
+                date: _,
+                rating: _,
+            } => *movie_id,
+            SyncItem::Edit {
+                movie_id,
+                date: _,
+                rating: _,
+            } => *movie_id,
+            SyncItem::RemoveFromWatched { movie_id } => *movie_id,
+            SyncItem::RemoveFromList { list: _, movie_id } => *movie_id,
+        }
     }
 }

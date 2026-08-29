@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     path::Path,
     sync::mpsc::{self, Receiver, Sender},
     thread,
@@ -15,8 +14,11 @@ use ratatui::{
     widgets::Block,
 };
 use ratatui_image::{Resize, picker::Picker, sliced::*};
+use rustc_hash::FxHashMap;
 use strum::EnumDiscriminants;
 use throbber_widgets_tui::{BRAILLE_SIX_DOUBLE, Throbber, ThrobberState};
+
+use crate::types::FxIndexMap;
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, EnumDiscriminants)]
 #[strum_discriminants(derive(Hash))]
@@ -34,27 +36,17 @@ enum Actions {
     UpdateTokens(String),
 }
 
-fn default_sizes() -> HashMap<ImageIDDiscriminants, [Size; 2]> {
-    HashMap::from_iter([
-        (
-            ImageIDDiscriminants::Movie,
-            [Default::default(), Default::default()],
-        ),
-        (
-            ImageIDDiscriminants::Collection,
-            [Default::default(), Default::default()],
-        ),
-        (
-            ImageIDDiscriminants::Person,
-            [Default::default(), Default::default()],
-        ),
+fn default_sizes() -> FxHashMap<ImageIDDiscriminants, [Size; 2]> {
+    FxHashMap::from_iter([
+        (ImageIDDiscriminants::Movie, Default::default()),
+        (ImageIDDiscriminants::Collection, Default::default()),
+        (ImageIDDiscriminants::Person, Default::default()),
     ])
 }
 
 pub struct RatatuiImage {
-    // preload_images: Vec<ImageID>,
-    sizes:         HashMap<ImageIDDiscriminants, [Size; 2]>,
-    hashed_images: HashMap<ImageID, Option<SlicedProtocol>>,
+    sizes:         FxHashMap<ImageIDDiscriminants, [Size; 2]>,
+    hashed_images: FxIndexMap<ImageID, Option<SlicedProtocol>>,
 
     tx_load: Sender<Actions>,
     rx_main: Receiver<LoadResult>,
@@ -62,16 +54,14 @@ pub struct RatatuiImage {
 impl RatatuiImage {
     pub fn new(cache_dir: &Path) -> Self {
         let (tx_main, rx_main) = mpsc::channel();
-
         let tx_load = Self::start_load_thread(&tx_main, cache_dir);
 
         Self {
-            // preload_images: vec![],
-            hashed_images: HashMap::new(),
             sizes: default_sizes(),
+            hashed_images: FxIndexMap::with_capacity_and_hasher(100, rustc_hash::FxBuildHasher),
 
-            rx_main,
             tx_load,
+            rx_main,
         }
     }
 
@@ -113,35 +103,28 @@ impl RatatuiImage {
                         };
 
                         if path.is_file() {
-                            let size = sizes[&image_id.into()]
-                                [matches!(image_id, ImageID::Movie(_, true)) as usize];
-                            // let size = match image_id {
-                            //     ImageID::Movie(_, backdrop) => sizes[&image_id.into()][backdrop as usize].clone(),
-                            //     ImageID::Collection(_, backdrop) => sizes[&image_id.into()][backdrop as usize].clone(),
-                            //     ImageID::Person(_) => sizes[&image_id.into()][0].clone(),
-                            // };
-                            let _picker = picker.clone();
+                            let size = sizes[&image_id.into()][matches!(
+                                image_id,
+                                ImageID::Movie(_, true) | ImageID::Collection(_, true)
+                            )
+                                as usize];
+
+                            let picker = picker.clone();
                             thread::spawn(move || {
                                 let result = (|| -> anyhow::Result<_> {
-                                    let decoded;
-                                    let reader;
                                     let result = image::ImageReader::open(&path);
                                     if let Err(err) = result {
                                         bail!("Failed to open {:?}: {}", image_id, err);
-                                    } else {
-                                        reader = result.unwrap();
                                     }
 
-                                    let result = reader.decode();
+                                    let result = result.unwrap().decode();
                                     if let Err(err) = result {
                                         bail!("Failed to decode {:?}: {}", image_id, err);
-                                    } else {
-                                        decoded = result.unwrap();
                                     }
 
                                     let protocol = SlicedProtocol::new_with_resize(
-                                        &_picker,
-                                        decoded,
+                                        &picker,
+                                        result.unwrap(),
                                         size,
                                         Resize::Scale(Some(ratatui_image::FilterType::Triangle)),
                                     )?;
@@ -240,6 +223,10 @@ impl RatatuiImage {
                 _ = self.tx_load.send(Actions::Load(image_id));
             }
         }
+
+        while self.hashed_images.len() > 100 {
+            _ = self.hashed_images.shift_remove_index(0).unwrap();
+        }
     }
 
     pub fn draw_image(
@@ -262,10 +249,10 @@ impl RatatuiImage {
         //     };
         // }
 
-        let index = match image_id {
-            ImageID::Movie(_, backdrop) | ImageID::Collection(_, backdrop) => backdrop as usize,
-            ImageID::Person(_) => 0,
-        };
+        let index = matches!(
+            image_id,
+            ImageID::Movie(_, true) | ImageID::Collection(_, true)
+        ) as usize;
         if sliced_pos.is_none() {
             let size = self.sizes.get_mut(&image_id.into()).unwrap();
             if size[index] != area.as_size() {
@@ -357,6 +344,12 @@ impl RatatuiImage {
             }
         } else {
             self.hash_image(image_id);
+        }
+        if drawn {
+            self.hashed_images.move_index(
+                self.hashed_images.get_index_of(&image_id).unwrap(),
+                self.hashed_images.len() - 1,
+            );
         }
 
         // pop_then_hash!(

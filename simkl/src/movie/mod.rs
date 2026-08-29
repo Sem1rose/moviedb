@@ -1,7 +1,8 @@
 use chrono::{DateTime, TimeDelta, Utc};
 use itertools::Itertools;
 use reqwest::{
-    blocking::ClientBuilder,
+    Method,
+    blocking::{ClientBuilder, Response},
     header::{AUTHORIZATION, HeaderMap, USER_AGENT},
 };
 use serde::Serialize;
@@ -79,7 +80,7 @@ pub fn add_movies_to_watchlist(
     app_name: &str,
     app_version: &str,
     ids_added_at: &[(u32, DateTime<Utc>)],
-) -> anyhow::Result<Value> {
+) -> anyhow::Result<Response> {
     #[derive(Serialize)]
     struct Id {
         tmdb: u32,
@@ -102,13 +103,13 @@ pub fn add_movies_to_watchlist(
         }).collect_vec(),
     });
 
-    crate::send_request_deserialized(
+    crate::send_simkl_request(
         &client,
         &format!("https://api.simkl.com/sync/add-to-list"),
         Some(&headers),
         Some(&body),
         Some(&query),
-        "Simkl: Error while adding movies to watchlist",
+        Method::POST,
     )
 }
 pub fn remove_movies_history_or_from_watchlist(
@@ -117,7 +118,7 @@ pub fn remove_movies_history_or_from_watchlist(
     app_name: &str,
     app_version: &str,
     ids: &[u32],
-) -> anyhow::Result<Value> {
+) -> anyhow::Result<Response> {
     #[derive(Serialize)]
     struct Id {
         tmdb: u32,
@@ -136,13 +137,13 @@ pub fn remove_movies_history_or_from_watchlist(
         }).collect_vec(),
     });
 
-    crate::send_request_deserialized(
+    crate::send_simkl_request(
         &client,
         &format!("https://api.simkl.com/sync/history/remove"),
         Some(&headers),
         Some(&body),
         Some(&query),
-        "Simkl: Error while removing movies history/from watchlist",
+        Method::POST,
     )
 }
 
@@ -152,7 +153,7 @@ pub fn log_watched(
     app_name: &str,
     app_version: &str,
     items: &[(u32, usize, DateTime<Utc>)],
-) -> anyhow::Result<Value> {
+) -> anyhow::Result<Response> {
     #[derive(Serialize)]
     struct Id {
         tmdb: u32,
@@ -177,13 +178,13 @@ pub fn log_watched(
         }).collect_vec(),
     });
 
-    crate::send_request_deserialized(
+    crate::send_simkl_request(
         &client,
         &format!("https://api.simkl.com/sync/history"),
         Some(&headers),
         Some(&body),
         Some(&query),
-        "Simkl: Error while logging movies watch times",
+        Method::POST,
     )
 }
 
@@ -193,8 +194,14 @@ pub fn edit_watched(
     app_name: &str,
     app_version: &str,
     items: &[(u32, usize, DateTime<Utc>)],
-) -> anyhow::Result<Value> {
-    _ = remove_movies_history_or_from_watchlist(access_token, client_id, app_name, app_version, &items.iter().map(|&(x, _, _)| x).collect_vec())?;
+) -> anyhow::Result<Response> {
+    _ = remove_movies_history_or_from_watchlist(
+        access_token,
+        client_id,
+        app_name,
+        app_version,
+        &items.iter().map(|&(x, _, _)| x).collect_vec(),
+    )?;
 
     #[derive(Serialize)]
     struct Id {
@@ -220,13 +227,13 @@ pub fn edit_watched(
         }).collect_vec(),
     });
 
-    crate::send_request_deserialized(
+    crate::send_simkl_request(
         &client,
         &format!("https://api.simkl.com/sync/history"),
         Some(&headers),
         Some(&body),
         Some(&query),
-        "Simkl: Error while editing movies watch times",
+        Method::POST,
     )
 }
 

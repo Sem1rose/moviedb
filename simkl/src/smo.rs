@@ -111,15 +111,15 @@ pub struct Item {
 #[derive(Deserialize, Debug)]
 pub struct WatchlistBucketItem {
     pub added_to_watchlist_at: DateTime<Utc>,
-    pub last_watched_at: Option<DateTime<Utc>>,
-    pub user_rating: Option<usize>,
-    pub status: String,
+    pub last_watched_at:       Option<DateTime<Utc>>,
+    pub user_rating:           Option<usize>,
+    pub status:                String,
     #[serde(alias = "show")]
-    pub show_or_movie: Item
+    pub show_or_movie:         Item,
 }
 
 #[derive(Deserialize, Debug, Default)]
 pub struct WatchlistBucket {
     pub movies: Option<Vec<WatchlistBucketItem>>,
-    pub shows: Option<Vec<WatchlistBucketItem>>,
+    pub shows:  Option<Vec<WatchlistBucketItem>>,
 }

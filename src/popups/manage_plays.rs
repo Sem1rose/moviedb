@@ -14,15 +14,15 @@ use ratatui::{
 use ratatui_textarea::{TextArea, WrapMode};
 
 use crate::{
-    helpers::{self, add_padding},
-    key_event_handler::{self, KeyEventHandler},
+    helpers,
+    key_event_handler::{Data, KeyEventHandler},
     popups::{Popup, PopupTrait},
     types::Entry,
     widgets::{self, Action, ActionType, ScrollView},
 };
 
 #[derive(Default)]
-pub enum Phase {
+enum Phase {
     #[default]
     Overview,
     EnterDetails,
@@ -205,13 +205,13 @@ impl PopupTrait for ManagePlaysPopup {
                         manage_plays_popup.confirm_delete = false;
 
                         match data {
-                            key_event_handler::Data::Direction(true, _) => {
+                            Data::Direction(true, _) => {
                                 manage_plays_popup.tab += 1;
                                 if manage_plays_popup.tab > 2 {
                                     manage_plays_popup.tab = 0;
                                 }
                             }
-                            key_event_handler::Data::Direction(false, _) => {
+                            Data::Direction(false, _) => {
                                 manage_plays_popup.tab =
                                     manage_plays_popup.tab.checked_sub(1).unwrap_or(2);
                                 if manage_plays_popup.tab == 0 && num_entries == 0 {
@@ -234,7 +234,7 @@ impl PopupTrait for ManagePlaysPopup {
                                 manage_plays_popup.item = 0;
                                 manage_plays_popup.confirm_delete = false;
 
-                                if let key_event_handler::Data::Direction(direction, _) = data {
+                                if let Data::Direction(direction, _) = data {
                                     manage_plays_popup.scrollview.scroll(direction, num_entries);
                                 }
                             }
@@ -250,8 +250,8 @@ impl PopupTrait for ManagePlaysPopup {
                             {
                                 manage_plays_popup.confirm_delete = false;
 
-                                if matches!(data, key_event_handler::Data::Direction(true, _) if manage_plays_popup.item != 0) ||
-                                    matches!(data, key_event_handler::Data::Direction(false, _) if manage_plays_popup.item == 0) {
+                                if matches!(data, Data::Direction(true, _) if manage_plays_popup.item != 0) ||
+                                    matches!(data, Data::Direction(false, _) if manage_plays_popup.item == 0) {
                                     manage_plays_popup.item = (manage_plays_popup.item == 0) as usize;
                                 }
                             }
@@ -343,30 +343,21 @@ impl PopupTrait for ManagePlaysPopup {
                             }
                         },
                     );
-                    key_event_handler.bind_key(
-                        (Some(0), None),
-                        'd',
-                        if self.confirm_delete { "Confirm" } else { "Delete" }.into(),
-                        |app, _| {
-                            if let Some(Popup::ManagePlays(manage_plays_popup)) =
-                                app.drawer.active_popup.as_ref()
-                            {
-                                if manage_plays_popup.confirm_delete {
-                                    app.remove_movie_play();
+                    if !self.confirm_delete {
+                        key_event_handler.bind_key(
+                            (Some(0), None),
+                            'd',
+                            "Delete".into(),
+                            |app, _| {
+                                if let Some(Popup::ManagePlays(manage_plays_popup)) =
+                                    app.drawer.active_popup.as_mut()
+                                {
+                                    manage_plays_popup.item = 1;
+                                    manage_plays_popup.confirm_delete = true;
                                 }
-                            }
-
-                            if let Some(Popup::ManagePlays(manage_plays_popup)) =
-                                app.drawer.active_popup.as_mut()
-                            {
-                                if manage_plays_popup.confirm_delete {
-                                    manage_plays_popup.item = 0;
-                                    manage_plays_popup.delete_play();
-                                }
-                                manage_plays_popup.confirm_delete ^= true;
-                            }
-                        },
-                    );
+                            },
+                        );
+                    }
                 } else if self.tab == 0 {
                     self.tab = 1;
                 }
@@ -433,7 +424,7 @@ impl PopupTrait for ManagePlaysPopup {
                 {
                     let tab_selected = self.tab == 0;
 
-                    let list_area = add_padding(list_area, Padding::horizontal(1));
+                    let list_area = helpers::add_padding(list_area, Padding::horizontal(1));
                     let list_block = Block::bordered()
                         .border_set(border::PROPORTIONAL_WIDE)
                         .fg(tailwind::SLATE.c900);
@@ -739,7 +730,7 @@ impl PopupTrait for ManagePlaysPopup {
                     Action::new(" + ", ActionType::Default, self.tab == 1, true),
                     HorizontalAlignment::Right,
                     false,
-                    add_padding(new_area, Padding::horizontal(1)),
+                    helpers::add_padding(new_area, Padding::horizontal(1)),
                     frame,
                 );
                 key_event_handler.bind_mouse_button_down(
@@ -801,7 +792,7 @@ impl PopupTrait for ManagePlaysPopup {
                             if let Some(Popup::ManagePlays(manage_plays_popup)) =
                                 app.drawer.active_popup.as_mut()
                             {
-                                if let crate::key_event_handler::Data::Direction(true, _) = data {
+                                if let Data::Direction(true, _) = data {
                                     manage_plays_popup.item = 3;
                                 }
                             }
@@ -814,7 +805,7 @@ impl PopupTrait for ManagePlaysPopup {
                             if let Some(Popup::ManagePlays(manage_plays_popup)) =
                                 app.drawer.active_popup.as_mut()
                             {
-                                if let crate::key_event_handler::Data::Direction(false, _) = data {
+                                if let Data::Direction(false, _) = data {
                                     manage_plays_popup.item = 2;
                                 }
                             }
@@ -850,13 +841,13 @@ impl PopupTrait for ManagePlaysPopup {
                         app.drawer.active_popup.as_mut()
                     {
                         match data {
-                            crate::key_event_handler::Data::Direction(true, _) => {
+                            Data::Direction(true, _) => {
                                 manage_plays_popup.item += 1;
                                 if manage_plays_popup.item > last_item {
                                     manage_plays_popup.item = 0;
                                 }
                             }
-                            crate::key_event_handler::Data::Direction(false, _) => {
+                            Data::Direction(false, _) => {
                                 manage_plays_popup.item =
                                     manage_plays_popup.item.checked_sub(1).unwrap_or(last_item);
                             }
@@ -911,7 +902,7 @@ impl PopupTrait for ManagePlaysPopup {
                     if let Some(Popup::ManagePlays(manage_plays_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
-                        if let crate::key_event_handler::Data::Direction(true, _) = data {
+                        if let Data::Direction(true, _) = data {
                             manage_plays_popup.item = 1;
                         }
                     }
@@ -920,7 +911,7 @@ impl PopupTrait for ManagePlaysPopup {
                     if let Some(Popup::ManagePlays(manage_plays_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
-                        if let crate::key_event_handler::Data::Direction(false, _) = data {
+                        if let Data::Direction(false, _) = data {
                             manage_plays_popup.item = 0;
                         }
                     }
@@ -930,7 +921,7 @@ impl PopupTrait for ManagePlaysPopup {
                     if let Some(Popup::ManagePlays(manage_plays_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
-                        if let crate::key_event_handler::Data::Key(key_event) = data {
+                        if let Data::Key(key_event) = data {
                             let parsed = manage_plays_popup.rating_input.lines()[0]
                                 .parse::<f64>()
                                 .unwrap_or(0.0);
@@ -954,7 +945,7 @@ impl PopupTrait for ManagePlaysPopup {
                     if let Some(Popup::ManagePlays(manage_plays_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
-                        if let crate::key_event_handler::Data::Key(key_event) = data {
+                        if let Data::Key(key_event) = data {
                             manage_plays_popup.date_input.input(key_event);
                         }
                     }

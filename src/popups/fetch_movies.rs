@@ -63,34 +63,26 @@ impl FetchMoviesPopup {
         let (tx_details_response, rx_details_response) =
             channel::<(u32, anyhow::Result<MovieDetailsResponse>)>();
 
-        let trakt_status = self.trakt_tokens.status;
-        let punch_play_status = self.punch_play_tokens.status;
-        let omdb_status = self.omdb_tokens.status;
-        let omdb_api_key = self.omdb_tokens.key_owned();
-        let trakt_client_id = self.trakt_tokens.client_id_owned();
-        let punch_play_access_token = self.punch_play_tokens.access_token_owned();
-        let tmdb_access_token = self.tmdb_tokens.access_token_owned();
-
+        let tmdb_tokens = self.tmdb_tokens.clone();
+        let punch_play_tokens = self.punch_play_tokens.clone();
+        let trakt_tokens = self.trakt_tokens.clone();
+        let omdb_tokens = self.omdb_tokens.clone();
         thread::spawn(move || {
             for movie_id in rx_details_request.iter() {
                 let tx_response = tx_details_response.clone();
 
-                let omdb_api_key = omdb_api_key.clone();
-                let trakt_client_id = trakt_client_id.clone();
-                let punch_play_access_token = punch_play_access_token.clone();
-                let tmdb_access_token = tmdb_access_token.clone();
-                let tmdb_access_token = tmdb_access_token.clone();
+                let tmdb_tokens = tmdb_tokens.clone();
+                let punch_play_tokens = punch_play_tokens.clone();
+                let trakt_tokens = trakt_tokens.clone();
+                let omdb_tokens = omdb_tokens.clone();
                 thread::spawn(move || {
                     _ = tx_response.send((
                         movie_id,
                         App::fetch_movie_details(
-                            &omdb_api_key,
-                            &trakt_client_id,
-                            &punch_play_access_token,
-                            &tmdb_access_token,
-                            trakt_status,
-                            punch_play_status,
-                            omdb_status,
+                            tmdb_tokens,
+                            punch_play_tokens,
+                            trakt_tokens,
+                            omdb_tokens,
                             movie_id,
                         ),
                     ));
@@ -122,7 +114,7 @@ impl FetchMoviesPopup {
             let borrowed_movies = movies.borrow();
             watched
                 .keys()
-                .chain(lists.iter().flat_map(|x| x.items.iter().map(|x| &x.id)))
+                .chain(lists.iter().flat_map(|x| x.items.keys()))
                 .filter(|x| !borrowed_movies.contains_key(*x))
                 .copied()
                 .collect_vec()

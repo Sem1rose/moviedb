@@ -2,6 +2,7 @@ mod add_movie;
 mod advanced_filter;
 mod delete_movie;
 mod fetch_movies;
+mod manage_lists;
 mod manage_plays;
 mod omdb_init;
 mod out_of_box;
@@ -14,6 +15,7 @@ pub use add_movie::{AddMoviePopup, Phase as AddMoviePopupPhase};
 pub use advanced_filter::AdvancedFilterPopup;
 pub use delete_movie::DeleteMoviePopup;
 pub use fetch_movies::FetchMoviesPopup;
+pub use manage_lists::ManageListsPopup;
 pub use manage_plays::ManagePlaysPopup;
 pub use omdb_init::OMDBInitPopup;
 pub use out_of_box::OutOfBoxPopup;
@@ -25,6 +27,7 @@ pub use trakt_init::{Phase as TraktInitPopupPhase, TraktInitPopup};
 pub enum Popup {
     AddMovie(Box<AddMoviePopup>),
     ManagePlays(Box<ManagePlaysPopup>),
+    ManageLists(Box<ManageListsPopup>),
     DeleteMovie(Box<DeleteMoviePopup>),
     TMDBInit(Box<TMDBInitPopup>),
     SimklInit(Box<SimklInitPopup>),
@@ -41,6 +44,7 @@ impl Popup {
         match self {
             Popup::AddMovie(add_movie_popup) => &**add_movie_popup,
             Popup::ManagePlays(manage_plays_popup) => &**manage_plays_popup,
+            Popup::ManageLists(manage_lists_popup) => &**manage_lists_popup,
             Popup::DeleteMovie(delete_movie_popup) => &**delete_movie_popup,
             Popup::TMDBInit(tmdbinit_popup) => &**tmdbinit_popup,
             Popup::SimklInit(simkl_popup) => &**simkl_popup,
@@ -57,6 +61,7 @@ impl Popup {
         match self {
             Popup::AddMovie(add_movie_popup) => &mut **add_movie_popup,
             Popup::ManagePlays(manage_plays_popup) => &mut **manage_plays_popup,
+            Popup::ManageLists(manage_lists_popup) => &mut **manage_lists_popup,
             Popup::DeleteMovie(delete_movie_popup) => &mut **delete_movie_popup,
             Popup::TMDBInit(tmdbinit_popup) => &mut **tmdbinit_popup,
             Popup::SimklInit(simkl_popup) => &mut **simkl_popup,

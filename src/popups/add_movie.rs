@@ -212,24 +212,18 @@ impl AddMoviePopup {
             Receiver<anyhow::Result<MovieDetailsResponse>>,
         ) = mpsc::channel();
 
-        let trakt_status = self.trakt_tokens.status;
-        let punch_play_status = self.punch_play_tokens.status;
-        let omdb_status = self.omdb_tokens.status;
-        let omdb_api_key = self.omdb_tokens.key_owned();
-        let trakt_client_id = self.trakt_tokens.client_id_owned();
-        let punch_play_access_token = self.punch_play_tokens.access_token_owned();
-        let tmdb_access_token = self.tmdb_tokens.access_token_owned();
+        let tmdb_tokens = self.tmdb_tokens.clone();
+        let punch_play_tokens = self.punch_play_tokens.clone();
+        let trakt_tokens = self.trakt_tokens.clone();
+        let omdb_tokens = self.omdb_tokens.clone();
         // let cache_dir = self.cache_dir.clone();
 
         thread::spawn(move || {
             _ = tx_details_request.send(App::fetch_movie_details(
-                &omdb_api_key,
-                &trakt_client_id,
-                &punch_play_access_token,
-                &tmdb_access_token,
-                trakt_status,
-                punch_play_status,
-                omdb_status,
+                tmdb_tokens,
+                punch_play_tokens,
+                trakt_tokens,
+                omdb_tokens,
                 tmdb_id,
             ));
         });
@@ -377,7 +371,7 @@ impl PopupTrait for AddMoviePopup {
                     } else if let Err(error) = details_response {
                         self.item = 0;
                         self.rx_details_response = None;
-                        self.phase = Phase::Error(format!("{error}"));
+                        self.phase = Phase::Error(error.to_string());
                     },
                 Err(mpsc::TryRecvError::Disconnected) => {
                     self.item = 0;

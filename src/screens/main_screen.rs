@@ -6,8 +6,8 @@ use std::{
 };
 
 use chrono::{DateTime, Datelike, TimeDelta, Utc};
-use itertools::Itertools;
-use log::error;
+use itertools::{Itertools, izip};
+use log::{error, info};
 use nucleo_matcher::{Config as MatcherConfig, Matcher, pattern::Atom};
 use ratatui::{
     Frame,
@@ -141,6 +141,7 @@ impl MainScreen {
                 <usize>::from(Sort::Rating(Default::default())),
                 RatingSource::iter()
                     .map(|x| x.as_ref().to_string())
+                    .enumerate()
                     .collect_vec(),
                 6,
                 None,
@@ -168,7 +169,7 @@ impl MainScreen {
                 List {
                     id:       ListID::Watchlist,
                     name:     "Watchlist".into(),
-                    items:    vec![],
+                    items:    Default::default(),
                     readonly: false,
                 },
             );
@@ -229,13 +230,22 @@ impl MainScreen {
     ) {
         self.lists.entry(id).and_modify(|x| {
             if overwrite {
-                x.items = items;
+                x.items = items.into_iter().map(|x| (x.id, x)).collect();
             } else {
-                let keys = x.items.iter().map(|x| x.id).collect_vec();
-                x.items
-                    .extend(items.into_iter().filter(|y| !keys.contains(&y.id)));
+                x.items.extend(
+                    items
+                        .into_iter()
+                        .filter_map(|y| {
+                            if !x.items.contains_key(&y.id) {
+                                Some((y.id, y))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect_vec(),
+                );
                 if let Some(deleted_items) = deleted_items {
-                    x.items.retain(|x| !deleted_items.contains(&x.id));
+                    x.items.retain(|x, _| !deleted_items.contains(x));
                 }
             }
         });
@@ -274,6 +284,9 @@ impl MainScreen {
                     .iter()
                     .any(|x| !movies_borrowed.contains_key(x))
             };
+            if matches!(id, ListID::Watchlist) && matches!(self.sort, Sort::FirstWatched) {
+                self.sort = Default::default();
+            }
             if fetch_movies {
                 key_event_handler.bind_immediate(|app, _| app.drawer.open_fetch_movies_popup());
 
@@ -311,7 +324,7 @@ impl MainScreen {
         } else {
             self.lists
                 .get(&self.selected_list)
-                .map(|x| x.items.iter().map(|x| x.id).collect_vec())
+                .map(|x| x.items.keys().copied().collect_vec())
                 .unwrap()
         }
     }
@@ -647,7 +660,7 @@ impl MainScreen {
                     self.filtered_movies.reverse();
                 }
             }
-            Sort::DateAdded => {
+            Sort::FirstWatched => {
                 self.filtered_movies.sort_by_key(|x| {
                     self.watched
                         .borrow()
@@ -660,13 +673,22 @@ impl MainScreen {
                 }
             }
             Sort::MostRecent => {
-                self.filtered_movies.sort_by_key(|x| {
-                    self.watched
-                        .borrow()
-                        .get(&x.id)
-                        .map(|x| x.get_latest_play())
-                        .unwrap_or_default()
-                });
+                if let Some(list) = self.lists.get(&self.selected_list) {
+                    self.filtered_movies.sort_by_key(|x| {
+                        list.items
+                            .get(&x.id)
+                            .map(|x| x.added_at)
+                            .unwrap_or_default()
+                    });
+                } else {
+                    self.filtered_movies.sort_by_key(|x| {
+                        self.watched
+                            .borrow()
+                            .get(&x.id)
+                            .map(|x| x.get_latest_play())
+                            .unwrap_or_default()
+                    });
+                }
                 if !self.sort_ascending {
                     self.filtered_movies.reverse();
                 }
@@ -798,18 +820,11 @@ impl MainScreen {
         }
 
         for i in 0..=(9.min(self.lists.len() + 2)) {
-            key_event_handler.bind_key(
-                (Some(0), None),
-                i,
-                "".into(),
-                move |app, _| {
-                    if let Some(Screens::MainScreen(main_screen)) =
-                        app.drawer.current_screen.as_mut()
-                    {
-                        main_screen.open_list(i, &mut app.key_event_handler);
-                    }
-                },
-            );
+            key_event_handler.bind_key((Some(0), None), i, "".into(), move |app, _| {
+                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                    main_screen.open_list(i, &mut app.key_event_handler);
+                }
+            });
         }
 
         if !matches!(self.selected_list, ListID::Local(_) | ListID::Watched) {
@@ -848,6 +863,9 @@ impl MainScreen {
         }
         key_event_handler.bind_key((Some(0), None), 'F', "Advanced Filter".into(), |app, _| {
             app.drawer.open_advanced_filter_popup();
+        });
+        key_event_handler.bind_key((Some(0), None), 'l', "Manage lists".into(), |app, _| {
+            app.drawer.open_manage_lists_popup();
         });
         key_event_handler.bind_key((Some(0), None), ',', "Sort by".into(), |app, _| {
             if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
@@ -923,18 +941,15 @@ impl MainScreen {
                     _ => true,
                 })
                 .collect_vec();
-            if self.context_menu_model
-                != self
-                    .context_menu
-                    .model
-                    .iter()
-                    .map(|x| CONTEXT_MENU_MODEL.iter().position(|y| y == x).unwrap())
-                    .collect_vec()
+            if self
+                .context_menu_model
+                .iter()
+                .ne(self.context_menu.model.keys())
             {
                 self.context_menu.change_model(
                     self.context_menu_model
                         .iter()
-                        .map(|x| CONTEXT_MENU_MODEL[*x].to_string())
+                        .map(|&x| (x, CONTEXT_MENU_MODEL[x].to_string()))
                         .collect(),
                     None,
                 );
@@ -1391,12 +1406,19 @@ impl MainScreen {
                         {
                             Sort::Rating(
                                 RatingSource::from_repr(
-                                    main_screen.sort_popup.submenus[submenu_id].selected_index,
+                                    main_screen.sort_popup.submenus[submenu_id].id_from_index(
+                                        main_screen.sort_popup.submenus[submenu_id].selected_index,
+                                    ),
                                 )
                                 .unwrap(),
                             )
                         } else {
-                            Sort::from_repr(main_screen.sort_popup.selected_index).unwrap()
+                            Sort::from_repr(
+                                main_screen
+                                    .sort_popup
+                                    .id_from_index(main_screen.sort_popup.selected_index),
+                            )
+                            .unwrap()
                         };
                     }
                     main_screen.filter_sort_movies(true);
@@ -1457,8 +1479,10 @@ impl MainScreen {
             }
         });
 
+        let sort_max_width = Sort::iter().map(|x| x.as_ref().len()).max().unwrap() + 4;
+
         let [_, input_area, _, sort_area, _, direction_area, _] =
-            horizontal![>=1, <=25, ==1, <=16, ==1, ==3, ==1].areas(area);
+            horizontal![>=1, <=25, ==1, ==sort_max_width as u16, ==1, ==3, ==1].areas(area);
 
         let filter = if let Some(FilterCriterion::Title(n, f)) =
             pop_criterion!(self.filter_criteria, FilterCriterion::Title(_, _))
@@ -1553,20 +1577,42 @@ impl MainScreen {
         );
 
         if tab_selected && self.item == 1 {
-            let mut items = Sort::iter()
-                .map(|x| helpers::ellipsize_string(x.as_ref(), sort_area.width as usize - 2))
+            let items = Sort::iter()
+                .filter(|x| match x {
+                    Sort::MostRecent => true,
+                    Sort::ReleaseDate => true,
+                    Sort::Rating(_) => true,
+                    Sort::Name => true,
+                    Sort::FirstWatched => {
+                        let watched_borrowed = self.watched.borrow();
+                        self.get_list_ids()
+                            .iter()
+                            .any(|x| watched_borrowed.contains_key(x))
+                    }
+                    Sort::UserRating => {
+                        let watched_borrowed = self.watched.borrow();
+                        self.get_list_ids()
+                            .iter()
+                            .any(|x| watched_borrowed.contains_key(x))
+                    }
+                    Sort::Relevance => !self.search_input.is_empty(),
+                })
                 .collect_vec();
-            if self.search_input.is_empty() {
-                _ = items.pop();
 
-                if matches!(self.sort, Sort::Relevance) {
-                    self.sort = Sort::default();
-                }
-            }
-            self.sort_popup.model = items;
+            self.sort_popup.model = items
+                .iter()
+                .map(|&x| {
+                    (
+                        <usize>::from(x),
+                        helpers::ellipsize_string(x.as_ref(), sort_area.width as usize - 2),
+                    )
+                })
+                .collect();
 
-            let selected_sort = <usize>::from(self.sort);
-            self.sort_popup.selected_index = selected_sort;
+            self.sort_popup.selected_index = self
+                .sort_popup
+                .index_from_id(<usize>::from(self.sort))
+                .unwrap_or_default();
             if let Sort::Rating(source) = self.sort {
                 self.sort_popup
                     .submenus
@@ -1584,14 +1630,14 @@ impl MainScreen {
                     let scroll_pos = self.sort_popup.scroll_pos;
                     for i in 0..len {
                         let index = i + scroll_pos;
-                        key_event_handler.bind_mouse_button_down(
-                            ratatui::crossterm::event::MouseButton::Left,
-                            mouse_area,
-                            move |app, _| {
-                                if let Some(Screens::MainScreen(main_screen)) =
-                                    app.drawer.current_screen.as_mut()
-                                {
-                                    if main_screen.sort_popup.selected_index != index {
+                        if self.sort_popup.selected_index != index {
+                            key_event_handler.bind_mouse_button_down(
+                                ratatui::crossterm::event::MouseButton::Left,
+                                mouse_area,
+                                move |app, _| {
+                                    if let Some(Screens::MainScreen(main_screen)) =
+                                        app.drawer.current_screen.as_mut()
+                                    {
                                         main_screen.sort = Sort::from_repr(index).unwrap();
                                         main_screen.sort_popup.selected_index = index;
 
@@ -1603,9 +1649,9 @@ impl MainScreen {
                                         }
                                         main_screen.filter_sort_movies(true);
                                     }
-                                }
-                            },
-                        );
+                                },
+                            );
+                        }
                         mouse_area = mouse_area.offset(Offset { x: 0, y: 1 });
                     }
                 } else {
@@ -2497,42 +2543,57 @@ impl MainScreen {
             .flex(ratatui::layout::Flex::SpaceEvenly)
             .split(helpers::add_padding(area, Padding::top(1)));
         let mut widgets = vec![];
+        let mut links = vec![];
         let mut labels = line!();
         for (name, rating) in ratings {
             let (bg, fg) = if name == "imdb" {
                 labels.push_span(span!("IMDB").fg(imdb_colors.2));
+                links.push("".to_string());
 
                 (imdb_colors.0, imdb_colors.1)
             } else if name == "letterboxd" {
                 labels.push_span(span!("Letterboxd").fg(letterboxd_colors.2));
+                links.push("".to_string());
 
                 (letterboxd_colors.0, letterboxd_colors.1)
             } else if name == "trakt" {
                 labels.push_span(span!("Trakt").fg(trakt_colors.2));
+                links.push("".to_string());
 
                 (trakt_colors.0, trakt_colors.1)
             } else if name == "tmdb" {
                 labels.push_span(span!("TMDB").fg(tmdb_colors.2));
+                links.push(format!("https://www.themoviedb.org/movie/{}", movie.id));
 
                 (tmdb_colors.0, tmdb_colors.1)
             } else if name == "popcorn" {
                 labels.push_span(span!("Popcorn").fg(popcorn_colors.2));
+                links.push("".to_string());
 
                 (popcorn_colors.0, popcorn_colors.1)
             } else if name == "tomatoes" {
                 labels.push_span(span!("Tomatoes").fg(tomatoes_colors.2));
+                links.push("".to_string());
 
                 (tomatoes_colors.0, tomatoes_colors.1)
             } else {
                 continue;
             };
 
-            widgets.push(vec!["".fg(bg), rating.bg(bg).fg(fg).bold(), "".fg(bg)]);
+            widgets.push(line!["".fg(bg), rating.bg(bg).fg(fg).bold(), "".fg(bg)]);
         }
 
-        for ((widget, label), &area) in widgets.into_iter().zip(labels).zip(widget_areas.iter()) {
+        for ((widget, label, link), &area) in
+            izip!(widgets.into_iter(), labels, links).zip(widget_areas.iter())
+        {
             frame.render_widget(label, area.offset(Offset::new(0, -1)));
-            frame.render_widget(Line::from_iter(widget), area);
+            frame.render_widget(
+                widgets::Hyperlink {
+                    text: widget.into(),
+                    url:  link,
+                },
+                area,
+            );
         }
     }
 

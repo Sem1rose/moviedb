@@ -15,7 +15,7 @@ use ratatui::{
 use ratatui_textarea::{TextArea, WrapMode};
 use rustc_hash::FxHashMap;
 
-use crate::{helpers::add_padding, key_event_handler::KeyEventHandler};
+use crate::{helpers::add_padding, key_event_handler::KeyEventHandler, types::FxIndexMap};
 
 #[allow(clippy::too_many_arguments)]
 pub fn input_field(
@@ -81,18 +81,19 @@ pub fn input_field(
 
 pub fn dropdown(tab_selected: bool, selected: bool, frame: &mut Frame, area: Rect, text: String) {
     // "▼⬇⬆⏷▲▴▼▾◥◤◣◢⥡⥝⥜⥠🡙🢓🢑"
-    let sort_block = Block::bordered()
-        .border_set(border::PROPORTIONAL_WIDE)
-        .fg(if tab_selected {
-            if selected {
-                material::BLUE.c600
+    let dropdown_block =
+        Block::bordered()
+            .border_set(border::PROPORTIONAL_WIDE)
+            .fg(if tab_selected {
+                if selected {
+                    material::BLUE.c600
+                } else {
+                    material::INDIGO.c800
+                }
             } else {
-                material::INDIGO.c800
-            }
-        } else {
-            tailwind::SLATE.c700
-        });
-    frame.render_widget(&sort_block, area);
+                tailwind::SLATE.c700
+            });
+    frame.render_widget(&dropdown_block, area);
     frame.render_widget(
         span!(text)
             .bold()
@@ -114,7 +115,7 @@ pub fn dropdown(tab_selected: bool, selected: bool, frame: &mut Frame, area: Rec
             } else {
                 tailwind::SLATE.c700
             }),
-        sort_block.inner(area),
+        dropdown_block.inner(area),
     );
     frame.render_widget(
         line!(" ▼")
@@ -138,32 +139,33 @@ pub fn dropdown(tab_selected: bool, selected: bool, frame: &mut Frame, area: Rec
             } else {
                 tailwind::SLATE.c700
             }),
-        sort_block.inner(area),
+        dropdown_block.inner(area),
     );
 }
 
 #[derive(Default)]
 pub struct ContextMenu {
-    pub model:             Vec<String>,
+    pub model:             FxIndexMap<usize, String>,
     pub selected_index:    usize,
     pub scroll_pos:        usize,
     pub num_visible_items: usize,
     pub opened_submenu:    Option<usize>,
     pub submenu_right:     bool,
     pub width:             u16,
-    pub submenus:          FxHashMap<usize, ContextMenu>,
+    pub submenus:          FxIndexMap<usize, ContextMenu>,
 }
 
 impl ContextMenu {
     pub fn new(
-        model: Vec<String>,
+        model: Vec<(usize, String)>,
         num_visible_items: usize,
         max_width: Option<u16>,
         submenu_right: bool,
     ) -> Self {
         Self {
-            width: max_width.unwrap_or(model.iter().map(|x| x.len()).max().unwrap_or(0) as u16 + 4),
-            model,
+            width: max_width
+                .unwrap_or(model.iter().map(|(_, x)| x.len()).max().unwrap_or(0) as u16 + 4),
+            model: model.into_iter().collect(),
             num_visible_items,
             submenu_right,
 
@@ -174,7 +176,7 @@ impl ContextMenu {
     pub fn with_submenu(
         mut self,
         index: usize,
-        model: Vec<String>,
+        model: Vec<(usize, String)>,
         num_visible_items: usize,
         max_width: Option<u16>,
     ) -> Self {
@@ -183,10 +185,10 @@ impl ContextMenu {
         self
     }
 
-    pub fn change_model(&mut self, new_model: Vec<String>, max_width: Option<u16>) {
-        self.width =
-            max_width.unwrap_or(new_model.iter().map(|x| x.len()).max().unwrap_or(0) as u16 + 4);
-        self.model = new_model;
+    pub fn change_model(&mut self, new_model: Vec<(usize, String)>, max_width: Option<u16>) {
+        self.width = max_width
+            .unwrap_or(new_model.iter().map(|(_, x)| x.len()).max().unwrap_or(0) as u16 + 4);
+        self.model = new_model.into_iter().collect();
         self.submenus.clear();
         self.selected_index = 0;
         self.scroll_pos = 0;
@@ -195,13 +197,13 @@ impl ContextMenu {
 
     pub fn add_submenu(
         &mut self,
-        index: usize,
-        model: Vec<String>,
+        id: usize,
+        model: Vec<(usize, String)>,
         num_visible_items: usize,
         max_width: Option<u16>,
     ) {
         self.submenus.insert(
-            index,
+            id,
             Self::new(model, num_visible_items, max_width, self.submenu_right),
         );
     }
@@ -216,6 +218,15 @@ impl ContextMenu {
         }
     }
 
+    pub fn id_from_index(&self, index: usize) -> usize {
+        let (&x, _) = self.model.get_index(index).unwrap();
+        x
+    }
+
+    pub fn index_from_id(&self, id: usize) -> Option<usize> {
+        self.model.keys().position(|x| *x == id)
+    }
+
     pub fn open_submenu(&mut self, reset: bool) {
         if let Some(submenu_id) = self.opened_submenu.as_ref() {
             self.submenus
@@ -223,14 +234,12 @@ impl ContextMenu {
                 .unwrap()
                 .open_submenu(reset);
         } else {
-            if self.submenus.contains_key(&self.selected_index) {
-                self.opened_submenu = Some(self.selected_index);
+            let x = self.id_from_index(self.selected_index);
+            if self.submenus.contains_key(&x) {
+                self.opened_submenu = Some(x);
 
                 if reset {
-                    self.submenus
-                        .get_mut(&self.selected_index)
-                        .unwrap()
-                        .reset_state();
+                    self.submenus.get_mut(&x).unwrap().reset_state();
                 }
             }
         }
@@ -269,12 +278,12 @@ impl ContextMenu {
 
     pub fn choose(&self) -> Vec<usize> {
         if let Some(submenu_id) = self.opened_submenu.as_ref() {
-            [self.selected_index]
+            [*submenu_id]
                 .into_iter()
                 .chain(self.submenus[submenu_id].choose())
                 .collect()
         } else {
-            vec![self.selected_index]
+            vec![self.id_from_index(self.selected_index)]
         }
     }
 
@@ -292,6 +301,11 @@ impl ContextMenu {
                 .selected_index
                 .saturating_sub(self.num_visible_items - 1)
         }
+        if self.opened_submenu.is_some()
+            && *self.opened_submenu.as_ref().unwrap() != self.id_from_index(self.selected_index)
+        {
+            _ = self.opened_submenu.take();
+        }
 
         let mut visible_items = self
             .model
@@ -299,15 +313,15 @@ impl ContextMenu {
             .enumerate()
             .dropping(self.scroll_pos)
             .take(self.num_visible_items)
-            .map(|(i, x)| {
+            .map(|(i, (_, x))| {
                 line!(
-                    if !self.submenu_right && self.submenus.contains_key(&i) {
+                    if !self.submenu_right && self.submenus.contains_key(&self.id_from_index(i)) {
                         "<"
                     } else {
                         " "
                     },
                     x,
-                    if self.submenu_right && self.submenus.contains_key(&i) {
+                    if self.submenu_right && self.submenus.contains_key(&self.id_from_index(i)) {
                         ">"
                     } else {
                         " "
@@ -408,7 +422,7 @@ impl ContextMenu {
                 } else {
                     -(submenu_width as i32)
                 },
-                *submenu_id as i32 + 1 - self.scroll_pos as i32,
+                self.index_from_id(*submenu_id).unwrap() as i32 + 1 - self.scroll_pos as i32,
             ));
 
             result.extend(
@@ -739,14 +753,20 @@ pub fn scroll_bar(
             scroll_pos as f32 / items_count.saturating_sub(num_visible_items) as f32;
         let phase = (scroll_fraction * cycle_every as f32) as usize;
         let block = BLOCKS[(scroll_fraction * 9.0 * cycle_every as f32) as usize % 9]
-            .bg(tailwind::INDIGO.c600)
+            .bg(tailwind::INDIGO.c950)
             .fg(material::BLUE.c300);
 
         let mut lines = Text::default();
+        for _ in 0..phase {
+            lines.push_line(" ".bg(tailwind::INDIGO.c950));
+        }
         lines.push_line(block.clone());
         lines.push_line(block.reversed());
+        for _ in 0..(area.height as usize - lines.lines.len()) {
+            lines.push_line(" ".bg(tailwind::INDIGO.c950));
+        }
 
-        frame.render_widget(lines, area.offset(Offset::new(0, phase as i32 + 1)));
+        frame.render_widget(&lines, area);
     }
 
     frame.render_widget(
@@ -918,16 +938,22 @@ impl Widget for Hyperlink<'_> {
     fn render(self, area: Rect, buffer: &mut Buffer) {
         (&self.text).render(area, buffer);
 
-        // this is a hacky workaround for https://github.com/ratatui/ratatui/issues/902, a bug
-        // in the terminal code that incorrectly calculates the width of ANSI escape sequences. It
-        // works by rendering the hyperlink as a series of 2-character chunks, which is the
-        // calculated width of the hyperlink text.
-        for (j, line) in self.text.lines.clone().into_iter().enumerate() {
-            // for (i, two_chars) in line.to_string().chars().chunks(2).into_iter().enumerate() {
-            // let text = two_chars.collect::<String>();
-            let hyperlink = format!("\x1B]8;;{}\x07{}\x1B]8;;\x07", self.url, line);
-            buffer[(area.x, area.y + j as u16)].set_symbol(hyperlink.as_str());
-            // }
+        if !self.text.lines.is_empty() {
+            for (j, line) in self.text.lines.iter().enumerate() {
+                if line.width() > 0 {
+                    for (i, char) in line.to_string().chars().enumerate() {
+                        let hyperlink = format!("\x1B]8;;{}\x07{}\x1B]8;;\x07", self.url, char);
+
+                        buffer[(area.x + i as u16, area.y + j as u16)]
+                            .set_symbol(hyperlink.as_str());
+                        buffer[(area.x + i as u16, area.y + j as u16)].set_diff_option(
+                            ratatui::buffer::CellDiffOption::ForcedWidth(
+                                core::num::NonZero::new(1).unwrap(),
+                            ),
+                        );
+                    }
+                }
+            }
         }
     }
 }
