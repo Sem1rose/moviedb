@@ -24,6 +24,8 @@ pub use simkl_init::{Phase as SimklInitPopupPhase, SimklInitPopup};
 pub use tmdb_init::{Phase as TMDBInitPopupPhase, TMDBInitPopup};
 pub use trakt_init::{Phase as TraktInitPopupPhase, TraktInitPopup};
 
+use crate::image_backend::RatatuiImage;
+
 pub enum Popup {
     AddMovie(Box<AddMoviePopup>),
     ManagePlays(Box<ManagePlaysPopup>),
@@ -90,8 +92,10 @@ impl Popup {
         &mut self,
         frame: &mut ratatui::Frame,
         key_event_handler: &mut crate::key_event_handler::KeyEventHandler,
+        image_renderer: &mut RatatuiImage,
     ) {
-        self.as_trait_mut().render(frame, key_event_handler)
+        self.as_trait_mut()
+            .render(frame, key_event_handler, image_renderer)
     }
 }
 
@@ -103,5 +107,6 @@ pub trait PopupTrait {
         &mut self,
         frame: &mut ratatui::Frame,
         key_event_handler: &mut crate::key_event_handler::KeyEventHandler,
+        image_renderer: &mut RatatuiImage,
     );
 }

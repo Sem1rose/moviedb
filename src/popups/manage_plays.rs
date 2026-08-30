@@ -15,6 +15,7 @@ use ratatui_textarea::{TextArea, WrapMode};
 
 use crate::{
     helpers,
+    image_backend::RatatuiImage,
     key_event_handler::{Data, KeyEventHandler},
     popups::{Popup, PopupTrait},
     types::Entry,
@@ -168,7 +169,12 @@ impl PopupTrait for ManagePlaysPopup {
 
     fn update(&mut self) {}
 
-    fn render(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
+    fn render(
+        &mut self,
+        frame: &mut Frame,
+        key_event_handler: &mut KeyEventHandler,
+        image_renderer: &mut RatatuiImage,
+    ) {
         key_event_handler.clear();
         key_event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
@@ -414,6 +420,7 @@ impl PopupTrait for ManagePlaysPopup {
                     "Manage Plays",
                     true,
                 );
+                image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     popup_area.outer(Margin::new(1, 1)),
@@ -957,6 +964,7 @@ impl PopupTrait for ManagePlaysPopup {
                     if new_play { " Add a new play " } else { " Edit rating " },
                     true,
                 );
+                image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     popup_area.outer(Margin::new(1, 1)),

@@ -7,7 +7,7 @@ use std::{
 
 use chrono::{DateTime, Datelike, TimeDelta, Utc};
 use itertools::{Itertools, izip};
-use log::{error, info};
+use log::error;
 use nucleo_matcher::{Config as MatcherConfig, Matcher, pattern::Atom};
 use ratatui::{
     Frame,
@@ -1147,6 +1147,12 @@ impl MainScreen {
                     .nth(0)
                     .unwrap()
                     .1;
+                image_renderer.add_overlay(Rect {
+                    x,
+                    y,
+                    width,
+                    height: height + 2,
+                });
 
                 for i in 0..len {
                     let option_index = self.context_menu_model[i];

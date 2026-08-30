@@ -15,6 +15,7 @@ use strum::{AsRefStr, EnumCount, EnumIter, IntoEnumIterator};
 
 use crate::{
     helpers,
+    image_backend::RatatuiImage,
     key_event_handler::{Data, KeyEventHandler},
     popups::{Popup, PopupTrait},
     types::Entry,
@@ -56,7 +57,12 @@ impl PopupTrait for ManageListsPopup {
 
     fn update(&mut self) {}
 
-    fn render(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
+    fn render(
+        &mut self,
+        frame: &mut Frame,
+        key_event_handler: &mut KeyEventHandler,
+        image_renderer: &mut RatatuiImage,
+    ) {
         key_event_handler.clear();
         key_event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
@@ -75,6 +81,7 @@ impl PopupTrait for ManageListsPopup {
             "Manage Lists",
             false,
         );
+        image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
         key_event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
             popup_area.outer(Margin::new(1, 1)),

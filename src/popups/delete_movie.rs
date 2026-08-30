@@ -8,6 +8,7 @@ use ratatui::{
 
 use crate::{
     helpers,
+    image_backend::RatatuiImage,
     key_event_handler::{self, KeyEventHandler},
     popups::{Popup, PopupTrait},
     widgets::{self, Action, ActionType},
@@ -39,7 +40,12 @@ impl PopupTrait for DeleteMoviePopup {
 
     fn update(&mut self) {}
 
-    fn render(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
+    fn render(
+        &mut self,
+        frame: &mut Frame,
+        key_event_handler: &mut KeyEventHandler,
+        image_renderer: &mut RatatuiImage,
+    ) {
         key_event_handler.clear();
         key_event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
@@ -82,6 +88,7 @@ impl PopupTrait for DeleteMoviePopup {
             " Remove movie ",
             true,
         );
+        image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
         key_event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
             popup_area.outer(Margin::new(1, 1)),

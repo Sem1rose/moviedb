@@ -16,6 +16,7 @@ use throbber_widgets_tui::{Throbber, ThrobberState};
 
 use crate::{
     helpers,
+    image_backend::RatatuiImage,
     key_event_handler::{self, KeyEventHandler},
     popups::{Popup, PopupTrait},
     tokens::omdb_tokens::OMDBTokens,
@@ -86,7 +87,12 @@ impl PopupTrait for OMDBInitPopup {
         }
     }
 
-    fn render(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
+    fn render(
+        &mut self,
+        frame: &mut Frame,
+        key_event_handler: &mut KeyEventHandler,
+        image_renderer: &mut RatatuiImage,
+    ) {
         key_event_handler.clear();
         if self.can_close {
             key_event_handler.bind_esc((None, None), "Close".into(), |app, _| {
@@ -159,6 +165,7 @@ impl PopupTrait for OMDBInitPopup {
                 " OMDB Authentication ",
                 true,
             );
+            image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
             key_event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,
                 popup_area.outer(Margin::new(1, 1)),
@@ -226,6 +233,7 @@ impl PopupTrait for OMDBInitPopup {
                 " OMDB Authentication ",
                 false,
             );
+            image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
             key_event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,
                 popup_area.outer(Margin::new(1, 1)),

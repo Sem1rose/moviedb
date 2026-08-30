@@ -17,7 +17,7 @@ use ratatui::{
 use crate::{
     config::Config,
     helpers::ellipsize_string,
-    image_backend::RatatuiImage,
+    image_backend::{ImageID, RatatuiImage},
     key_event_handler::{self, KeyEventHandler},
     popups::*,
     processors::Processor,
@@ -116,12 +116,14 @@ impl Drawer {
         self.check_popups(key_event_handler);
         if !self.show_term_size_warning {
             if let Some(processor) = processors.next() {
-                processor.render(frame, key_event_handler);
+                processor.render(frame, key_event_handler, &mut self.image_renderer);
             } else if self.active_popup.is_some() {
                 self.draw_popup(frame, key_event_handler);
             }
             self.render_footer(frame, key_event_handler);
         }
+
+        self.image_renderer.render(frame);
     }
 
     fn draw_current_screen(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
@@ -210,7 +212,7 @@ impl Drawer {
 
     fn draw_popup(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
         if let Some(active_popup) = self.active_popup.as_mut() {
-            active_popup.render(frame, key_event_handler);
+            active_popup.render(frame, key_event_handler, &mut self.image_renderer);
         }
     }
 

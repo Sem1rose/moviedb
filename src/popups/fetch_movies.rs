@@ -9,7 +9,7 @@ use itertools::Itertools;
 use log::info;
 use ratatui::{
     Frame,
-    layout::Flex,
+    layout::{Flex, Margin},
     macros::{horizontal, vertical},
     style::{Style, Stylize, palette::tailwind},
     text::Text,
@@ -20,6 +20,7 @@ use throbber_widgets_tui::{Throbber, ThrobberState};
 use crate::{
     app::App,
     helpers,
+    image_backend::RatatuiImage,
     key_event_handler::KeyEventHandler,
     popups::PopupTrait,
     tokens::{OMDBTokens, PunchPlayTokens, TraktTokens, tmdb_tokens::TMDBTokens},
@@ -258,7 +259,12 @@ impl PopupTrait for FetchMoviesPopup {
         }
     }
 
-    fn render(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
+    fn render(
+        &mut self,
+        frame: &mut Frame,
+        key_event_handler: &mut KeyEventHandler,
+        image_renderer: &mut RatatuiImage,
+    ) {
         if !self.started {
             return;
         }
@@ -274,6 +280,12 @@ impl PopupTrait for FetchMoviesPopup {
             ),
             " Fetching Movies ",
             self.errored.is_some(),
+        );
+        image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
+        key_event_handler.bind_mouse_button_down(
+            ratatui::crossterm::event::MouseButton::Left,
+            popup_area.outer(Margin::new(1, 1)),
+            |_, _| {},
         );
 
         let [_, throbber_area, _, progress_area] = vertical![==1, ==1, ==1, ==3].areas(popup_area);

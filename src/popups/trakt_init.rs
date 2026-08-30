@@ -23,6 +23,7 @@ use trakt::{self, smo::TokenResponse};
 use crate::{
     app::App,
     helpers,
+    image_backend::RatatuiImage,
     key_event_handler::{self, KeyEventHandler},
     popups::{Popup, PopupTrait},
     tokens::trakt_tokens::{TraktTokens, UserTokens},
@@ -239,7 +240,12 @@ impl PopupTrait for TraktInitPopup {
         }
     }
 
-    fn render(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
+    fn render(
+        &mut self,
+        frame: &mut Frame,
+        key_event_handler: &mut KeyEventHandler,
+        image_renderer: &mut RatatuiImage,
+    ) {
         key_event_handler.clear();
         if self.can_close {
             key_event_handler.bind_esc((None, None), "Close".into(), |app, _| {
@@ -279,6 +285,7 @@ impl PopupTrait for TraktInitPopup {
                     " Trakt Authentication ",
                     true,
                 );
+                image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     popup_area.outer(Margin::new(1, 1)),
@@ -388,6 +395,7 @@ impl PopupTrait for TraktInitPopup {
                     " Trakt Authentication ",
                     true,
                 );
+                image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     popup_area.outer(Margin::new(1, 1)),
@@ -562,6 +570,7 @@ impl PopupTrait for TraktInitPopup {
                     " Trakt Authentication ",
                     true,
                 );
+                image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     popup_area.outer(Margin::new(1, 1)),
@@ -731,6 +740,7 @@ impl PopupTrait for TraktInitPopup {
                     " Error ",
                     true,
                 );
+                image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     popup_area.outer(Margin::new(1, 1)),

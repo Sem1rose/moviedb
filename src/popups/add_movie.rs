@@ -37,6 +37,7 @@ use trakt::{
 use crate::{
     app::App,
     helpers,
+    image_backend::RatatuiImage,
     key_event_handler::{self, KeyEventHandler},
     omdb::OMDBDetailsResponse,
     popups::{Popup, PopupTrait},
@@ -384,7 +385,12 @@ impl PopupTrait for AddMoviePopup {
         }
     }
 
-    fn render(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
+    fn render(
+        &mut self,
+        frame: &mut Frame,
+        key_event_handler: &mut KeyEventHandler,
+        image_renderer: &mut RatatuiImage,
+    ) {
         key_event_handler.clear();
         key_event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
@@ -456,15 +462,7 @@ impl PopupTrait for AddMoviePopup {
                     " Add movie ",
                     false,
                 );
-                for i in 0..popup_area.width {
-                    for j in 0..popup_area.height {
-                        frame
-                            .buffer_mut()
-                            .cell_mut(Position::new(popup_area.x + i, popup_area.y + j))
-                            .unwrap()
-                            .set_diff_option(ratatui::buffer::CellDiffOption::AlwaysUpdate);
-                    }
-                }
+                image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     popup_area.outer(Margin::new(1, 1)),
@@ -817,6 +815,7 @@ impl PopupTrait for AddMoviePopup {
                     " Add movie ",
                     true,
                 );
+                image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     popup_area.outer(Margin::new(1, 1)),
@@ -953,6 +952,7 @@ impl PopupTrait for AddMoviePopup {
                     },
                     false,
                 );
+                image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     popup_area.outer(Margin::new(1, 1)),
@@ -1007,6 +1007,7 @@ impl PopupTrait for AddMoviePopup {
                     " Refetch details ",
                     true,
                 );
+                image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     popup_area.outer(Margin::new(1, 1)),
@@ -1058,6 +1059,7 @@ impl PopupTrait for AddMoviePopup {
                     " Error ",
                     true,
                 );
+                image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     popup_area.outer(Margin::new(1, 1)),

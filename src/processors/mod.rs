@@ -4,22 +4,12 @@ use history_syncer::HistorySyncerProcessor;
 use itertools::Itertools;
 use strum::{EnumCount, EnumDiscriminants, EnumIter, IntoEnumIterator};
 
-use crate::key_event_handler::KeyEventHandler;
+use crate::{image_backend::RatatuiImage, key_event_handler::KeyEventHandler};
 
 #[derive(EnumDiscriminants, EnumCount, EnumIter)]
 #[strum_discriminants(derive(Hash))]
 pub enum Processor {
     HistorySyncer(Box<HistorySyncerProcessor>),
-}
-
-#[macro_export]
-macro_rules! new_processor {
-    ($processor_enum:ident, $T:expr) => {
-        Processor::$processor_enum(Box::new($T))
-    };
-    ($processor_enum:ident) => {
-        Processor::$processor_enum(Box::default())
-    };
 }
 
 impl Processor {
@@ -47,13 +37,24 @@ impl Processor {
         self.as_trait().needs_render()
     }
 
-    pub fn render(&self, frame: &mut ratatui::Frame, key_event_handler: &mut KeyEventHandler) {
-        self.as_trait().render(frame, key_event_handler)
+    pub fn render(
+        &self,
+        frame: &mut ratatui::Frame,
+        key_event_handler: &mut KeyEventHandler,
+        image_renderer: &mut RatatuiImage,
+    ) {
+        self.as_trait()
+            .render(frame, key_event_handler, image_renderer)
     }
 }
 
 pub trait ProcessorTrait {
     fn update(&mut self, key_event_handler: &mut KeyEventHandler);
     fn needs_render(&self) -> bool;
-    fn render(&self, frame: &mut ratatui::Frame, key_event_handler: &mut KeyEventHandler);
+    fn render(
+        &self,
+        frame: &mut ratatui::Frame,
+        key_event_handler: &mut KeyEventHandler,
+        image_renderer: &mut RatatuiImage,
+    );
 }

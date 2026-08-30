@@ -17,6 +17,7 @@ use toml::Value;
 
 use crate::{
     helpers,
+    image_backend::RatatuiImage,
     key_event_handler::KeyEventHandler,
     processors::{Processor, ProcessorDiscriminants, ProcessorTrait},
     tokens::{PunchPlayTokens, SimklTokens, tmdb_tokens::TMDBTokens},
@@ -635,7 +636,12 @@ impl ProcessorTrait for HistorySyncerProcessor {
         !self.errors.is_empty()
     }
 
-    fn render(&self, frame: &mut ratatui::Frame, key_event_handler: &mut KeyEventHandler) {
+    fn render(
+        &self,
+        frame: &mut ratatui::Frame,
+        key_event_handler: &mut KeyEventHandler,
+        image_renderer: &mut RatatuiImage,
+    ) {
         if let Some((source, item, error)) = self.errors.first() {
             key_event_handler.clear();
 
@@ -645,6 +651,7 @@ impl ProcessorTrait for HistorySyncerProcessor {
                 " Error ",
                 true,
             );
+            image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
             key_event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,
                 popup_area.outer(Margin::new(1, 1)),

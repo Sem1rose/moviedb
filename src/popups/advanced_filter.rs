@@ -20,6 +20,7 @@ use strum::IntoEnumIterator;
 use crate::{
     app::App,
     helpers,
+    image_backend::RatatuiImage,
     key_event_handler::{self, KeyEventHandler},
     pop_criterion,
     popups::{Popup, PopupTrait},
@@ -1654,7 +1655,12 @@ impl PopupTrait for AdvancedFilterPopup {
 
     fn update(&mut self) {}
 
-    fn render(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
+    fn render(
+        &mut self,
+        frame: &mut Frame,
+        key_event_handler: &mut KeyEventHandler,
+        image_renderer: &mut RatatuiImage,
+    ) {
         key_event_handler.clear();
         key_event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
@@ -1738,6 +1744,7 @@ impl PopupTrait for AdvancedFilterPopup {
             " Advanced Filter ",
             true,
         );
+        image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
         key_event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
             popup_area.outer(Margin::new(1, 1)),

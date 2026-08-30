@@ -18,7 +18,7 @@ use rustc_hash::FxHashMap;
 use strum::EnumDiscriminants;
 use throbber_widgets_tui::{BRAILLE_SIX_DOUBLE, Throbber, ThrobberState};
 
-use crate::types::FxIndexMap;
+use crate::{helpers, types::FxIndexMap};
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, EnumDiscriminants)]
 #[strum_discriminants(derive(Hash))]
@@ -44,9 +44,14 @@ fn default_sizes() -> FxHashMap<ImageIDDiscriminants, [Size; 2]> {
     ])
 }
 
+const CALCULATE_OBSTRUCTION: bool = false;
+
 pub struct RatatuiImage {
     sizes:         FxHashMap<ImageIDDiscriminants, [Size; 2]>,
     hashed_images: FxIndexMap<ImageID, Option<SlicedProtocol>>,
+
+    draw_queue:    Vec<(ImageID, Rect, Option<SignedPosition>)>,
+    overlay_areas: Vec<Rect>,
 
     tx_load: Sender<Actions>,
     rx_main: Receiver<LoadResult>,
@@ -59,6 +64,9 @@ impl RatatuiImage {
         Self {
             sizes: default_sizes(),
             hashed_images: FxIndexMap::with_capacity_and_hasher(100, rustc_hash::FxBuildHasher),
+
+            draw_queue: vec![],
+            overlay_areas: vec![],
 
             tx_load,
             rx_main,
@@ -183,13 +191,16 @@ impl RatatuiImage {
         tx_load
     }
 
-    fn hash_image(&mut self, image_id: ImageID) {
+    pub fn hash_image(&mut self, image_id: ImageID) {
         self.hashed_images.insert(image_id, None);
 
         _ = self.tx_load.send(Actions::Load(image_id));
     }
 
     pub fn update(&mut self) {
+        self.draw_queue.clear();
+        self.overlay_areas.clear();
+
         for (image_id, result) in self.rx_main.try_iter() {
             if let Ok(protocol) = result {
                 if self.hashed_images.contains_key(&image_id) {
@@ -237,81 +248,25 @@ impl RatatuiImage {
         throbber_state: &mut ThrobberState,
         frame: &mut Frame,
     ) -> bool {
-        // macro_rules! pop_then_hash {
-        //     ($collection:expr, $filter_map:expr, $retain:expr) => {
-        //         let hash = $collection.iter().filter_map($filter_map).collect_vec();
-        //         $collection.retain($retain);
-        //         for artwork_id in hash {
-        //             if self.hashed_images.get(&artwork_id).is_none() {
-        //                 self.hash_image(artwork_id);
-        //             }
-        //         }
-        //     };
-        // }
-
-        let index = matches!(
+        let size_index = matches!(
             image_id,
             ImageID::Movie(_, true) | ImageID::Collection(_, true)
         ) as usize;
+
         if sliced_pos.is_none() {
             let size = self.sizes.get_mut(&image_id.into()).unwrap();
-            if size[index] != area.as_size() {
-                size[index] = area.as_size();
+            if size[size_index] != area.as_size() {
+                size[size_index] = area.as_size();
                 _ = self.tx_load.send(Actions::Resize(image_id.into(), *size));
 
                 self.hashed_images.retain(|k, _| {
                     ImageIDDiscriminants::from(k) != image_id.into()
                         || match k {
-                            ImageID::Movie(_, backdrop) => *backdrop as usize != index,
-                            ImageID::Collection(_, backdrop) => *backdrop as usize != index,
+                            ImageID::Movie(_, backdrop) => *backdrop as usize != size_index,
+                            ImageID::Collection(_, backdrop) => *backdrop as usize != size_index,
                             ImageID::Person(_) => false,
                         }
                 });
-                // pop_then_hash!(
-                //     self.hashed_images,
-                //     |(k, _)| {
-                //         (ImageIDDiscriminants::from(*k) == image_id.into())
-                //             .then_some(match k {
-                //                 ImageID::Movie(_, backdrop) =>
-                //                     (*backdrop as usize == index).then_some(*k),
-                //                 ImageID::Collection(_, backdrop) =>
-                //                     (*backdrop as usize == index).then_some(*k),
-                //                 ImageID::Person(_) => Some(*k),
-                //             })
-                //             .flatten()
-                //     },
-                //     |k, _| {
-                //         ImageIDDiscriminants::from(k) != image_id.into()
-                //             || match k {
-                //                 ImageID::Movie(_, backdrop) => *backdrop as usize != index,
-                //                 ImageID::Collection(_, backdrop) => *backdrop as usize != index,
-                //                 ImageID::Person(_) => false,
-                //             }
-                //     }
-                // );
-
-                // pop_then_hash!(
-                //     self.preload_images,
-                //     |k| {
-                //         (ImageIDDiscriminants::from(*k) == image_id.into())
-                //             .then_some(match k {
-                //                 ImageID::Movie(_, backdrop) =>
-                //                     (*backdrop as usize == index).then_some(*k),
-                //                 ImageID::Collection(_, backdrop) =>
-                //                     (*backdrop as usize == index).then_some(*k),
-                //                 ImageID::Person(_) => Some(*k),
-                //             })
-                //             .flatten()
-                //     },
-                //     |k| {
-                //         ImageIDDiscriminants::from(k) != image_id.into()
-                //             || match k {
-                //                 ImageID::Movie(_, backdrop) => *backdrop as usize != index,
-                //                 ImageID::Collection(_, backdrop) => *backdrop as usize != index,
-                //                 ImageID::Person(_) => false,
-                //             }
-                //     }
-                // );
 
                 return false;
             }
@@ -320,16 +275,21 @@ impl RatatuiImage {
         let mut drawn = false;
         if let Some(value) = self.hashed_images.get(&image_id) {
             if let Some(protocol) = value {
-                let Size { width, height } = protocol.size();
+                if CALCULATE_OBSTRUCTION {
+                    self.draw_queue.push((image_id, area, sliced_pos));
+                } else {
+                    let Size { width, height } = protocol.size();
 
-                let centered_area = area.centered(constraint!(== width), constraint!(== height));
-                frame.render_widget(
-                    SlicedImage::new(
-                        protocol,
-                        sliced_pos.unwrap_or(SignedPosition { x: 0, y: 0 }),
-                    ),
-                    centered_area,
-                );
+                    let centered_area =
+                        area.centered(constraint!(== width), constraint!(== height));
+                    frame.render_widget(
+                        SlicedImage::new(
+                            protocol,
+                            sliced_pos.unwrap_or(SignedPosition { x: 0, y: 0 }),
+                        ),
+                        centered_area,
+                    );
+                }
 
                 drawn = true;
             } else {
@@ -352,44 +312,248 @@ impl RatatuiImage {
             );
         }
 
-        // pop_then_hash!(
-        //     self.preload_images,
-        //     |k| {
-        //         (ImageIDDiscriminants::from(*k) == image_id.into())
-        //             .then_some(match k {
-        //                 ImageID::Movie(_, backdrop) => (*backdrop as usize == index).then_some(*k),
-        //                 ImageID::Collection(_, backdrop) =>
-        //                     (*backdrop as usize == index).then_some(*k),
-        //                 ImageID::Person(_) => Some(*k),
-        //             })
-        //             .flatten()
-        //     },
-        //     |k| {
-        //         ImageIDDiscriminants::from(k) != image_id.into()
-        //             || match k {
-        //                 ImageID::Movie(_, backdrop) => *backdrop as usize != index,
-        //                 ImageID::Collection(_, backdrop) => *backdrop as usize != index,
-        //                 ImageID::Person(_) => false,
-        //             }
-        //     }
-        // );
-
         drawn
     }
 
-    // pub fn preload_movies(&mut self, movies: Vec<u32>, rule: &str) {
-    //     match rule {
-    //         "all" => {
-    //             self.preload_images = movies.iter().map(|&id| ImageID::Movie(id, false)).collect();
-    //             self.preload_images
-    //                 .extend(movies.into_iter().map(|id| ImageID::Movie(id, true)));
-    //         }
-    //         "posters" => {
-    //             self.preload_images = movies.iter().map(|&id| ImageID::Movie(id, false)).collect();
-    //         }
-    //         _ => (),
-    //     }
-    // }
+    pub fn add_overlay(&mut self, area: Rect) {
+        self.overlay_areas.push(area);
+    }
+
+    pub fn render(&self, frame: &mut Frame) {
+        if !CALCULATE_OBSTRUCTION {
+            return;
+        }
+
+        if self.overlay_areas.is_empty() {
+            for (image_id, area, sliced_pos) in &self.draw_queue {
+                if let Some(value) = self.hashed_images.get(image_id) {
+                    if let Some(protocol) = value {
+                        let Size { width, height } = protocol.size();
+
+                        let centered_area =
+                            area.centered(constraint!(== width), constraint!(== height));
+                        frame.render_widget(
+                            SlicedImage::new(
+                                protocol,
+                                sliced_pos.unwrap_or(SignedPosition { x: 0, y: 0 }),
+                            ),
+                            centered_area,
+                        );
+                    }
+                }
+            }
+        } else {
+            let (obsructed, unobstructed): (
+                Vec<&(ImageID, Rect, Option<SignedPosition>)>,
+                Vec<&(ImageID, Rect, Option<SignedPosition>)>,
+            ) = self
+                .draw_queue
+                .iter()
+                .partition(|x| self.overlay_areas.iter().any(|y| y.intersects(x.1)));
+
+            for (image_id, area, sliced_pos) in unobstructed {
+                if let Some(value) = self.hashed_images.get(image_id) {
+                    if let Some(protocol) = value {
+                        let Size { width, height } = protocol.size();
+
+                        let centered_area =
+                            area.centered(constraint!(== width), constraint!(== height));
+                        frame.render_widget(
+                            SlicedImage::new(
+                                protocol,
+                                sliced_pos.unwrap_or(SignedPosition { x: 0, y: 0 }),
+                            ),
+                            centered_area,
+                        );
+                    }
+                }
+            }
+
+            for (image_id, big_area, sliced_pos) in obsructed {
+                let obstructions = self
+                    .overlay_areas
+                    .iter()
+                    .filter(|x| x.intersects(*big_area));
+                let mut areas = vec![*big_area];
+                for obstruction in obstructions {
+                    let mut new_areas = vec![];
+                    for area in areas {
+                        //     match (
+                        //         obstruction.contains(area.as_position()),
+                        //         obstruction.contains(
+                        //             area.offset(Offset::new(area.width as i32, 0)).as_position(),
+                        //         ),
+                        //         obstruction.contains(
+                        //             area.offset(Offset::new(0, area.height as i32))
+                        //                 .as_position(),
+                        //         ),
+                        //         obstruction.contains(
+                        //             area.offset(Offset::new(area.width as i32, area.height as i32))
+                        //                 .as_position(),
+                        //         ),
+                        //     ) {
+                        //         (false, false, false, true) => {
+                        //             new_areas.push(Rect::new(
+                        //                 area.x,
+                        //                 area.y,
+                        //                 area.width,
+                        //                 obstruction.y - area.y,
+                        //             ));
+                        //             new_areas.push(Rect::new(
+                        //                 area.x,
+                        //                 obstruction.y,
+                        //                 obstruction.x - area.x,
+                        //                 area.bottom() - obstruction.y,
+                        //             ));
+                        //         }
+                        //         (false, false, true, false) => {
+                        //             new_areas.push(Rect::new(
+                        //                 area.x,
+                        //                 area.y,
+                        //                 area.width,
+                        //                 obstruction.y - area.y,
+                        //             ));
+                        //             new_areas.push(Rect::new(
+                        //                 obstruction.right(),
+                        //                 obstruction.y,
+                        //                 area.right() - obstruction.right(),
+                        //                 area.bottom() - obstruction.y,
+                        //             ));
+                        //         }
+                        //         (false, true, false, false) => {
+                        //             new_areas.push(Rect::new(
+                        //                 area.x,
+                        //                 area.y,
+                        //                 obstruction.x - area.x,
+                        //                 obstruction.bottom() - area.y,
+                        //             ));
+                        //             new_areas.push(Rect::new(
+                        //                 area.x,
+                        //                 obstruction.bottom(),
+                        //                 area.width,
+                        //                 area.bottom() - obstruction.bottom(),
+                        //             ));
+                        //         }
+                        //         (true, false, false, false) => {
+                        //             new_areas.push(Rect::new(
+                        //                 obstruction.right(),
+                        //                 area.y,
+                        //                 area.right() - obstruction.right(),
+                        //                 obstruction.bottom() - area.y,
+                        //             ));
+                        //             new_areas.push(Rect::new(
+                        //                 area.x,
+                        //                 obstruction.bottom(),
+                        //                 area.width,
+                        //                 area.bottom() - obstruction.bottom(),
+                        //             ));
+                        //         }
+                        //         (true, true, false, false) => {
+                        //             new_areas.push(Rect::new(
+                        //                 area.x,
+                        //                 obstruction.bottom(),
+                        //                 area.width,
+                        //                 area.bottom() - obstruction.bottom(),
+                        //             ));
+                        //         }
+                        //         (false, false, true, true) => {
+                        //             new_areas.push(Rect::new(
+                        //                 area.x,
+                        //                 area.y,
+                        //                 area.width,
+                        //                 obstruction.y - area.y,
+                        //             ));
+                        //         }
+                        //         (false, true, false, true) => {
+                        //             new_areas.push(Rect::new(
+                        //                 area.x,
+                        //                 area.y,
+                        //                 obstruction.x - area.x,
+                        //                 area.height,
+                        //             ));
+                        //         }
+                        //         (true, false, true, false) => {
+                        //             new_areas.push(Rect::new(
+                        //                 obstruction.right(),
+                        //                 area.y,
+                        //                 area.right() - obstruction.right(),
+                        //                 area.height,
+                        //             ));
+                        //         }
+
+                        //         (false, true, true, true) => (),
+                        //         (true, false, true, true) => (),
+                        //         (true, true, false, true) => (),
+                        //         (true, true, true, false) => (),
+                        //         (false, true, true, false) => (),
+                        //         (true, false, false, true) => (),
+                        //         (false, false, false, false) => (),
+                        //         (true, true, true, true) => (),
+                        //     }
+                        let intersection = obstruction.intersection(area);
+                        if intersection.x > area.x {
+                            new_areas.push(Rect::new(
+                                area.x,
+                                intersection.y,
+                                intersection.x - area.x,
+                                intersection.height,
+                            ));
+                        }
+                        if intersection.right() < area.right() {
+                            new_areas.push(Rect::new(
+                                intersection.right(),
+                                intersection.y,
+                                area.right() - intersection.right(),
+                                intersection.height,
+                            ));
+                        }
+                        if intersection.y > area.y {
+                            new_areas.push(Rect::new(
+                                area.x,
+                                area.y,
+                                area.width,
+                                intersection.y - area.y,
+                            ));
+                        }
+                        if intersection.bottom() < area.bottom() {
+                            new_areas.push(Rect::new(
+                                area.x,
+                                intersection.bottom(),
+                                area.width,
+                                area.bottom() - intersection.bottom(),
+                            ));
+                        }
+                    }
+
+                    areas = new_areas;
+                }
+
+                if let Some(value) = self.hashed_images.get(image_id) {
+                    if let Some(protocol) = value {
+                        let Size { width, height } = protocol.size();
+                        let centered_big_area =
+                            big_area.centered(constraint!(== width), constraint!(== height));
+
+                        for area in areas.into_iter().filter(|x| x.height > 0 && x.width > 1) {
+                            frame.render_widget(
+                                SlicedImage::new(
+                                    protocol,
+                                    helpers::signed_pos_add(
+                                        sliced_pos.unwrap_or(SignedPosition { x: 0, y: 0 }),
+                                        helpers::signed_subtract_pos(
+                                            centered_big_area.as_position(),
+                                            area.as_position(),
+                                        ),
+                                    ),
+                                ),
+                                area,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     pub fn update_access_token(&self, access_token: &str) {
         _ = self

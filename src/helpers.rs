@@ -2,10 +2,11 @@ use std::{cell::RefCell, rc::Rc};
 
 use itertools::Itertools;
 use ratatui::{
-    layout::{Offset, Rect, Size},
+    layout::{Offset, Position, Rect, Size},
     macros::constraint,
     widgets::{Block, Padding},
 };
+use ratatui_image::sliced::SignedPosition;
 
 pub fn wrap_text(line: &str, width: usize) -> Vec<String> {
     if line.chars().count() <= width {
@@ -77,10 +78,22 @@ pub fn ellipsize_string(string: &str, max_width: usize) -> String {
 pub trait SuperOrd {
     fn is_between(&self, lb: &Self, ub: &Self) -> bool;
 }
-
 impl<T: Ord> SuperOrd for T {
     fn is_between(&self, lb: &Self, ub: &Self) -> bool {
         self >= lb && self <= ub
+    }
+}
+
+pub fn signed_subtract_pos(lhs: Position, rhs: Position) -> SignedPosition {
+    SignedPosition {
+        x: (lhs.x as i16 - rhs.x as i16),
+        y: (lhs.y as i16 - rhs.y as i16),
+    }
+}
+pub fn signed_pos_add(lhs: SignedPosition, rhs: SignedPosition) -> SignedPosition {
+    SignedPosition {
+        x: (lhs.x + rhs.x),
+        y: (lhs.y + rhs.y),
     }
 }
 
