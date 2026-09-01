@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::bail;
-use log::error;
+use log::{error, info, warn};
 use ratatui::{
     Frame,
     layout::{Rect, Size},
@@ -15,17 +15,26 @@ use ratatui::{
 };
 use ratatui_image::{Resize, picker::Picker, sliced::*};
 use rustc_hash::FxHashMap;
-use strum::EnumDiscriminants;
+use strum::{EnumDiscriminants, IntoDiscriminant};
 use throbber_widgets_tui::{BRAILLE_SIX_DOUBLE, Throbber, ThrobberState};
 
 use crate::{helpers, types::FxIndexMap};
 
-#[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, EnumDiscriminants)]
+#[derive(PartialEq, Eq, Hash, Clone, Debug, EnumDiscriminants)]
 #[strum_discriminants(derive(Hash))]
 pub enum ImageID {
     Movie(u32, bool),
     Collection(u32, bool),
     Person(u32),
+    Custom(Option<u32>, String, bool),
+}
+impl ImageID {
+    pub fn get_discriminant(&self) -> ImageIDDiscriminants {
+        match self {
+            ImageID::Custom(Some(_), _, _) => ImageIDDiscriminants::Movie,
+            _ => self.discriminant(),
+        }
+    }
 }
 
 type LoadResult = (ImageID, anyhow::Result<Result<SlicedProtocol, bool>>);
@@ -41,10 +50,11 @@ fn default_sizes() -> FxHashMap<ImageIDDiscriminants, [Size; 2]> {
         (ImageIDDiscriminants::Movie, Default::default()),
         (ImageIDDiscriminants::Collection, Default::default()),
         (ImageIDDiscriminants::Person, Default::default()),
+        (ImageIDDiscriminants::Custom, Default::default()),
     ])
 }
 
-const CALCULATE_OBSTRUCTION: bool = false;
+const CALCULATE_OBSTRUCTION: bool = true;
 
 pub struct RatatuiImage {
     sizes:         FxHashMap<ImageIDDiscriminants, [Size; 2]>,
@@ -92,28 +102,41 @@ impl RatatuiImage {
                     Actions::Load(image_id) => {
                         let tx_main = tx_main.clone();
 
-                        let path = match image_id {
-                            ImageID::Movie(id, backdrop) => if backdrop {
+                        let path = match &image_id {
+                            &ImageID::Movie(id, backdrop) => if backdrop {
                                 cache_dir.join("backdrops")
                             } else {
                                 cache_dir.join("posters")
                             }
                             .join(id.to_string())
                             .with_extension("jpg"),
-                            ImageID::Collection(id, _backdrop) => cache_dir
+                            &ImageID::Collection(id, _backdrop) => cache_dir
                                 .join("collections")
                                 .join(id.to_string())
                                 .with_extension("jpg"),
-                            ImageID::Person(id) => cache_dir
+                            &ImageID::Person(id) => cache_dir
                                 .join("persons")
                                 .join(id.to_string())
+                                .with_extension("jpg"),
+                            &ImageID::Custom(Some(id), _, backdrop) => if backdrop {
+                                cache_dir.join("backdrops")
+                            } else {
+                                cache_dir.join("posters")
+                            }
+                            .join(id.to_string())
+                            .with_extension("jpg"),
+                            ImageID::Custom(None, path, _) => cache_dir
+                                .join("custom")
+                                .join(path.strip_prefix('/').unwrap_or(path))
                                 .with_extension("jpg"),
                         };
 
                         if path.is_file() {
-                            let size = sizes[&image_id.into()][matches!(
+                            let size = sizes[&image_id.get_discriminant()][matches!(
                                 image_id,
-                                ImageID::Movie(_, true) | ImageID::Collection(_, true)
+                                ImageID::Movie(_, true)
+                                    | ImageID::Collection(_, true)
+                                    | ImageID::Custom(_, _, true)
                             )
                                 as usize];
 
@@ -146,35 +169,36 @@ impl RatatuiImage {
                             let cache_dir = cache_dir.clone();
                             let tmdb_access_token = tmdb_access_token.as_ref().unwrap().clone();
                             thread::spawn(move || {
-                                let result = {
-                                    let result = match image_id {
-                                        ImageID::Movie(id, false) =>
-                                            tmdb::movie::get_movie_artworks(
-                                                &cache_dir,
-                                                tmdb_access_token.as_str(),
-                                                None,
-                                                id,
-                                            ),
-                                        ImageID::Collection(id, false) =>
-                                            tmdb::collection::get_collection_artwork(
-                                                &cache_dir,
-                                                tmdb_access_token.as_str(),
-                                                id,
-                                            ),
-                                        ImageID::Person(id) => tmdb::movie::get_person_artwork(
+                                let result = match &image_id {
+                                    &ImageID::Movie(id, false) => tmdb::movie::get_movie_artworks(
+                                        &cache_dir,
+                                        tmdb_access_token.as_str(),
+                                        None,
+                                        id,
+                                    ),
+                                    &ImageID::Collection(id, false) =>
+                                        tmdb::collection::get_collection_artwork(
                                             &cache_dir,
                                             tmdb_access_token.as_str(),
                                             id,
                                         ),
-                                        _ => Ok(false),
-                                    }
-                                    .ok()
-                                    .unwrap_or(false);
-
-                                    Ok(Err(result))
+                                    &ImageID::Person(id) => tmdb::movie::get_person_artwork(
+                                        &cache_dir,
+                                        tmdb_access_token.as_str(),
+                                        id,
+                                    ),
+                                    ImageID::Custom(id, path, backdrop) =>
+                                        tmdb::movie::get_custom_artwork(
+                                            &cache_dir,
+                                            tmdb_access_token.as_str(),
+                                            *id,
+                                            path,
+                                            *backdrop,
+                                        ),
+                                    _ => Ok(false),
                                 };
 
-                                tx_main.send((image_id, result))
+                                tx_main.send((image_id, result.map(|x| Err(x))))
                             });
                         }
                     }
@@ -192,7 +216,7 @@ impl RatatuiImage {
     }
 
     pub fn hash_image(&mut self, image_id: ImageID) {
-        self.hashed_images.insert(image_id, None);
+        self.hashed_images.insert(image_id.clone(), None);
 
         _ = self.tx_load.send(Actions::Load(image_id));
     }
@@ -210,22 +234,27 @@ impl RatatuiImage {
                             .get_mut(&image_id)
                             .unwrap()
                             .insert(protocol);
-                    } else if let Err(true) = protocol {
-                        // downloaded successfully
-                        match image_id {
-                            ImageID::Movie(id, _) => {
-                                _ = self.tx_load.send(Actions::Load(ImageID::Movie(id, true)));
-                                _ = self.tx_load.send(Actions::Load(ImageID::Movie(id, false)));
+                    } else if let Err(result) = protocol {
+                        if result {
+                            // downloaded successfully
+                            match image_id {
+                                ImageID::Movie(id, _) => {
+                                    _ = self.tx_load.send(Actions::Load(ImageID::Movie(id, true)));
+                                    _ = self.tx_load.send(Actions::Load(ImageID::Movie(id, false)));
+                                }
+                                ImageID::Collection(id, _) =>
+                                    _ = self
+                                        .tx_load
+                                        .send(Actions::Load(ImageID::Collection(id, false))),
+                                ImageID::Person(id) =>
+                                    _ = self.tx_load.send(Actions::Load(ImageID::Person(id))),
+                                ImageID::Custom(id, path, backdrop) =>
+                                    _ = self
+                                        .tx_load
+                                        .send(Actions::Load(ImageID::Custom(id, path, backdrop))),
                             }
-                            ImageID::Collection(id, _) => {
-                                // _ = self.tx_load.send(Actions::Load(ImageID::Collection(id, true)));
-                                _ = self
-                                    .tx_load
-                                    .send(Actions::Load(ImageID::Collection(id, false)));
-                            }
-                            ImageID::Person(id) => {
-                                _ = self.tx_load.send(Actions::Load(ImageID::Person(id)));
-                            }
+                        } else {
+                            error!("Unable to download {image_id:?}");
                         }
                     }
                 }
@@ -244,26 +273,30 @@ impl RatatuiImage {
         &mut self,
         image_id: ImageID,
         area: Rect,
+        unobstructed: bool,
         sliced_pos: Option<SignedPosition>,
         throbber_state: &mut ThrobberState,
         frame: &mut Frame,
     ) -> bool {
         let size_index = matches!(
             image_id,
-            ImageID::Movie(_, true) | ImageID::Collection(_, true)
+            ImageID::Movie(_, true) | ImageID::Collection(_, true) | ImageID::Custom(_, _, true)
         ) as usize;
 
         if sliced_pos.is_none() {
-            let size = self.sizes.get_mut(&image_id.into()).unwrap();
+            let size = self.sizes.get_mut(&image_id.get_discriminant()).unwrap();
             if size[size_index] != area.as_size() {
                 size[size_index] = area.as_size();
-                _ = self.tx_load.send(Actions::Resize(image_id.into(), *size));
+                _ = self
+                    .tx_load
+                    .send(Actions::Resize(image_id.get_discriminant(), *size));
 
                 self.hashed_images.retain(|k, _| {
-                    ImageIDDiscriminants::from(k) != image_id.into()
+                    ImageIDDiscriminants::from(k) != image_id.get_discriminant()
                         || match k {
-                            ImageID::Movie(_, backdrop) => *backdrop as usize != size_index,
-                            ImageID::Collection(_, backdrop) => *backdrop as usize != size_index,
+                            ImageID::Movie(_, backdrop)
+                            | ImageID::Collection(_, backdrop)
+                            | ImageID::Custom(_, _, backdrop) => *backdrop as usize != size_index,
                             ImageID::Person(_) => false,
                         }
                 });
@@ -273,9 +306,14 @@ impl RatatuiImage {
         }
 
         let mut drawn = false;
-        if let Some(value) = self.hashed_images.get(&image_id) {
-            if let Some(protocol) = value {
-                if CALCULATE_OBSTRUCTION {
+        if self.hashed_images.contains_key(&image_id) {
+            self.hashed_images.move_index(
+                self.hashed_images.get_index_of(&image_id).unwrap(),
+                self.hashed_images.len() - 1,
+            );
+
+            if let Some(protocol) = self.hashed_images.get(&image_id).unwrap() {
+                if !unobstructed && CALCULATE_OBSTRUCTION {
                     self.draw_queue.push((image_id, area, sliced_pos));
                 } else {
                     let Size { width, height } = protocol.size();
@@ -304,12 +342,6 @@ impl RatatuiImage {
             }
         } else {
             self.hash_image(image_id);
-        }
-        if drawn {
-            self.hashed_images.move_index(
-                self.hashed_images.get_index_of(&image_id).unwrap(),
-                self.hashed_images.len() - 1,
-            );
         }
 
         drawn
@@ -378,118 +410,6 @@ impl RatatuiImage {
                 for obstruction in obstructions {
                     let mut new_areas = vec![];
                     for area in areas {
-                        //     match (
-                        //         obstruction.contains(area.as_position()),
-                        //         obstruction.contains(
-                        //             area.offset(Offset::new(area.width as i32, 0)).as_position(),
-                        //         ),
-                        //         obstruction.contains(
-                        //             area.offset(Offset::new(0, area.height as i32))
-                        //                 .as_position(),
-                        //         ),
-                        //         obstruction.contains(
-                        //             area.offset(Offset::new(area.width as i32, area.height as i32))
-                        //                 .as_position(),
-                        //         ),
-                        //     ) {
-                        //         (false, false, false, true) => {
-                        //             new_areas.push(Rect::new(
-                        //                 area.x,
-                        //                 area.y,
-                        //                 area.width,
-                        //                 obstruction.y - area.y,
-                        //             ));
-                        //             new_areas.push(Rect::new(
-                        //                 area.x,
-                        //                 obstruction.y,
-                        //                 obstruction.x - area.x,
-                        //                 area.bottom() - obstruction.y,
-                        //             ));
-                        //         }
-                        //         (false, false, true, false) => {
-                        //             new_areas.push(Rect::new(
-                        //                 area.x,
-                        //                 area.y,
-                        //                 area.width,
-                        //                 obstruction.y - area.y,
-                        //             ));
-                        //             new_areas.push(Rect::new(
-                        //                 obstruction.right(),
-                        //                 obstruction.y,
-                        //                 area.right() - obstruction.right(),
-                        //                 area.bottom() - obstruction.y,
-                        //             ));
-                        //         }
-                        //         (false, true, false, false) => {
-                        //             new_areas.push(Rect::new(
-                        //                 area.x,
-                        //                 area.y,
-                        //                 obstruction.x - area.x,
-                        //                 obstruction.bottom() - area.y,
-                        //             ));
-                        //             new_areas.push(Rect::new(
-                        //                 area.x,
-                        //                 obstruction.bottom(),
-                        //                 area.width,
-                        //                 area.bottom() - obstruction.bottom(),
-                        //             ));
-                        //         }
-                        //         (true, false, false, false) => {
-                        //             new_areas.push(Rect::new(
-                        //                 obstruction.right(),
-                        //                 area.y,
-                        //                 area.right() - obstruction.right(),
-                        //                 obstruction.bottom() - area.y,
-                        //             ));
-                        //             new_areas.push(Rect::new(
-                        //                 area.x,
-                        //                 obstruction.bottom(),
-                        //                 area.width,
-                        //                 area.bottom() - obstruction.bottom(),
-                        //             ));
-                        //         }
-                        //         (true, true, false, false) => {
-                        //             new_areas.push(Rect::new(
-                        //                 area.x,
-                        //                 obstruction.bottom(),
-                        //                 area.width,
-                        //                 area.bottom() - obstruction.bottom(),
-                        //             ));
-                        //         }
-                        //         (false, false, true, true) => {
-                        //             new_areas.push(Rect::new(
-                        //                 area.x,
-                        //                 area.y,
-                        //                 area.width,
-                        //                 obstruction.y - area.y,
-                        //             ));
-                        //         }
-                        //         (false, true, false, true) => {
-                        //             new_areas.push(Rect::new(
-                        //                 area.x,
-                        //                 area.y,
-                        //                 obstruction.x - area.x,
-                        //                 area.height,
-                        //             ));
-                        //         }
-                        //         (true, false, true, false) => {
-                        //             new_areas.push(Rect::new(
-                        //                 obstruction.right(),
-                        //                 area.y,
-                        //                 area.right() - obstruction.right(),
-                        //                 area.height,
-                        //             ));
-                        //         }
-
-                        //         (false, true, true, true) => (),
-                        //         (true, false, true, true) => (),
-                        //         (true, true, false, true) => (),
-                        //         (true, true, true, false) => (),
-                        //         (false, true, true, false) => (),
-                        //         (true, false, false, true) => (),
-                        //         (false, false, false, false) => (),
-                        //         (true, true, true, true) => (),
-                        //     }
                         let intersection = obstruction.intersection(area);
                         if intersection.x > area.x {
                             new_areas.push(Rect::new(

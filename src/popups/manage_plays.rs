@@ -1,9 +1,10 @@
 use chrono::{DateTime, Local, Utc};
+use itertools::Itertools;
 use ratatui::{
     Frame,
     crossterm::event::KeyCode,
-    layout::{HorizontalAlignment, Layout, Margin, Offset, Size},
-    macros::{constraint, line, vertical},
+    layout::{HorizontalAlignment, Margin, Offset, Rect, Size},
+    macros::{line, vertical},
     style::{
         Modifier, Stylize,
         palette::{material, tailwind},
@@ -19,7 +20,7 @@ use crate::{
     key_event_handler::{Data, KeyEventHandler},
     popups::{Popup, PopupTrait},
     types::Entry,
-    widgets::{self, Action, ActionType, ScrollView},
+    widgets::{self, Action, ActionType, ScrollList},
 };
 
 #[derive(Default)]
@@ -38,7 +39,7 @@ pub struct ManagePlaysPopup {
     one_shot:       bool,
     new_play:       bool,
     entry:          Option<Entry>,
-    pub scrollview: ScrollView,
+    pub scrollview: ScrollList,
 
     pub rating_input: TextArea<'static>,
     pub date_input:   TextArea<'static>,
@@ -48,7 +49,7 @@ impl ManagePlaysPopup {
     pub fn new(entry: Option<Entry>) -> Self {
         Self {
             entry: entry.or_else(|| Some(Default::default())),
-            scrollview: ScrollView::new(3),
+            scrollview: ScrollList::new(3),
 
             ..Default::default()
         }
@@ -417,7 +418,7 @@ impl PopupTrait for ManagePlaysPopup {
                 let popup_area = widgets::window(
                     frame,
                     helpers::centered_area(17, 50, frame.area()),
-                    "Manage Plays",
+                    " Manage Plays ",
                     true,
                 );
                 image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
@@ -492,9 +493,9 @@ impl PopupTrait for ManagePlaysPopup {
                             let latest = index == 0;
                             let local_date = entry.date.with_timezone(&chrono::Local);
 
-                            let areas =
-                                Layout::vertical(vec![constraint!(==1); area.height as usize])
-                                    .split(area);
+                            let areas = (0..area.height)
+                                .map(|i| Rect::new(area.x, area.y + i, area.width, 1))
+                                .collect_vec();
 
                             for i in 0..area.height {
                                 let index = if area.height < scroll_view.item_height {
@@ -879,7 +880,15 @@ impl PopupTrait for ManagePlaysPopup {
                                 if new_play {
                                     app.add_play();
                                 } else {
-                                    app.edit_movie_play();
+                                    if let Some(Popup::ManagePlays(manage_plays_popup)) =
+                                        app.drawer.active_popup.as_ref()
+                                    {
+                                        if manage_plays_popup.scrollview.selected_index == 0 {
+                                            app.edit_movie();
+                                        } else {
+                                            app.edit_movie_play();
+                                        }
+                                    }
                                 }
 
                                 if one_shot {
@@ -1100,7 +1109,15 @@ impl PopupTrait for ManagePlaysPopup {
                             if new_play {
                                 app.add_play();
                             } else {
-                                app.edit_movie_play();
+                                if let Some(Popup::ManagePlays(manage_plays_popup)) =
+                                    app.drawer.active_popup.as_ref()
+                                {
+                                    if manage_plays_popup.scrollview.selected_index == 0 {
+                                        app.edit_movie();
+                                    } else {
+                                        app.edit_movie_play();
+                                    }
+                                }
                             }
 
                             if let Some(Popup::ManagePlays(manage_plays_popup)) =

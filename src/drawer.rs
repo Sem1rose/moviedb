@@ -7,7 +7,7 @@ use std::{
 use itertools::Itertools;
 use ratatui::{
     Frame,
-    layout::{Layout, Offset, Size},
+    layout::{Offset, Rect, Size},
     macros::{constraint, line, span},
     style::{Stylize, palette::tailwind},
     text::Text,
@@ -17,7 +17,7 @@ use ratatui::{
 use crate::{
     config::Config,
     helpers::ellipsize_string,
-    image_backend::{ImageID, RatatuiImage},
+    image_backend::RatatuiImage,
     key_event_handler::{self, KeyEventHandler},
     popups::*,
     processors::Processor,
@@ -206,6 +206,7 @@ impl Drawer {
                             app.drawer.close_popup();
                         });
                     },
+                Popup::ChangeArtworks(_) => (),
             }
         }
     }
@@ -278,9 +279,20 @@ impl Drawer {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn open_fetch_movies_popup(&mut self) {
         self.popup_queue.push(new_popup!(FetchMovies));
+    }
+
+    pub fn open_change_artwork_popup(&mut self, tmdb_tokens: &TMDBTokens) {
+        if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_ref() {
+            self.popup_queue.push(new_popup!(
+                ChangeArtworks,
+                ChangeArtworksPopup::new(
+                    main_screen.current_movie().unwrap(),
+                    tmdb_tokens.access_token()
+                )
+            ));
+        }
     }
 
     // pub fn open_trakt_init_popup(&mut self) {
@@ -448,16 +460,16 @@ impl Drawer {
     }
 
     fn render_footer(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
-        let area = frame
-            .area()
-            .resize(Size::new(frame.area().width, 2))
-            .offset(Offset::new(0, frame.area().height as i32 - 2));
+        let area = frame.area();
+        let area = area
+            .resize(Size::new(area.width, 2))
+            .offset(Offset::new(0, area.height as i32 - 2));
 
         frame.render_widget(Clear, area);
         frame.render_widget(Block::new().bg(tailwind::EMERALD.c950), area);
 
         // ↔⇆⬌⬍⮀⬅⬆⬇←↕→↓↹•↵⏎
-        let bind_to_string = |bind: &key_event_handler::Bind| {
+        let bind_to_string = |bind: key_event_handler::Bind| {
             match bind {
                 key_event_handler::Bind::Horizontal => {
                     span!(" ←→ ")
@@ -467,37 +479,40 @@ impl Drawer {
                 key_event_handler::Bind::Esc => span!(" Esc "),
                 key_event_handler::Bind::Tab => span!(" ↹ "),
                 key_event_handler::Bind::Key(x) => {
-                    span!(format!(" {} ", if x == " " { "␣" } else { x }))
+                    span!(format!(" {} ", if x == " " { "␣" } else { &x }))
                 }
                 _ => "_".into(),
             }
             .bold()
             .fg(tailwind::AMBER.c600)
         };
+
+        let num_items_per_row = area.width.div_ceil(20);
         let binds = key_event_handler
-            .get_key_binds_descriptions(self, (area.width / 10 * area.height) as usize);
+            .get_key_binds_descriptions(self, (num_items_per_row * area.height) as usize);
 
-        let num_items_per_row = (binds.len() as f64 / area.height as f64).ceil() as usize;
-        let len_item = ((area.width - 2 * (num_items_per_row.saturating_sub(1) as u16)) as f32
-            / num_items_per_row as f32)
-            .floor() as u16;
-
-        let verts = Layout::vertical(vec![constraint!(==1); area.height as usize]).split(area);
+        let len_item = area.width.div_ceil(num_items_per_row as u16);
+        let verts = (0..area.height)
+            .map(|i| Rect::new(area.x, area.y + i, area.width, 1))
+            .collect_vec();
         let mut areas = verts.iter().flat_map(|&area| {
-            Layout::horizontal(vec![constraint!(==len_item); num_items_per_row])
-                .split(area)
-                .iter()
-                .copied()
+            (0..num_items_per_row as u16)
+                .map(|i| {
+                    Rect::new(
+                        area.x + i * len_item,
+                        area.y,
+                        len_item.min(area.width - i * len_item - 1),
+                        area.height,
+                    )
+                })
                 .collect_vec()
         });
 
-        binds.into_iter().for_each(|x| {
-            let bind = bind_to_string(&x.0);
-            let desc = ellipsize_string(&x.1, len_item as usize - bind.width());
-            frame.render_widget(
-                line![bind, span!(desc).fg(tailwind::SLATE.c500)],
-                areas.next().unwrap(),
-            );
+        binds.into_iter().for_each(|(bind, description)| {
+            let area = areas.next().unwrap();
+            let bind = bind_to_string(bind);
+            let desc = ellipsize_string(&description, area.width as usize - bind.width());
+            frame.render_widget(line![bind, span!(desc).fg(tailwind::SLATE.c500)], area);
         });
     }
 }

@@ -38,14 +38,12 @@ fn send_tmdb_request(
     Ok(response)
 }
 
-fn download_image(client: Client, url: &str, path: PathBuf) -> anyhow::Result<()> {
+fn download_image(client: Client, url: &str, path: PathBuf) -> anyhow::Result<bool> {
     let image_bytes = client.get(url).send()?.bytes()?.into_iter().collect_vec();
 
-    if let Ok(img) = image::load_from_memory(&image_bytes) {
-        img.save(path)?;
-    }
+    image::load_from_memory(&image_bytes)?.save(path)?;
 
-    Ok(())
+    Ok(true)
 }
 
 fn send_request_deserialized<T: for<'a> Deserialize<'a>>(

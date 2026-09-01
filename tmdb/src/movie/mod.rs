@@ -85,6 +85,7 @@ pub fn get_user_watchlist(
         Ok(first_page.results)
     }
 }
+
 pub fn find_movie(access_token: &str, name: &str) -> anyhow::Result<Vec<SearchResult>> {
     let client = ClientBuilder::new().build()?;
     let mut headers = HeaderMap::new();
@@ -118,7 +119,7 @@ pub fn get_movie_user_interaction(
         headers,
         None,
         None,
-        "TMDB: Error while getting movie credits",
+        "TMDB: Error while getting user-movie interactions",
     )
     .map(|x| UserInteraction {
         favorite:  x["favorite"].as_bool().unwrap(),
@@ -219,7 +220,12 @@ pub fn get_movie_recommendations(
     .map(|x| x.results.into_iter().map(|y| y.id).take(5).collect())
 }
 
-pub fn get_movie_details(access_token: &str, movie_id: u32) -> anyhow::Result<MovieDetails> {
+fn get_movie_details_and<T: for<'a> Deserialize<'a>>(
+    access_token: &str,
+    movie_id: u32,
+    extra_details: &[&str],
+    error_context: &str,
+) -> anyhow::Result<T> {
     let client = ClientBuilder::new().build()?;
 
     let mut headers = HeaderMap::new();
@@ -232,12 +238,34 @@ pub fn get_movie_details(access_token: &str, movie_id: u32) -> anyhow::Result<Mo
 
     crate::send_request_deserialized(
         &client,
-        &format!(
-            "https://api.themoviedb.org/3/movie/{movie_id}?append_to_response=account_states,credits,release_dates,recommendations,images"
-        ),
+        &format!("https://api.themoviedb.org/3/movie/{movie_id}"),
         &headers,
         None,
-        None,
+        Some(&[("append_to_response", &extra_details.join(","))]),
+        error_context,
+    )
+}
+
+pub fn get_movie_images(access_token: &str, movie_id: u32) -> anyhow::Result<MovieDetails> {
+    get_movie_details_and(
+        access_token,
+        movie_id,
+        &["images"],
+        "TMDB: Error while getting movie images",
+    )
+}
+
+pub fn get_movie_details(access_token: &str, movie_id: u32) -> anyhow::Result<MovieDetails> {
+    get_movie_details_and(
+        access_token,
+        movie_id,
+        &[
+            "account_states",
+            "credits",
+            "release_dates",
+            "recommendations",
+            "images",
+        ],
         "TMDB: Error while getting movie details",
     )
 }
@@ -304,10 +332,11 @@ pub fn get_rated_movies(access_token: &str, account_id: u32) -> anyhow::Result<V
     }
 }
 
-pub(crate) fn get_movie_images(
+pub fn add_or_edit_rating(
     access_token: &str,
     movie_id: u32,
-) -> anyhow::Result<MovieImagesResponse> {
+    rating: usize,
+) -> anyhow::Result<Response> {
     let client = ClientBuilder::new().build()?;
 
     let mut headers = HeaderMap::new();
@@ -318,13 +347,71 @@ pub(crate) fn get_movie_images(
         format!("Bearer {}", access_token).parse().unwrap(),
     );
 
-    crate::send_request_deserialized(
+    let body = json!({
+        "value": rating
+    });
+
+    crate::send_tmdb_request(
         &client,
-        &format!("https://api.themoviedb.org/3/movie/{movie_id}/images"),
+        &format!("https://api.themoviedb.org/3/movie/{movie_id}/rating"),
+        &headers,
+        Some(&body),
+        None,
+        Method::POST,
+    )
+    .map_err(Into::into)
+}
+
+pub fn delete_rating(access_token: &str, movie_id: u32) -> anyhow::Result<Response> {
+    let client = ClientBuilder::new().build()?;
+
+    let mut headers = HeaderMap::new();
+    headers.insert("accept", "application/json".parse().unwrap());
+    headers.insert("content-type", "application/json".parse().unwrap());
+    headers.insert(
+        "Authorization",
+        format!("Bearer {}", access_token).parse().unwrap(),
+    );
+
+    crate::send_tmdb_request(
+        &client,
+        &format!("https://api.themoviedb.org/3/movie/{movie_id}/rating"),
         &headers,
         None,
         None,
-        "",
+        Method::DELETE,
+    )
+}
+
+pub fn add_or_remove_watchlist(
+    access_token: &str,
+    account_id: u32,
+    movie_id: u32,
+    watchlist: bool,
+) -> anyhow::Result<Response> {
+    let client = ClientBuilder::new().build()?;
+
+    let mut headers = HeaderMap::new();
+    headers.insert("accept", "application/json".parse().unwrap());
+    headers.insert("content-type", "application/json".parse().unwrap());
+    headers.insert(
+        "Authorization",
+        format!("Bearer {}", access_token).parse().unwrap(),
+    );
+
+    let body = json!({
+        "media_type": "movie",
+        "media_id": movie_id,
+        "watchlist": watchlist
+    });
+
+    crate::send_tmdb_request(
+        &client,
+        &format!("https://api.themoviedb.org/3/account/{account_id}/watchlist"),
+        &headers,
+        Some(&body),
+        None,
+        Method::POST,
     )
 }
 
@@ -341,7 +428,11 @@ pub fn get_movie_artworks(
             .unwrap_or_default()
     });
     if movie_images.backdrops.is_empty() || movie_images.posters.is_empty() {
-        if let Ok(images) = get_movie_images(access_token, movie_id) {
+        if let Ok(MovieDetails {
+            images: Some(images),
+            ..
+        }) = get_movie_images(access_token, movie_id)
+        {
             if movie_images.backdrops.is_empty() && !images.backdrops.is_empty() {
                 movie_images.backdrops = images
                     .backdrops
@@ -488,24 +579,26 @@ pub fn get_person_artwork(cache_dir: &Path, access_token: &str, id: u32) -> anyh
     .profile_path;
 
     if let Some(profile_path) = profile_path {
-        let path = cache_dir.join("persons").join(format!("{}.jpg", id));
         crate::download_image(
             client,
             &format!("https://image.tmdb.org/t/p/{}/{}", "w342", profile_path),
-            path,
-        )?;
-
-        return Ok(true);
+            cache_dir
+                .join("persons")
+                .join(id.to_string())
+                .with_extension("jpg"),
+        )
+    } else {
+        Ok(false)
     }
-
-    Ok(false)
 }
 
-pub fn add_or_edit_rating(
+pub fn get_custom_artwork(
+    cache_dir: &Path,
     access_token: &str,
-    movie_id: u32,
-    rating: usize,
-) -> anyhow::Result<Response> {
+    movie_id: Option<u32>,
+    path: &str,
+    backdrop: bool,
+) -> anyhow::Result<bool> {
     let client = ClientBuilder::new().build()?;
 
     let mut headers = HeaderMap::new();
@@ -516,70 +609,24 @@ pub fn add_or_edit_rating(
         format!("Bearer {}", access_token).parse().unwrap(),
     );
 
-    let body = json!({
-        "value": rating
-    });
-
-    crate::send_tmdb_request(
-        &client,
-        &format!("https://api.themoviedb.org/3/movie/{movie_id}/rating"),
-        &headers,
-        Some(&body),
-        None,
-        Method::POST,
-    )
-    .map_err(Into::into)
-}
-
-pub fn delete_rating(access_token: &str, movie_id: u32) -> anyhow::Result<Response> {
-    let client = ClientBuilder::new().build()?;
-
-    let mut headers = HeaderMap::new();
-    headers.insert("accept", "application/json".parse().unwrap());
-    headers.insert("content-type", "application/json".parse().unwrap());
-    headers.insert(
-        "Authorization",
-        format!("Bearer {}", access_token).parse().unwrap(),
-    );
-
-    crate::send_tmdb_request(
-        &client,
-        &format!("https://api.themoviedb.org/3/movie/{movie_id}/rating"),
-        &headers,
-        None,
-        None,
-        Method::DELETE,
-    )
-}
-
-pub fn add_or_remove_watchlist(
-    access_token: &str,
-    account_id: u32,
-    movie_id: u32,
-    watchlist: bool,
-) -> anyhow::Result<Response> {
-    let client = ClientBuilder::new().build()?;
-
-    let mut headers = HeaderMap::new();
-    headers.insert("accept", "application/json".parse().unwrap());
-    headers.insert("content-type", "application/json".parse().unwrap());
-    headers.insert(
-        "Authorization",
-        format!("Bearer {}", access_token).parse().unwrap(),
-    );
-
-    let body = json!({
-        "media_type": "movie",
-        "media_id": movie_id,
-        "watchlist": watchlist
-    });
-
-    crate::send_tmdb_request(
-        &client,
-        &format!("https://api.themoviedb.org/3/account/{account_id}/watchlist"),
-        &headers,
-        Some(&body),
-        None,
-        Method::POST,
+    crate::download_image(
+        client,
+        &format!(
+            "https://image.tmdb.org/t/p/{}{}",
+            if movie_id.is_some() {
+                if backdrop { "w780" } else { "w500" }
+            } else {
+                if backdrop { "w300" } else { "w154" }
+            },
+            path
+        ),
+        if let Some(id) = movie_id {
+            cache_dir
+                .join(if backdrop { "backdrops" } else { "posters" })
+                .join(id.to_string())
+        } else {
+            cache_dir.join("custom").join(path.strip_prefix('/').unwrap_or(path))
+        }
+        .with_extension("jpg"),
     )
 }

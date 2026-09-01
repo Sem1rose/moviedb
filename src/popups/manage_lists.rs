@@ -19,7 +19,7 @@ use crate::{
     key_event_handler::{Data, KeyEventHandler},
     popups::{Popup, PopupTrait},
     types::Entry,
-    widgets::{self, Action, ActionType, ScrollView},
+    widgets::{self, Action, ActionType, ScrollList},
 };
 
 #[derive(Default, Clone, Copy, EnumCount, EnumIter, PartialEq, AsRefStr)]
@@ -78,7 +78,7 @@ impl PopupTrait for ManageListsPopup {
         let popup_area = widgets::window(
             frame,
             helpers::centered_area(28, 74, frame.area()),
-            "Manage Lists",
+            " Manage Lists ",
             false,
         );
         image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));

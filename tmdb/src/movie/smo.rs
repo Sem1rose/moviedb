@@ -107,14 +107,19 @@ pub struct MovieDetails {
     pub backdrop_path:         Option<String>,
     pub credits:               Option<Credits>,
     pub images:                Option<MovieImagesResponse>,
-    #[serde(deserialize_with = "certificate_deserializer", alias = "release_dates")]
+    #[serde(
+        deserialize_with = "certificate_deserializer",
+        alias = "release_dates",
+        default
+    )]
     pub certificate:           Option<String>,
-    #[serde(deserialize_with = "recommendations_deserializer")]
+    #[serde(deserialize_with = "recommendations_deserializer", default)]
     pub recommendations:       Option<Vec<u32>>,
     pub collection_details:    Option<CollectionDetails>,
     #[serde(
         deserialize_with = "user_interaction_deserializer",
-        alias = "account_states"
+        alias = "account_states",
+        default
     )]
     pub user_interaction:      Option<UserInteraction>,
 }

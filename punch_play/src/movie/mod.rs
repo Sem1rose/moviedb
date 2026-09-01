@@ -11,7 +11,7 @@ use serde_json::json;
 use crate::{
     list::smo::ListItem,
     smo::{
-        DetailsResponse, HistoryItem, ItemDetails, PaginatedResponse, RatingsResponse,
+        MovieDetails, HistoryItem, ItemDetails, PaginatedResponse, RatingsResponse,
         SearchResponse,
     },
 };
@@ -65,7 +65,7 @@ pub fn find_movie(name: &str) -> anyhow::Result<Vec<ItemDetails>> {
     .map(|x| x.items)
 }
 
-pub fn get_movie_details(access_token: &str, tmdb_id: u32) -> anyhow::Result<DetailsResponse> {
+pub fn get_movie_details(access_token: &str, tmdb_id: u32) -> anyhow::Result<MovieDetails> {
     let client = ClientBuilder::new().build()?;
 
     let mut headers = HeaderMap::new();
@@ -387,5 +387,4 @@ pub fn add_or_edit_rating(
         None,
         Method::PATCH,
     )
-    .map_err(Into::into)
 }

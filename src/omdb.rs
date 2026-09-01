@@ -19,7 +19,7 @@ impl Display for DetailsResponseError {
 
 #[derive(Deserialize, Debug, Default, Clone)]
 #[serde(rename_all = "PascalCase")]
-pub struct OMDBDetailsResponse {
+pub struct MovieDetails {
     // pub title:       String,
     // pub year:        String,
     // pub rated:       String,
@@ -42,7 +42,7 @@ pub struct OMDBDetailsResponse {
     // pub type: String,
 }
 
-pub fn get_movie_details(omdb_key: &str, imdb_id: &str) -> anyhow::Result<OMDBDetailsResponse> {
+pub fn get_movie_details(omdb_key: &str, imdb_id: &str) -> anyhow::Result<MovieDetails> {
     let client = ClientBuilder::new().build()?;
 
     let query = [("apikey", omdb_key), ("i", imdb_id), ("type", "movie")];
@@ -59,7 +59,5 @@ pub fn get_movie_details(omdb_key: &str, imdb_id: &str) -> anyhow::Result<OMDBDe
         .context("Error while requesting from the omdb API");
     }
 
-    response
-        .json::<OMDBDetailsResponse>()
-        .context("Couldn't parse response")
+    response.json().context("Couldn't parse response")
 }

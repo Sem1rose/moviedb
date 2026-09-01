@@ -39,7 +39,7 @@ pub(crate) struct SearchResponse {
 
 #[derive(Deserialize, Debug, Default, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct DetailsResponse {
+pub struct MovieDetails {
     pub title:            ItemDetails,
     pub interaction:      Option<Interaction>,
     pub watch_history:    Vec<WatchHistory>,

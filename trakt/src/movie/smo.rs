@@ -1,16 +1,16 @@
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug, Default, Clone)]
-pub(crate) struct TraktSearchResponse {
+pub(crate) struct SearchResponse {
     // score: String,
     // type: String,
-    pub movie: TraktSearchResponseMovie,
+    pub movie: SearchResponseMovie,
 }
 #[derive(Deserialize, Debug, Default, Clone)]
-pub struct TraktSearchResponseMovie {
+pub struct SearchResponseMovie {
     pub title:                  String,
     pub year:                   Option<usize>,
-    pub ids:                    TraktSearchResponseID,
+    pub ids:                    SearchResponseID,
     pub tagline:                String,
     pub overview:               String,
     pub runtime:                usize,
@@ -32,10 +32,10 @@ pub struct TraktSearchResponseMovie {
     pub after_credits:          bool,
     pub during_credits:         bool,
     pub certification:          String,
-    // images: TraktMovieImages,
+    // images: MovieImages,
 }
 #[derive(Deserialize, Debug, Default, Clone)]
-pub struct TraktSearchResponseID {
+pub struct SearchResponseID {
     pub trakt: u32,
     pub imdb:  String,
     pub tmdb:  u32,
@@ -44,7 +44,7 @@ pub struct TraktSearchResponseID {
 }
 
 #[derive(Deserialize, Debug, Default, Clone)]
-pub struct TraktDetailsResponse {
+pub struct MovieDetails {
     pub title:                  String,
     pub year:                   Option<usize>,
     pub ids:                    IDs,
@@ -65,10 +65,10 @@ pub struct TraktDetailsResponse {
     pub available_translations: Vec<String>,
     pub genres:                 Vec<String>,
     pub certification:          Option<String>,
-    pub(crate) images:          TraktMovieImages,
+    pub(crate) images:          MovieImages,
 }
 #[derive(Deserialize, Debug, Default, Clone)]
-pub(crate) struct TraktMovieImages {
+pub(crate) struct MovieImages {
     pub fanart: Vec<String>,
     pub poster: Vec<String>,
     pub banner: Vec<String>,

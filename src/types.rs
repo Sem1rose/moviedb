@@ -4,7 +4,7 @@ use chrono::{DateTime, NaiveDate, TimeDelta, Utc};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use log::info;
-use punch_play::smo::{DetailsResponse, HistoryItem as PunchPlayHistoryItem};
+use punch_play::smo::{HistoryItem as PunchPlayHistoryItem, MovieDetails as PunchPlayMovieDetails};
 use ratatui::{
     Terminal,
     backend::CrosstermBackend,
@@ -22,10 +22,10 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use strum::{
     AsRefStr, EnumCount, EnumDiscriminants, EnumIter, FromRepr, IntoEnumIterator, IntoStaticStr,
 };
-use tmdb::smo::{MovieDetails, Person as TMDBPerson};
-use trakt::smo::TraktDetailsResponse;
+use tmdb::smo::{MovieDetails as TMDBMovieDetails, Person as TMDBPerson};
+use trakt::smo::MovieDetails as TraktMovieDetails;
 
-use crate::omdb::OMDBDetailsResponse;
+use crate::omdb::MovieDetails as OMDBMovieDetails;
 pub use crate::pop_criterion;
 
 pub type Term = Terminal<TermBackend>;
@@ -70,10 +70,10 @@ fn set_panic_hook() {
 }
 
 pub struct MovieDetailsResponse {
-    pub tmdb:       Option<MovieDetails>,
-    pub trakt:      Option<TraktDetailsResponse>,
-    pub punch_play: Option<DetailsResponse>,
-    pub omdb:       Option<OMDBDetailsResponse>,
+    pub tmdb:       Option<TMDBMovieDetails>,
+    pub trakt:      Option<TraktMovieDetails>,
+    pub punch_play: Option<PunchPlayMovieDetails>,
+    pub omdb:       Option<OMDBMovieDetails>,
 }
 
 #[allow(clippy::upper_case_acronyms)]
@@ -446,9 +446,12 @@ pub struct Movie {
     pub origin_country:   String,
     pub credits:          Credits,
     pub recommendations:  Vec<u32>,
+
+    pub override_poster:   Option<String>,
+    pub override_backdrop: Option<String>,
 }
-impl From<MovieDetails> for Movie {
-    fn from(tmdb_details: MovieDetails) -> Self {
+impl From<TMDBMovieDetails> for Movie {
+    fn from(tmdb_details: TMDBMovieDetails) -> Self {
         info!("{tmdb_details:#?}");
 
         let (cast, crew) = if let Some(credits) = tmdb_details.credits.as_ref() {
@@ -515,16 +518,19 @@ impl From<MovieDetails> for Movie {
                 .unwrap_or("Unknown".into()),
             credits: Credits { cast, crew },
             recommendations: tmdb_details.recommendations.clone().unwrap_or_default(),
+
+            override_backdrop: None,
+            override_poster: None,
         }
     }
 }
 
 impl Movie {
-    pub fn add_trakt_details(&mut self, _trakt_details: TraktDetailsResponse) {
+    pub fn add_trakt_details(&mut self, _trakt_details: TraktMovieDetails) {
         info!("{_trakt_details:#?}");
     }
 
-    pub fn add_punch_play_details(&mut self, punch_play_details: DetailsResponse) {
+    pub fn add_punch_play_details(&mut self, punch_play_details: PunchPlayMovieDetails) {
         info!("{punch_play_details:#?}");
 
         if self.released {
@@ -574,7 +580,7 @@ impl Movie {
         }
     }
 
-    pub fn add_omdb_details(&mut self, omdb_details: OMDBDetailsResponse) {
+    pub fn add_omdb_details(&mut self, omdb_details: OMDBMovieDetails) {
         info!("{omdb_details:#?}");
 
         let rating = omdb_details.imdb_rating.parse::<f64>();
@@ -644,6 +650,14 @@ impl Movie {
             RatingSource::Popcorn => cmp_rating!(popcorn),
             RatingSource::Tomatoes => cmp_rating!(tomatoes),
         }
+    }
+
+    pub fn override_poster(&mut self, custom_poster: String) {
+        self.override_poster = Some(custom_poster)
+    }
+
+    pub fn override_backdrop(&mut self, custom_backdrop: String) {
+        self.override_backdrop = Some(custom_backdrop)
     }
 }
 

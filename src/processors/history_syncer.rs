@@ -321,13 +321,34 @@ impl HistorySyncerProcessor {
                                     rating,
                                 } => {
                                     thread::spawn(move || {
-                                        tx_sync_response.send((source, item, {
+                                        tx_sync_response.send((source, item, 'label: {
+                                            let response = punch_play::movie::log_watch(
+                                                punch_play_tokens.access_token(),
+                                                movie_id,
+                                                Some(date),
+                                            );
+                                            if response.is_err()
+                                                || (!response
+                                                    .as_ref()
+                                                    .unwrap()
+                                                    .status()
+                                                    .is_success()
+                                                    && response.as_ref().unwrap().status() != 409)
+                                            {
+                                                break 'label response;
+                                            }
+
                                             let response = punch_play::movie::add_or_edit_rating(
                                                 punch_play_tokens.access_token(),
                                                 movie_id,
                                                 Some(rating.trunc() as usize),
                                                 Some(date),
                                             );
+                                            if response.is_err()
+                                                || !response.as_ref().unwrap().status().is_success()
+                                            {
+                                                break 'label response;
+                                            }
 
                                             if punch_play_watchlist_id.is_none() {
                                                 if let Ok(Some(watchlist_id)) =
@@ -343,16 +364,16 @@ impl HistorySyncerProcessor {
                                                     punch_play_watchlist_id = Some(watchlist_id);
                                                 }
                                             }
-
                                             if let Some(&watchlist_id) =
                                                 punch_play_watchlist_id.as_ref()
                                             {
-                                                _ = punch_play::list::remove_item_from_list(
+                                                _ = punch_play::list::remove_id_from_list(
                                                     punch_play_tokens.access_token(),
                                                     watchlist_id,
                                                     movie_id,
                                                 );
                                             }
+
                                             response
                                         }))
                                     });
@@ -466,7 +487,7 @@ impl HistorySyncerProcessor {
                                                 movie_id,
                                                 Some(rating.floor() as usize),
                                                 Some(date),
-                                            ),
+                                            )
                                         ))
                                     });
                                 }
@@ -596,23 +617,21 @@ impl ProcessorTrait for HistorySyncerProcessor {
             return;
         }
 
-        for (source, item, result) in self
-            .rx_sync_response
-            .as_ref()
-            .unwrap()
-            .try_iter()
-            .inspect(|x| info!("{x:#?}"))
-        {
+        for (source, item, result) in self.rx_sync_response.as_ref().unwrap().try_iter() {
             match result {
                 Ok(response) =>
                     if !response.status().is_success() {
                         self.errors.push((
                             source,
                             item,
-                            match response.json::<Value>() {
-                                Ok(err) => err.to_string(),
-                                Err(_) => Default::default(),
-                            },
+                            format!(
+                                "{} {}",
+                                response.status(),
+                                match response.json::<Value>() {
+                                    Ok(err) => err.to_string(),
+                                    Err(_) => Default::default(),
+                                }
+                            ),
                         ));
                     } else {
                         self.progress += 1;

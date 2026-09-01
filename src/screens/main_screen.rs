@@ -39,7 +39,7 @@ use crate::{
         Entry, FilterCriterion, FxIndexMap, List, ListID, ListItem, Movie, RatingSource, Sort,
         pop_criterion,
     },
-    widgets::{self, ContextMenu, ScrollView},
+    widgets::{self, ContextMenu, ScrollList},
 };
 
 #[derive(Default)]
@@ -58,11 +58,12 @@ pub struct MoviesDescription {
     pub overview_scroll: usize,
 }
 
-const CONTEXT_MENU_MODEL: [&str; 5] = [
+const CONTEXT_MENU_MODEL: [&str; 6] = [
     "Add play",
     "Edit",
     "Manage plays",
     "Refetch details",
+    "Change artworks",
     "Delete",
 ];
 pub struct MainScreen {
@@ -84,7 +85,7 @@ pub struct MainScreen {
     pub watched:         Rc<RefCell<FxIndexMap<u32, Entry>>>,
     pub filtered_movies: Vec<Movie>,
 
-    movies_list:        ScrollView,
+    movies_list:        ScrollList,
     movies_description: MoviesDescription,
     sort_popup:         ContextMenu,
     context_menu_pos:   Option<Position>,
@@ -135,7 +136,7 @@ impl MainScreen {
             watched: helpers::default_rc(),
             filtered_movies: vec![],
 
-            movies_list: ScrollView::new(MOVIE_WIDGET_HEIGHT as u16),
+            movies_list: ScrollList::new(MOVIE_WIDGET_HEIGHT as u16),
             movies_description: MoviesDescription::default(),
             sort_popup: ContextMenu::new(vec![], 6, None, false).with_submenu(
                 <usize>::from(Sort::Rating(Default::default())),
@@ -773,6 +774,15 @@ impl MainScreen {
                         );
                     },
                 );
+                key_event_handler.bind_key(
+                    (Some(tab), None),
+                    'm',
+                    "Change artworks".into(),
+                    |app, _| {
+                        app.drawer.open_change_artwork_popup(&app.tmdb_tokens);
+                    },
+                );
+
                 if matches!(self.current_movie(), Some(movie) if movie.released) {
                     key_event_handler.bind_key(
                         (Some(tab), None),
@@ -806,6 +816,7 @@ impl MainScreen {
                         );
                     }
                 }
+
                 if self.list_editable() {
                     key_event_handler.bind_key(
                         (Some(tab), None),
@@ -955,8 +966,7 @@ impl MainScreen {
                 );
             }
 
-            if self.context_menu_model.is_empty() {
-            } else {
+            if !self.context_menu_model.is_empty() {
                 key_event_handler.clear();
 
                 key_event_handler.bind_mouse_button_down(
@@ -1013,7 +1023,7 @@ impl MainScreen {
                 );
 
                 for &i in &self.context_menu_model {
-                    if i == 0 {
+                    if CONTEXT_MENU_MODEL[i] == "Add play" {
                         key_event_handler.bind_key(
                             (None, None),
                             'A',
@@ -1028,7 +1038,7 @@ impl MainScreen {
                                 }
                             },
                         );
-                    } else if i == 1 {
+                    } else if CONTEXT_MENU_MODEL[i] == "Edit" {
                         key_event_handler.bind_key(
                             (None, None),
                             'e',
@@ -1043,7 +1053,7 @@ impl MainScreen {
                                 }
                             },
                         );
-                    } else if i == 2 {
+                    } else if CONTEXT_MENU_MODEL[i] == "Manage plays" {
                         key_event_handler.bind_key(
                             (None, None),
                             'E',
@@ -1058,7 +1068,7 @@ impl MainScreen {
                                 }
                             },
                         );
-                    } else if i == 3 {
+                    } else if CONTEXT_MENU_MODEL[i] == "Refetch details" {
                         key_event_handler.bind_key(
                             (None, None),
                             'R',
@@ -1078,7 +1088,22 @@ impl MainScreen {
                                 }
                             },
                         );
-                    } else if i == 4 {
+                    } else if CONTEXT_MENU_MODEL[i] == "Change artworks" {
+                        key_event_handler.bind_key(
+                            (None, None),
+                            'm',
+                            "Change artworks".into(),
+                            |app, _| {
+                                app.drawer.open_change_artwork_popup(&app.tmdb_tokens);
+
+                                if let Some(Screens::MainScreen(main_screen)) =
+                                    app.drawer.current_screen.as_mut()
+                                {
+                                    main_screen.context_menu_pos = None;
+                                }
+                            },
+                        );
+                    } else if CONTEXT_MENU_MODEL[i] == "Delete" {
                         key_event_handler.bind_key(
                             (None, None),
                             'd',
@@ -1121,20 +1146,22 @@ impl MainScreen {
                         main_screen.context_menu_pos = None;
                         let i = main_screen.context_menu_model
                             [*main_screen.context_menu.choose().first().unwrap()];
-                        if i == 0 {
+                        if CONTEXT_MENU_MODEL[i] == "Add play" {
                             app.drawer.open_add_play_popup();
-                        } else if i == 1 {
+                        } else if CONTEXT_MENU_MODEL[i] == "Edit" {
                             app.drawer.open_edit_movie_popup(&app.watched.borrow());
-                        } else if i == 2 {
+                        } else if CONTEXT_MENU_MODEL[i] == "Manage plays" {
                             app.drawer.open_manage_plays_popup(&app.watched.borrow());
-                        } else if i == 3 {
+                        } else if CONTEXT_MENU_MODEL[i] == "Refetch details" {
                             app.drawer.open_refetch_details_popup(
                                 app.tmdb_tokens.clone(),
                                 app.punch_play_tokens.clone(),
                                 app.trakt_tokens.clone(),
                                 app.omdb_tokens.clone(),
                             );
-                        } else if i == 4 {
+                        } else if CONTEXT_MENU_MODEL[i] == "Change artworks" {
+                            app.drawer.open_change_artwork_popup(&app.tmdb_tokens);
+                        } else if CONTEXT_MENU_MODEL[i] == "Delete" {
                             app.drawer.open_delete_movie_popup(&app.movies.borrow());
                         }
                     }
@@ -1155,25 +1182,27 @@ impl MainScreen {
                 });
 
                 for i in 0..len {
-                    let option_index = self.context_menu_model[i];
+                    let option_index = self.context_menu_model[i + self.context_menu.scroll_pos];
                     key_event_handler.bind_mouse_button_down(
                         ratatui::crossterm::event::MouseButton::Left,
                         mouse_area,
                         move |app, _| {
-                            if option_index == 0 {
+                            if CONTEXT_MENU_MODEL[option_index] == "Add play" {
                                 app.drawer.open_add_play_popup();
-                            } else if option_index == 1 {
+                            } else if CONTEXT_MENU_MODEL[option_index] == "Edit" {
                                 app.drawer.open_edit_movie_popup(&app.watched.borrow());
-                            } else if option_index == 2 {
+                            } else if CONTEXT_MENU_MODEL[option_index] == "Manage plays" {
                                 app.drawer.open_manage_plays_popup(&app.watched.borrow());
-                            } else if option_index == 3 {
+                            } else if CONTEXT_MENU_MODEL[option_index] == "Refetch details" {
                                 app.drawer.open_refetch_details_popup(
                                     app.tmdb_tokens.clone(),
                                     app.punch_play_tokens.clone(),
                                     app.trakt_tokens.clone(),
                                     app.omdb_tokens.clone(),
                                 );
-                            } else if option_index == 4 {
+                            } else if CONTEXT_MENU_MODEL[option_index] == "Change artworks" {
+                                app.drawer.open_change_artwork_popup(&app.tmdb_tokens);
+                            } else if CONTEXT_MENU_MODEL[option_index] == "Delete" {
                                 app.drawer.open_delete_movie_popup(&app.movies.borrow());
                             }
 
@@ -2023,15 +2052,19 @@ impl MainScreen {
             description_lines.push(tagline_lines.pop().unwrap().into());
         }
 
-        let areas = Layout::vertical(vec![constraint!(==1); description_area.height as usize])
-            .split(description_area);
+        let areas = (0..description_area.height)
+            .map(|i| {
+                Rect::new(
+                    description_area.x,
+                    description_area.y + i,
+                    description_area.width,
+                    1,
+                )
+            })
+            .collect_vec();
         for i in (0..description_area.height).rev() {
-            let index = if is_partially_visible {
-                if self.movies_list.alignment_bottom {
-                    i + (MOVIE_WIDGET_HEIGHT as u16 - 1 - area.height)
-                } else {
-                    i
-                }
+            let index = if is_partially_visible && self.movies_list.alignment_bottom {
+                i + (MOVIE_WIDGET_HEIGHT as u16 - 1 - area.height)
             } else {
                 i
             } as usize;
@@ -2090,6 +2123,7 @@ impl MainScreen {
             // },
             ImageID::Movie(self.filtered_movies[movie_index].id, false),
             poster_area,
+            false,
             if is_partially_visible {
                 Some(SignedPosition {
                     x: 0,
@@ -2477,6 +2511,7 @@ impl MainScreen {
             self.drawing_images |= !image_renderer.draw_image(
                 ImageID::Movie(movie.id, true),
                 backdrop_area,
+                false,
                 None,
                 &mut self.throbber_state,
                 frame,
@@ -2485,32 +2520,32 @@ impl MainScreen {
     }
 
     fn draw_ratings(&self, movie: &Movie, frame: &mut Frame, area: Rect) {
-        let imdb_colors = (
+        const IMDB_COLORS: (Color, Color, Color) = (
             Color::Rgb(245, 197, 24),
             Color::Black,
             Color::Rgb(250, 225, 120),
         );
-        let letterboxd_colors = (
+        const LETTERBOXD_COLORS: (Color, Color, Color) = (
             Color::Rgb(0, 192, 48),
             Color::Black,
             Color::Rgb(115, 226, 122),
         );
-        let trakt_colors = (
+        const TRAKT_COLORS: (Color, Color, Color) = (
             Color::Rgb(165, 61, 185),
             Color::White,
             Color::Rgb(230, 140, 245),
         );
-        let tmdb_colors = (
+        const TMDB_COLORS: (Color, Color, Color) = (
             Color::Rgb(42, 187, 209),
             Color::Black,
             Color::Rgb(140, 205, 215),
         );
-        let popcorn_colors = (
+        const POPCORN_COLORS: (Color, Color, Color) = (
             Color::Rgb(255, 114, 33),
             Color::White,
             Color::Rgb(242, 165, 121),
         );
-        let tomatoes_colors = (
+        const TOMATOES_COLORS: (Color, Color, Color) = (
             Color::Rgb(216, 44, 60),
             Color::White,
             Color::Rgb(247, 100, 103),
@@ -2553,35 +2588,35 @@ impl MainScreen {
         let mut labels = line!();
         for (name, rating) in ratings {
             let (bg, fg) = if name == "imdb" {
-                labels.push_span(span!("IMDB").fg(imdb_colors.2));
+                labels.push_span(span!("IMDB").fg(IMDB_COLORS.2));
                 links.push("".to_string());
 
-                (imdb_colors.0, imdb_colors.1)
+                (IMDB_COLORS.0, IMDB_COLORS.1)
             } else if name == "letterboxd" {
-                labels.push_span(span!("Letterboxd").fg(letterboxd_colors.2));
+                labels.push_span(span!("Letterboxd").fg(LETTERBOXD_COLORS.2));
                 links.push("".to_string());
 
-                (letterboxd_colors.0, letterboxd_colors.1)
+                (LETTERBOXD_COLORS.0, LETTERBOXD_COLORS.1)
             } else if name == "trakt" {
-                labels.push_span(span!("Trakt").fg(trakt_colors.2));
+                labels.push_span(span!("Trakt").fg(TRAKT_COLORS.2));
                 links.push("".to_string());
 
-                (trakt_colors.0, trakt_colors.1)
+                (TRAKT_COLORS.0, TRAKT_COLORS.1)
             } else if name == "tmdb" {
-                labels.push_span(span!("TMDB").fg(tmdb_colors.2));
+                labels.push_span(span!("TMDB").fg(TMDB_COLORS.2));
                 links.push(format!("https://www.themoviedb.org/movie/{}", movie.id));
 
-                (tmdb_colors.0, tmdb_colors.1)
+                (TMDB_COLORS.0, TMDB_COLORS.1)
             } else if name == "popcorn" {
-                labels.push_span(span!("Popcorn").fg(popcorn_colors.2));
+                labels.push_span(span!("Popcorn").fg(POPCORN_COLORS.2));
                 links.push("".to_string());
 
-                (popcorn_colors.0, popcorn_colors.1)
+                (POPCORN_COLORS.0, POPCORN_COLORS.1)
             } else if name == "tomatoes" {
-                labels.push_span(span!("Tomatoes").fg(tomatoes_colors.2));
+                labels.push_span(span!("Tomatoes").fg(TOMATOES_COLORS.2));
                 links.push("".to_string());
 
-                (tomatoes_colors.0, tomatoes_colors.1)
+                (TOMATOES_COLORS.0, TOMATOES_COLORS.1)
             } else {
                 continue;
             };
@@ -2715,8 +2750,9 @@ impl MainScreen {
                     helpers::add_padding(area, Padding::left(2)),
                 );
 
-                let areas =
-                    Layout::vertical(vec![constraint!(==1); area.height as usize]).split(area);
+                let areas = (0..area.height)
+                    .map(|i| Rect::new(area.x, area.y + i, area.width, 1))
+                    .collect_vec();
 
                 let rating_color = if play.rating >= 9.0 {
                     tailwind::SKY.c400

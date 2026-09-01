@@ -10,13 +10,13 @@ use reqwest::{
 use crate::{
     download_image, send_trakt_request,
     smo::{
-        TokenResponseError, TraktDetailsResponse, TraktSearchResponse, TraktSearchResponseMovie,
+        TokenResponseError, MovieDetails, SearchResponse, SearchResponseMovie,
     },
 };
 
 pub(crate) mod smo;
 
-pub fn find_movie(client_id: &str, name: &str) -> anyhow::Result<Vec<TraktSearchResponseMovie>> {
+pub fn find_movie(client_id: &str, name: &str) -> anyhow::Result<Vec<SearchResponseMovie>> {
     let client = ClientBuilder::new().build()?;
 
     let mut headers = HeaderMap::new();
@@ -42,11 +42,11 @@ pub fn find_movie(client_id: &str, name: &str) -> anyhow::Result<Vec<TraktSearch
         .context(format!("Trakt: Error while searching for movie: {}", name));
     }
 
-    let json = search_response.json::<Vec<TraktSearchResponse>>()?;
+    let json = search_response.json::<Vec<SearchResponse>>()?;
     Ok(json.into_iter().map(|x| x.movie).collect_vec())
 }
 
-pub fn get_movie_details(client_id: &str, imdb_id: &str) -> anyhow::Result<TraktDetailsResponse> {
+pub fn get_movie_details(client_id: &str, imdb_id: &str) -> anyhow::Result<MovieDetails> {
     let client = ClientBuilder::new().build()?;
 
     let mut headers = HeaderMap::new();

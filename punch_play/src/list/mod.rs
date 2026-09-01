@@ -5,32 +5,12 @@ use reqwest::{
     header::HeaderMap,
 };
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::json;
 
 use crate::list::smo::ListDetails;
 
 pub mod smo;
 
-pub fn test(access_token: &str, id: u32) -> anyhow::Result<Value> {
-    let client = ClientBuilder::new().build()?;
-
-    let mut headers = HeaderMap::new();
-    headers.insert("accept", "application/json".parse().unwrap());
-    headers.insert("content-type", "application/json".parse().unwrap());
-    headers.insert(
-        "Authorization",
-        format!("Bearer {}", access_token).parse().unwrap(),
-    );
-
-    crate::send_request_deserialized(
-        &client,
-        &format!("https://punchplay.tv/api/platform/v1/lists/{id}"),
-        &headers,
-        None,
-        None,
-        "PunchPlay: Error while getting list details",
-    )
-}
 pub fn get_user_lists(access_token: &str) -> anyhow::Result<Vec<ListDetails>> {
     let client = ClientBuilder::new().build()?;
 
@@ -87,7 +67,7 @@ pub fn add_item_to_list(
     item_id: u32,
 ) -> anyhow::Result<Response> {
     let client = ClientBuilder::new().build()?;
-    
+
     let mut headers = HeaderMap::new();
     headers.insert("accept", "application/json".parse().unwrap());
     headers.insert("content-type", "application/json".parse().unwrap());
@@ -101,7 +81,7 @@ pub fn add_item_to_list(
         "sourceId": item_id,
         "title": ""
     });
-    
+
     crate::send_punch_play_request(
         &client,
         &format!("https://punchplay.tv/api/platform/v1/lists/{list_id}/items"),
@@ -118,7 +98,7 @@ pub fn remove_item_from_list(
     item_id: u32,
 ) -> anyhow::Result<Response> {
     let client = ClientBuilder::new().build()?;
-    
+
     let mut headers = HeaderMap::new();
     headers.insert("accept", "application/json".parse().unwrap());
     headers.insert("content-type", "application/json".parse().unwrap());
@@ -126,7 +106,7 @@ pub fn remove_item_from_list(
         "Authorization",
         format!("Bearer {}", access_token).parse().unwrap(),
     );
-    
+
     crate::send_punch_play_request(
         &client,
         &format!("https://punchplay.tv/api/platform/v1/lists/{list_id}/items/{item_id}"),

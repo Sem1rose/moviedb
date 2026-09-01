@@ -9,12 +9,12 @@ use itertools::Itertools;
 use log::error;
 use punch_play::{
     self,
-    smo::{DetailsResponse, ItemDetails as PunchPlayItemDetails},
+    smo::{ItemDetails as PunchPlayItemDetails, MovieDetails as PunchPlayMovieDetails},
 };
 use ratatui::{
     Frame,
     crossterm::event::KeyCode,
-    layout::{HorizontalAlignment, Layout, Margin, Offset, Position, Size},
+    layout::{HorizontalAlignment, Margin, Offset, Position, Rect, Size},
     macros::{constraint, horizontal, line, span, vertical},
     style::{
         Modifier, Style, Stylize,
@@ -31,7 +31,7 @@ use tmdb::{
 };
 use trakt::{
     self,
-    smo::{TraktDetailsResponse, TraktSearchResponseMovie},
+    smo::{MovieDetails as TraktMovieDetails, SearchResponseMovie as TraktSearchResponseMovie},
 };
 
 use crate::{
@@ -39,11 +39,11 @@ use crate::{
     helpers,
     image_backend::RatatuiImage,
     key_event_handler::{self, KeyEventHandler},
-    omdb::OMDBDetailsResponse,
+    omdb::MovieDetails as OMDBMovieDetails,
     popups::{Popup, PopupTrait},
     tokens::{OMDBTokens, PunchPlayTokens, TMDBTokens, TraktTokens},
     types::MovieDetailsResponse,
-    widgets::{self, Action, ActionType, ScrollView},
+    widgets::{self, Action, ActionType, ScrollList},
 };
 
 #[derive(Default)]
@@ -106,7 +106,7 @@ pub struct AddMoviePopup {
     pub phase:        Phase,
     throbber_visible: bool,
     item:             usize,
-    scrollview:       ScrollView,
+    scrollview:       ScrollList,
 
     input0:         TextArea<'static>,
     input1:         TextArea<'static>,
@@ -120,10 +120,10 @@ pub struct AddMoviePopup {
     pub refetch_details:                 bool,
     pub user_rating:                     f64,
     pub date:                            DateTime<Utc>,
-    pub trakt_movie_details_result:      Option<TraktDetailsResponse>,
-    pub punch_play_movie_details_result: Option<DetailsResponse>,
+    pub trakt_movie_details_result:      Option<TraktMovieDetails>,
+    pub punch_play_movie_details_result: Option<PunchPlayMovieDetails>,
     pub tmdb_movie_details_result:       Option<TMDBMovieDetails>,
-    pub omdb_movie_details_result:       Option<OMDBDetailsResponse>,
+    pub omdb_movie_details_result:       Option<OMDBMovieDetails>,
     rx_details_response:                 Option<Receiver<anyhow::Result<MovieDetailsResponse>>>,
 
     tmdb_tokens:       TMDBTokens,
@@ -149,7 +149,7 @@ impl AddMoviePopup {
             trakt_tokens,
             omdb_tokens,
             take_rating,
-            scrollview: ScrollView::new(5),
+            scrollview: ScrollList::new(5),
 
             _cache_dir: cache_dir.to_path_buf(),
             ..Default::default()
@@ -536,8 +536,9 @@ impl PopupTrait for AddMoviePopup {
                         );
 
                         let result = &self.search_results.as_ref().unwrap()[index];
-                        let areas = Layout::vertical(vec![constraint!(==1); area.height as usize])
-                            .split(area);
+                        let areas = (0..area.height)
+                            .map(|i| Rect::new(area.x, area.y + i, area.width, 1))
+                            .collect_vec();
                         for i in 0..area.height {
                             let index = if area.height < scroll_view.item_height {
                                 if scroll_view.alignment_bottom {

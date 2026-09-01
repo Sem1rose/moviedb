@@ -44,14 +44,14 @@ pub fn get_collection_artwork(
     );
 
     if let Some(profile_path) = collection_details.poster_path {
-        let path = cache_dir.join("collections").join(format!("{}.jpg", id));
         crate::download_image(
             client,
             &format!("https://image.tmdb.org/t/p/{}/{}", "w500", profile_path),
-            path,
-        )?;
-
-        Ok(true)
+            cache_dir
+                .join("collections")
+                .join(id.to_string())
+                .with_extension("jpg"),
+        )
     } else {
         Ok(false)
     }

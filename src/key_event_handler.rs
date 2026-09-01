@@ -1,10 +1,9 @@
-use std::collections::HashMap;
-
 use itertools::Itertools;
 use ratatui::{
     crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind},
     layout::{Position, Rect},
 };
+use rustc_hash::FxHashMap;
 
 use crate::{app::App, drawer::Drawer};
 
@@ -49,9 +48,9 @@ impl Bind {
 
 #[derive(Default)]
 pub struct KeyEventHandler {
-    key_binds:         HashMap<(Bind, State), (String, Callback)>,
+    key_binds:         FxHashMap<(Bind, State), (String, Callback)>,
     execute_immediate: Vec<Callback>,
-    mouse_binds:       HashMap<(usize, Bind, Rect), Callback>,
+    mouse_binds:       FxHashMap<(usize, Bind, Rect), Callback>,
 
     semi_bind: Option<char>,
 }

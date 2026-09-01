@@ -1,5 +1,6 @@
 mod add_movie;
 mod advanced_filter;
+mod change_artworks;
 mod delete_movie;
 mod fetch_movies;
 mod manage_lists;
@@ -13,6 +14,7 @@ mod trakt_init;
 
 pub use add_movie::{AddMoviePopup, Phase as AddMoviePopupPhase};
 pub use advanced_filter::AdvancedFilterPopup;
+pub use change_artworks::ChangeArtworksPopup;
 pub use delete_movie::DeleteMoviePopup;
 pub use fetch_movies::FetchMoviesPopup;
 pub use manage_lists::ManageListsPopup;
@@ -30,6 +32,7 @@ pub enum Popup {
     AddMovie(Box<AddMoviePopup>),
     ManagePlays(Box<ManagePlaysPopup>),
     ManageLists(Box<ManageListsPopup>),
+    ChangeArtworks(Box<ChangeArtworksPopup>),
     DeleteMovie(Box<DeleteMoviePopup>),
     TMDBInit(Box<TMDBInitPopup>),
     SimklInit(Box<SimklInitPopup>),
@@ -47,6 +50,7 @@ impl Popup {
             Popup::AddMovie(add_movie_popup) => &**add_movie_popup,
             Popup::ManagePlays(manage_plays_popup) => &**manage_plays_popup,
             Popup::ManageLists(manage_lists_popup) => &**manage_lists_popup,
+            Popup::ChangeArtworks(change_artwork_popup) => &**change_artwork_popup,
             Popup::DeleteMovie(delete_movie_popup) => &**delete_movie_popup,
             Popup::TMDBInit(tmdbinit_popup) => &**tmdbinit_popup,
             Popup::SimklInit(simkl_popup) => &**simkl_popup,
@@ -64,6 +68,7 @@ impl Popup {
             Popup::AddMovie(add_movie_popup) => &mut **add_movie_popup,
             Popup::ManagePlays(manage_plays_popup) => &mut **manage_plays_popup,
             Popup::ManageLists(manage_lists_popup) => &mut **manage_lists_popup,
+            Popup::ChangeArtworks(change_artwork_popup) => &mut **change_artwork_popup,
             Popup::DeleteMovie(delete_movie_popup) => &mut **delete_movie_popup,
             Popup::TMDBInit(tmdbinit_popup) => &mut **tmdbinit_popup,
             Popup::SimklInit(simkl_popup) => &mut **simkl_popup,
