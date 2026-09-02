@@ -4,7 +4,6 @@ use std::{
 };
 
 use anyhow::anyhow;
-use log::info;
 use ratatui::{
     layout::{HorizontalAlignment, Margin},
     macros::vertical,
@@ -487,7 +486,7 @@ impl HistorySyncerProcessor {
                                                 movie_id,
                                                 Some(rating.floor() as usize),
                                                 Some(date),
-                                            )
+                                            ),
                                         ))
                                     });
                                 }

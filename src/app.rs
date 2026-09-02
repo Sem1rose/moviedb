@@ -11,6 +11,7 @@ use crate::{
     config::Config,
     drawer::Drawer,
     helpers::{default_rc, new_rc},
+    image_backend::ImageID,
     key_event_handler::KeyEventHandler,
     load_file, omdb,
     popups::Popup,
@@ -279,9 +280,10 @@ impl App {
                 &dirs::cache_dir()
                     .expect("Couldn't get user's cache dir")
                     .join("moviedb"),
-                &tmdb_tokens.access_token(),
-                tmdb_result.as_ref(),
+                tmdb_tokens.access_token(),
+                tmdb_result.clone(),
                 tmdb_id,
+                None,
             );
 
             Ok(MovieDetailsResponse {
@@ -807,6 +809,92 @@ impl App {
         }
 
         self.save_data(false, true, false, false);
+    }
+
+    pub fn change_movie_artworks(&mut self) {
+        let mut updated = false;
+        if let Some(Popup::ChangeArtworks(change_artworks_popup)) =
+            self.drawer.active_popup.as_mut()
+        {
+            self.movies
+                .borrow_mut()
+                .entry(change_artworks_popup.movie_id)
+                .and_modify(|movie| {
+                    let backdrop = if change_artworks_popup.chosen_backdrop == 0 {
+                        None
+                    } else if let Some(tmdb::smo::MovieDetails {
+                        images: Some(images),
+                        ..
+                    }) = change_artworks_popup.movie_images.as_ref()
+                    {
+                        Some(
+                            images.backdrops[change_artworks_popup.chosen_backdrop - 1]
+                                .file_path
+                                .clone(),
+                        )
+                    } else {
+                        unreachable!()
+                    };
+
+                    let poster = if change_artworks_popup.chosen_poster == 0 {
+                        None
+                    } else if let Some(tmdb::smo::MovieDetails {
+                        images: Some(images),
+                        ..
+                    }) = change_artworks_popup.movie_images.as_ref()
+                    {
+                        Some(
+                            images.posters[change_artworks_popup.chosen_poster - 1]
+                                .file_path
+                                .clone(),
+                        )
+                    } else {
+                        unreachable!()
+                    };
+
+                    info!(
+                        "{backdrop:?} {:?}\n{poster:?} {:?}",
+                        movie.override_backdrop, movie.override_poster
+                    );
+
+                    if backdrop != movie.override_backdrop {
+                        movie.override_backdrop = backdrop;
+                        self.drawer.image_renderer.delete_image_file(ImageID::Movie(
+                            change_artworks_popup.movie_id,
+                            None,
+                            true,
+                        ));
+                        self.drawer.image_renderer.hash_image(ImageID::Movie(
+                            change_artworks_popup.movie_id,
+                            movie.override_backdrop.clone(),
+                            true,
+                        ));
+                        updated = true;
+                    }
+                    if poster != movie.override_poster {
+                        movie.override_poster = poster;
+                        self.drawer.image_renderer.delete_image_file(ImageID::Movie(
+                            change_artworks_popup.movie_id,
+                            None,
+                            false,
+                        ));
+                        self.drawer.image_renderer.hash_image(ImageID::Movie(
+                            change_artworks_popup.movie_id,
+                            movie.override_poster.clone(),
+                            false,
+                        ));
+                        updated = true;
+                    }
+                });
+        }
+
+        if updated {
+            if let Some(Screens::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
+                main_screen.filter_sort_movies(true);
+            }
+        }
+
+        self.save_data(true, false, false, false);
     }
 
     pub fn set_tmdb_user_tokens(&mut self) {

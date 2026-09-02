@@ -2,7 +2,7 @@ use serde::Deserialize;
 
 use crate::smo::SearchResult;
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct CollectionDetails {
     pub id:            u32,
     pub name:          String,

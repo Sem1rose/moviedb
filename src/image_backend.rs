@@ -1,11 +1,13 @@
 use std::{
-    path::Path,
+    fs,
+    hash::Hash,
+    path::{Path, PathBuf},
     sync::mpsc::{self, Receiver, Sender},
     thread,
 };
 
-use anyhow::bail;
-use log::{error, info, warn};
+use anyhow::{anyhow, bail};
+use log::error;
 use ratatui::{
     Frame,
     layout::{Rect, Size},
@@ -20,25 +22,27 @@ use throbber_widgets_tui::{BRAILLE_SIX_DOUBLE, Throbber, ThrobberState};
 
 use crate::{helpers, types::FxIndexMap};
 
-#[derive(PartialEq, Eq, Hash, Clone, Debug, EnumDiscriminants)]
+#[derive(PartialEq, Eq, Clone, Debug, EnumDiscriminants)]
 #[strum_discriminants(derive(Hash))]
 pub enum ImageID {
-    Movie(u32, bool),
+    Movie(u32, Option<String>, bool),
     Collection(u32, bool),
     Person(u32),
-    Custom(Option<u32>, String, bool),
+    Custom(String, bool),
 }
-impl ImageID {
-    pub fn get_discriminant(&self) -> ImageIDDiscriminants {
+
+impl Hash for ImageID {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         match self {
-            ImageID::Custom(Some(_), _, _) => ImageIDDiscriminants::Movie,
-            _ => self.discriminant(),
+            ImageID::Movie(id, _, backdrop) => (id, backdrop).hash(state),
+            _ => core::mem::discriminant(self).hash(state),
         }
     }
 }
 
 type LoadResult = (ImageID, anyhow::Result<Result<SlicedProtocol, bool>>);
 
+#[derive(Debug)]
 enum Actions {
     Load(ImageID),
     Resize(ImageIDDiscriminants, [Size; 2]),
@@ -65,6 +69,8 @@ pub struct RatatuiImage {
 
     tx_load: Sender<Actions>,
     rx_main: Receiver<LoadResult>,
+
+    cache_dir: PathBuf,
 }
 impl RatatuiImage {
     pub fn new(cache_dir: &Path) -> Self {
@@ -80,6 +86,8 @@ impl RatatuiImage {
 
             tx_load,
             rx_main,
+
+            cache_dir: cache_dir.to_path_buf(),
         }
     }
 
@@ -102,43 +110,21 @@ impl RatatuiImage {
                     Actions::Load(image_id) => {
                         let tx_main = tx_main.clone();
 
-                        let path = match &image_id {
-                            &ImageID::Movie(id, backdrop) => if backdrop {
-                                cache_dir.join("backdrops")
-                            } else {
-                                cache_dir.join("posters")
-                            }
-                            .join(id.to_string())
-                            .with_extension("jpg"),
-                            &ImageID::Collection(id, _backdrop) => cache_dir
-                                .join("collections")
-                                .join(id.to_string())
-                                .with_extension("jpg"),
-                            &ImageID::Person(id) => cache_dir
-                                .join("persons")
-                                .join(id.to_string())
-                                .with_extension("jpg"),
-                            &ImageID::Custom(Some(id), _, backdrop) => if backdrop {
-                                cache_dir.join("backdrops")
-                            } else {
-                                cache_dir.join("posters")
-                            }
-                            .join(id.to_string())
-                            .with_extension("jpg"),
-                            ImageID::Custom(None, path, _) => cache_dir
-                                .join("custom")
-                                .join(path.strip_prefix('/').unwrap_or(path))
-                                .with_extension("jpg"),
-                        };
+                        let path = Self::path_from_image_id(&image_id, &cache_dir);
 
                         if path.is_file() {
-                            let size = sizes[&image_id.get_discriminant()][matches!(
+                            let size = sizes[&image_id.discriminant()][matches!(
                                 image_id,
-                                ImageID::Movie(_, true)
+                                ImageID::Movie(_, _, true)
                                     | ImageID::Collection(_, true)
-                                    | ImageID::Custom(_, _, true)
+                                    | ImageID::Custom(_, true)
                             )
                                 as usize];
+
+                            if size.width == 0 || size.height == 0 {
+                                _ = tx_main.send((image_id, Err(anyhow!("Size not initialized."))));
+                                continue;
+                            }
 
                             let picker = picker.clone();
                             thread::spawn(move || {
@@ -170,12 +156,22 @@ impl RatatuiImage {
                             let tmdb_access_token = tmdb_access_token.as_ref().unwrap().clone();
                             thread::spawn(move || {
                                 let result = match &image_id {
-                                    &ImageID::Movie(id, false) => tmdb::movie::get_movie_artworks(
-                                        &cache_dir,
-                                        tmdb_access_token.as_str(),
-                                        None,
-                                        id,
-                                    ),
+                                    ImageID::Movie(id, Some(path), backdrop) =>
+                                        tmdb::movie::get_custom_artwork(
+                                            &cache_dir,
+                                            tmdb_access_token.as_str(),
+                                            Some(*id),
+                                            path,
+                                            *backdrop,
+                                        ),
+                                    &ImageID::Movie(id, None, backdrop) =>
+                                        tmdb::movie::get_movie_artworks(
+                                            &cache_dir,
+                                            tmdb_access_token.as_str(),
+                                            None,
+                                            id,
+                                            Some(backdrop),
+                                        ),
                                     &ImageID::Collection(id, false) =>
                                         tmdb::collection::get_collection_artwork(
                                             &cache_dir,
@@ -187,11 +183,11 @@ impl RatatuiImage {
                                         tmdb_access_token.as_str(),
                                         id,
                                     ),
-                                    ImageID::Custom(id, path, backdrop) =>
+                                    ImageID::Custom(path, backdrop) =>
                                         tmdb::movie::get_custom_artwork(
                                             &cache_dir,
                                             tmdb_access_token.as_str(),
-                                            *id,
+                                            None,
                                             path,
                                             *backdrop,
                                         ),
@@ -213,6 +209,37 @@ impl RatatuiImage {
         });
 
         tx_load
+    }
+
+    fn path_from_image_id(image_id: &ImageID, cache_dir: &Path) -> PathBuf {
+        match image_id {
+            &ImageID::Movie(id, _, backdrop) => if backdrop {
+                cache_dir.join("backdrops")
+            } else {
+                cache_dir.join("posters")
+            }
+            .join(id.to_string())
+            .with_extension("jpg"),
+            ImageID::Collection(id, _backdrop) => cache_dir
+                .join("collections")
+                .join(id.to_string())
+                .with_extension("jpg"),
+            ImageID::Person(id) => cache_dir
+                .join("persons")
+                .join(id.to_string())
+                .with_extension("jpg"),
+            ImageID::Custom(path, _) => cache_dir
+                .join("custom")
+                .join(path.strip_prefix('/').unwrap_or(path))
+                .with_extension("jpg"),
+        }
+    }
+
+    pub fn delete_image_file(&mut self, image_id: ImageID) {
+        let path = Self::path_from_image_id(&image_id, &self.cache_dir);
+        if let Err(error) = fs::remove_file(path) {
+            error!("Error while trying to delete {image_id:?}: {error:#?}");
+        }
     }
 
     pub fn hash_image(&mut self, image_id: ImageID) {
@@ -238,9 +265,10 @@ impl RatatuiImage {
                         if result {
                             // downloaded successfully
                             match image_id {
-                                ImageID::Movie(id, _) => {
-                                    _ = self.tx_load.send(Actions::Load(ImageID::Movie(id, true)));
-                                    _ = self.tx_load.send(Actions::Load(ImageID::Movie(id, false)));
+                                ImageID::Movie(id, path, backdrop) => {
+                                    _ = self
+                                        .tx_load
+                                        .send(Actions::Load(ImageID::Movie(id, path, backdrop)));
                                 }
                                 ImageID::Collection(id, _) =>
                                     _ = self
@@ -248,10 +276,10 @@ impl RatatuiImage {
                                         .send(Actions::Load(ImageID::Collection(id, false))),
                                 ImageID::Person(id) =>
                                     _ = self.tx_load.send(Actions::Load(ImageID::Person(id))),
-                                ImageID::Custom(id, path, backdrop) =>
+                                ImageID::Custom(path, backdrop) =>
                                     _ = self
                                         .tx_load
-                                        .send(Actions::Load(ImageID::Custom(id, path, backdrop))),
+                                        .send(Actions::Load(ImageID::Custom(path, backdrop))),
                             }
                         } else {
                             error!("Unable to download {image_id:?}");
@@ -280,23 +308,23 @@ impl RatatuiImage {
     ) -> bool {
         let size_index = matches!(
             image_id,
-            ImageID::Movie(_, true) | ImageID::Collection(_, true) | ImageID::Custom(_, _, true)
+            ImageID::Movie(_, _, true) | ImageID::Collection(_, true) | ImageID::Custom(_, true)
         ) as usize;
 
         if sliced_pos.is_none() {
-            let size = self.sizes.get_mut(&image_id.get_discriminant()).unwrap();
+            let size = self.sizes.get_mut(&image_id.discriminant()).unwrap();
             if size[size_index] != area.as_size() {
                 size[size_index] = area.as_size();
                 _ = self
                     .tx_load
-                    .send(Actions::Resize(image_id.get_discriminant(), *size));
+                    .send(Actions::Resize(image_id.discriminant(), *size));
 
                 self.hashed_images.retain(|k, _| {
-                    ImageIDDiscriminants::from(k) != image_id.get_discriminant()
+                    ImageIDDiscriminants::from(k) != image_id.discriminant()
                         || match k {
-                            ImageID::Movie(_, backdrop)
+                            ImageID::Movie(_, _, backdrop)
                             | ImageID::Collection(_, backdrop)
-                            | ImageID::Custom(_, _, backdrop) => *backdrop as usize != size_index,
+                            | ImageID::Custom(_, backdrop) => *backdrop as usize != size_index,
                             ImageID::Person(_) => false,
                         }
                 });

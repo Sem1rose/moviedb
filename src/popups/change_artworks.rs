@@ -4,17 +4,17 @@ use std::{
     time::Duration,
 };
 
-use log::{error, info};
+use log::error;
 use ratatui::{
     Frame,
-    layout::{Margin, Offset, Rect, Size},
-    macros::{constraint, horizontal, line, vertical},
-    style::{Stylize, palette::tailwind},
-    symbols::{block, border},
+    layout::{HorizontalAlignment, Margin, Offset, Rect, Size},
+    macros::{constraint, line, vertical},
+    style::{Style, Stylize, palette::tailwind},
+    symbols::border,
     widgets::{Block, Borders, Fill, Padding},
 };
 use ratatui_image::sliced::SignedPosition;
-use throbber_widgets_tui::ThrobberState;
+use throbber_widgets_tui::{Throbber, ThrobberState, symbols::throbber};
 use tmdb::smo::MovieDetails as TMDBMovieDetails;
 
 use crate::{
@@ -23,60 +23,62 @@ use crate::{
     key_event_handler::{Data, KeyEventHandler},
     popups::{Popup, PopupTrait},
     types::Movie,
-    widgets::{self, Direction, ScrollGallery},
+    widgets::{self, Action, ActionType, Direction, ScrollGallery},
 };
 
 const POSTER_SIZE: Size = Size {
-    width:  13,
-    height: 9,
+    width:  16,
+    height: 11,
 };
 const BACKDROP_SIZE: Size = Size {
-    width:  21,
-    height: 7,
+    width:  25,
+    height: 8,
 };
 const POSTER_WINDOW_SIZE: Size = Size {
-    width:  55,
-    height: 29,
+    width:  67,
+    height: 33,
 };
 const BACKDROP_WINDOW_SIZE: Size = Size {
-    width:  66,
-    height: 24,
+    width:  78,
+    height: 27,
 };
 #[derive(Default)]
 pub struct ChangeArtworksPopup {
-    item:           usize,
     backdrops:      bool,
     tick:           u64,
     throbber_state: ThrobberState,
-    drawing_images: bool,
+    images_drawn:   bool,
 
-    chosen_poster:   Option<String>,
-    chosen_backdrop: Option<String>,
+    pub chosen_poster:   usize,
+    pub chosen_backdrop: usize,
+
+    movie_override_poster:   Option<String>,
+    movie_override_backdrop: Option<String>,
 
     gallery: ScrollGallery,
 
-    movie_images:        Option<TMDBMovieDetails>,
+    pub movie_images:    Option<TMDBMovieDetails>,
     rx_details_response: Option<Receiver<anyhow::Result<TMDBMovieDetails>>>,
 
-    movie_id:          u32,
+    pub movie_id:      u32,
     tmdb_access_token: String,
 }
 
 impl ChangeArtworksPopup {
     pub fn new(movie: &Movie, tmdb_access_token: &str) -> Self {
         Self {
-            chosen_poster: movie.override_poster.clone(),
-            chosen_backdrop: movie.override_backdrop.clone(),
+            movie_override_backdrop: movie.override_backdrop.clone(),
+            movie_override_poster: movie.override_poster.clone(),
+            movie_id: movie.id,
 
             gallery: ScrollGallery::new(POSTER_SIZE),
 
             ..Default::default()
         }
-        // .start_thread(movie, tmdb_access_token)
+        .start_thread(tmdb_access_token)
     }
 
-    fn start_thread(mut self, movie: &Movie, tmdb_access_token: &str) -> Self {
-        self.movie_id = movie.id;
+    fn start_thread(mut self, tmdb_access_token: &str) -> Self {
         self.tmdb_access_token = tmdb_access_token.to_string();
 
         let (tx_details_response, rx_details_response) = mpsc::channel();
@@ -93,11 +95,11 @@ impl ChangeArtworksPopup {
 
 impl PopupTrait for ChangeArtworksPopup {
     fn get_state(&self) -> (Option<usize>, Option<usize>) {
-        (None, Some(self.item))
+        (None, None)
     }
 
     fn update_next_frame(&self) -> bool {
-        self.drawing_images || self.movie_images.is_none()
+        !self.images_drawn || self.movie_images.is_none()
     }
 
     fn update(&mut self) {
@@ -111,6 +113,34 @@ impl PopupTrait for ChangeArtworksPopup {
                 if let Ok(result) = rx_details_response.try_recv() {
                     match result {
                         Ok(images) => {
+                            if let Some(backdrop) = self.movie_override_backdrop.take() {
+                                if let Some(position) = images
+                                    .images
+                                    .as_ref()
+                                    .map(|images| {
+                                        images
+                                            .backdrops
+                                            .iter()
+                                            .position(|x| x.file_path == backdrop)
+                                    })
+                                    .flatten()
+                                {
+                                    self.chosen_backdrop = position + 1;
+                                }
+                            }
+                            if let Some(poster) = self.movie_override_poster.take() {
+                                if let Some(position) = images
+                                    .images
+                                    .as_ref()
+                                    .map(|images| {
+                                        images.posters.iter().position(|x| x.file_path == poster)
+                                    })
+                                    .flatten()
+                                {
+                                    self.chosen_poster = position + 1;
+                                }
+                            }
+
                             self.movie_images = Some(images);
                             _ = self.rx_details_response.take();
                         }
@@ -149,6 +179,28 @@ impl PopupTrait for ChangeArtworksPopup {
         );
         key_event_handler.bind_key((None, None), 'q', "Close".into(), |app, _| {
             app.drawer.close_popup();
+        });
+        key_event_handler.bind_esc((None, None), "Close".into(), |app, _| {
+            app.drawer.close_popup();
+        });
+
+        key_event_handler.bind_tab((None, None), "Change tab".into(), |app, _| {
+            if let Some(Popup::ChangeArtworks(change_artworks_popup)) =
+                app.drawer.active_popup.as_mut()
+            {
+                change_artworks_popup.backdrops ^= true;
+                change_artworks_popup.gallery =
+                    ScrollGallery::new(if change_artworks_popup.backdrops {
+                        BACKDROP_SIZE
+                    } else {
+                        POSTER_SIZE
+                    });
+                change_artworks_popup.gallery.selected_index = if change_artworks_popup.backdrops {
+                    change_artworks_popup.chosen_backdrop
+                } else {
+                    change_artworks_popup.chosen_poster
+                };
+            }
         });
 
         let popup_area = widgets::window(
@@ -243,13 +295,23 @@ impl PopupTrait for ChangeArtworksPopup {
                 ratatui::crossterm::event::MouseButton::Left,
                 area,
                 move |app, _| {
-                    if let Some(Popup::ChangeArtworks(change_artwork_popup)) =
+                    if let Some(Popup::ChangeArtworks(change_artworks_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
-                        if change_artwork_popup.backdrops != tab {
-                            change_artwork_popup.gallery =
-                                ScrollGallery::new(if tab { BACKDROP_SIZE } else { POSTER_SIZE });
-                            change_artwork_popup.backdrops = tab;
+                        if change_artworks_popup.backdrops != tab {
+                            change_artworks_popup.backdrops = tab;
+                            change_artworks_popup.gallery =
+                                ScrollGallery::new(if change_artworks_popup.backdrops {
+                                    BACKDROP_SIZE
+                                } else {
+                                    POSTER_SIZE
+                                });
+                            change_artworks_popup.gallery.selected_index =
+                                if change_artworks_popup.backdrops {
+                                    change_artworks_popup.chosen_backdrop
+                                } else {
+                                    change_artworks_popup.chosen_poster
+                                };
                         }
                     }
                 },
@@ -259,170 +321,258 @@ impl PopupTrait for ChangeArtworksPopup {
                 .resize(Size::new(1, 2));
         }
 
-        key_event_handler.bind_tab((None, None), "Change tab".into(), |app, _| {
-            if let Some(Popup::ChangeArtworks(change_artwork_popup)) =
-                app.drawer.active_popup.as_mut()
-            {
-                change_artwork_popup.backdrops ^= true;
-                change_artwork_popup.gallery =
-                    ScrollGallery::new(if change_artwork_popup.backdrops {
-                        BACKDROP_SIZE
-                    } else {
-                        POSTER_SIZE
-                    });
-            }
-        });
-
-        key_event_handler.bind_horizontal((None, None), "Scroll".into(), |app, data| {
-            if let Some(Popup::ChangeArtworks(change_artwork_popup)) =
-                app.drawer.active_popup.as_mut()
-            {
-                change_artwork_popup.gallery.scroll(
-                    match data {
-                        Data::Direction(b, _) =>
-                            if b {
-                                Direction::Right
-                            } else {
-                                Direction::Left
-                            },
-                        _ => unreachable!(),
-                    },
-                    18,
-                );
-            }
-        });
-
-        key_event_handler.bind_vertical((None, None), "Scroll".into(), |app, data| {
-            if let Some(Popup::ChangeArtworks(change_artwork_popup)) =
-                app.drawer.active_popup.as_mut()
-            {
-                change_artwork_popup.gallery.scroll(
-                    match data {
-                        Data::Direction(b, _) =>
-                            if b {
-                                Direction::Down
-                            } else {
-                                Direction::Up
-                            },
-                        _ => unreachable!(),
-                    },
-                    18,
-                );
-            }
-        });
-
-        let scrollbar_area = main_area
-            .offset(Offset::new(main_area.width as i32 - 1, 0))
-            .resize(Size::new(1, main_area.height));
-        // if let Some(TMDBMovieDetails {
-        //     poster_path,
-        //     backdrop_path,
-        //     images: Some(images),
-        //     ..
-        // }) = self.movie_images.as_ref()
-        // {
-        self.drawing_images = false;
-
-        self.gallery.render(
-            18,
-            main_area,
-            scrollbar_area,
+        let actions_mouse_areas = widgets::actions(
+            [
+                Action::new("  ", ActionType::Normal, true, true),
+                Action::new("  ", ActionType::Critical, true, true),
+            ],
+            HorizontalAlignment::Right,
+            true,
+            1,
+            helpers::add_padding(tabs_area, Padding::uniform(1)),
             frame,
-            key_event_handler,
-            |gallery, area, index, hidden_height, selected, alternate, frame, key_event_handler| {
-                frame.render_widget(
-                    Block::new().bg(if selected {
-                        tailwind::RED.c500
-                    } else if alternate {
-                        tailwind::SLATE.c950
+        );
+        for (i, mouse_area) in actions_mouse_areas.into_iter().enumerate() {
+            key_event_handler.bind_mouse_button_down(
+                ratatui::crossterm::event::MouseButton::Left,
+                mouse_area,
+                move |app, _| {
+                    if i == 0 {
+                        app.change_movie_artworks();
+                    }
+
+                    app.drawer.close_popup();
+                },
+            );
+        }
+
+        self.images_drawn = true;
+        if let Some(TMDBMovieDetails {
+            poster_path,
+            backdrop_path,
+            images,
+            ..
+        }) = self.movie_images.as_ref()
+        {
+            let num_items = if self.backdrops {
+                images
+                    .as_ref()
+                    .map(|x| x.backdrops.len())
+                    .unwrap_or_default()
+                    + backdrop_path.as_ref().map(|_| 1).unwrap_or_default()
+            } else {
+                images.as_ref().map(|x| x.posters.len()).unwrap_or_default()
+                    + poster_path.as_ref().map(|_| 1).unwrap_or_default()
+            };
+
+            key_event_handler.bind_horizontal((None, None), "Scroll".into(), move |app, data| {
+                if let Some(Popup::ChangeArtworks(change_artworks_popup)) =
+                    app.drawer.active_popup.as_mut()
+                {
+                    change_artworks_popup.gallery.scroll(
+                        match data {
+                            Data::Direction(b, _) =>
+                                if b {
+                                    Direction::Right
+                                } else {
+                                    Direction::Left
+                                },
+                            _ => unreachable!(),
+                        },
+                        num_items,
+                    );
+                }
+            });
+            key_event_handler.bind_vertical((None, None), "Scroll".into(), move |app, data| {
+                if let Some(Popup::ChangeArtworks(change_artworks_popup)) =
+                    app.drawer.active_popup.as_mut()
+                {
+                    change_artworks_popup.gallery.scroll(
+                        match data {
+                            Data::Direction(b, _) =>
+                                if b {
+                                    Direction::Down
+                                } else {
+                                    Direction::Up
+                                },
+                            _ => unreachable!(),
+                        },
+                        num_items,
+                    );
+                }
+            });
+            key_event_handler.bind_key((None, None), ' ', "Select".into(), |app, _| {
+                if let Some(Popup::ChangeArtworks(change_artworks_popup)) =
+                    app.drawer.active_popup.as_mut()
+                {
+                    let selected_index = change_artworks_popup.gallery.selected_index;
+                    if change_artworks_popup.backdrops {
+                        change_artworks_popup.chosen_backdrop = selected_index;
                     } else {
-                        tailwind::BLACK
-                    }),
-                    area,
-                );
-                self.drawing_images |= image_renderer.draw_image(
-                    ImageID::Custom(
-                        None,
-                        if self.backdrops {
-                            if alternate {
-                                "/iImUFYvuwDHildoANGXpvA30ROO.jpg".to_string()
-                            } else {
-                                "/qTdCfGyDisY9e8BLycszlyTsPWx.jpg".to_string()
-                            }
+                        change_artworks_popup.chosen_poster = selected_index;
+                    }
+                }
+            });
+            key_event_handler.bind_enter((None, None), "Select & Confirm".into(), |app, _| {
+                if let Some(Popup::ChangeArtworks(change_artworks_popup)) =
+                    app.drawer.active_popup.as_mut()
+                {
+                    let selected_index = change_artworks_popup.gallery.selected_index;
+                    if change_artworks_popup.backdrops {
+                        change_artworks_popup.chosen_backdrop = selected_index;
+                    } else {
+                        change_artworks_popup.chosen_poster = selected_index;
+                    }
+
+                    app.change_movie_artworks();
+                }
+
+                app.drawer.close_popup();
+            });
+
+            let scrollbar_area = main_area
+                .offset(Offset::new(main_area.width as i32 - 1, 0))
+                .resize(Size::new(1, main_area.height));
+
+            self.gallery.render(
+                num_items,
+                main_area,
+                scrollbar_area,
+                frame,
+                key_event_handler,
+                |gallery,
+                 area,
+                 index,
+                 hidden_height,
+                 selected,
+                 alternate,
+                 frame,
+                 key_event_handler| {
+                    let active = if self.backdrops {
+                        index == self.chosen_backdrop
+                    } else {
+                        index == self.chosen_poster
+                    };
+
+                    frame.render_widget(
+                        Block::new().bg(if active {
+                            tailwind::TEAL.c700
+                        } else if alternate {
+                            tailwind::SLATE.c950
                         } else {
-                            if alternate {
-                                "/r9utEhMKiaXUj0Bi6iAa3Yr5hrL.jpg".to_string()
+                            tailwind::GRAY.c900
+                        }),
+                        area,
+                    );
+                    if selected {
+                        // frame.render_widget(
+                        //     Block::bordered().border_set(border::PROPORTIONAL_WIDE).fg(
+                        //         tailwind::SKY.c700
+                        //     ),
+                        //     helpers::add_padding(area, Padding::horizontal(1)),
+                        // );
+                        // frame.render_widget(
+                        //     Block::new().bg(
+                        //         tailwind::SKY.c700
+                        //     ),
+                        //     helpers::add_padding(area, Padding::proportional(1)),
+                        // );
+                        frame.render_widget(
+                            Block::bordered()
+                                .border_set(border::PROPORTIONAL_TALL)
+                                .fg(if active {
+                                    tailwind::SKY.c600
+                                } else {
+                                    tailwind::TEAL.c600
+                                }),
+                            area,
+                        );
+                    }
+                    self.images_drawn &= image_renderer.draw_image(
+                        ImageID::Custom(
+                            if self.backdrops {
+                                if index == 0 {
+                                    backdrop_path.clone().unwrap()
+                                } else if let Some(images) = images {
+                                    images.backdrops[index - 1].file_path.clone()
+                                } else {
+                                    unreachable!()
+                                }
                             } else {
-                                "/vQoAq0etXKgEB67iFYVYZoTlKTR.jpg".to_string()
+                                if index == 0 {
+                                    poster_path.clone().unwrap()
+                                } else if let Some(images) = images {
+                                    images.posters[index - 1].file_path.clone()
+                                } else {
+                                    unreachable!()
+                                }
+                            },
+                            self.backdrops,
+                        ),
+                        helpers::add_padding(
+                            area,
+                            Padding::new(
+                                2,
+                                2,
+                                if hidden_height > 0 && gallery.alignment_bottom {
+                                    0
+                                } else {
+                                    1
+                                },
+                                if hidden_height > 0 && !gallery.alignment_bottom {
+                                    0
+                                } else {
+                                    1
+                                },
+                            ),
+                        ),
+                        true,
+                        if hidden_height > 0 {
+                            Some(SignedPosition {
+                                x: 0,
+                                y: if gallery.alignment_bottom {
+                                    -(hidden_height as i16 - 1)
+                                } else {
+                                    0
+                                },
+                            })
+                        } else {
+                            None
+                        },
+                        &mut self.throbber_state,
+                        frame,
+                    );
+
+                    key_event_handler.bind_mouse_button_down(
+                        ratatui::crossterm::event::MouseButton::Left,
+                        area,
+                        move |app, _| {
+                            if let Some(Popup::ChangeArtworks(change_artworks_popup)) =
+                                app.drawer.active_popup.as_mut()
+                            {
+                                if change_artworks_popup.gallery.selected_index != index {
+                                    change_artworks_popup.gallery.goto_index(index, false, 18);
+                                } else {
+                                    if change_artworks_popup.backdrops {
+                                        change_artworks_popup.chosen_backdrop = index;
+                                    } else {
+                                        change_artworks_popup.chosen_poster = index;
+                                    }
+                                }
                             }
                         },
-                        self.backdrops,
-                    ),
-                    helpers::add_padding(area, Padding::uniform(1)),
-                    true,
-                    if hidden_height > 0 {
-                        Some(SignedPosition {
-                            x: 0,
-                            y: if gallery.alignment_bottom {
-                                -(hidden_height as i16 - 1)
-                            } else {
-                                0
-                            },
-                        })
-                    } else {
-                        None
-                    },
-                    &mut self.throbber_state,
-                    frame,
-                );
-            },
-        );
-        // if self.backdrops {
-
-        // for (row, &vert) in vertical![==5; 2].split(main_area).into_iter().enumerate() {
-        //     for (col, &area) in horizontal![==17; 3].split(vert).into_iter().enumerate() {
-        //         // if row * 7 + col > images.backdrops.len() {
-        //         //     break;
-        //         // }
-
-        //         image_renderer.draw_image(
-        //             ImageID::Custom(
-        //                 None,
-        //                 "/qTdCfGyDisY9e8BLycszlyTsPWx.jpg".to_string(),
-        //                 // images.backdrops[row * 7 + col].file_path.clone(),
-        //                 true,
-        //             ),
-        //             area,
-        //             true,
-        //             None,
-        //             &mut self.throbber_state,
-        //             frame,
-        //         );
-        //     }
-        // }
-        // } else {
-        // for (row, &vert) in vertical![==7; 2].split(main_area).into_iter().enumerate() {
-        //     for (col, &area) in horizontal![==9; 6].split(vert).into_iter().enumerate() {
-        //         // if row * 7 + col > images.posters.len() {
-        //         //     break;
-        //         // }
-
-        //         image_renderer.draw_image(
-        //             ImageID::Custom(
-        //                 None,
-        //                 "/vQoAq0etXKgEB67iFYVYZoTlKTR.jpg".to_string(),
-        //                 // images.posters[row * 7 + col].file_path.clone(),
-        //                 false,
-        //             ),
-        //             area,
-        //             true,
-        //             None,
-        //             &mut self.throbber_state,
-        //             frame,
-        //         );
-        //     }
-        // }
-        // }
-        // }
+                    );
+                },
+            );
+        } else {
+            frame.render_widget(Block::new().bg(tailwind::GRAY.c950), main_area);
+            frame.render_stateful_widget(
+                Throbber::default()
+                    .throbber_set(throbber::BRAILLE_SIX_DOUBLE)
+                    .style(Style::new().fg(tailwind::CYAN.c600).bold()),
+                main_area.centered(constraint!(==1), constraint!(==1)),
+                &mut self.throbber_state,
+            );
+        }
     }
 }

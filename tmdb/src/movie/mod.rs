@@ -418,57 +418,15 @@ pub fn add_or_remove_watchlist(
 pub fn get_movie_artworks(
     cache_dir: &Path,
     access_token: &str,
-    tmdb_details: Option<&MovieDetails>,
+    tmdb_details: Option<MovieDetails>,
     movie_id: u32,
+    backdrop_or_poster: Option<bool>,
 ) -> anyhow::Result<bool> {
-    let mut movie_images: MovieImagesResponse = tmdb_details.map(Into::into).unwrap_or_else(|| {
-        get_movie_details(access_token, movie_id)
-            .as_ref()
+    let movie_images: MovieImagesResponse = tmdb_details.map(Into::into).unwrap_or_else(|| {
+        get_movie_images(access_token, movie_id)
             .map(Into::into)
             .unwrap_or_default()
     });
-    if movie_images.backdrops.is_empty() || movie_images.posters.is_empty() {
-        if let Ok(MovieDetails {
-            images: Some(images),
-            ..
-        }) = get_movie_images(access_token, movie_id)
-        {
-            if movie_images.backdrops.is_empty() && !images.backdrops.is_empty() {
-                movie_images.backdrops = images
-                    .backdrops
-                    .into_iter()
-                    .sorted_by(|a, b| {
-                        b.vote_average
-                            .partial_cmp(&a.vote_average)
-                            .map(|x| -> Option<std::cmp::Ordering> {
-                                matches!(x, std::cmp::Ordering::Equal)
-                                    .then_some(b.vote_count.cmp(&a.vote_count))
-                                    .or_else(|| Some(x))
-                            })
-                            .flatten()
-                            .unwrap_or(std::cmp::Ordering::Equal)
-                    })
-                    .collect();
-            }
-            if movie_images.posters.is_empty() && !images.posters.is_empty() {
-                movie_images.posters = images
-                    .posters
-                    .into_iter()
-                    .sorted_by(|a, b| {
-                        b.vote_average
-                            .partial_cmp(&a.vote_average)
-                            .map(|x| {
-                                matches!(x, std::cmp::Ordering::Equal)
-                                    .then_some(b.vote_count.cmp(&a.vote_count))
-                                    .or_else(|| Some(x))
-                            })
-                            .flatten()
-                            .unwrap_or(std::cmp::Ordering::Equal)
-                    })
-                    .collect();
-            }
-        }
-    }
 
     let try_get_artwork = |id: usize,
                            backdrop: bool,
@@ -513,6 +471,10 @@ pub fn get_movie_artworks(
         let movie_images = movie_images.clone();
 
         thread::spawn(move || -> anyhow::Result<bool> {
+            if backdrop_or_poster.is_some() && backdrop_or_poster.unwrap() {
+                return Ok(true);
+            }
+
             if !movie_images.posters.is_empty() {
                 for i in 0..5 {
                     let result = try_get_artwork(i, false, &poster_path, &movie_images)?;
@@ -532,6 +494,10 @@ pub fn get_movie_artworks(
         .join(format!("{}.jpg", movie_id));
     let backdrop_handle = {
         thread::spawn(move || -> anyhow::Result<bool> {
+            if backdrop_or_poster.is_some() && !backdrop_or_poster.unwrap() {
+                return Ok(true);
+            }
+
             if !movie_images.backdrops.is_empty() {
                 for i in 0..5 {
                     let result = try_get_artwork(i, true, &backdrop_path, &movie_images)?;
@@ -625,7 +591,9 @@ pub fn get_custom_artwork(
                 .join(if backdrop { "backdrops" } else { "posters" })
                 .join(id.to_string())
         } else {
-            cache_dir.join("custom").join(path.strip_prefix('/').unwrap_or(path))
+            cache_dir
+                .join("custom")
+                .join(path.strip_prefix('/').unwrap_or(path))
         }
         .with_extension("jpg"),
     )

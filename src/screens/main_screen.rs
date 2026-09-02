@@ -2121,7 +2121,7 @@ impl MainScreen {
             // } else {
             //     ImageID::Movie(self.filtered_movies[movie_index].id, false)
             // },
-            ImageID::Movie(self.filtered_movies[movie_index].id, false),
+            ImageID::Movie(movie.id, movie.override_poster.clone(), false),
             poster_area,
             false,
             if is_partially_visible {
@@ -2509,7 +2509,7 @@ impl MainScreen {
             };
 
             self.drawing_images |= !image_renderer.draw_image(
-                ImageID::Movie(movie.id, true),
+                ImageID::Movie(movie.id, movie.override_backdrop.clone(), true),
                 backdrop_area,
                 false,
                 None,

@@ -1,4 +1,5 @@
 use chrono::NaiveDate;
+use itertools::Itertools;
 use serde::{self, Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
@@ -19,38 +20,37 @@ pub struct MovieImagesResponse {
     pub backdrops: Vec<MovieImage>,
     pub posters:   Vec<MovieImage>,
 }
-impl Into<MovieImagesResponse> for &MovieDetails {
-    fn into(self) -> MovieImagesResponse {
+impl Into<MovieImagesResponse> for MovieDetails {
+    fn into(mut self) -> MovieImagesResponse {
+        let images = self.images.take().unwrap_or_default();
         MovieImagesResponse {
-            posters:   self
-                .poster_path
-                .clone()
-                .and_then(|x| if x.is_empty() { None } else { Some(x) })
-                .map(|x| {
-                    vec![MovieImage {
-                        file_path:    x,
-                        vote_average: 10.0,
-                        vote_count:   1000,
-                    }]
-                })
-                .unwrap_or(vec![]),
-            backdrops: self
-                .backdrop_path
-                .clone()
-                .and_then(|x| if x.is_empty() { None } else { Some(x) })
-                .map(|x| {
-                    vec![MovieImage {
-                        file_path:    x,
-                        vote_average: 10.0,
-                        vote_count:   1000,
-                    }]
-                })
-                .unwrap_or(vec![]),
+            posters:   match self.poster_path.clone() {
+                Some(x) if x.len() > 0 => vec![MovieImage {
+                    file_path:    x,
+                    vote_average: 100.0,
+                    vote_count:   10000,
+                }],
+                _ => vec![],
+            }
+            .into_iter()
+            .chain(images.posters)
+            .collect_vec(),
+            backdrops: match self.backdrop_path.clone() {
+                Some(x) if x.len() > 0 => vec![MovieImage {
+                    file_path:    x,
+                    vote_average: 100.0,
+                    vote_count:   10000,
+                }],
+                _ => vec![],
+            }
+            .into_iter()
+            .chain(images.backdrops)
+            .collect_vec(),
         }
     }
 }
 
-#[derive(Deserialize, Debug, PartialEq, Default)]
+#[derive(Deserialize, Debug, PartialEq, Default, Clone)]
 pub struct SearchResult {
     pub id:                u32,
     #[serde(alias = "name")]
@@ -80,7 +80,7 @@ where
         .map(|x: &str| NaiveDate::parse_from_str(x, "%Y-%m-%d").unwrap_or_default())
 }
 
-#[derive(Deserialize, Default, Debug)]
+#[derive(Deserialize, Default, Debug, Clone)]
 pub struct MovieDetails {
     pub id:                    u32,
     pub imdb_id:               String,
@@ -208,19 +208,19 @@ pub struct Genre {
     pub name: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone, Copy)]
 pub struct UserInteraction {
     pub favorite:  bool,
     pub watchlist: bool,
     pub rating:    Option<u64>,
 }
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct Credits {
     // pub id:                    u32,
     pub cast: Vec<Person>,
     pub crew: Vec<Person>,
 }
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct Person {
     pub id:           u32,
     // pub adult:        bool,

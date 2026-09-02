@@ -653,7 +653,7 @@ impl ScrollList {
 #[derive(Default)]
 pub struct ScrollGallery {
     item_size:            Size,
-    selected_index:       usize,
+    pub selected_index:   usize,
     items_per_row:        usize,
     scroll_pos:           usize,
     pub alignment_bottom: bool,
@@ -670,10 +670,10 @@ impl ScrollGallery {
         }
     }
 
-    pub fn reset(&mut self) {
-        self.selected_index = 0;
-        self.scroll_pos = 0;
-    }
+    // pub fn reset(&mut self) {
+    //     self.selected_index = 0;
+    //     self.scroll_pos = 0;
+    // }
 
     fn ensure_view_in_bounds(&mut self, num_items: usize) {
         let num_rows = if self.items_per_row != 0 {
@@ -700,8 +700,10 @@ impl ScrollGallery {
 
         if selected_row < self.scroll_pos {
             self.scroll_pos = selected_row;
-        } else if selected_row.saturating_sub(self.scroll_pos) >= self.num_visible_rows - 1 {
-            self.scroll_pos = selected_row.saturating_sub(self.num_visible_rows - 1);
+        } else if selected_row.saturating_sub(self.scroll_pos)
+            >= self.num_visible_rows.saturating_sub(1)
+        {
+            self.scroll_pos = selected_row.saturating_sub(self.num_visible_rows.saturating_sub(1));
         }
 
         if num_rows < self.num_visible_rows || selected_row.saturating_sub(self.scroll_pos) == 0 {
@@ -858,8 +860,8 @@ impl ScrollGallery {
                     horizontal![==self.item_size.width, >=0].areas(remaining_horiz_area);
 
                 let index = row * self.items_per_row + j;
+                let alternate = (j + i) & 1 == 1;
                 if index < num_items {
-                    let alternate = index & 1 == 1;
                     let selected = self.selected_index == index;
 
                     render_callback(
@@ -873,14 +875,7 @@ impl ScrollGallery {
                         key_event_handler,
                     );
                 } else {
-                    frame.render_widget(
-                        Block::new().bg(if i & 1 == 0 {
-                            tailwind::SLATE.c950
-                        } else {
-                            tailwind::BLACK
-                        }),
-                        area,
-                    );
+                    frame.render_widget(Block::new().bg(tailwind::SLATE.c900), area);
                 }
 
                 remaining_horiz_area = remaining;

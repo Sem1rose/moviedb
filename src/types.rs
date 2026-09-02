@@ -651,14 +651,6 @@ impl Movie {
             RatingSource::Tomatoes => cmp_rating!(tomatoes),
         }
     }
-
-    pub fn override_poster(&mut self, custom_poster: String) {
-        self.override_poster = Some(custom_poster)
-    }
-
-    pub fn override_backdrop(&mut self, custom_backdrop: String) {
-        self.override_backdrop = Some(custom_backdrop)
-    }
 }
 
 impl std::cmp::PartialEq<Movie> for Movie {
