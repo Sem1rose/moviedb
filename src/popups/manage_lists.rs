@@ -19,7 +19,7 @@ use crate::{
     key_event_handler::{Data, KeyEventHandler},
     popups::{Popup, PopupTrait},
     types::Entry,
-    widgets::{self, Action, ActionType, ScrollList},
+    widgets::{self, Action, ActionType, ScrolledList},
 };
 
 #[derive(Default, Clone, Copy, EnumCount, EnumIter, PartialEq, AsRefStr)]

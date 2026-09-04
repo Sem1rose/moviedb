@@ -1,16 +1,15 @@
 use chrono::{DateTime, Local, Utc};
-use itertools::Itertools;
 use ratatui::{
     Frame,
     crossterm::event::KeyCode,
-    layout::{HorizontalAlignment, Margin, Offset, Rect, Size},
+    layout::{HorizontalAlignment, Margin, Offset, Size},
     macros::{line, vertical},
     style::{
-        Modifier, Stylize,
+        Modifier, Style, Stylize,
         palette::{material, tailwind},
     },
     symbols::border,
-    widgets::{Block, Padding},
+    widgets::{Block, Fill, Padding, Widget},
 };
 use ratatui_textarea::{TextArea, WrapMode};
 
@@ -20,7 +19,7 @@ use crate::{
     key_event_handler::{Data, KeyEventHandler},
     popups::{Popup, PopupTrait},
     types::Entry,
-    widgets::{self, Action, ActionType, ScrollList},
+    widgets::{self, Action, ActionType, ScrolledList},
 };
 
 #[derive(Default)]
@@ -39,7 +38,7 @@ pub struct ManagePlaysPopup {
     one_shot:       bool,
     new_play:       bool,
     entry:          Option<Entry>,
-    pub scrollview: ScrollList,
+    pub scrollview: ScrolledList,
 
     pub rating_input: TextArea<'static>,
     pub date_input:   TextArea<'static>,
@@ -49,7 +48,7 @@ impl ManagePlaysPopup {
     pub fn new(entry: Option<Entry>) -> Self {
         Self {
             entry: entry.or_else(|| Some(Default::default())),
-            scrollview: ScrollList::new(3),
+            scrollview: ScrolledList::new(3),
 
             ..Default::default()
         }
@@ -442,22 +441,34 @@ impl PopupTrait for ManagePlaysPopup {
                         .offset(Offset::new(list_area.width as i32 - 1, 1))
                         .resize(Size::new(1, list_area.height - 2));
 
-                    self.scrollview.render(
+                    self.scrollview.render_without_area_update(
                         num_entries,
                         list_block_inner,
                         scrollbar_area,
                         frame,
                         key_event_handler,
-                        |scroll_view,
-                         area,
+                        |buffer,
+                         num_hidden_rows,
+                         _,
+                         align_bottom,
                          index,
                          selected,
-                         alternate,
-                         frame,
                          key_event_handler| {
+                            let buffer_area = *buffer.area();
+                            let visible_area = helpers::add_padding(
+                                buffer_area,
+                                if align_bottom {
+                                    Padding::top(num_hidden_rows)
+                                } else {
+                                    Padding::bottom(num_hidden_rows)
+                                },
+                            );
+
+                            let alternate = index & 1 == 1;
+
                             key_event_handler.bind_mouse_button_down(
                                 ratatui::crossterm::event::MouseButton::Left,
-                                area,
+                                visible_area,
                                 move |app, _| {
                                     if let Some(Popup::ManagePlays(manage_plays_popup)) =
                                         app.drawer.active_popup.as_mut()
@@ -474,8 +485,8 @@ impl PopupTrait for ManagePlaysPopup {
                                 },
                             );
 
-                            frame.render_widget(
-                                Block::new().bg(if selected {
+                            Fill::new(" ")
+                                .bg(if selected {
                                     if tab_selected {
                                         tailwind::TEAL.c700
                                     } else {
@@ -485,207 +496,166 @@ impl PopupTrait for ManagePlaysPopup {
                                     tailwind::GRAY.c800
                                 } else {
                                     tailwind::SLATE.c700
-                                }),
-                                area,
-                            );
+                                })
+                                .render(buffer_area, buffer);
 
                             let entry = &history_entries[num_entries - 1 - index];
                             let latest = index == 0;
                             let local_date = entry.date.with_timezone(&chrono::Local);
 
-                            let areas = (0..area.height)
-                                .map(|i| Rect::new(area.x, area.y + i, area.width, 1))
-                                .collect_vec();
+                            if selected {
+                                for x in 0..buffer_area.width {
+                                    buffer[(buffer_area.x + x, buffer_area.y)]
+                                        .set_symbol("▔")
+                                        .set_style(Style::new().fg(if tab_selected {
+                                            tailwind::EMERALD.c800
+                                        } else {
+                                            tailwind::SLATE.c700
+                                        }));
+                                    buffer[(buffer_area.x + x, buffer_area.bottom() - 1)]
+                                        .set_symbol("▁")
+                                        .set_style(Style::new().fg(if tab_selected {
+                                            tailwind::EMERALD.c800
+                                        } else {
+                                            tailwind::SLATE.c700
+                                        }));
+                                }
+                            }
 
-                            for i in 0..area.height {
-                                let index = if area.height < scroll_view.item_height {
-                                    if scroll_view.alignment_bottom {
-                                        i + (scroll_view.item_height - area.height)
+                            let area = helpers::add_padding(buffer_area, Padding::proportional(1));
+                            line![
+                                format!("{:.1}", entry.rating)
+                                    .fg(if entry.rating >= 9.0 {
+                                        tailwind::SKY.c400
+                                    } else if entry.rating >= 8.0 {
+                                        tailwind::GREEN.c500
+                                    } else if entry.rating >= 7.5 {
+                                        tailwind::LIME.c400
+                                    } else if entry.rating >= 7.0 {
+                                        material::AMBER.c400
+                                    } else if entry.rating >= 6.0 {
+                                        material::DEEP_ORANGE.c300
                                     } else {
-                                        i
+                                        material::RED.c400
+                                    })
+                                    .add_modifier(if latest {
+                                        Modifier::BOLD
+                                    } else {
+                                        Modifier::empty()
+                                    }),
+                                " @ ".white().bold(),
+                                if entry.date == DateTime::<Utc>::default() {
+                                    "Unknown".into()
+                                } else {
+                                    local_date.format("%d/%m/%Y %H:%M").to_string()
+                                }
+                                .fg(if latest {
+                                    if selected && tab_selected {
+                                        tailwind::YELLOW.c500
+                                    } else if tab_selected {
+                                        tailwind::YELLOW.c600
+                                    } else {
+                                        tailwind::AMBER.c600
                                     }
                                 } else {
-                                    i
-                                };
-                                if index == 0 && selected {
-                                    frame.render_widget(
-                                        line!("▔".repeat(area.width as usize)).fg(
-                                            if tab_selected {
-                                                tailwind::EMERALD.c800
-                                            } else {
-                                                tailwind::SLATE.c700
-                                            },
-                                        ),
-                                        areas[i as usize],
-                                    );
-                                } else if index == 1 {
-                                    let area = helpers::add_padding(
-                                        areas[i as usize],
-                                        Padding::horizontal(2),
-                                    );
+                                    if selected && tab_selected {
+                                        tailwind::INDIGO.c200
+                                    } else if tab_selected {
+                                        tailwind::INDIGO.c300
+                                    } else {
+                                        tailwind::INDIGO.c400
+                                    }
+                                }),
+                            ]
+                            .render(area, buffer);
 
-                                    frame.render_widget(
-                                        line![
-                                            format!("{:.1}", entry.rating)
-                                                .fg(if entry.rating >= 9.0 {
-                                                    tailwind::SKY.c400
-                                                } else if entry.rating >= 8.0 {
-                                                    tailwind::GREEN.c500
-                                                } else if entry.rating >= 7.5 {
-                                                    tailwind::LIME.c400
-                                                } else if entry.rating >= 7.0 {
-                                                    material::AMBER.c400
-                                                } else if entry.rating >= 6.0 {
-                                                    material::DEEP_ORANGE.c300
-                                                } else {
-                                                    material::RED.c400
-                                                })
-                                                .add_modifier(if latest {
-                                                    Modifier::BOLD
-                                                } else {
-                                                    Modifier::empty()
-                                                }),
-                                            " @ ".white().bold(),
-                                            if entry.date == DateTime::<Utc>::default() {
-                                                "Unknown".into()
-                                            } else {
-                                                local_date.format("%d/%m/%Y %H:%M").to_string()
-                                            }
-                                            .fg(
-                                                if latest {
-                                                    if selected && tab_selected {
-                                                        tailwind::YELLOW.c500
-                                                    } else if tab_selected {
-                                                        tailwind::YELLOW.c600
-                                                    } else {
-                                                        tailwind::AMBER.c600
-                                                    }
-                                                } else {
-                                                    if selected && tab_selected {
-                                                        tailwind::INDIGO.c200
-                                                    } else if tab_selected {
-                                                        tailwind::INDIGO.c300
-                                                    } else {
-                                                        tailwind::INDIGO.c400
+                            if tab_selected && selected {
+                                let actions_mouse_areas = widgets::actions(
+                                    [
+                                        Action::new(
+                                            if self.confirm_delete { " Confirm " } else { " D " },
+                                            ActionType::Critical,
+                                            self.item == 1,
+                                            true,
+                                        ),
+                                        Action::new(
+                                            " E ",
+                                            ActionType::Normal,
+                                            self.item == 0,
+                                            true,
+                                        ),
+                                    ],
+                                    HorizontalAlignment::Right,
+                                    false,
+                                    1,
+                                    area,
+                                    buffer,
+                                );
+                                for (i, mouse_area) in actions_mouse_areas.into_iter().enumerate() {
+                                    key_event_handler.bind_mouse_button_down(
+                                        ratatui::crossterm::event::MouseButton::Left,
+                                        mouse_area,
+                                        move |app, _| {
+                                            if i == 0 {
+                                                if let Some(Popup::ManagePlays(
+                                                    manage_plays_popup,
+                                                )) = app.drawer.active_popup.as_ref()
+                                                {
+                                                    if manage_plays_popup.confirm_delete {
+                                                        app.remove_movie_play();
                                                     }
                                                 }
-                                            ),
-                                        ],
-                                        area,
-                                    );
 
-                                    if tab_selected && selected {
-                                        let actions_mouse_areas = widgets::actions(
-                                            [
-                                                Action::new(
-                                                    if self.confirm_delete {
-                                                        " Confirm "
-                                                    } else {
-                                                        " D "
-                                                    },
-                                                    ActionType::Critical,
-                                                    self.item == 1,
-                                                    true,
-                                                ),
-                                                Action::new(
-                                                    " E ",
-                                                    ActionType::Normal,
-                                                    self.item == 0,
-                                                    true,
-                                                ),
-                                            ],
-                                            HorizontalAlignment::Right,
-                                            false,
-                                            1,
-                                            area,
-                                            frame,
-                                        );
-                                        for (i, mouse_area) in
-                                            actions_mouse_areas.into_iter().enumerate()
-                                        {
-                                            key_event_handler.bind_mouse_button_down(
-                                                ratatui::crossterm::event::MouseButton::Left,
-                                                mouse_area,
-                                                move |app, _| {
-                                                    if i == 0 {
-                                                        if let Some(Popup::ManagePlays(
-                                                            manage_plays_popup,
-                                                        )) = app.drawer.active_popup.as_ref()
-                                                        {
-                                                            if manage_plays_popup.confirm_delete {
-                                                                app.remove_movie_play();
-                                                            }
-                                                        }
+                                                if let Some(Popup::ManagePlays(
+                                                    manage_plays_popup,
+                                                )) = app.drawer.active_popup.as_mut()
+                                                {
+                                                    manage_plays_popup.item = 1;
 
-                                                        if let Some(Popup::ManagePlays(
-                                                            manage_plays_popup,
-                                                        )) = app.drawer.active_popup.as_mut()
-                                                        {
-                                                            manage_plays_popup.item = 1;
-
-                                                            if manage_plays_popup.confirm_delete {
-                                                                manage_plays_popup.item = 0;
-                                                                manage_plays_popup.delete_play();
-                                                            }
-                                                            manage_plays_popup.confirm_delete ^=
-                                                                true;
-                                                        }
-                                                    } else {
-                                                        if let Some(Popup::ManagePlays(
-                                                            manage_plays_popup,
-                                                        )) = app.drawer.active_popup.as_mut()
-                                                        {
-                                                            manage_plays_popup.item = 0;
-
-                                                            let entry = &manage_plays_popup
-                                                                .entry
-                                                                .as_ref()
-                                                                .unwrap()
-                                                                .history[num_entries
-                                                                - 1
-                                                                - manage_plays_popup
-                                                                    .scrollview
-                                                                    .selected_index];
-
-                                                            manage_plays_popup.phase =
-                                                                Phase::EnterDetails;
-                                                            manage_plays_popup.rating_input =
-                                                                TextArea::from([format!(
-                                                                    "{:.1}",
-                                                                    entry.rating
-                                                                )]);
-                                                            manage_plays_popup.date_input =
-                                                                TextArea::from([entry
-                                                                    .date
-                                                                    .with_timezone(&Local)
-                                                                    .to_string()]);
-
-                                                            manage_plays_popup
-                                                                .rating_input
-                                                                .move_cursor(
-                                                                ratatui_textarea::CursorMove::End,
-                                                            );
-                                                            manage_plays_popup
-                                                                .date_input
-                                                                .move_cursor(
-                                                                ratatui_textarea::CursorMove::End,
-                                                            );
-                                                        }
+                                                    if manage_plays_popup.confirm_delete {
+                                                        manage_plays_popup.item = 0;
+                                                        manage_plays_popup.delete_play();
                                                     }
-                                                },
-                                            );
-                                        }
-                                    }
-                                } else if index == 2 && selected {
-                                    frame.render_widget(
-                                        line!("▁".repeat(area.width as usize)).fg(
-                                            if tab_selected {
-                                                tailwind::EMERALD.c800
+                                                    manage_plays_popup.confirm_delete ^= true;
+                                                }
                                             } else {
-                                                tailwind::SLATE.c700
-                                            },
-                                        ),
-                                        areas[i as usize],
+                                                if let Some(Popup::ManagePlays(
+                                                    manage_plays_popup,
+                                                )) = app.drawer.active_popup.as_mut()
+                                                {
+                                                    manage_plays_popup.item = 0;
+
+                                                    let entry = &manage_plays_popup
+                                                        .entry
+                                                        .as_ref()
+                                                        .unwrap()
+                                                        .history[num_entries
+                                                        - 1
+                                                        - manage_plays_popup
+                                                            .scrollview
+                                                            .selected_index];
+
+                                                    manage_plays_popup.phase = Phase::EnterDetails;
+                                                    manage_plays_popup.rating_input =
+                                                        TextArea::from([format!(
+                                                            "{:.1}",
+                                                            entry.rating
+                                                        )]);
+                                                    manage_plays_popup.date_input =
+                                                        TextArea::from([entry
+                                                            .date
+                                                            .with_timezone(&Local)
+                                                            .to_string()]);
+
+                                                    manage_plays_popup.rating_input.move_cursor(
+                                                        ratatui_textarea::CursorMove::End,
+                                                    );
+                                                    manage_plays_popup.date_input.move_cursor(
+                                                        ratatui_textarea::CursorMove::End,
+                                                    );
+                                                }
+                                            }
+                                        },
                                     );
                                 }
                             }
@@ -1047,7 +1017,7 @@ impl PopupTrait for ManagePlaysPopup {
                         true,
                         1,
                         helpers::add_padding(popup_area, Padding::right(1)),
-                        frame,
+                        frame.buffer_mut(),
                     );
                     for (i, mouse_area) in actions_mouse_areas.into_iter().enumerate() {
                         key_event_handler.bind_mouse_button_down(

@@ -424,11 +424,7 @@ impl Drawer {
             active_popup.update_next_frame()
         } else {
             false
-        }) | if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_ref() {
-            main_screen.drawing_images
-        } else {
-            false
-        }
+        }) | !self.image_renderer.images_drawn
     }
 
     fn check_term_size(&mut self, frame: &Frame) {

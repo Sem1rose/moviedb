@@ -13,21 +13,23 @@ use punch_play::{
 };
 use ratatui::{
     Frame,
+    buffer::{Buffer, Cell},
     crossterm::event::KeyCode,
-    layout::{HorizontalAlignment, Margin, Offset, Position, Rect, Size},
+    layout::{HorizontalAlignment, Margin, Offset, Position, Size},
     macros::{constraint, horizontal, line, span, vertical},
     style::{
         Modifier, Style, Stylize,
         palette::{material, tailwind},
     },
     text::Text,
-    widgets::{Block, Padding},
+    widgets::{Padding, Widget},
 };
+use ratatui_image::sliced::SignedPosition;
 use ratatui_textarea::{TextArea, WrapMode};
 use throbber_widgets_tui::{Throbber, ThrobberState};
 use tmdb::{
     self,
-    smo::{MovieDetails as TMDBMovieDetails, SearchResult},
+    smo::{MovieDetails as TMDBMovieDetails, SearchResult as TMDBSearchResult},
 };
 use trakt::{
     self,
@@ -37,13 +39,13 @@ use trakt::{
 use crate::{
     app::App,
     helpers,
-    image_backend::RatatuiImage,
+    image_backend::{ImageID, RatatuiImage},
     key_event_handler::{self, KeyEventHandler},
     omdb::MovieDetails as OMDBMovieDetails,
     popups::{Popup, PopupTrait},
     tokens::{OMDBTokens, PunchPlayTokens, TMDBTokens, TraktTokens},
     types::MovieDetailsResponse,
-    widgets::{self, Action, ActionType, ScrollList},
+    widgets::{self, Action, ActionType, ScrolledList},
 };
 
 #[derive(Default)]
@@ -61,13 +63,14 @@ pub enum Phase {
 enum SearchResults {
     Trakt(anyhow::Result<Vec<TraktSearchResponseMovie>>),
     PunchPlay(anyhow::Result<Vec<PunchPlayItemDetails>>),
-    TMDB(anyhow::Result<Vec<SearchResult>>),
+    TMDB(anyhow::Result<Vec<TMDBSearchResult>>),
 }
 struct SearchResultMovie {
     title:        String,
     release_year: u32,
     rating:       f64,
     id:           u32,
+    poster:       Option<String>,
 }
 impl From<TraktSearchResponseMovie> for SearchResultMovie {
     fn from(value: TraktSearchResponseMovie) -> Self {
@@ -76,6 +79,7 @@ impl From<TraktSearchResponseMovie> for SearchResultMovie {
             release_year: value.year.unwrap_or(1970) as u32,
             rating:       value.rating,
             id:           value.ids.tmdb,
+            poster:       None,
         }
     }
 }
@@ -86,16 +90,18 @@ impl From<PunchPlayItemDetails> for SearchResultMovie {
             release_year: value.release_date.year() as u32,
             rating:       value.community_rating,
             id:           value.tmdb_id,
+            poster:       value.poster_path,
         }
     }
 }
-impl From<SearchResult> for SearchResultMovie {
-    fn from(value: SearchResult) -> Self {
+impl From<TMDBSearchResult> for SearchResultMovie {
+    fn from(value: TMDBSearchResult) -> Self {
         Self {
             title:        value.title,
             release_year: value.release_date.year() as u32,
             rating:       value.vote_average.unwrap_or(0.0),
             id:           value.id,
+            poster:       value.poster_path,
         }
     }
 }
@@ -106,7 +112,7 @@ pub struct AddMoviePopup {
     pub phase:        Phase,
     throbber_visible: bool,
     item:             usize,
-    scrollview:       ScrollList,
+    scrollview:       ScrolledList,
 
     input0:         TextArea<'static>,
     input1:         TextArea<'static>,
@@ -149,7 +155,7 @@ impl AddMoviePopup {
             trakt_tokens,
             omdb_tokens,
             take_rating,
-            scrollview: ScrollList::new(5),
+            scrollview: ScrolledList::new(8),
 
             _cache_dir: cache_dir.to_path_buf(),
             ..Default::default()
@@ -458,7 +464,7 @@ impl PopupTrait for AddMoviePopup {
 
                 let popup_area = widgets::window(
                     frame,
-                    helpers::centered_area(28, 66, frame.area()),
+                    helpers::centered_area(36, 66, frame.area()),
                     " Add movie ",
                     false,
                 );
@@ -503,10 +509,32 @@ impl PopupTrait for AddMoviePopup {
                     scrollbar_area,
                     frame,
                     key_event_handler,
-                    |scroll_view, area, index, selected, alternate, frame, key_event_handler| {
+                    |buffer,
+                     num_hidden_rows,
+                     buffer_y_negative_offset,
+                     align_bottom,
+                     index,
+                     selected,
+                     key_event_handler| {
+                        let buffer_area = *buffer.area();
+                        let visible_area = helpers::add_padding(
+                            buffer_area,
+                            if align_bottom {
+                                Padding::top(num_hidden_rows)
+                            } else {
+                                Padding::bottom(num_hidden_rows)
+                            },
+                        )
+                        .offset(Offset {
+                            x: 0,
+                            y: buffer_y_negative_offset,
+                        });
+
+                        let alternate = index & 1 == 1;
+
                         key_event_handler.bind_mouse_button_down(
                             ratatui::crossterm::event::MouseButton::Left,
-                            area,
+                            visible_area,
                             move |app, _| {
                                 if let Some(Popup::AddMovie(add_movie_popup)) =
                                     app.drawer.active_popup.as_mut()
@@ -524,100 +552,105 @@ impl PopupTrait for AddMoviePopup {
                             },
                         );
 
-                        frame.render_widget(
-                            Block::new().bg(if selected {
-                                tailwind::TEAL.c600
-                            } else if !alternate {
-                                tailwind::GRAY.c600
-                            } else {
-                                tailwind::SLATE.c700
-                            }),
-                            area,
-                        );
+                        for position in buffer_area.positions() {
+                            buffer[position].set_symbol(" ").set_style(Style::new().bg(
+                                if selected {
+                                    tailwind::TEAL.c600
+                                } else if !alternate {
+                                    tailwind::GRAY.c600
+                                } else {
+                                    tailwind::SLATE.c700
+                                },
+                            ));
+                        }
 
                         let result = &self.search_results.as_ref().unwrap()[index];
-                        let areas = (0..area.height)
-                            .map(|i| Rect::new(area.x, area.y + i, area.width, 1))
-                            .collect_vec();
-                        for i in 0..area.height {
-                            let index = if area.height < scroll_view.item_height {
-                                if scroll_view.alignment_bottom {
-                                    i + (scroll_view.item_height - area.height)
+                        for x in 0..buffer_area.width {
+                            buffer[(buffer_area.x + x, buffer_area.y)]
+                                .set_symbol("▔")
+                                .set_style(Style::new().fg(if selected {
+                                    tailwind::EMERALD.c700
                                 } else {
-                                    i
-                                }
+                                    tailwind::SLATE.c600
+                                }));
+                            buffer[(buffer_area.x + x, buffer_area.bottom() - 1)]
+                                .set_symbol("▁")
+                                .set_style(Style::new().fg(if selected {
+                                    tailwind::EMERALD.c700
+                                } else {
+                                    tailwind::SLATE.c600
+                                }));
+                        }
+
+                        let [poster_area, _, description_area] = horizontal![==8, ==1, >=0]
+                            .areas(helpers::add_padding(buffer_area, Padding::proportional(1)));
+                        line![
+                            span!(&result.title)
+                                .fg(if selected {
+                                    material::CYAN.c100
+                                } else {
+                                    material::ORANGE.c400
+                                })
+                                .add_modifier(if selected {
+                                    Modifier::BOLD
+                                } else {
+                                    Modifier::empty()
+                                }),
+                            span!("  "),
+                            span!(result.release_year)
+                                .fg(if selected {
+                                    material::CYAN.c100
+                                } else {
+                                    material::ORANGE.c400
+                                })
+                                .add_modifier(if selected {
+                                    Modifier::BOLD
+                                } else {
+                                    Modifier::empty()
+                                })
+                                .italic(),
+                        ]
+                        .left_aligned()
+                        .render(description_area.offset(Offset::new(0, 2)), buffer);
+
+                        line![format!("{:.1}", result.rating)]
+                            .fg(if selected {
+                                material::CYAN.c100
                             } else {
-                                i
-                            };
-                            if index == 0 {
-                                frame.render_widget(
-                                    line!("▔".repeat(area.width as usize)).fg(if selected {
-                                        tailwind::EMERALD.c700
-                                    // } else if !alternate {
-                                    //     tailwind::GRAY.c600
-                                    } else {
-                                        tailwind::SLATE.c600
-                                    }),
-                                    areas[i as usize],
-                                );
-                            } else if index == 1 {
-                                frame.render_widget(
-                                    line![
-                                        span!(&result.title)
-                                            .fg(if selected {
-                                                material::CYAN.c100
-                                            } else {
-                                                material::ORANGE.c400
-                                            })
-                                            .add_modifier(if selected {
-                                                Modifier::BOLD
-                                            } else {
-                                                Modifier::empty()
-                                            }),
-                                        span!("  "),
-                                        span!(result.release_year)
-                                            .fg(if selected {
-                                                material::CYAN.c100
-                                            } else {
-                                                material::ORANGE.c400
-                                            })
-                                            .add_modifier(if selected {
-                                                Modifier::BOLD
-                                            } else {
-                                                Modifier::empty()
-                                            })
-                                            .italic(),
-                                    ]
-                                    .left_aligned(),
-                                    helpers::add_padding(areas[i as usize], Padding::left(2)),
-                                );
-                            } else if index == 3 {
-                                frame.render_widget(
-                                    line![format!("{:.1}", result.rating)]
-                                        .fg(if selected {
-                                            material::CYAN.c100
+                                material::ORANGE.c400
+                            })
+                            .add_modifier(if selected { Modifier::BOLD } else { Modifier::empty() })
+                            .left_aligned()
+                            .render(description_area.offset(Offset::new(0, 4)), buffer);
+
+                        if let Some(poster) = result.poster.clone() {
+                            let mut cell = Cell::new(" ");
+                            cell.set_style(Style::new().bg(tailwind::GRAY.c950));
+                            let mut image_buffer =
+                                Buffer::filled(poster_area.intersection(visible_area), cell);
+                            image_renderer.draw_image(
+                                ImageID::Custom(poster, false),
+                                true,
+                                if num_hidden_rows > 0 {
+                                    Some(SignedPosition {
+                                        x: 0,
+                                        y: if align_bottom {
+                                            -(num_hidden_rows as i16 - 1)
                                         } else {
-                                            material::ORANGE.c400
-                                        })
-                                        .add_modifier(if selected {
-                                            Modifier::BOLD
-                                        } else {
-                                            Modifier::empty()
-                                        })
-                                        .left_aligned(),
-                                    helpers::add_padding(areas[i as usize], Padding::left(2)),
-                                );
-                            } else if index == 4 {
-                                frame.render_widget(
-                                    line!("▁".repeat(area.width as usize)).fg(if selected {
-                                        tailwind::EMERALD.c700
-                                    // } else if !alternate {
-                                    //     tailwind::GRAY.c600
-                                    } else {
-                                        tailwind::SLATE.c600
-                                    }),
-                                    areas[i as usize],
-                                );
+                                            0
+                                        },
+                                    })
+                                } else {
+                                    None
+                                },
+                                &mut image_buffer,
+                            );
+                            buffer.merge(&image_buffer);
+                        } else {
+                            for position in poster_area.positions() {
+                                buffer[position]
+                                    .set_symbol(" ")
+                                    .set_style(Style::new().bg(tailwind::GRAY.c950));
                             }
                         }
                     },
@@ -869,7 +902,7 @@ impl PopupTrait for AddMoviePopup {
                     true,
                     1,
                     helpers::add_padding(popup_area, Padding::right(1)),
-                    frame,
+                    frame.buffer_mut(),
                 );
                 for (i, mouse_area) in actions_mouse_areas.into_iter().enumerate() {
                     key_event_handler.bind_mouse_button_down(
@@ -1033,7 +1066,7 @@ impl PopupTrait for AddMoviePopup {
                     true,
                     1,
                     helpers::add_padding(popup_area, Padding::right(1)),
-                    frame,
+                    frame.buffer_mut(),
                 );
                 for (i, mouse_area) in actions_mouse_areas.into_iter().enumerate() {
                     key_event_handler.bind_mouse_button_down(
@@ -1139,7 +1172,7 @@ impl PopupTrait for AddMoviePopup {
                         true,
                         1,
                         helpers::add_padding(popup_area, Padding::right(1)),
-                        frame,
+                        frame.buffer_mut(),
                     );
                     for (i, mouse_area) in actions_mouse_areas.into_iter().enumerate() {
                         key_event_handler.bind_mouse_button_down(

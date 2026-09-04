@@ -7,11 +7,12 @@ use std::{
 use log::error;
 use ratatui::{
     Frame,
+    buffer::{Buffer, Cell},
     layout::{HorizontalAlignment, Margin, Offset, Rect, Size},
     macros::{constraint, line, vertical},
     style::{Style, Stylize, palette::tailwind},
     symbols::border,
-    widgets::{Block, Borders, Fill, Padding},
+    widgets::{Block, Borders, Fill, Padding, Widget},
 };
 use ratatui_image::sliced::SignedPosition;
 use throbber_widgets_tui::{Throbber, ThrobberState, symbols::throbber};
@@ -47,7 +48,6 @@ pub struct ChangeArtworksPopup {
     backdrops:      bool,
     tick:           u64,
     throbber_state: ThrobberState,
-    images_drawn:   bool,
 
     pub chosen_poster:   usize,
     pub chosen_backdrop: usize,
@@ -99,7 +99,7 @@ impl PopupTrait for ChangeArtworksPopup {
     }
 
     fn update_next_frame(&self) -> bool {
-        !self.images_drawn || self.movie_images.is_none()
+        self.movie_images.is_none()
     }
 
     fn update(&mut self) {
@@ -330,7 +330,7 @@ impl PopupTrait for ChangeArtworksPopup {
             true,
             1,
             helpers::add_padding(tabs_area, Padding::uniform(1)),
-            frame,
+            frame.buffer_mut(),
         );
         for (i, mouse_area) in actions_mouse_areas.into_iter().enumerate() {
             key_event_handler.bind_mouse_button_down(
@@ -346,7 +346,6 @@ impl PopupTrait for ChangeArtworksPopup {
             );
         }
 
-        self.images_drawn = true;
         if let Some(TMDBMovieDetails {
             poster_path,
             backdrop_path,
@@ -440,30 +439,66 @@ impl PopupTrait for ChangeArtworksPopup {
                 scrollbar_area,
                 frame,
                 key_event_handler,
-                |gallery,
-                 area,
+                |buffer,
+                 num_hidden_rows,
+                 buffer_y_negative_offset,
+                 align_bottom,
                  index,
-                 hidden_height,
                  selected,
-                 alternate,
-                 frame,
                  key_event_handler| {
+                    let buffer_area = *buffer.area();
+                    let visible_area = helpers::add_padding(
+                        buffer_area,
+                        if align_bottom {
+                            Padding::top(num_hidden_rows)
+                        } else {
+                            Padding::bottom(num_hidden_rows)
+                        },
+                    )
+                    .offset(Offset {
+                        x: 0,
+                        y: buffer_y_negative_offset,
+                    });
+
+                    key_event_handler.bind_mouse_button_down(
+                        ratatui::crossterm::event::MouseButton::Left,
+                        visible_area,
+                        move |app, _| {
+                            if let Some(Popup::ChangeArtworks(change_artworks_popup)) =
+                                app.drawer.active_popup.as_mut()
+                            {
+                                if change_artworks_popup.gallery.selected_index != index {
+                                    change_artworks_popup.gallery.selected_index = index;
+                                } else {
+                                    if change_artworks_popup.backdrops {
+                                        change_artworks_popup.chosen_backdrop = index;
+                                    } else {
+                                        change_artworks_popup.chosen_poster = index;
+                                    }
+                                }
+                            }
+                        },
+                    );
+
+                    let alternate = index & 1 == 1;
                     let active = if self.backdrops {
                         index == self.chosen_backdrop
                     } else {
                         index == self.chosen_poster
                     };
 
-                    frame.render_widget(
-                        Block::new().bg(if active {
-                            tailwind::TEAL.c700
-                        } else if alternate {
-                            tailwind::SLATE.c950
-                        } else {
-                            tailwind::GRAY.c900
-                        }),
-                        area,
-                    );
+                    for position in buffer_area.positions() {
+                        buffer[position]
+                            .set_symbol(" ")
+                            .set_style(Style::new().bg(if active {
+                                tailwind::TEAL.c700
+                            } else if alternate {
+                                tailwind::SLATE.c950
+                            } else {
+                                tailwind::GRAY.c900
+                            }));
+                    }
+
                     if selected {
                         // frame.render_widget(
                         //     Block::bordered().border_set(border::PROPORTIONAL_WIDE).fg(
@@ -477,18 +512,24 @@ impl PopupTrait for ChangeArtworksPopup {
                         //     ),
                         //     helpers::add_padding(area, Padding::proportional(1)),
                         // );
-                        frame.render_widget(
-                            Block::bordered()
-                                .border_set(border::PROPORTIONAL_TALL)
-                                .fg(if active {
-                                    tailwind::SKY.c600
-                                } else {
-                                    tailwind::TEAL.c600
-                                }),
-                            area,
-                        );
+                        Block::bordered()
+                            .border_set(border::PROPORTIONAL_TALL)
+                            .fg(if active {
+                                tailwind::SKY.c600
+                            } else {
+                                tailwind::TEAL.c600
+                            })
+                            .render(buffer_area, buffer);
                     }
-                    self.images_drawn &= image_renderer.draw_image(
+
+                    let mut cell = Cell::new(" ");
+                    cell.set_style(Style::new().bg(tailwind::GRAY.c950));
+                    let mut image_buffer = Buffer::filled(
+                        helpers::add_padding(buffer_area, Padding::proportional(1))
+                            .intersection(visible_area),
+                        cell,
+                    );
+                    image_renderer.draw_image(
                         ImageID::Custom(
                             if self.backdrops {
                                 if index == 0 {
@@ -509,59 +550,18 @@ impl PopupTrait for ChangeArtworksPopup {
                             },
                             self.backdrops,
                         ),
-                        helpers::add_padding(
-                            area,
-                            Padding::new(
-                                2,
-                                2,
-                                if hidden_height > 0 && gallery.alignment_bottom {
-                                    0
-                                } else {
-                                    1
-                                },
-                                if hidden_height > 0 && !gallery.alignment_bottom {
-                                    0
-                                } else {
-                                    1
-                                },
-                            ),
-                        ),
                         true,
-                        if hidden_height > 0 {
+                        if num_hidden_rows > 0 {
                             Some(SignedPosition {
                                 x: 0,
-                                y: if gallery.alignment_bottom {
-                                    -(hidden_height as i16 - 1)
-                                } else {
-                                    0
-                                },
+                                y: if align_bottom { -(num_hidden_rows as i16 - 1) } else { 0 },
                             })
                         } else {
                             None
                         },
-                        &mut self.throbber_state,
-                        frame,
+                        &mut image_buffer,
                     );
-
-                    key_event_handler.bind_mouse_button_down(
-                        ratatui::crossterm::event::MouseButton::Left,
-                        area,
-                        move |app, _| {
-                            if let Some(Popup::ChangeArtworks(change_artworks_popup)) =
-                                app.drawer.active_popup.as_mut()
-                            {
-                                if change_artworks_popup.gallery.selected_index != index {
-                                    change_artworks_popup.gallery.goto_index(index, false, 18);
-                                } else {
-                                    if change_artworks_popup.backdrops {
-                                        change_artworks_popup.chosen_backdrop = index;
-                                    } else {
-                                        change_artworks_popup.chosen_poster = index;
-                                    }
-                                }
-                            }
-                        },
-                    );
+                    buffer.merge(&image_buffer);
                 },
             );
         } else {

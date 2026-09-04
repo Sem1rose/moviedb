@@ -10,10 +10,11 @@ use anyhow::{anyhow, bail};
 use log::error;
 use ratatui::{
     Frame,
+    buffer::Buffer,
     layout::{Rect, Size},
     macros::constraint,
     style::{Style, Stylize, palette::tailwind},
-    widgets::Block,
+    widgets::{Fill, StatefulWidget, Widget},
 };
 use ratatui_image::{Resize, picker::Picker, sliced::*};
 use rustc_hash::FxHashMap;
@@ -71,6 +72,10 @@ pub struct RatatuiImage {
     rx_main: Receiver<LoadResult>,
 
     cache_dir: PathBuf,
+
+    tick:             u64,
+    throbber_state:   ThrobberState,
+    pub images_drawn: bool,
 }
 impl RatatuiImage {
     pub fn new(cache_dir: &Path) -> Self {
@@ -88,6 +93,10 @@ impl RatatuiImage {
             rx_main,
 
             cache_dir: cache_dir.to_path_buf(),
+
+            tick: 0,
+            throbber_state: Default::default(),
+            images_drawn: false,
         }
     }
 
@@ -251,6 +260,12 @@ impl RatatuiImage {
     pub fn update(&mut self) {
         self.draw_queue.clear();
         self.overlay_areas.clear();
+        self.images_drawn = true;
+
+        self.tick += 1;
+        if self.tick & 7 == 0 {
+            self.throbber_state.calc_next();
+        }
 
         for (image_id, result) in self.rx_main.try_iter() {
             if let Ok(protocol) = result {
@@ -300,12 +315,11 @@ impl RatatuiImage {
     pub fn draw_image(
         &mut self,
         image_id: ImageID,
-        area: Rect,
         unobstructed: bool,
         sliced_pos: Option<SignedPosition>,
-        throbber_state: &mut ThrobberState,
-        frame: &mut Frame,
-    ) -> bool {
+        buffer: &mut Buffer,
+    ) {
+        let buffer_area = *buffer.area();
         let size_index = matches!(
             image_id,
             ImageID::Movie(_, _, true) | ImageID::Collection(_, true) | ImageID::Custom(_, true)
@@ -313,8 +327,8 @@ impl RatatuiImage {
 
         if sliced_pos.is_none() {
             let size = self.sizes.get_mut(&image_id.discriminant()).unwrap();
-            if size[size_index] != area.as_size() {
-                size[size_index] = area.as_size();
+            if size[size_index] != buffer_area.as_size() {
+                size[size_index] = buffer_area.as_size();
                 _ = self
                     .tx_load
                     .send(Actions::Resize(image_id.discriminant(), *size));
@@ -328,12 +342,9 @@ impl RatatuiImage {
                             ImageID::Person(_) => false,
                         }
                 });
-
-                return false;
             }
         }
 
-        let mut drawn = false;
         if self.hashed_images.contains_key(&image_id) {
             self.hashed_images.move_index(
                 self.hashed_images.get_index_of(&image_id).unwrap(),
@@ -342,37 +353,50 @@ impl RatatuiImage {
 
             if let Some(protocol) = self.hashed_images.get(&image_id).unwrap() {
                 if !unobstructed && CALCULATE_OBSTRUCTION {
-                    self.draw_queue.push((image_id, area, sliced_pos));
+                    self.draw_queue.push((image_id, buffer_area, sliced_pos));
                 } else {
                     let Size { width, height } = protocol.size();
 
                     let centered_area =
-                        area.centered(constraint!(== width), constraint!(== height));
-                    frame.render_widget(
-                        SlicedImage::new(
-                            protocol,
-                            sliced_pos.unwrap_or(SignedPosition { x: 0, y: 0 }),
-                        ),
-                        centered_area,
-                    );
+                        buffer_area.centered(constraint!(== width), constraint!(== height));
+                    SlicedImage::new(
+                        protocol,
+                        sliced_pos.unwrap_or(SignedPosition { x: 0, y: 0 }),
+                    )
+                    .render(centered_area, buffer);
                 }
-
-                drawn = true;
             } else {
-                frame.render_widget(Block::new().bg(tailwind::GRAY.c950), area);
-                frame.render_stateful_widget(
+                Fill::new(" ")
+                    .bg(tailwind::GRAY.c950)
+                    .render(buffer_area, buffer);
+                StatefulWidget::render(
                     Throbber::default()
                         .throbber_set(BRAILLE_SIX_DOUBLE)
                         .style(Style::new().fg(tailwind::CYAN.c600).bold()),
-                    area.centered(constraint!(==1), constraint!(==1)),
-                    throbber_state,
+                    buffer_area.centered(constraint!(==1), constraint!(==1)),
+                    buffer,
+                    &mut self.throbber_state,
                 );
+
+                self.images_drawn = false;
             }
         } else {
             self.hash_image(image_id);
-        }
 
-        drawn
+            Fill::new(" ")
+                .bg(tailwind::GRAY.c950)
+                .render(buffer_area, buffer);
+            StatefulWidget::render(
+                Throbber::default()
+                    .throbber_set(BRAILLE_SIX_DOUBLE)
+                    .style(Style::new().fg(tailwind::CYAN.c600).bold()),
+                buffer_area.centered(constraint!(==1), constraint!(==1)),
+                buffer,
+                &mut self.throbber_state,
+            );
+
+            self.images_drawn = false;
+        }
     }
 
     pub fn add_overlay(&mut self, area: Rect) {

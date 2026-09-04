@@ -73,8 +73,8 @@ pub struct ItemDetails {
     // pub is_anime:             bool,
     // pub writers:           Option<Vec<Person>>,
 
-    // pub poster_path:          Option<String>,
-    // pub backdrop_path:        Option<String>,
+    pub poster_path:          Option<String>,
+    pub backdrop_path:        Option<String>,
     // pub poster_color:         String,
     // pub poster_color_is_dark: bool,
     pub cast:            Option<Vec<Person>>,

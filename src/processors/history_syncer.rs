@@ -734,7 +734,7 @@ impl ProcessorTrait for HistorySyncerProcessor {
                 true,
                 1,
                 helpers::add_padding(popup_area, Padding::right(1)),
-                frame,
+                frame.buffer_mut(),
             );
             for (i, mouse_area) in actions_mouse_areas.into_iter().enumerate() {
                 key_event_handler.bind_mouse_button_down(
