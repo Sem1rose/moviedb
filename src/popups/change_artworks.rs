@@ -445,6 +445,7 @@ impl PopupTrait for ChangeArtworksPopup {
                  align_bottom,
                  index,
                  selected,
+                 alternate,
                  key_event_handler| {
                     let buffer_area = *buffer.area();
                     let visible_area = helpers::add_padding(
@@ -480,7 +481,6 @@ impl PopupTrait for ChangeArtworksPopup {
                         },
                     );
 
-                    let alternate = index & 1 == 1;
                     let active = if self.backdrops {
                         index == self.chosen_backdrop
                     } else {

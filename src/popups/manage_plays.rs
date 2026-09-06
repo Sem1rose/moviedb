@@ -19,7 +19,7 @@ use crate::{
     key_event_handler::{Data, KeyEventHandler},
     popups::{Popup, PopupTrait},
     types::Entry,
-    widgets::{self, Action, ActionType, ScrolledList},
+    widgets::{self, Action, ActionType, ListDirection, ScrolledList},
 };
 
 #[derive(Default)]
@@ -48,7 +48,7 @@ impl ManagePlaysPopup {
     pub fn new(entry: Option<Entry>) -> Self {
         Self {
             entry: entry.or_else(|| Some(Default::default())),
-            scrollview: ScrolledList::new(3),
+            scrollview: ScrolledList::new(ListDirection::Vertical(false), 3),
 
             ..Default::default()
         }
@@ -669,10 +669,10 @@ impl PopupTrait for ManagePlaysPopup {
                             if let Some(Popup::ManagePlays(manage_plays_popup)) =
                                 app.drawer.active_popup.as_mut()
                             {
-                                if manage_plays_popup.scrollview.alignment_bottom
+                                if manage_plays_popup.scrollview.alignment_opposite
                                     && manage_plays_popup.scrollview.partially_visible
                                 {
-                                    manage_plays_popup.scrollview.alignment_bottom = false;
+                                    manage_plays_popup.scrollview.alignment_opposite = false;
                                 } else if manage_plays_popup.scrollview.scroll_pos > 0 {
                                     manage_plays_popup.scrollview.scroll_pos -= 1;
                                 }
@@ -688,10 +688,10 @@ impl PopupTrait for ManagePlaysPopup {
                             if let Some(Popup::ManagePlays(manage_plays_popup)) =
                                 app.drawer.active_popup.as_mut()
                             {
-                                if !manage_plays_popup.scrollview.alignment_bottom
+                                if !manage_plays_popup.scrollview.alignment_opposite
                                     && manage_plays_popup.scrollview.partially_visible
                                 {
-                                    manage_plays_popup.scrollview.alignment_bottom = true;
+                                    manage_plays_popup.scrollview.alignment_opposite = true;
                                 } else if manage_plays_popup.scrollview.scroll_pos
                                     < num_entries.saturating_sub(
                                         manage_plays_popup.scrollview.num_visible_items,

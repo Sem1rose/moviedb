@@ -10,7 +10,7 @@ use strum::IntoDiscriminant;
 use crate::{
     config::Config,
     drawer::Drawer,
-    helpers::{default_rc, new_rc},
+    helpers,
     image_backend::ImageID,
     key_event_handler::KeyEventHandler,
     load_file, omdb,
@@ -58,7 +58,7 @@ impl App {
         let cache_dir = dirs::cache_dir()
             .expect("Couldn't get user's cache dir")
             .join("moviedb");
-        let config = new_rc(Config::new(&home_dir));
+        let config = helpers::new_rc(Config::new(&home_dir));
 
         Self {
             terminal: initialize_terminal().expect("Unable to initialize terminal"),
@@ -66,10 +66,10 @@ impl App {
             drawer: Drawer::new(&home_dir, &cache_dir, config.clone()),
 
             config,
-            movies: default_rc(),
-            watched: default_rc(),
-            persons: default_rc(),
-            collections: default_rc(),
+            movies: Default::default(),
+            watched: Default::default(),
+            persons: Default::default(),
+            collections: Default::default(),
 
             tmdb_tokens: TMDBTokens::new(&home_dir),
             simkl_tokens: SimklTokens::new(&home_dir),
@@ -276,15 +276,15 @@ impl App {
                     .flatten();
             }
 
-            _ = tmdb::movie::get_movie_artworks(
-                &dirs::cache_dir()
-                    .expect("Couldn't get user's cache dir")
-                    .join("moviedb"),
-                tmdb_tokens.access_token(),
-                tmdb_result.clone(),
-                tmdb_id,
-                None,
-            );
+            // _ = tmdb::movie::get_movie_artworks(
+            //     &dirs::cache_dir()
+            //         .expect("Couldn't get user's cache dir")
+            //         .join("moviedb"),
+            //     tmdb_tokens.access_token(),
+            //     tmdb_result.clone(),
+            //     tmdb_id,
+            //     None,
+            // );
 
             Ok(MovieDetailsResponse {
                 tmdb:       tmdb_result,
@@ -435,7 +435,16 @@ impl App {
         info!("{movie:#?}");
         // if the movie is already cached, remove it because the info is probably outdated.
         match self.movies.borrow_mut().entry(movie_id) {
-            indexmap::map::Entry::Occupied(mut occupied_entry) => *occupied_entry.get_mut() = movie,
+            indexmap::map::Entry::Occupied(mut occupied_entry) => {
+                let entry = occupied_entry.get_mut();
+
+                let override_backdrop = entry.override_backdrop.take();
+                let override_poster = entry.override_poster.take();
+
+                *entry = movie;
+                entry.override_backdrop = override_backdrop;
+                entry.override_poster = override_poster;
+            }
             indexmap::map::Entry::Vacant(vacant_entry) => {
                 vacant_entry.insert_entry(movie);
             }
@@ -608,7 +617,14 @@ impl App {
         self.movies
             .borrow_mut()
             .entry(movie.id)
-            .and_modify(|x| *x = movie);
+            .and_modify(|entry| {
+                let override_backdrop = entry.override_backdrop.take();
+                let override_poster = entry.override_poster.take();
+
+                *entry = movie;
+                entry.override_backdrop = override_backdrop;
+                entry.override_poster = override_poster;
+            });
 
         if let Some(Screens::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
             main_screen.filter_sort_movies(true);

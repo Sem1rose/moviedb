@@ -269,7 +269,11 @@ impl Drawer {
                         if let Some(Screens::MainScreen(main_screen)) =
                             app.drawer.current_screen.as_mut()
                         {
-                            if main_screen.initialize(app.movies.clone(), app.watched.clone()) {
+                            if main_screen.initialize(
+                                app.movies.clone(),
+                                app.watched.clone(),
+                                app.persons.clone(),
+                            ) {
                                 app.drawer.open_fetch_movies_popup();
                             }
                         }

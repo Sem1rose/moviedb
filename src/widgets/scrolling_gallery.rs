@@ -7,23 +7,16 @@ use ratatui::{
     widgets::Fill,
 };
 
-use crate::key_event_handler::KeyEventHandler;
-
-pub enum Direction {
-    Up,
-    Down,
-    Right,
-    Left,
-}
+use crate::{key_event_handler::KeyEventHandler, widgets::Direction};
 
 #[derive(Default)]
 pub struct ScrollGallery {
     item_size:            Size,
     pub selected_index:   usize,
-    items_per_row:        usize,
-    scroll_pos:           usize,
+    pub items_per_row:    usize,
+    pub scroll_pos:       usize,
     pub alignment_bottom: bool,
-    num_visible_rows:     usize,
+    pub num_visible_rows: usize,
     partially_visible:    bool,
 }
 
@@ -74,33 +67,33 @@ impl ScrollGallery {
         }
     }
 
-    pub fn goto_index(&mut self, index: usize, centered: bool, num_items: usize) {
-        let num_rows = if self.items_per_row != 0 {
-            num_items.div_ceil(self.items_per_row)
-        } else {
-            0
-        };
-        let row = if self.items_per_row != 0 {
-            index / self.items_per_row
-        } else {
-            0
-        };
-        self.selected_index = index;
-        if centered {
-            if self.scroll_pos > row || row >= self.scroll_pos + self.num_visible_rows {
-                self.scroll_pos = row
-                    .saturating_sub(self.num_visible_rows / 2)
-                    .min(num_rows.saturating_sub(self.num_visible_rows));
-                self.alignment_bottom = false;
-            }
-        } else {
-            self.scroll_pos = self.scroll_pos.min(row);
-            if row - self.scroll_pos >= self.num_visible_rows {
-                self.scroll_pos = row - self.num_visible_rows + 1;
-            }
-        }
-        self.ensure_view_in_bounds(num_items);
-    }
+    // pub fn goto_index(&mut self, index: usize, centered: bool, num_items: usize) {
+    //     let num_rows = if self.items_per_row != 0 {
+    //         num_items.div_ceil(self.items_per_row)
+    //     } else {
+    //         0
+    //     };
+    //     let row = if self.items_per_row != 0 {
+    //         index / self.items_per_row
+    //     } else {
+    //         0
+    //     };
+    //     self.selected_index = index;
+    //     if centered {
+    //         if self.scroll_pos > row || row >= self.scroll_pos + self.num_visible_rows {
+    //             self.scroll_pos = row
+    //                 .saturating_sub(self.num_visible_rows / 2)
+    //                 .min(num_rows.saturating_sub(self.num_visible_rows));
+    //             self.alignment_bottom = false;
+    //         }
+    //     } else {
+    //         self.scroll_pos = self.scroll_pos.min(row);
+    //         if row - self.scroll_pos >= self.num_visible_rows {
+    //             self.scroll_pos = row - self.num_visible_rows + 1;
+    //         }
+    //     }
+    //     self.ensure_view_in_bounds(num_items);
+    // }
 
     pub fn scroll(&mut self, direction: Direction, num_items: usize) {
         match direction {
@@ -111,7 +104,6 @@ impl ScrollGallery {
                 } else {
                     0
                 };
-
                 if selected_row < self.scroll_pos {
                     self.scroll_pos = selected_row;
                 }
@@ -187,7 +179,16 @@ impl ScrollGallery {
         scrollbar_area: Rect,
         frame: &mut Frame,
         key_event_handler: &mut KeyEventHandler,
-        mut render_callback: impl FnMut(&mut Buffer, u16, i32, bool, usize, bool, &mut KeyEventHandler),
+        mut render_callback: impl FnMut(
+            &mut Buffer,
+            u16,
+            i32,
+            bool,
+            usize,
+            bool,
+            bool,
+            &mut KeyEventHandler,
+        ),
     ) {
         let num_rows = if self.items_per_row != 0 {
             num_items.div_ceil(self.items_per_row)
@@ -220,6 +221,7 @@ impl ScrollGallery {
                 let index = row * self.items_per_row + j;
                 if index < num_items {
                     let selected = self.selected_index == index;
+                    let alternate = (row + j) & 1 == 1;
                     let num_hidden_lines = self.item_size.height - area.height as u16;
                     let buffer_y_negative_offset =
                         if row_is_partially_visible && area.y < num_hidden_lines {
@@ -247,6 +249,7 @@ impl ScrollGallery {
                         self.alignment_bottom,
                         index,
                         selected,
+                        alternate,
                         key_event_handler,
                     );
 
@@ -289,7 +292,16 @@ impl ScrollGallery {
         scrollbar_area: Rect,
         frame: &mut Frame,
         key_event_handler: &mut KeyEventHandler,
-        render_callback: impl FnMut(&mut Buffer, u16, i32, bool, usize, bool, &mut KeyEventHandler),
+        render_callback: impl FnMut(
+            &mut Buffer,
+            u16,
+            i32,
+            bool,
+            usize,
+            bool,
+            bool,
+            &mut KeyEventHandler,
+        ),
     ) {
         self.update_for_area(area, num_items);
         self.render_without_area_update(

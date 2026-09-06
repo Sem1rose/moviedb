@@ -45,7 +45,7 @@ use crate::{
     popups::{Popup, PopupTrait},
     tokens::{OMDBTokens, PunchPlayTokens, TMDBTokens, TraktTokens},
     types::MovieDetailsResponse,
-    widgets::{self, Action, ActionType, ScrolledList},
+    widgets::{self, Action, ActionType, ListDirection, ScrolledList},
 };
 
 #[derive(Default)]
@@ -155,7 +155,7 @@ impl AddMoviePopup {
             trakt_tokens,
             omdb_tokens,
             take_rating,
-            scrollview: ScrolledList::new(8),
+            scrollview: ScrolledList::new(ListDirection::Vertical(false), 8),
 
             _cache_dir: cache_dir.to_path_buf(),
             ..Default::default()
@@ -663,10 +663,10 @@ impl PopupTrait for AddMoviePopup {
                         if let Some(Popup::AddMovie(add_movie_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
-                            if add_movie_popup.scrollview.alignment_bottom
+                            if add_movie_popup.scrollview.alignment_opposite
                                 && add_movie_popup.scrollview.partially_visible
                             {
-                                add_movie_popup.scrollview.alignment_bottom = false;
+                                add_movie_popup.scrollview.alignment_opposite = false;
                             } else if add_movie_popup.scrollview.scroll_pos > 0 {
                                 add_movie_popup.scrollview.scroll_pos -= 1;
                             }
@@ -682,10 +682,10 @@ impl PopupTrait for AddMoviePopup {
                         if let Some(Popup::AddMovie(add_movie_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
-                            if !add_movie_popup.scrollview.alignment_bottom
+                            if !add_movie_popup.scrollview.alignment_opposite
                                 && add_movie_popup.scrollview.partially_visible
                             {
-                                add_movie_popup.scrollview.alignment_bottom = true;
+                                add_movie_popup.scrollview.alignment_opposite = true;
                             } else if add_movie_popup.scrollview.scroll_pos
                                 < num_results
                                     .saturating_sub(add_movie_popup.scrollview.num_visible_items)

@@ -97,9 +97,6 @@ pub fn signed_pos_add(lhs: SignedPosition, rhs: SignedPosition) -> SignedPositio
     }
 }
 
-pub fn default_rc<T: Default>() -> Rc<RefCell<T>> {
-    Rc::new(RefCell::default())
-}
 pub fn new_rc<T>(value: T) -> Rc<RefCell<T>> {
     Rc::new(RefCell::new(value))
 }

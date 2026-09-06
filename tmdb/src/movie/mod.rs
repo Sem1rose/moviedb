@@ -10,7 +10,10 @@ use reqwest::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::smo::{Credits, MovieDetails, MovieImagesResponse, SearchResult, UserInteraction};
+use crate::{
+    collection::get_collection_details,
+    smo::{Collection, Credits, MovieDetails, MovieImagesResponse, SearchResult, UserInteraction},
+};
 
 pub(crate) mod smo;
 
@@ -268,6 +271,12 @@ pub fn get_movie_details(access_token: &str, movie_id: u32) -> anyhow::Result<Mo
         ],
         "TMDB: Error while getting movie details",
     )
+    .map(|mut x: MovieDetails| {
+        if let Some(Collection { id, .. }) = x.belongs_to_collection {
+            x.collection_details = get_collection_details(access_token, id).ok();
+        }
+        x
+    })
 }
 
 pub fn get_rated_movies(access_token: &str, account_id: u32) -> anyhow::Result<Vec<SearchResult>> {

@@ -23,6 +23,13 @@ mod context_menu;
 mod scrolling_gallery;
 mod scrolling_list;
 
+pub enum Direction {
+    Up,
+    Down,
+    Right,
+    Left,
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn input_field(
     tab_selected: bool,
