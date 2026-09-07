@@ -1,11 +1,10 @@
 use itertools::Itertools;
 use ratatui::{
-    Frame,
     buffer::Buffer,
     layout::Rect,
     macros::{horizontal, vertical},
     style::{Stylize, palette::tailwind},
-    widgets::Fill,
+    widgets::{Fill, Widget},
 };
 
 use crate::key_event_handler::KeyEventHandler;
@@ -53,8 +52,16 @@ impl ScrolledList {
                 .selected_index
                 .saturating_sub(self.num_visible_items + 1);
         }
-        if self.scroll_pos > num_items.saturating_sub(self.num_visible_items) {
-            self.scroll_pos = num_items.saturating_sub(self.num_visible_items);
+
+        match self.direction {
+            ListDirection::Vertical(_) =>
+                if self.scroll_pos > num_items.saturating_sub(self.num_visible_items) {
+                    self.scroll_pos = num_items.saturating_sub(self.num_visible_items);
+                },
+            ListDirection::Horizontal(_) =>
+                if self.scroll_pos > num_items.saturating_sub(self.num_visible_items) + 1 {
+                    self.scroll_pos = num_items.saturating_sub(self.num_visible_items) + 1;
+                },
         }
 
         if self.selected_index < self.scroll_pos {
@@ -72,7 +79,13 @@ impl ScrolledList {
             self.alignment_opposite = false;
         } else if self.selected_index.saturating_sub(self.scroll_pos) == self.num_visible_items - 1
         {
-            self.alignment_opposite = true;
+            if matches!(self.direction, ListDirection::Horizontal(_)) {
+                if self.partially_visible {
+                    self.scroll_pos += 1;
+                }
+            } else {
+                self.alignment_opposite = true;
+            }
         }
     }
 
@@ -153,12 +166,13 @@ impl ScrolledList {
     pub fn render_without_area_update(
         &self,
         num_items: usize,
-        area: Rect,
-        scrollbar_area: Rect,
-        frame: &mut Frame,
+        scrollbar_buffer: Option<&mut Buffer>,
+        render_placeholder: bool,
+        buffer: &mut Buffer,
         key_event_handler: &mut KeyEventHandler,
         mut render_callback: impl FnMut(&mut Buffer, u16, i32, bool, usize, bool, &mut KeyEventHandler),
     ) {
+        let area = buffer.area;
         let partially_visible_item_dimension = match self.direction {
             ListDirection::Vertical(_) => area.height,
             ListDirection::Horizontal(_) => area.width,
@@ -222,7 +236,7 @@ impl ScrolledList {
                     0
                 };
 
-                let mut buffer = Buffer::empty(Rect::new(
+                let mut buf = Buffer::empty(Rect::new(
                     area.x.saturating_sub(
                         if item_is_partially_visible
                             && matches!(self.direction, ListDirection::Horizontal(false))
@@ -256,7 +270,7 @@ impl ScrolledList {
                 ));
 
                 render_callback(
-                    &mut buffer,
+                    &mut buf,
                     num_hidden_lines,
                     buffer_negative_offset,
                     self.alignment_opposite,
@@ -270,27 +284,27 @@ impl ScrolledList {
                         ListDirection::Vertical(reversed) =>
                             if reversed {
                                 if self.alignment_opposite {
-                                    buffer.resize(area);
+                                    buf.resize(area);
                                 } else {
-                                    buffer.content = buffer.content
+                                    buf.content = buf.content
                                         [(num_hidden_lines * area.width) as usize..]
                                         .to_vec();
-                                    buffer.area = area;
+                                    buf.area = area;
                                 }
                             } else {
                                 if self.alignment_opposite {
-                                    buffer.content = buffer.content
+                                    buf.content = buf.content
                                         [(num_hidden_lines * area.width) as usize..]
                                         .to_vec();
-                                    buffer.area = area;
+                                    buf.area = area;
                                 } else {
-                                    buffer.resize(area);
+                                    buf.resize(area);
                                 }
                             },
                         ListDirection::Horizontal(reversed) => {
                             if reversed {
                                 if self.alignment_opposite {
-                                    buffer.content = buffer
+                                    buf.content = buf
                                         .content
                                         .into_iter()
                                         .chunks(self.item_dimension as usize)
@@ -303,7 +317,7 @@ impl ScrolledList {
                                         .flatten()
                                         .collect_vec();
                                 } else {
-                                    buffer.content = buffer
+                                    buf.content = buf
                                         .content
                                         .into_iter()
                                         .chunks(self.item_dimension as usize)
@@ -314,7 +328,7 @@ impl ScrolledList {
                                 }
                             } else {
                                 if self.alignment_opposite {
-                                    buffer.content = buffer
+                                    buf.content = buf
                                         .content
                                         .into_iter()
                                         .chunks(self.item_dimension as usize)
@@ -323,7 +337,7 @@ impl ScrolledList {
                                         .flatten()
                                         .collect_vec();
                                 } else {
-                                    buffer.content = buffer
+                                    buf.content = buf
                                         .content
                                         .into_iter()
                                         .chunks(self.item_dimension as usize)
@@ -338,52 +352,52 @@ impl ScrolledList {
                                 }
                             }
 
-                            buffer.area = area;
+                            buf.area = area;
                         }
                     }
                 }
 
-                frame.buffer_mut().merge(&buffer);
-            } else {
-                frame.render_widget(
-                    Fill::new(" ").bg(if i & 1 == 0 {
+                buffer.merge(&buf);
+            } else if render_placeholder {
+                Fill::new(" ")
+                    .bg(if i & 1 == 0 {
                         tailwind::SLATE.c950
                     } else {
                         tailwind::BLACK
-                    }),
-                    area,
-                );
+                    })
+                    .render(area, buffer);
             }
 
             remaining_area = remaining;
         }
 
         if num_items + self.partially_visible as usize > self.num_visible_items {
-            super::scroll_bar(
-                num_items + self.partially_visible as usize,
-                self.scroll_pos + (self.partially_visible && self.alignment_opposite) as usize,
-                self.num_visible_items,
-                frame,
-                scrollbar_area,
-            );
+            if let Some(scrollbar_buffer) = scrollbar_buffer {
+                super::scroll_bar(
+                    num_items + self.partially_visible as usize,
+                    self.scroll_pos + (self.partially_visible && self.alignment_opposite) as usize,
+                    self.num_visible_items,
+                    scrollbar_buffer,
+                );
+            }
         }
     }
 
     pub fn render(
         &mut self,
         num_items: usize,
-        area: Rect,
-        scrollbar_area: Rect,
-        frame: &mut Frame,
+        scrollbar_buffer: Option<&mut Buffer>,
+        render_placeholder: bool,
+        buffer: &mut Buffer,
         key_event_handler: &mut KeyEventHandler,
         render_callback: impl FnMut(&mut Buffer, u16, i32, bool, usize, bool, &mut KeyEventHandler),
     ) {
-        self.update_for_area(area, num_items);
+        self.update_for_area(buffer.area, num_items);
         self.render_without_area_update(
             num_items,
-            area,
-            scrollbar_area,
-            frame,
+            scrollbar_buffer,
+            render_placeholder,
+            buffer,
             key_event_handler,
             render_callback,
         );

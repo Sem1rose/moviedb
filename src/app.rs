@@ -571,7 +571,6 @@ impl App {
                         .or_insert(person.into());
                 }
             }
-
             if let Some(collection_details) = tmdb_movie_details.collection_details.as_ref() {
                 self.collections
                     .borrow_mut()

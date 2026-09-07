@@ -275,13 +275,14 @@ impl ScrollGallery {
         }
 
         if num_rows + self.partially_visible as usize > self.num_visible_rows {
+            let mut buffer = Buffer::empty(scrollbar_area);
             super::scroll_bar(
                 num_rows + self.partially_visible as usize,
                 self.scroll_pos + (self.partially_visible && self.alignment_bottom) as usize,
                 self.num_visible_rows,
-                frame,
-                scrollbar_area,
+                &mut buffer,
             );
+            frame.buffer_mut().merge(&buffer);
         }
     }
 

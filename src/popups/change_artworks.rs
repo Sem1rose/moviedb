@@ -441,7 +441,7 @@ impl PopupTrait for ChangeArtworksPopup {
                 key_event_handler,
                 |buffer,
                  num_hidden_rows,
-                 buffer_y_negative_offset,
+                 buffer_negative_offset,
                  align_bottom,
                  index,
                  selected,
@@ -458,7 +458,7 @@ impl PopupTrait for ChangeArtworksPopup {
                     )
                     .offset(Offset {
                         x: 0,
-                        y: buffer_y_negative_offset,
+                        y: buffer_negative_offset,
                     });
 
                     key_event_handler.bind_mouse_button_down(
@@ -523,10 +523,20 @@ impl PopupTrait for ChangeArtworksPopup {
                     }
 
                     let mut cell = Cell::new(" ");
-                    cell.set_style(Style::new().bg(tailwind::GRAY.c950));
+                    cell.set_style(Style::new().bg(if active {
+                        tailwind::TEAL.c700
+                    } else if alternate {
+                        tailwind::SLATE.c950
+                    } else {
+                        tailwind::GRAY.c900
+                    }));
                     let mut image_buffer = Buffer::filled(
                         helpers::add_padding(buffer_area, Padding::proportional(1))
-                            .intersection(visible_area),
+                            .intersection(visible_area)
+                            .offset(Offset {
+                                x: 0,
+                                y: buffer_negative_offset,
+                            }),
                         cell,
                     );
                     image_renderer.draw_image(
@@ -561,6 +571,10 @@ impl PopupTrait for ChangeArtworksPopup {
                         },
                         &mut image_buffer,
                     );
+                    image_buffer.area = image_buffer.area.offset(Offset {
+                        x: 0,
+                        y: -buffer_negative_offset,
+                    });
                     buffer.merge(&image_buffer);
                 },
             );

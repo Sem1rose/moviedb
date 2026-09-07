@@ -1,6 +1,7 @@
 use chrono::{DateTime, Local, Utc};
 use ratatui::{
     Frame,
+    buffer::Buffer,
     crossterm::event::KeyCode,
     layout::{HorizontalAlignment, Margin, Offset, Size},
     macros::{line, vertical},
@@ -441,11 +442,13 @@ impl PopupTrait for ManagePlaysPopup {
                         .offset(Offset::new(list_area.width as i32 - 1, 1))
                         .resize(Size::new(1, list_area.height - 2));
 
+                    let mut scrollbar_buffer = Buffer::empty(scrollbar_area);
+                    let mut list_buffer = Buffer::empty(list_block_inner);
                     self.scrollview.render_without_area_update(
                         num_entries,
-                        list_block_inner,
-                        scrollbar_area,
-                        frame,
+                        Some(&mut scrollbar_buffer),
+                        true,
+                        &mut list_buffer,
                         key_event_handler,
                         |buffer,
                          num_hidden_rows,
@@ -661,6 +664,8 @@ impl PopupTrait for ManagePlaysPopup {
                             }
                         },
                     );
+                    frame.buffer_mut().merge(&scrollbar_buffer);
+                    frame.buffer_mut().merge(&list_buffer);
 
                     key_event_handler.bind_mouse_button_down(
                         ratatui::crossterm::event::MouseButton::Left,

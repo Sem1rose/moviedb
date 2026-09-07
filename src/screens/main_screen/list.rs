@@ -138,12 +138,14 @@ impl MainScreen {
             },
         );
 
+        let mut list_buffer = Buffer::empty(movies_area);
+        let mut scrollbar_buffer = Buffer::empty(scrollbar_area);
         self.movies_list.update_for_area(area, num_items);
         self.movies_list.render_without_area_update(
             num_items,
-            movies_area,
-            scrollbar_area,
-            frame,
+            Some(&mut scrollbar_buffer),
+            true,
+            &mut list_buffer,
             key_event_handler,
             |buffer,
              num_hidden_rows,
@@ -164,6 +166,8 @@ impl MainScreen {
                 );
             },
         );
+        frame.buffer_mut().merge(&scrollbar_buffer);
+        frame.buffer_mut().merge(&list_buffer);
     }
 
     fn draw_movie_widget(
@@ -172,15 +176,15 @@ impl MainScreen {
         buffer: &mut Buffer,
         selected: bool,
         num_hidden_rows: u16,
-        buffer_y_negative_offset: i32,
-        align_bottom: bool,
+        buffer_negative_offset: i32,
+        align_opposite: bool,
         image_renderer: &mut RatatuiImage,
         key_event_handler: &mut KeyEventHandler,
     ) {
         let buffer_area = *buffer.area();
         let visible_area = helpers::add_padding(
             buffer_area,
-            if align_bottom {
+            if align_opposite {
                 Padding::top(num_hidden_rows)
             } else {
                 Padding::bottom(num_hidden_rows)
@@ -188,7 +192,7 @@ impl MainScreen {
         );
         let input_area = visible_area.offset(Offset {
             x: 0,
-            y: buffer_y_negative_offset,
+            y: buffer_negative_offset,
         });
 
         let alt = movie_index & 1 == 1;
@@ -363,20 +367,34 @@ impl MainScreen {
 
         let mut cell = Cell::new(" ");
         cell.set_style(Style::new().bg(tailwind::GRAY.c950));
-        let mut image_buffer = Buffer::filled(poster_area.intersection(visible_area), cell);
+        let mut image_buffer = Buffer::filled(
+            poster_area.intersection(visible_area).offset(Offset {
+                x: 0,
+                y: buffer_negative_offset,
+            }),
+            cell,
+        );
         image_renderer.draw_image(
             ImageID::Movie(movie.id, movie.override_poster.clone(), false),
             false,
             if num_hidden_rows > 0 {
                 Some(SignedPosition {
                     x: 0,
-                    y: if align_bottom { -(num_hidden_rows as i16 - 1) } else { 0 },
+                    y: if align_opposite {
+                        -(num_hidden_rows as i16 - 1)
+                    } else {
+                        0
+                    },
                 })
             } else {
                 None
             },
             &mut image_buffer,
         );
+        image_buffer.area = image_buffer.area.offset(Offset {
+            x: 0,
+            y: -buffer_negative_offset,
+        });
         buffer.merge(&image_buffer);
 
         // frame.render_widget(

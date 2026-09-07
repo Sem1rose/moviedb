@@ -1,6 +1,7 @@
 use itertools::Itertools;
 use ratatui::{
     Frame,
+    buffer::Buffer,
     layout::{Offset, Position, Rect, Size},
     macros::line,
     style::{
@@ -255,15 +256,18 @@ impl ContextMenu {
         frame.render_widget(Text::from_iter(visible_items).left_aligned(), inner_area);
 
         if model_len > self.num_visible_items {
-            super::scroll_bar(
-                model_len,
-                self.scroll_pos,
-                self.num_visible_items,
-                frame,
+            let mut buffer = Buffer::empty(
                 inner_area
                     .offset(Offset::new(inner_area.width as i32, 0))
                     .resize(Size::new(1, inner_area.height)),
             );
+            super::scroll_bar(
+                model_len,
+                self.scroll_pos,
+                self.num_visible_items,
+                &mut buffer,
+            );
+            frame.buffer_mut().merge(&buffer);
         }
 
         for x in 0..area.width {

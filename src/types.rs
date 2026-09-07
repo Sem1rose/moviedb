@@ -452,35 +452,8 @@ pub struct Movie {
 }
 impl From<TMDBMovieDetails> for Movie {
     fn from(tmdb_details: TMDBMovieDetails) -> Self {
-        info!("{tmdb_details:#?}");
+        // info!("{tmdb_details:#?}");
 
-        let (cast, crew) = if let Some(credits) = tmdb_details.credits.as_ref() {
-            (
-                credits
-                    .cast
-                    .iter()
-                    .take(14)
-                    .map(|x| Role {
-                        id:               x.id,
-                        job_or_character: x.character.clone().unwrap_or("Unknown".into()),
-                    })
-                    .collect(),
-                credits
-                    .crew
-                    .iter()
-                    .filter(|x| {
-                        ["Director", "Original Music Composer", "Additional Music"]
-                            .contains(&x.job.as_ref().unwrap().as_str())
-                    })
-                    .map(|x| Role {
-                        id:               x.id,
-                        job_or_character: x.job.clone().unwrap_or("Unknown".into()),
-                    })
-                    .collect(),
-            )
-        } else {
-            (vec![], vec![])
-        };
         let released = tmdb_details.status == "Released";
         let external_ratings = if released {
             ExternalRatings {
@@ -516,7 +489,47 @@ impl From<TMDBMovieDetails> for Movie {
                 .clone()
                 .map(|x| x.first().unwrap_or(&"Unknown".into()).clone())
                 .unwrap_or("Unknown".into()),
-            credits: Credits { cast, crew },
+            credits: Credits {
+                cast: tmdb_details
+                    .credits
+                    .as_ref()
+                    .map(|credits| {
+                        credits
+                            .cast
+                            .iter()
+                            .take(14)
+                            .map(|x| Role {
+                                id:               x.id,
+                                job_or_character: x.character.clone().unwrap_or("Unknown".into()),
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                crew: tmdb_details
+                    .credits
+                    .as_ref()
+                    .map(|credits| {
+                        credits
+                            .crew
+                            .iter()
+                            .filter(|x| {
+                                x.job.is_some()
+                                    && ["Director", "Original Music Composer"]
+                                        .contains(&x.job.as_ref().unwrap().as_str())
+                            })
+                            .map(|x| Role {
+                                id:               x.id,
+                                job_or_character: x.job.clone().unwrap(),
+                            })
+                            .sorted_by_key(|x| {
+                                ["Director", "Original Music Composer"]
+                                    .iter()
+                                    .position(|y| y == &x.job_or_character.as_str())
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+            },
             recommendations: tmdb_details.recommendations.clone().unwrap_or_default(),
 
             override_backdrop: None,
@@ -527,11 +540,11 @@ impl From<TMDBMovieDetails> for Movie {
 
 impl Movie {
     pub fn add_trakt_details(&mut self, _trakt_details: TraktMovieDetails) {
-        info!("{_trakt_details:#?}");
+        // info!("{_trakt_details:#?}");
     }
 
     pub fn add_punch_play_details(&mut self, punch_play_details: PunchPlayMovieDetails) {
-        info!("{punch_play_details:#?}");
+        // info!("{punch_play_details:#?}");
 
         if self.released {
             if let Some(external_ratings) = punch_play_details.external_ratings {
@@ -581,7 +594,7 @@ impl Movie {
     }
 
     pub fn add_omdb_details(&mut self, omdb_details: OMDBMovieDetails) {
-        info!("{omdb_details:#?}");
+        // info!("{omdb_details:#?}");
 
         let rating = omdb_details.imdb_rating.parse::<f64>();
         let votes = omdb_details.imdb_votes.replace(',', "").parse::<u32>();

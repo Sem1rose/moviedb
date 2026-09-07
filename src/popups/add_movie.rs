@@ -503,15 +503,17 @@ impl PopupTrait for AddMoviePopup {
                     );
                 }
 
+                let mut scrollbar_buffer = Buffer::empty(scrollbar_area);
+                let mut list_buffer = Buffer::empty(results_list_area);
                 self.scrollview.render(
                     num_results,
-                    results_list_area,
-                    scrollbar_area,
-                    frame,
+                    Some(&mut scrollbar_buffer),
+                    true,
+                    &mut list_buffer,
                     key_event_handler,
                     |buffer,
                      num_hidden_rows,
-                     buffer_y_negative_offset,
+                     buffer_negative_offset,
                      align_bottom,
                      index,
                      selected,
@@ -527,7 +529,7 @@ impl PopupTrait for AddMoviePopup {
                         )
                         .offset(Offset {
                             x: 0,
-                            y: buffer_y_negative_offset,
+                            y: buffer_negative_offset,
                         });
 
                         let alternate = index & 1 == 1;
@@ -625,9 +627,20 @@ impl PopupTrait for AddMoviePopup {
 
                         if let Some(poster) = result.poster.clone() {
                             let mut cell = Cell::new(" ");
-                            cell.set_style(Style::new().bg(tailwind::GRAY.c950));
-                            let mut image_buffer =
-                                Buffer::filled(poster_area.intersection(visible_area), cell);
+                            cell.set_style(Style::new().bg(if selected {
+                                tailwind::TEAL.c600
+                            } else if !alternate {
+                                tailwind::GRAY.c600
+                            } else {
+                                tailwind::SLATE.c700
+                            }));
+                            let mut image_buffer = Buffer::filled(
+                                poster_area.intersection(visible_area).offset(Offset {
+                                    x: 0,
+                                    y: buffer_negative_offset,
+                                }),
+                                cell,
+                            );
                             image_renderer.draw_image(
                                 ImageID::Custom(poster, false),
                                 true,
@@ -645,6 +658,10 @@ impl PopupTrait for AddMoviePopup {
                                 },
                                 &mut image_buffer,
                             );
+                            image_buffer.area = image_buffer.area.offset(Offset {
+                                x: 0,
+                                y: -buffer_negative_offset,
+                            });
                             buffer.merge(&image_buffer);
                         } else {
                             for position in poster_area.positions() {
@@ -655,6 +672,8 @@ impl PopupTrait for AddMoviePopup {
                         }
                     },
                 );
+                frame.buffer_mut().merge(&scrollbar_buffer);
+                frame.buffer_mut().merge(&list_buffer);
 
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,

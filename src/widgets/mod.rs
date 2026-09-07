@@ -4,14 +4,14 @@ use ratatui::{
     Frame,
     buffer::Buffer,
     layout::{Alignment, HorizontalAlignment, Offset, Rect, Size},
-    macros::{line, span, text, vertical},
+    macros::{line, span, vertical},
     style::{
         Modifier, Style, Stylize,
         palette::{material, tailwind},
     },
     symbols::border,
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Clear, Padding, Widget},
+    widgets::{Block, Borders, Clear, Fill, Padding, Widget},
 };
 use ratatui_textarea::{TextArea, WrapMode};
 pub use scrolling_gallery::*;
@@ -216,16 +216,18 @@ pub fn scroll_bar(
     items_count: usize,
     scroll_pos: usize,
     num_visible_items: usize,
-    frame: &mut Frame,
-    area: Rect,
+    buffer: &mut Buffer,
 ) {
+    let area = buffer.area;
     const BLOCKS: [char; 9] = ['█', '▇', '▆', '▅', '▄', '▃', '▂', '▁', ' '];
 
-    frame.render_widget(
-        text!["█".repeat(area.height as usize),].fg(tailwind::INDIGO.c950),
-        area,
-    );
-    frame.render_widget("▲".bg(tailwind::INDIGO.c700).fg(material::BLUE.c300), area);
+    Fill::new("█")
+        .fg(tailwind::INDIGO.c950)
+        .render(area, buffer);
+    "▲"
+        .bg(tailwind::INDIGO.c700)
+        .fg(material::BLUE.c300)
+        .render(area, buffer);
 
     let num_pixels = (area.height as usize - 2) * 8;
     let max_scroll_amount = items_count.saturating_sub(num_visible_items);
@@ -271,7 +273,7 @@ pub fn scroll_bar(
             lines.push_line(" ".bg(tailwind::INDIGO.c950));
         }
 
-        frame.render_widget(lines, area.offset(Offset::new(0, 1)));
+        lines.render(area.offset(Offset::new(0, 1)), buffer);
     } else {
         let cycle_every = area.height as usize - 3;
         let scroll_fraction =
@@ -291,16 +293,14 @@ pub fn scroll_bar(
             lines.push_line(" ".bg(tailwind::INDIGO.c950));
         }
 
-        frame.render_widget(&lines, area);
+        lines.render(area, buffer);
     }
 
-    frame.render_widget(
-        "▼"
-            .bg(tailwind::INDIGO.c700)
-            .fg(material::BLUE.c300)
-            .not_reversed(),
-        area.offset(Offset::new(0, area.height as i32 - 1)),
-    );
+    "▼"
+        .bg(tailwind::INDIGO.c700)
+        .fg(material::BLUE.c300)
+        .not_reversed()
+        .render(area.offset(Offset::new(0, area.height as i32 - 1)), buffer);
 }
 
 pub enum ActionType {

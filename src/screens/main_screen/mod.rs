@@ -82,17 +82,7 @@ pub struct MainScreen {
 
 impl MainScreen {
     pub fn get_state(&self) -> (Option<usize>, Option<usize>) {
-        (
-            Some(self.tab),
-            Some(
-                self.item
-                    + if self.tab == 1 {
-                        self.movies_description.selected_tab << 9
-                    } else {
-                        0
-                    },
-            ),
-        )
+        (Some(self.tab), Some(self.item))
     }
 
     pub fn new(home_dir: &Path, _config: Rc<RefCell<Config>>) -> Self {
@@ -122,10 +112,7 @@ impl MainScreen {
                 ListDirection::Vertical(false),
                 MOVIE_WIDGET_HEIGHT as u16,
             ),
-            movies_description: MoviesDescription {
-                credits_list: ScrolledList::new(ListDirection::Horizontal(false), 14),
-                ..Default::default()
-            },
+            movies_description: Default::default(),
             sort_popup: ContextMenu::new(vec![], 6, None, false).with_submenu(
                 <usize>::from(Sort::Rating(Default::default())),
                 RatingSource::iter()
