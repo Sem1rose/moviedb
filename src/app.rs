@@ -353,9 +353,9 @@ impl App {
             if matches!(main_screen.selected_list, ListID::Watchlist) {
                 if self.watched.borrow().contains_key(&movie_id) {
                     main_screen.open_list_and_select_movie(
-                        &mut self.key_event_handler,
                         ListID::Watched,
                         movie_id,
+                        &mut self.key_event_handler,
                     );
                 }
             } else {
@@ -432,7 +432,7 @@ impl App {
         };
         let movie_id = movie.id;
 
-        info!("{movie:#?}");
+        // info!("{movie:#?}");
         // if the movie is already cached, remove it because the info is probably outdated.
         match self.movies.borrow_mut().entry(movie_id) {
             indexmap::map::Entry::Occupied(mut occupied_entry) => {
@@ -612,7 +612,7 @@ impl App {
             unreachable!()
         };
 
-        info!("{movie:#?}");
+        // info!("{movie:#?}");
         self.movies
             .borrow_mut()
             .entry(movie.id)

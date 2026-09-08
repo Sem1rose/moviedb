@@ -2162,7 +2162,7 @@ impl PopupTrait for AdvancedFilterPopup {
 
             frame.render_widget(
                 "Add a new Criterion:",
-                helpers::resize_area_centered(message_area, Offset::new(0, -2)),
+                helpers::add_padding(message_area, Padding::top(1)),
             );
 
             let selected = self.item == 0;

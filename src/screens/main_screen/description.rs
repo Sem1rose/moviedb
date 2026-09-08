@@ -20,7 +20,7 @@ use crate::{
     key_event_handler::{self, KeyEventHandler},
     screens::{Screens, main_screen::MainScreen},
     types::Movie,
-    widgets::{self, ListDirection, ScrolledList},
+    widgets::{self, Orientation, ScrolledList},
 };
 
 #[derive(Default)]
@@ -75,18 +75,12 @@ impl Default for MoviesDescription {
             plays_tab:       PlaysTab::default(),
             credits_tab:     CreditsTab {
                 main_list: ScrolledList::new(
-                    ListDirection::default(),
-                    PERSON_POSTER_SIZE.height + 2 + 1,
+                    Orientation::Vertical,
+                    PERSON_POSTER_SIZE.height + 2 + 2,
                 ),
 
-                cast_list: ScrolledList::new(
-                    ListDirection::Horizontal(false),
-                    PERSON_POSTER_SIZE.width + 4,
-                ),
-                crew_list: ScrolledList::new(
-                    ListDirection::Horizontal(false),
-                    PERSON_POSTER_SIZE.width + 4,
-                ),
+                cast_list: ScrolledList::new(Orientation::Horizontal, PERSON_POSTER_SIZE.width + 4),
+                crew_list: ScrolledList::new(Orientation::Horizontal, PERSON_POSTER_SIZE.width + 4),
             },
         }
     }
@@ -267,8 +261,13 @@ impl MainScreen {
                 })
                 .collect_vec();
             let num_available_tabs = self.movies_description.available_tabs.len();
-            if self.movies_description.selected_tab >= num_available_tabs {
-                self.movies_description.selected_tab = 0;
+            if !self
+                .movies_description
+                .available_tabs
+                .contains(&self.movies_description.selected_tab)
+            {
+                self.movies_description.selected_tab =
+                    *self.movies_description.available_tabs.first().unwrap();
             }
 
             if num_available_tabs > 1 {
@@ -282,14 +281,28 @@ impl MainScreen {
                             match data {
                                 key_event_handler::Data::Direction(true, _) => {
                                     main_screen.movies_description.selected_tab =
-                                        (main_screen.movies_description.selected_tab + 1)
-                                            .min(num_available_tabs - 1);
+                                        main_screen.movies_description.available_tabs[(main_screen
+                                            .movies_description
+                                            .available_tabs
+                                            .iter()
+                                            .position(|&x| {
+                                                x == main_screen.movies_description.selected_tab
+                                            })
+                                            .unwrap()
+                                            + 1)
+                                        .min(num_available_tabs - 1)];
                                 }
                                 key_event_handler::Data::Direction(false, _) => {
-                                    main_screen.movies_description.selected_tab = main_screen
-                                        .movies_description
-                                        .selected_tab
-                                        .saturating_sub(1);
+                                    main_screen.movies_description.selected_tab =
+                                        main_screen.movies_description.available_tabs[main_screen
+                                            .movies_description
+                                            .available_tabs
+                                            .iter()
+                                            .position(|&x| {
+                                                x == main_screen.movies_description.selected_tab
+                                            })
+                                            .unwrap()
+                                            .saturating_sub(1)];
                                 }
                                 _ => (),
                             }
@@ -322,13 +335,12 @@ impl MainScreen {
                 .movies_description
                 .available_tabs
                 .iter()
-                .enumerate()
-                .flat_map(|(i, x)| {
+                .flat_map(|&x| {
                     [
-                        format!(" {} ", DESCRIPTION_TABS[*x])
-                            .fg(if description_selected { FGS[*x] } else { _FGS[*x] })
-                            .bg(if description_selected { BGS[*x] } else { _BGS[*x] })
-                            .add_modifier(if i == self.movies_description.selected_tab {
+                        format!(" {} ", DESCRIPTION_TABS[x])
+                            .fg(if description_selected { FGS[x] } else { _FGS[x] })
+                            .bg(if description_selected { BGS[x] } else { _BGS[x] })
+                            .add_modifier(if x == self.movies_description.selected_tab {
                                 Modifier::BOLD
                             } else {
                                 Modifier::empty()
@@ -358,7 +370,8 @@ impl MainScreen {
                         {
                             main_screen.tab = 1;
                             main_screen.item = 0;
-                            main_screen.movies_description.selected_tab = i / 2;
+                            main_screen.movies_description.selected_tab =
+                                main_screen.movies_description.available_tabs[i / 2];
                         }
                     },
                 );
@@ -379,9 +392,7 @@ impl MainScreen {
                 tabs_area,
             );
 
-            match DESCRIPTION_TABS
-                [self.movies_description.available_tabs[self.movies_description.selected_tab]]
-            {
+            match DESCRIPTION_TABS[self.movies_description.selected_tab] {
                 "Overview" => {
                     frame.render_widget(Fill::new(" ").bg(tailwind::SLATE.c900), description_area);
 
@@ -397,12 +408,12 @@ impl MainScreen {
                         .sorted_by(|a, b| a.len().cmp(&b.len()))
                         .map(|genre| {
                             vec![
-                                span!("").fg(tailwind::SLATE.c100),
+                                span!("").fg(tailwind::LIME.c400),
                                 span!(genre)
                                     .bold()
-                                    .fg(tailwind::SLATE.c950)
-                                    .bg(tailwind::SLATE.c100),
-                                span!("").fg(tailwind::SLATE.c100),
+                                    .fg(tailwind::SKY.c900)
+                                    .bg(tailwind::LIME.c400),
+                                span!("").fg(tailwind::LIME.c400),
                             ]
                         });
                     let mut genres_lines = vec![];
@@ -480,7 +491,7 @@ impl MainScreen {
             };
 
             let mut cell = Cell::new(" ");
-            cell.set_style(Style::new().bg(tailwind::GRAY.c950));
+            cell.set_style(Style::new().bg(tailwind::SLATE.c900));
             let mut image_buffer = Buffer::filled(backdrop_area, cell);
             image_renderer.draw_image(
                 ImageID::Movie(movie.id, movie.override_backdrop.clone(), true),
@@ -890,7 +901,7 @@ impl MainScreen {
             }
         });
 
-        let mut lists_data: [(Rect, u16, i32, bool); 2] = Default::default();
+        let mut lists_data: [(Rect, Rect, u16, i32, bool); 2] = Default::default();
 
         let mut cell = Cell::new(" ");
         cell.set_style(Style::new().bg(tailwind::SLATE.c900));
@@ -916,7 +927,8 @@ impl MainScreen {
                         .set_style(Style::new().bg(tailwind::SLATE.c900));
                 }
 
-                let [title, list] = vertical![==1, >=0].areas(buffer_area);
+                let [title, list, scrollbar] = vertical![==1, >=0, ==1].areas(buffer_area);
+                Fill::new(" ").underlined().render(title, buffer);
                 if index == 0 { "Cast" } else { "Crew" }
                     .bold()
                     .underlined()
@@ -924,11 +936,8 @@ impl MainScreen {
 
                 lists_data[index] = (
                     list,
-                    if align_opposite {
-                        num_hidden_rows.saturating_sub(1)
-                    } else {
-                        num_hidden_rows
-                    },
+                    scrollbar,
+                    num_hidden_rows.saturating_sub(1),
                     buffer_negative_offset,
                     align_opposite,
                 );
@@ -936,8 +945,10 @@ impl MainScreen {
         );
         frame.buffer_mut().merge(&buffer);
 
-        for (cast_or_crew, (area, num_hidden_rows, buffer_negative_y_offset, align_bottom)) in
-            lists_data.into_iter().enumerate()
+        for (
+            cast_or_crew,
+            (list_area, scrollbar_area, num_hidden_rows, buffer_negative_y_offset, align_bottom),
+        ) in lists_data.into_iter().enumerate()
         {
             let num_items = if cast_or_crew == 0 { num_cast } else { num_crew };
             let persons = if cast_or_crew == 0 {
@@ -946,17 +957,71 @@ impl MainScreen {
                 &movie.credits.crew
             };
 
+            let (visible_scrollbar_area, input_scrollbar_area) =
+                helpers::deconstruct_scrollview_area(
+                    scrollbar_area,
+                    self.movies_description.credits_tab.main_list.orientation,
+                    align_bottom,
+                    if align_bottom {
+                        num_hidden_rows.saturating_sub(PERSON_POSTER_SIZE.height + 1)
+                    } else {
+                        num_hidden_rows
+                    },
+                    buffer_negative_y_offset,
+                );
+            key_event_handler.bind_mouse_button_down(
+                ratatui::crossterm::event::MouseButton::Left,
+                helpers::add_padding(
+                    input_scrollbar_area,
+                    Padding::right(input_scrollbar_area.width - 1),
+                ),
+                move |app, _| {
+                    if let Some(Screens::MainScreen(main_screen)) =
+                        app.drawer.current_screen.as_mut()
+                    {
+                        let list = main_screen
+                            .movies_description
+                            .credits_tab
+                            .get_child_list_mut(cast_or_crew);
+                        list.selected_index = list.scroll_pos;
+                        list.scroll(false, num_cast);
+                    }
+                },
+            );
+            key_event_handler.bind_mouse_button_down(
+                ratatui::crossterm::event::MouseButton::Left,
+                helpers::add_padding(
+                    input_scrollbar_area,
+                    Padding::left(input_scrollbar_area.width - 1),
+                ),
+                move |app, _| {
+                    if let Some(Screens::MainScreen(main_screen)) =
+                        app.drawer.current_screen.as_mut()
+                    {
+                        let list = main_screen
+                            .movies_description
+                            .credits_tab
+                            .get_child_list_mut(cast_or_crew);
+                        list.selected_index = list.scroll_pos + list.num_visible_items - 1;
+                        if !list.partially_visible {
+                            list.scroll(true, num_cast);
+                        }
+                    }
+                },
+            );
+
             let mut cell = Cell::new(" ");
             cell.set_style(Style::new().bg(tailwind::SLATE.c900));
-            let mut buffer = Buffer::filled(area, cell);
+            let mut list_buffer = Buffer::filled(list_area, cell.clone());
+            let mut scrollbar_buffer = Buffer::filled(visible_scrollbar_area, cell);
             self.movies_description
                 .credits_tab
                 .get_child_list_mut(cast_or_crew)
                 .render(
                     num_items,
-                    None,
+                    Some(&mut scrollbar_buffer),
                     false,
-                    &mut buffer,
+                    &mut list_buffer,
                     key_event_handler,
                     |buffer,
                      num_hidden_columns,
@@ -1074,22 +1139,27 @@ impl MainScreen {
                         .render(text_area, buffer);
                     },
                 );
-
             if num_hidden_rows > 0 {
                 if align_bottom {
-                    buffer.content =
-                        buffer.content[(num_hidden_rows * area.width) as usize..].to_vec();
-                    buffer.area = helpers::add_padding(area, Padding::top(num_hidden_rows));
+                    list_buffer.content = list_buffer.content
+                        [(num_hidden_rows * list_area.width) as usize..]
+                        .to_vec();
+                    list_buffer.area =
+                        helpers::add_padding(list_area, Padding::top(num_hidden_rows));
                 } else {
-                    buffer.resize(helpers::add_padding(area, Padding::bottom(num_hidden_rows)));
+                    list_buffer.resize(helpers::add_padding(
+                        list_area,
+                        Padding::bottom(num_hidden_rows),
+                    ));
                 }
             }
-            buffer.area = buffer.area.offset(Offset {
+            list_buffer.area = list_buffer.area.offset(Offset {
                 x: 0,
                 y: buffer_negative_y_offset,
             });
 
-            frame.buffer_mut().merge(&buffer);
+            frame.buffer_mut().merge(&scrollbar_buffer);
+            frame.buffer_mut().merge(&list_buffer);
         }
     }
 }

@@ -14,7 +14,7 @@ use ratatui::{
 };
 use rustc_hash::FxHashMap;
 
-use crate::{key_event_handler::KeyEventHandler, types::FxIndexMap};
+use crate::{key_event_handler::KeyEventHandler, types::FxIndexMap, widgets::Orientation};
 
 #[derive(Default)]
 pub struct ContextMenu {
@@ -262,6 +262,7 @@ impl ContextMenu {
                     .resize(Size::new(1, inner_area.height)),
             );
             super::scroll_bar(
+                Orientation::Vertical,
                 model_len,
                 self.scroll_pos,
                 self.num_visible_items,

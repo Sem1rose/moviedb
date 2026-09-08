@@ -31,7 +31,6 @@ pub enum ImageID {
     Person(u32),
     Custom(String, bool),
 }
-
 impl Hash for ImageID {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         match self {
@@ -60,6 +59,7 @@ fn default_sizes() -> FxHashMap<ImageIDDiscriminants, [Size; 2]> {
 }
 
 const CALCULATE_OBSTRUCTION: bool = true;
+const CACHE_SIZE: usize = 384;
 
 pub struct RatatuiImage {
     sizes:         FxHashMap<ImageIDDiscriminants, [Size; 2]>,
@@ -84,7 +84,10 @@ impl RatatuiImage {
 
         Self {
             sizes: default_sizes(),
-            hashed_images: FxIndexMap::with_capacity_and_hasher(100, rustc_hash::FxBuildHasher),
+            hashed_images: FxIndexMap::with_capacity_and_hasher(
+                CACHE_SIZE,
+                rustc_hash::FxBuildHasher,
+            ),
 
             draw_queue: vec![],
             overlay_areas: vec![],
@@ -307,7 +310,7 @@ impl RatatuiImage {
             }
         }
 
-        while self.hashed_images.len() > 100 {
+        while self.hashed_images.len() > CACHE_SIZE {
             _ = self.hashed_images.shift_remove_index(0).unwrap();
         }
     }

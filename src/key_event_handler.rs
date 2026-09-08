@@ -149,6 +149,10 @@ impl KeyEventHandler {
         area: Rect,
         callback: impl Fn(&mut App, Data) + 'static,
     ) {
+        if area.is_empty() {
+            return;
+        }
+
         _ = self.mouse_binds.insert(
             (self.mouse_binds.len(), Bind::MouseButtonDown(button), area),
             Box::new(callback),

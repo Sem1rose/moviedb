@@ -23,6 +23,8 @@ mod context_menu;
 mod scrolling_gallery;
 mod scrolling_list;
 
+pub use ratatui::layout::Direction as Orientation;
+
 pub enum Direction {
     Up,
     Down,
@@ -212,7 +214,93 @@ pub fn window(frame: &mut Frame, area: Rect, title: &str, and_a_half: bool) -> R
     popup_area
 }
 
-pub fn scroll_bar(
+fn scroll_bar(
+    orientation: Orientation,
+    items_count: usize,
+    scroll_pos: usize,
+    num_visible_items: usize,
+    buffer: &mut Buffer,
+) {
+    match orientation {
+        Orientation::Horizontal => h_scroll_bar(items_count, scroll_pos, num_visible_items, buffer),
+        Orientation::Vertical => v_scroll_bar(items_count, scroll_pos, num_visible_items, buffer),
+    }
+}
+fn h_scroll_bar(
+    items_count: usize,
+    scroll_pos: usize,
+    num_visible_items: usize,
+    buffer: &mut Buffer,
+) {
+    let area = buffer.area;
+    const BLOCKS: [char; 9] = [' ', '▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'];
+    Fill::new("█")
+        .fg(tailwind::INDIGO.c950)
+        .render(area, buffer);
+    "⏴"
+        .bg(tailwind::INDIGO.c700)
+        .fg(material::BLUE.c300)
+        .render(area, buffer);
+
+    let num_pixels = (area.width as usize - 2) * 8;
+    let max_scroll_amount = items_count.saturating_sub(num_visible_items);
+
+    let mut handle_size = num_pixels.saturating_sub(max_scroll_amount);
+    let mut scroll_pixels = handle_size.div_ceil(max_scroll_amount).min(6);
+    handle_size -= scroll_pixels.saturating_sub(1) * max_scroll_amount;
+    while handle_size < 8 && scroll_pixels > 1 {
+        handle_size += max_scroll_amount;
+        scroll_pixels -= 1;
+    }
+
+    let mut top_margin;
+    let mut line = Line::default();
+    if handle_size < 8 {
+        handle_size = 8;
+        let scroll_pixels =
+            num_pixels.saturating_sub(handle_size) as f64 / max_scroll_amount as f64;
+
+        top_margin = (scroll_pos as f64 * scroll_pixels).floor() as usize;
+    } else {
+        top_margin = scroll_pos * scroll_pixels;
+    }
+
+    while top_margin >= 8 {
+        line.push_span(" ".bg(tailwind::INDIGO.c950));
+        top_margin -= 8;
+    }
+    if top_margin > 0 {
+        line.push_span(
+            BLOCKS[top_margin]
+                .fg(tailwind::INDIGO.c950)
+                .bg(material::BLUE.c300),
+        );
+        handle_size -= 8 - top_margin;
+    }
+    while handle_size >= 8 {
+        line.push_span(" ".bg(material::BLUE.c300));
+        handle_size -= 8;
+    }
+    if handle_size > 0 {
+        line.push_span(
+            BLOCKS[handle_size]
+                .fg(material::BLUE.c300)
+                .bg(tailwind::INDIGO.c950),
+        );
+    }
+    while line.spans.len() < area.width as usize - 2 {
+        line.push_span(" ".bg(tailwind::INDIGO.c950));
+    }
+
+    line.render(area.offset(Offset::new(1, 0)), buffer);
+
+    "⏵"
+        .bg(tailwind::INDIGO.c700)
+        .fg(material::BLUE.c300)
+        .not_reversed()
+        .render(area.offset(Offset::new(area.width as i32 - 1, 0)), buffer);
+}
+fn v_scroll_bar(
     items_count: usize,
     scroll_pos: usize,
     num_visible_items: usize,
@@ -233,68 +321,53 @@ pub fn scroll_bar(
     let max_scroll_amount = items_count.saturating_sub(num_visible_items);
 
     let mut handle_size = num_pixels.saturating_sub(max_scroll_amount);
-    let mut scroll_pixels = handle_size.div_ceil(max_scroll_amount)
-        // - if handle_size % max_scroll_amount == 0 { 1 } else { 0 })
-    .min(3);
+    let mut scroll_pixels = handle_size.div_ceil(max_scroll_amount).min(3);
     handle_size -= scroll_pixels.saturating_sub(1) * max_scroll_amount;
     while handle_size < 8 && scroll_pixels > 1 {
         handle_size += max_scroll_amount;
         scroll_pixels -= 1;
     }
 
-    if handle_size >= 8 {
-        let mut top_margin = scroll_pos * scroll_pixels;
-        let mut lines = Text::default();
+    let mut top_margin;
+    let mut lines = Text::default();
+    if handle_size < 8 {
+        handle_size = 8;
+        let scroll_pixels =
+            num_pixels.saturating_sub(handle_size) as f64 / max_scroll_amount as f64;
 
-        while top_margin >= 8 {
-            lines.push_line(" ".bg(tailwind::INDIGO.c950));
-            top_margin -= 8;
-        }
-        if top_margin > 0 {
-            lines.push_line(
-                BLOCKS[top_margin]
-                    .bg(tailwind::INDIGO.c950)
-                    .fg(material::BLUE.c300),
-            );
-            handle_size -= 8 - top_margin;
-        }
-        while handle_size >= 8 {
-            lines.push_line(" ".bg(material::BLUE.c300));
-            handle_size -= 8;
-        }
-        if handle_size > 0 {
-            lines.push_line(
-                BLOCKS[handle_size]
-                    .fg(tailwind::INDIGO.c950)
-                    .bg(material::BLUE.c300),
-            );
-        }
-        while lines.lines.len() < area.height as usize - 2 {
-            lines.push_line(" ".bg(tailwind::INDIGO.c950));
-        }
-
-        lines.render(area.offset(Offset::new(0, 1)), buffer);
+        top_margin = (scroll_pos as f64 * scroll_pixels).floor() as usize;
     } else {
-        let cycle_every = area.height as usize - 3;
-        let scroll_fraction =
-            scroll_pos as f32 / items_count.saturating_sub(num_visible_items) as f32;
-        let phase = (scroll_fraction * cycle_every as f32) as usize;
-        let block = BLOCKS[(scroll_fraction * 9.0 * cycle_every as f32) as usize % 9]
-            .bg(tailwind::INDIGO.c950)
-            .fg(material::BLUE.c300);
-
-        let mut lines = Text::default();
-        for _ in 0..phase {
-            lines.push_line(" ".bg(tailwind::INDIGO.c950));
-        }
-        lines.push_line(block.clone());
-        lines.push_line(block.reversed());
-        for _ in 0..(area.height as usize - lines.lines.len()) {
-            lines.push_line(" ".bg(tailwind::INDIGO.c950));
-        }
-
-        lines.render(area, buffer);
+        top_margin = scroll_pos * scroll_pixels;
     }
+
+    while top_margin >= 8 {
+        lines.push_line(" ".bg(tailwind::INDIGO.c950));
+        top_margin -= 8;
+    }
+    if top_margin > 0 {
+        lines.push_line(
+            BLOCKS[top_margin]
+                .bg(tailwind::INDIGO.c950)
+                .fg(material::BLUE.c300),
+        );
+        handle_size -= 8 - top_margin;
+    }
+    while handle_size >= 8 {
+        lines.push_line(" ".bg(material::BLUE.c300));
+        handle_size -= 8;
+    }
+    if handle_size > 0 {
+        lines.push_line(
+            BLOCKS[handle_size]
+                .bg(material::BLUE.c300)
+                .fg(tailwind::INDIGO.c950),
+        );
+    }
+    while lines.lines.len() < area.height as usize - 2 {
+        lines.push_line(" ".bg(tailwind::INDIGO.c950));
+    }
+
+    lines.render(area.offset(Offset::new(0, 1)), buffer);
 
     "▼"
         .bg(tailwind::INDIGO.c700)

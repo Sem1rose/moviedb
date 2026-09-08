@@ -24,7 +24,7 @@ use crate::{
     key_event_handler::{Data, KeyEventHandler},
     popups::{Popup, PopupTrait},
     types::Movie,
-    widgets::{self, Action, ActionType, Direction, ScrollGallery},
+    widgets::{self, Action, ActionType, Direction, Orientation, ScrollGallery},
 };
 
 const POSTER_SIZE: Size = Size {
@@ -448,22 +448,17 @@ impl PopupTrait for ChangeArtworksPopup {
                  alternate,
                  key_event_handler| {
                     let buffer_area = *buffer.area();
-                    let visible_area = helpers::add_padding(
+                    let (visible_area, input_area) = helpers::deconstruct_scrollview_area(
                         buffer_area,
-                        if align_bottom {
-                            Padding::top(num_hidden_rows)
-                        } else {
-                            Padding::bottom(num_hidden_rows)
-                        },
-                    )
-                    .offset(Offset {
-                        x: 0,
-                        y: buffer_negative_offset,
-                    });
+                        Orientation::Vertical,
+                        align_bottom,
+                        num_hidden_rows,
+                        buffer_negative_offset,
+                    );
 
                     key_event_handler.bind_mouse_button_down(
                         ratatui::crossterm::event::MouseButton::Left,
-                        visible_area,
+                        input_area,
                         move |app, _| {
                             if let Some(Popup::ChangeArtworks(change_artworks_popup)) =
                                 app.drawer.active_popup.as_mut()

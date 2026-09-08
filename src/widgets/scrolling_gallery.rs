@@ -7,7 +7,10 @@ use ratatui::{
     widgets::Fill,
 };
 
-use crate::{key_event_handler::KeyEventHandler, widgets::Direction};
+use crate::{
+    key_event_handler::KeyEventHandler,
+    widgets::{Direction, Orientation},
+};
 
 #[derive(Default)]
 pub struct ScrollGallery {
@@ -277,6 +280,7 @@ impl ScrollGallery {
         if num_rows + self.partially_visible as usize > self.num_visible_rows {
             let mut buffer = Buffer::empty(scrollbar_area);
             super::scroll_bar(
+                Orientation::Vertical,
                 num_rows + self.partially_visible as usize,
                 self.scroll_pos + (self.partially_visible && self.alignment_bottom) as usize,
                 self.num_visible_rows,

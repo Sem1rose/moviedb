@@ -3,7 +3,7 @@ use ratatui::{
     Frame,
     buffer::{Buffer, Cell},
     crossterm::event::KeyModifiers,
-    layout::{Offset, Position, Rect, Size},
+    layout::{Offset, Position, Rect},
     macros::{horizontal, line, span},
     style::{
         Style, Styled, Stylize,
@@ -52,6 +52,8 @@ impl MainScreen {
                         }
                         _ => (),
                     }
+
+                    main_screen.item = 0;
                 }
             });
 
@@ -105,7 +107,7 @@ impl MainScreen {
 
         key_event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
-            scrollbar_area.resize(Size::new(1, 1)),
+            helpers::add_padding(scrollbar_area, Padding::bottom(scrollbar_area.height - 1)),
             move |app, _| {
                 if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     if main_screen.movies_list.alignment_opposite
@@ -120,9 +122,7 @@ impl MainScreen {
         );
         key_event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
-            scrollbar_area
-                .resize(Size::new(1, 1))
-                .offset(Offset::new(0, scrollbar_area.height as i32 - 1)),
+            helpers::add_padding(scrollbar_area, Padding::top(scrollbar_area.height - 1)),
             move |app, _| {
                 if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     if !main_screen.movies_list.alignment_opposite
@@ -182,18 +182,13 @@ impl MainScreen {
         key_event_handler: &mut KeyEventHandler,
     ) {
         let buffer_area = *buffer.area();
-        let visible_area = helpers::add_padding(
+        let (visible_area, input_area) = helpers::deconstruct_scrollview_area(
             buffer_area,
-            if align_opposite {
-                Padding::top(num_hidden_rows)
-            } else {
-                Padding::bottom(num_hidden_rows)
-            },
+            self.movies_list.orientation,
+            align_opposite,
+            num_hidden_rows,
+            buffer_negative_offset,
         );
-        let input_area = visible_area.offset(Offset {
-            x: 0,
-            y: buffer_negative_offset,
-        });
 
         let alt = movie_index & 1 == 1;
         let tab_selected = self.tab == 0;
@@ -366,7 +361,7 @@ impl MainScreen {
         }
 
         let mut cell = Cell::new(" ");
-        cell.set_style(Style::new().bg(tailwind::GRAY.c950));
+        cell.set_style(Style::new().bg(background));
         let mut image_buffer = Buffer::filled(
             poster_area.intersection(visible_area).offset(Offset {
                 x: 0,

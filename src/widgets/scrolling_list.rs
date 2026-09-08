@@ -1,39 +1,30 @@
 use itertools::Itertools;
 use ratatui::{
     buffer::Buffer,
-    layout::Rect,
+    layout::{Direction, Rect},
     macros::{horizontal, vertical},
     style::{Stylize, palette::tailwind},
     widgets::{Fill, Widget},
 };
 
-use crate::key_event_handler::KeyEventHandler;
-
-pub enum ListDirection {
-    Vertical(bool),
-    Horizontal(bool),
-}
-impl Default for ListDirection {
-    fn default() -> Self {
-        Self::Vertical(false)
-    }
-}
+use crate::{key_event_handler::KeyEventHandler, widgets::Orientation};
 
 #[derive(Default)]
 pub struct ScrolledList {
     pub item_dimension:     u16,
+    // pub item_spacing: u16,
     pub selected_index:     usize,
     pub scroll_pos:         usize,
     pub alignment_opposite: bool,
     pub num_visible_items:  usize,
     pub partially_visible:  bool,
-    direction:              ListDirection,
+    pub orientation:        Direction,
 }
 
 impl ScrolledList {
-    pub fn new(direction: ListDirection, item_dimension: u16) -> Self {
+    pub fn new(orientation: Direction, item_dimension: u16) -> Self {
         Self {
-            direction,
+            orientation,
             item_dimension,
 
             ..Default::default()
@@ -53,12 +44,12 @@ impl ScrolledList {
                 .saturating_sub(self.num_visible_items + 1);
         }
 
-        match self.direction {
-            ListDirection::Vertical(_) =>
+        match self.orientation {
+            Orientation::Vertical =>
                 if self.scroll_pos > num_items.saturating_sub(self.num_visible_items) {
                     self.scroll_pos = num_items.saturating_sub(self.num_visible_items);
                 },
-            ListDirection::Horizontal(_) =>
+            Orientation::Horizontal =>
                 if self.scroll_pos > num_items.saturating_sub(self.num_visible_items) + 1 {
                     self.scroll_pos = num_items.saturating_sub(self.num_visible_items) + 1;
                 },
@@ -79,7 +70,7 @@ impl ScrolledList {
             self.alignment_opposite = false;
         } else if self.selected_index.saturating_sub(self.scroll_pos) == self.num_visible_items - 1
         {
-            if matches!(self.direction, ListDirection::Horizontal(_)) {
+            if matches!(self.orientation, Orientation::Horizontal) {
                 if self.partially_visible {
                     self.scroll_pos += 1;
                 }
@@ -126,15 +117,15 @@ impl ScrolledList {
     }
 
     pub fn update_for_area(&mut self, area: Rect, num_items: usize) {
-        let num_visible_items = match self.direction {
-            ListDirection::Vertical(_) => {
+        let num_visible_items = match self.orientation {
+            Orientation::Vertical => {
                 let num_visible_items = area.height as usize / self.item_dimension as usize;
                 self.partially_visible =
                     area.height as usize > num_visible_items * self.item_dimension as usize;
 
                 num_visible_items
             }
-            ListDirection::Horizontal(_) => {
+            Orientation::Horizontal => {
                 let num_visible_items = area.width as usize / self.item_dimension as usize;
                 self.partially_visible =
                     area.width as usize > num_visible_items * self.item_dimension as usize;
@@ -173,9 +164,9 @@ impl ScrolledList {
         mut render_callback: impl FnMut(&mut Buffer, u16, i32, bool, usize, bool, &mut KeyEventHandler),
     ) {
         let area = buffer.area;
-        let partially_visible_item_dimension = match self.direction {
-            ListDirection::Vertical(_) => area.height,
-            ListDirection::Horizontal(_) => area.width,
+        let partially_visible_item_dimension = match self.orientation {
+            Orientation::Vertical => area.height,
+            Orientation::Horizontal => area.width,
         } as usize
             - (self.num_visible_items - if self.partially_visible { 1 } else { 0 })
                 * self.item_dimension as usize;
@@ -185,52 +176,37 @@ impl ScrolledList {
             let item_is_partially_visible = self.partially_visible
                 && i == (!self.alignment_opposite as usize * (self.num_visible_items - 1));
 
-            let [area, remaining] = match self.direction {
-                ListDirection::Vertical(reversed) =>
-                    if reversed {
-                        let [remaining, area] = vertical![>=0, ==if item_is_partially_visible {partially_visible_item_dimension as u16} else {self.item_dimension}]
-                    .areas(remaining_area);
-
-                        [area, remaining]
-                    } else {
+            let [area, remaining] = match self.orientation {
+                Orientation::Vertical =>
                         vertical![==if item_is_partially_visible {partially_visible_item_dimension as u16} else {self.item_dimension}, >= 0]
-                        .areas(remaining_area)
-                    },
-                ListDirection::Horizontal(reversed) =>
-                    if reversed {
-                        let [remaining, area] = horizontal![>=0, ==if item_is_partially_visible {partially_visible_item_dimension as u16} else {self.item_dimension}]
-                        .areas(remaining_area);
-
-                        [area, remaining]
-                    } else {
+                        .areas(remaining_area),
+                Orientation::Horizontal =>
                         horizontal![==if item_is_partially_visible {partially_visible_item_dimension as u16} else {self.item_dimension}, >= 0]
-                        .areas(remaining_area)
-                    },
+                        .areas(remaining_area),
             };
 
             let index = self.scroll_pos + i;
             if index < num_items {
                 let selected = self.selected_index == i + self.scroll_pos;
                 let num_hidden_lines = self.item_dimension
-                    - match self.direction {
-                        ListDirection::Vertical(_) => area.height,
-                        ListDirection::Horizontal(_) => area.width,
+                    - match self.orientation {
+                        Orientation::Vertical => area.height,
+                        Orientation::Horizontal => area.width,
                     } as u16;
                 let buffer_negative_offset = if item_is_partially_visible {
-                    match self.direction {
-                        ListDirection::Vertical(false) =>
+                    match self.orientation {
+                        Orientation::Vertical =>
                             if area.y < num_hidden_lines {
                                 -((num_hidden_lines - area.y) as i32)
                             } else {
                                 0
                             },
-                        ListDirection::Horizontal(false) =>
+                        Orientation::Horizontal =>
                             if area.x < num_hidden_lines {
                                 -((num_hidden_lines - area.x) as i32)
                             } else {
                                 0
                             },
-                        _ => 0,
                     }
                 } else {
                     0
@@ -239,7 +215,7 @@ impl ScrolledList {
                 let mut buf = Buffer::empty(Rect::new(
                     area.x.saturating_sub(
                         if item_is_partially_visible
-                            && matches!(self.direction, ListDirection::Horizontal(false))
+                            && matches!(self.orientation, Orientation::Horizontal)
                             && self.alignment_opposite
                         {
                             num_hidden_lines
@@ -249,7 +225,7 @@ impl ScrolledList {
                     ),
                     area.y.saturating_sub(
                         if item_is_partially_visible
-                            && matches!(self.direction, ListDirection::Vertical(false))
+                            && matches!(self.orientation, Orientation::Vertical)
                             && self.alignment_opposite
                         {
                             num_hidden_lines
@@ -257,12 +233,12 @@ impl ScrolledList {
                             0
                         },
                     ),
-                    if matches!(self.direction, ListDirection::Vertical(_)) {
+                    if matches!(self.orientation, Orientation::Vertical) {
                         area.width
                     } else {
                         self.item_dimension
                     },
-                    if matches!(self.direction, ListDirection::Vertical(_)) {
+                    if matches!(self.orientation, Orientation::Vertical) {
                         self.item_dimension
                     } else {
                         area.height
@@ -280,76 +256,37 @@ impl ScrolledList {
                 );
 
                 if item_is_partially_visible {
-                    match self.direction {
-                        ListDirection::Vertical(reversed) =>
-                            if reversed {
-                                if self.alignment_opposite {
-                                    buf.resize(area);
-                                } else {
-                                    buf.content = buf.content
-                                        [(num_hidden_lines * area.width) as usize..]
-                                        .to_vec();
-                                    buf.area = area;
-                                }
+                    match self.orientation {
+                        Orientation::Vertical =>
+                            if self.alignment_opposite {
+                                buf.content = buf.content
+                                    [(num_hidden_lines * area.width) as usize..]
+                                    .to_vec();
+                                buf.area = area;
                             } else {
-                                if self.alignment_opposite {
-                                    buf.content = buf.content
-                                        [(num_hidden_lines * area.width) as usize..]
-                                        .to_vec();
-                                    buf.area = area;
-                                } else {
-                                    buf.resize(area);
-                                }
+                                buf.resize(area);
                             },
-                        ListDirection::Horizontal(reversed) => {
-                            if reversed {
-                                if self.alignment_opposite {
-                                    buf.content = buf
-                                        .content
-                                        .into_iter()
-                                        .chunks(self.item_dimension as usize)
-                                        .into_iter()
-                                        .map(|x| {
-                                            x.take(
-                                                (self.item_dimension - num_hidden_lines) as usize,
-                                            )
-                                        })
-                                        .flatten()
-                                        .collect_vec();
-                                } else {
-                                    buf.content = buf
-                                        .content
-                                        .into_iter()
-                                        .chunks(self.item_dimension as usize)
-                                        .into_iter()
-                                        .map(|x| x.dropping(num_hidden_lines as usize))
-                                        .flatten()
-                                        .collect_vec();
-                                }
+                        Orientation::Horizontal => {
+                            if self.alignment_opposite {
+                                buf.content = buf
+                                    .content
+                                    .into_iter()
+                                    .chunks(self.item_dimension as usize)
+                                    .into_iter()
+                                    .map(|x| x.dropping(num_hidden_lines as usize))
+                                    .flatten()
+                                    .collect_vec();
                             } else {
-                                if self.alignment_opposite {
-                                    buf.content = buf
-                                        .content
-                                        .into_iter()
-                                        .chunks(self.item_dimension as usize)
-                                        .into_iter()
-                                        .map(|x| x.dropping(num_hidden_lines as usize))
-                                        .flatten()
-                                        .collect_vec();
-                                } else {
-                                    buf.content = buf
-                                        .content
-                                        .into_iter()
-                                        .chunks(self.item_dimension as usize)
-                                        .into_iter()
-                                        .map(|x| {
-                                            x.take(
-                                                (self.item_dimension - num_hidden_lines) as usize,
-                                            )
-                                        })
-                                        .flatten()
-                                        .collect_vec();
-                                }
+                                buf.content = buf
+                                    .content
+                                    .into_iter()
+                                    .chunks(self.item_dimension as usize)
+                                    .into_iter()
+                                    .map(|x| {
+                                        x.take((self.item_dimension - num_hidden_lines) as usize)
+                                    })
+                                    .flatten()
+                                    .collect_vec();
                             }
 
                             buf.area = area;
@@ -374,6 +311,7 @@ impl ScrolledList {
         if num_items + self.partially_visible as usize > self.num_visible_items {
             if let Some(scrollbar_buffer) = scrollbar_buffer {
                 super::scroll_bar(
+                    self.orientation,
                     num_items + self.partially_visible as usize,
                     self.scroll_pos + (self.partially_visible && self.alignment_opposite) as usize,
                     self.num_visible_items,

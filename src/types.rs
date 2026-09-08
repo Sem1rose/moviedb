@@ -3,7 +3,6 @@ use std::{cmp::Ordering, io::stdout};
 use chrono::{DateTime, NaiveDate, TimeDelta, Utc};
 use indexmap::IndexMap;
 use itertools::Itertools;
-use log::info;
 use punch_play::smo::{HistoryItem as PunchPlayHistoryItem, MovieDetails as PunchPlayMovieDetails};
 use ratatui::{
     Terminal,

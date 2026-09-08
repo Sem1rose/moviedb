@@ -1,7 +1,7 @@
 use chrono::{DateTime, Local, Utc};
 use ratatui::{
     Frame,
-    buffer::Buffer,
+    buffer::{Buffer, Cell},
     crossterm::event::KeyCode,
     layout::{HorizontalAlignment, Margin, Offset, Size},
     macros::{line, vertical},
@@ -20,7 +20,7 @@ use crate::{
     key_event_handler::{Data, KeyEventHandler},
     popups::{Popup, PopupTrait},
     types::Entry,
-    widgets::{self, Action, ActionType, ListDirection, ScrolledList},
+    widgets::{self, Action, ActionType, Orientation, ScrolledList},
 };
 
 #[derive(Default)]
@@ -49,7 +49,7 @@ impl ManagePlaysPopup {
     pub fn new(entry: Option<Entry>) -> Self {
         Self {
             entry: entry.or_else(|| Some(Default::default())),
-            scrollview: ScrolledList::new(ListDirection::Vertical(false), 3),
+            scrollview: ScrolledList::new(Orientation::Vertical, 3),
 
             ..Default::default()
         }
@@ -442,9 +442,11 @@ impl PopupTrait for ManagePlaysPopup {
                         .offset(Offset::new(list_area.width as i32 - 1, 1))
                         .resize(Size::new(1, list_area.height - 2));
 
+                    let mut cell = Cell::new(" ");
+                    cell.set_style(Style::new().bg(tailwind::SLATE.c900));
                     let mut scrollbar_buffer = Buffer::empty(scrollbar_area);
-                    let mut list_buffer = Buffer::empty(list_block_inner);
-                    self.scrollview.render_without_area_update(
+                    let mut list_buffer = Buffer::filled(list_block_inner, cell);
+                    self.scrollview.render(
                         num_entries,
                         Some(&mut scrollbar_buffer),
                         true,
@@ -452,26 +454,25 @@ impl PopupTrait for ManagePlaysPopup {
                         key_event_handler,
                         |buffer,
                          num_hidden_rows,
-                         _,
+                         buffer_negative_offset,
                          align_bottom,
                          index,
                          selected,
                          key_event_handler| {
                             let buffer_area = *buffer.area();
-                            let visible_area = helpers::add_padding(
+                            let (_, input_area) = helpers::deconstruct_scrollview_area(
                                 buffer_area,
-                                if align_bottom {
-                                    Padding::top(num_hidden_rows)
-                                } else {
-                                    Padding::bottom(num_hidden_rows)
-                                },
+                                Orientation::Vertical,
+                                align_bottom,
+                                num_hidden_rows,
+                                buffer_negative_offset,
                             );
 
                             let alternate = index & 1 == 1;
 
                             key_event_handler.bind_mouse_button_down(
                                 ratatui::crossterm::event::MouseButton::Left,
-                                visible_area,
+                                input_area,
                                 move |app, _| {
                                     if let Some(Popup::ManagePlays(manage_plays_popup)) =
                                         app.drawer.active_popup.as_mut()
@@ -664,8 +665,8 @@ impl PopupTrait for ManagePlaysPopup {
                             }
                         },
                     );
-                    frame.buffer_mut().merge(&scrollbar_buffer);
                     frame.buffer_mut().merge(&list_buffer);
+                    frame.buffer_mut().merge(&scrollbar_buffer);
 
                     key_event_handler.bind_mouse_button_down(
                         ratatui::crossterm::event::MouseButton::Left,

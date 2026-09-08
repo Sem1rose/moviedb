@@ -2,11 +2,13 @@ use std::{cell::RefCell, rc::Rc};
 
 use itertools::Itertools;
 use ratatui::{
-    layout::{Offset, Position, Rect, Size},
+    layout::{Offset, Position, Rect},
     macros::constraint,
     widgets::{Block, Padding},
 };
 use ratatui_image::sliced::SignedPosition;
+
+use crate::widgets::Orientation;
 
 pub fn wrap_text(line: &str, width: usize) -> Vec<String> {
     if line.chars().count() <= width {
@@ -57,12 +59,52 @@ pub fn add_padding(area: Rect, padding: Padding) -> Rect {
     Block::new().padding(padding).inner(area)
 }
 
-pub fn resize_area_centered(area: Rect, offset: Offset) -> Rect {
-    area.resize(Size::new(
-        (area.width as i32 + offset.x) as u16,
-        (area.height as i32 + offset.y) as u16,
-    ))
-    .offset(Offset::new(-offset.x / 2, -offset.y / 2))
+pub fn deconstruct_scrollview_area(
+    area: Rect,
+    orientation: Orientation,
+    align_opposite: bool,
+    num_hidden_rows: u16,
+    buffer_negative_offset: i32,
+) -> (Rect, Rect) {
+    let visible_area = add_padding(
+        area,
+        Padding::new(
+            if matches!(orientation, Orientation::Horizontal) && align_opposite {
+                num_hidden_rows
+            } else {
+                0
+            },
+            if matches!(orientation, Orientation::Horizontal) && !align_opposite {
+                num_hidden_rows
+            } else {
+                0
+            },
+            if matches!(orientation, Orientation::Vertical) && align_opposite {
+                num_hidden_rows
+            } else {
+                0
+            },
+            if matches!(orientation, Orientation::Vertical) && !align_opposite {
+                num_hidden_rows
+            } else {
+                0
+            },
+        ),
+    );
+    let input_area = visible_area.offset(Offset {
+        x: if matches!(orientation, Orientation::Horizontal) {
+            buffer_negative_offset
+        } else {
+            0
+        },
+        y: if matches!(orientation, Orientation::Vertical) {
+            buffer_negative_offset
+        } else {
+            0
+        },
+    });
+
+    (visible_area, input_area)
 }
 
 pub fn ellipsize_string(string: &str, max_width: usize) -> String {

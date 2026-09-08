@@ -45,7 +45,7 @@ use crate::{
     popups::{Popup, PopupTrait},
     tokens::{OMDBTokens, PunchPlayTokens, TMDBTokens, TraktTokens},
     types::MovieDetailsResponse,
-    widgets::{self, Action, ActionType, ListDirection, ScrolledList},
+    widgets::{self, Action, ActionType, Orientation, ScrolledList},
 };
 
 #[derive(Default)]
@@ -155,7 +155,7 @@ impl AddMoviePopup {
             trakt_tokens,
             omdb_tokens,
             take_rating,
-            scrollview: ScrolledList::new(ListDirection::Vertical(false), 8),
+            scrollview: ScrolledList::new(Orientation::Vertical, 8),
 
             _cache_dir: cache_dir.to_path_buf(),
             ..Default::default()
@@ -464,7 +464,7 @@ impl PopupTrait for AddMoviePopup {
 
                 let popup_area = widgets::window(
                     frame,
-                    helpers::centered_area(36, 66, frame.area()),
+                    helpers::centered_area(34, 66, frame.area()),
                     " Add movie ",
                     false,
                 );
@@ -503,8 +503,10 @@ impl PopupTrait for AddMoviePopup {
                     );
                 }
 
-                let mut scrollbar_buffer = Buffer::empty(scrollbar_area);
-                let mut list_buffer = Buffer::empty(results_list_area);
+                let mut cell = Cell::new(" ");
+                cell.set_style(Style::new().bg(tailwind::BLUE.c950));
+                let mut scrollbar_buffer = Buffer::filled(scrollbar_area, cell.clone());
+                let mut list_buffer = Buffer::filled(results_list_area, cell);
                 self.scrollview.render(
                     num_results,
                     Some(&mut scrollbar_buffer),
@@ -519,24 +521,19 @@ impl PopupTrait for AddMoviePopup {
                      selected,
                      key_event_handler| {
                         let buffer_area = *buffer.area();
-                        let visible_area = helpers::add_padding(
+                        let (visible_area, input_area) = helpers::deconstruct_scrollview_area(
                             buffer_area,
-                            if align_bottom {
-                                Padding::top(num_hidden_rows)
-                            } else {
-                                Padding::bottom(num_hidden_rows)
-                            },
-                        )
-                        .offset(Offset {
-                            x: 0,
-                            y: buffer_negative_offset,
-                        });
+                            Orientation::Vertical,
+                            align_bottom,
+                            num_hidden_rows,
+                            buffer_negative_offset,
+                        );
 
                         let alternate = index & 1 == 1;
 
                         key_event_handler.bind_mouse_button_down(
                             ratatui::crossterm::event::MouseButton::Left,
-                            visible_area,
+                            input_area,
                             move |app, _| {
                                 if let Some(Popup::AddMovie(add_movie_popup)) =
                                     app.drawer.active_popup.as_mut()
