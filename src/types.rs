@@ -109,7 +109,7 @@ pub struct ListItem {
     pub id:       u32,
     pub added_at: DateTime<Utc>,
 }
-#[derive(Serialize, Deserialize, Default, Clone)]
+#[derive(Serialize, Deserialize, Default, Debug, Clone)]
 pub struct List {
     pub id:       ListID,
     pub name:     String,
@@ -188,17 +188,28 @@ impl List {
 }
 
 #[derive(
-    Default, Clone, Debug, Copy, FromRepr, EnumCount, AsRefStr, EnumIter, EnumDiscriminants,
+    Default,
+    Clone,
+    Debug,
+    Copy,
+    FromRepr,
+    PartialEq,
+    Eq,
+    EnumCount,
+    AsRefStr,
+    EnumIter,
+    EnumDiscriminants,
 )]
 #[strum_discriminants(vis(), repr(usize))]
 #[strum(serialize_all = "title_case")]
 pub enum Sort {
     #[default]
     MostRecent,
-    FirstWatched,
+    ListOrder,
     ReleaseDate,
     UserRating,
     Rating(RatingSource),
+    FirstWatched,
     Name,
     Relevance,
 }
@@ -210,7 +221,7 @@ impl From<Sort> for usize {
 
 #[allow(clippy::upper_case_acronyms)]
 #[repr(usize)]
-#[derive(Default, Debug, Clone, Copy, EnumIter, AsRefStr, FromRepr)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, EnumIter, AsRefStr, FromRepr)]
 pub enum RatingSource {
     #[default]
     IMDB,

@@ -8,7 +8,9 @@ mod omdb;
 mod popups;
 mod processors;
 mod screens;
+mod sources;
 mod tokens;
+mod trackers;
 mod types;
 mod widgets;
 

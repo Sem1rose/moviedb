@@ -230,7 +230,7 @@ impl App {
             } else {
                 None
             };
-            let omdb_handle = if false && omdb_tokens.status {
+            let omdb_handle = if omdb_tokens.status {
                 Some({
                     let imdb_id = imdb_id.clone();
                     s.spawn(move || omdb::get_movie_details(omdb_tokens.key(), &imdb_id))
@@ -866,11 +866,6 @@ impl App {
                     } else {
                         unreachable!()
                     };
-
-                    info!(
-                        "{backdrop:?} {:?}\n{poster:?} {:?}",
-                        movie.override_backdrop, movie.override_poster
-                    );
 
                     if backdrop != movie.override_backdrop {
                         movie.override_backdrop = backdrop;

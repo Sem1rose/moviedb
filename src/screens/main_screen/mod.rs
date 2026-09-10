@@ -7,7 +7,7 @@ use std::{
 
 use chrono::{DateTime, Datelike, TimeDelta, Utc};
 use itertools::Itertools;
-use log::error;
+use log::{error, info};
 use nucleo_matcher::{Config as MatcherConfig, Matcher, pattern::Atom};
 use ratatui::{
     Frame,
@@ -269,15 +269,17 @@ impl MainScreen {
         if matches!(id, ListID::Watched | ListID::All) || self.lists.contains_key(&id) {
             self.selected_list = id;
 
+            let available_sort_options = self.get_available_sort_options();
+            if !available_sort_options.contains(&self.sort) {
+                self.sort = *available_sort_options.first().unwrap();
+            }
+
             let fetch_movies = {
                 let movies_borrowed = self.movies.borrow();
                 self.get_list_ids()
                     .iter()
                     .any(|x| !movies_borrowed.contains_key(x))
             };
-            if matches!(id, ListID::Watchlist) && matches!(self.sort, Sort::FirstWatched) {
-                self.sort = Default::default();
-            }
             if fetch_movies {
                 key_event_handler.bind_immediate(|app, _| app.drawer.open_fetch_movies_popup());
 
@@ -614,6 +616,44 @@ impl MainScreen {
         self.filtered_movies = movies;
     }
 
+    fn get_available_sort_options(&self) -> Vec<Sort> {
+        Sort::iter()
+            .filter(|x| match x {
+                Sort::MostRecent => match self.selected_list {
+                    ListID::Collection(_) => false,
+                    ListID::Local(_) | ListID::TMDB(_) | ListID::PunchPlay(_) =>
+                        !self.lists[&self.selected_list].readonly,
+                    _ => true,
+                },
+                Sort::ListOrder => !matches!(self.selected_list, ListID::All | ListID::Watched | ListID::Watchlist | ListID::Collection(_)),
+                Sort::ReleaseDate => true,
+                Sort::Rating(_) => true,
+                Sort::Name => true,
+                Sort::FirstWatched => {
+                    if matches!(self.selected_list, ListID::Watchlist) {
+                        false
+                    } else {
+                        let watched_borrowed = self.watched.borrow();
+                        self.get_list_ids()
+                            .iter()
+                            .any(|x| watched_borrowed.contains_key(x))
+                    }
+                }
+                Sort::UserRating => {
+                    if matches!(self.selected_list, ListID::Watchlist) {
+                        false
+                    } else {
+                        let watched_borrowed = self.watched.borrow();
+                        self.get_list_ids()
+                            .iter()
+                            .any(|x| watched_borrowed.contains_key(x))
+                    }
+                }
+                Sort::Relevance => !self.search_input.is_empty(),
+            })
+            .collect_vec()
+    }
+
     fn sort_movies(&mut self) {
         match self.sort {
             Sort::UserRating => {
@@ -688,6 +728,10 @@ impl MainScreen {
                     self.filtered_movies.reverse();
                 }
             }
+            Sort::ListOrder =>
+                if self.sort_ascending {
+                    self.filtered_movies.reverse();
+                },
             Sort::Relevance => (),
         }
     }
@@ -730,7 +774,7 @@ impl MainScreen {
             key_event_handler.bind_esc((Some(0), None), "Clear search".into(), |app, _| {
                 if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     if let Sort::Relevance = main_screen.sort {
-                        main_screen.sort = Sort::default();
+                        main_screen.sort = *main_screen.get_available_sort_options().first().unwrap();
                     }
 
                     main_screen.search_input = TextArea::from([""]);
@@ -831,27 +875,27 @@ impl MainScreen {
             });
         }
 
-        // if !matches!(self.selected_list, ListID::Local(_) | ListID::Watched) {
-        //     key_event_handler.bind_key((Some(0), None), 'R', "Update list".into(), |app, _| {
-        //         if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-        //             match main_screen.selected_list {
-        //                 ListID::Watched => {
-        //                     // app.refetch_watched();
-        //                 }
-        //                 _ => {
-        //                     main_screen.refetch_current_list(
-        //                         &app.watched.borrow_mut(),
-        //                         &app.tmdb_tokens,
-        //                         &app.simkl_tokens,
-        //                         &app.punch_play_tokens,
-        //                     );
-        //                 }
-        //             }
+        if !matches!(
+            self.selected_list,
+            ListID::Local(_) | ListID::Watched | ListID::All
+        ) {
+            key_event_handler.bind_key((Some(0), None), 'R', "Update list".into(), |app, _| {
+                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                    match main_screen.selected_list {
+                        _ => {
+                            main_screen.refetch_current_list(
+                                &app.watched.borrow_mut(),
+                                &app.tmdb_tokens,
+                                &app.simkl_tokens,
+                                &app.punch_play_tokens,
+                            );
+                        }
+                    }
 
-        //             app.drawer.open_fetch_movies_popup();
-        //         }
-        //     });
-        // }
+                    app.drawer.open_fetch_movies_popup();
+                }
+            });
+        }
 
         if self.list_editable() {
             let take_rating = self.selected_list == ListID::Watched;
@@ -900,7 +944,7 @@ impl MainScreen {
                 main_screen.item = 0;
 
                 if let Sort::Relevance = main_screen.sort {
-                    main_screen.sort = Sort::default();
+                    main_screen.sort = *main_screen.get_available_sort_options().first().unwrap();
                 }
                 _ = pop_criterion!(main_screen.filter_criteria, FilterCriterion::Title(_, _));
                 main_screen

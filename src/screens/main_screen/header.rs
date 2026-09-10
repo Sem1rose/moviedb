@@ -1,4 +1,3 @@
-use itertools::Itertools;
 use ratatui::{
     Frame,
     layout::{Offset, Rect},
@@ -37,7 +36,7 @@ impl MainScreen {
                 main_screen.item = 0;
 
                 if let Sort::Relevance = main_screen.sort {
-                    main_screen.sort = Sort::default();
+                    main_screen.sort = *main_screen.get_available_sort_options().first().unwrap();
                 }
 
                 main_screen.search_input = TextArea::from([""]);
@@ -73,7 +72,7 @@ impl MainScreen {
 
                     if name.is_empty() || !filter {
                         if let Sort::Relevance = main_screen.sort {
-                            main_screen.sort = Sort::default();
+                            main_screen.sort = *main_screen.get_available_sort_options().first().unwrap();
                         }
                         main_screen.search_input = TextArea::from([""]);
                     } else if filter {
@@ -121,7 +120,7 @@ impl MainScreen {
 
                 if name.is_empty() || !filter {
                     if let Sort::Relevance = main_screen.sort {
-                        main_screen.sort = Sort::default();
+                        main_screen.sort = *main_screen.get_available_sort_options().first().unwrap();
                     }
                     main_screen.search_input = TextArea::from([""]);
                 } else if filter {
@@ -303,7 +302,7 @@ impl MainScreen {
                     main_screen.sort = if filter && !main_screen.search_input.is_empty() {
                         Sort::Relevance
                     } else {
-                        Sort::default()
+                        *main_screen.get_available_sort_options().first().unwrap()
                     };
                     main_screen.filter_criteria.push(FilterCriterion::Title(
                         main_screen.search_input.lines()[0].clone(),
@@ -416,27 +415,7 @@ impl MainScreen {
         );
 
         if tab_selected && self.item == 1 {
-            let items = Sort::iter()
-                .filter(|x| match x {
-                    Sort::MostRecent => true,
-                    Sort::ReleaseDate => true,
-                    Sort::Rating(_) => true,
-                    Sort::Name => true,
-                    Sort::FirstWatched => {
-                        let watched_borrowed = self.watched.borrow();
-                        self.get_list_ids()
-                            .iter()
-                            .any(|x| watched_borrowed.contains_key(x))
-                    }
-                    Sort::UserRating => {
-                        let watched_borrowed = self.watched.borrow();
-                        self.get_list_ids()
-                            .iter()
-                            .any(|x| watched_borrowed.contains_key(x))
-                    }
-                    Sort::Relevance => !self.search_input.is_empty(),
-                })
-                .collect_vec();
+            let items = self.get_available_sort_options();
 
             self.sort_popup.model = items
                 .iter()
@@ -469,7 +448,7 @@ impl MainScreen {
                     let scroll_pos = self.sort_popup.scroll_pos;
                     for i in 0..len {
                         let index = i + scroll_pos;
-                        if self.sort_popup.selected_index != index {
+                        let repr = *self.sort_popup.model.get_index(index).unwrap().0;
                             key_event_handler.bind_mouse_button_down(
                                 ratatui::crossterm::event::MouseButton::Left,
                                 mouse_area,
@@ -477,20 +456,23 @@ impl MainScreen {
                                     if let Some(Screens::MainScreen(main_screen)) =
                                         app.drawer.current_screen.as_mut()
                                     {
-                                        main_screen.sort = Sort::from_repr(index).unwrap();
-                                        main_screen.sort_popup.selected_index = index;
+                                        let new_sort = Sort::from_repr(repr).unwrap();
 
-                                        if !matches!(main_screen.sort, Sort::Rating(_)) {
+                                        if main_screen.sort_popup.selected_index != index {
+                                            main_screen.sort = new_sort;
+                                            main_screen.sort_popup.selected_index = index;
+                                            main_screen.filter_sort_movies(true);
+                                        }
+
+                                        if !matches!(new_sort, Sort::Rating(_)) {
                                             main_screen.tab = 0;
                                             main_screen.item = 0;
                                         } else {
                                             main_screen.sort_popup.open_submenu(true);
                                         }
-                                        main_screen.filter_sort_movies(true);
                                     }
                                 },
                             );
-                        }
                         mouse_area = mouse_area.offset(Offset { x: 0, y: 1 });
                     }
                 } else {

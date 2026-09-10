@@ -6,7 +6,6 @@ use std::{
 };
 
 use itertools::Itertools;
-use log::info;
 use ratatui::{
     Frame,
     layout::{Flex, Margin},
@@ -227,7 +226,7 @@ impl PopupTrait for FetchMoviesPopup {
                             movie.add_omdb_details(omdb);
                         }
 
-                        info!("{movie:#?}");
+                        // info!("{movie:#?}");
                         match self.movies.borrow_mut().entry(movie_id) {
                             indexmap::map::Entry::Occupied(mut occupied_entry) =>
                                 *occupied_entry.get_mut() = movie,
