@@ -138,6 +138,17 @@ impl MainScreen {
 
         frame.render_widget(Fill::new(" ").bg(tailwind::GRAY.c950), backdrop_area);
         if let Some(movie) = movie {
+            let mut cell = Cell::new(" ");
+            cell.set_style(Style::new().bg(tailwind::SLATE.c900));
+            let mut image_buffer = Buffer::filled(backdrop_area, cell);
+            image_renderer.draw_image(
+                ImageID::Movie(movie.id, movie.override_backdrop.clone(), true),
+                false,
+                None,
+                &mut image_buffer,
+            );
+            frame.buffer_mut().merge(&image_buffer);
+
             let [title_area, ratings_area, _, tabs_area] =
                 vertical![==3, ==2, ==1, ==2].areas(title_area);
 
@@ -408,12 +419,12 @@ impl MainScreen {
                         .sorted_by(|a, b| a.len().cmp(&b.len()))
                         .map(|genre| {
                             vec![
-                                span!("").fg(tailwind::LIME.c400),
+                                span!("").fg(tailwind::TEAL.c500),
                                 span!(genre)
                                     .bold()
-                                    .fg(tailwind::SKY.c900)
-                                    .bg(tailwind::LIME.c400),
-                                span!("").fg(tailwind::LIME.c400),
+                                    .fg(tailwind::BLACK)
+                                    .bg(tailwind::TEAL.c500),
+                                span!("").fg(tailwind::TEAL.c500),
                             ]
                         });
                     let mut genres_lines = vec![];
@@ -489,17 +500,6 @@ impl MainScreen {
                 ),
                 _ => (),
             };
-
-            let mut cell = Cell::new(" ");
-            cell.set_style(Style::new().bg(tailwind::SLATE.c900));
-            let mut image_buffer = Buffer::filled(backdrop_area, cell);
-            image_renderer.draw_image(
-                ImageID::Movie(movie.id, movie.override_backdrop.clone(), true),
-                false,
-                None,
-                &mut image_buffer,
-            );
-            frame.buffer_mut().merge(&image_buffer);
         }
     }
 

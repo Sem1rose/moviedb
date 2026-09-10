@@ -17,14 +17,16 @@ fn parse_nullable_string<'de, D: Deserializer<'de>, T: FromStr>(d: D) -> Result<
 where
     <T as FromStr>::Err: std::fmt::Display,
 {
-    Deserialize::deserialize(d).and_then(|value: Option<&str>| {
+    match <Option<&str>>::deserialize(d) {
+        Ok(value) =>
         value.map_or(Ok(None), |value| {
             value
                 .parse::<T>()
                 .map_err(serde::de::Error::custom)
                 .map(Option::Some)
-        })
-    })
+        }),
+        Err(error) => Err(error)
+    }
 }
 
 macro_rules! headers {

@@ -1,13 +1,16 @@
 use std::{
+    collections::VecDeque,
     fs,
     hash::Hash,
     path::{Path, PathBuf},
     sync::mpsc::{self, Receiver, Sender},
     thread,
+    time::Duration,
 };
 
 use anyhow::{anyhow, bail};
-use log::error;
+use itertools::Either;
+use log::{error, info};
 use ratatui::{
     Frame,
     buffer::Buffer,
@@ -17,11 +20,11 @@ use ratatui::{
     widgets::{Fill, StatefulWidget, Widget},
 };
 use ratatui_image::{Resize, picker::Picker, sliced::*};
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use strum::{EnumDiscriminants, IntoDiscriminant};
 use throbber_widgets_tui::{BRAILLE_SIX_DOUBLE, Throbber, ThrobberState};
 
-use crate::{helpers, types::FxIndexMap};
+use crate::helpers;
 
 #[derive(PartialEq, Eq, Clone, Debug, EnumDiscriminants)]
 #[strum_discriminants(derive(Hash))]
@@ -40,10 +43,11 @@ impl Hash for ImageID {
     }
 }
 
-type LoadResult = (ImageID, anyhow::Result<Result<SlicedProtocol, bool>>);
+type LoadResult = (ImageID, anyhow::Result<Either<SlicedProtocol, bool>>);
 
 #[derive(Debug)]
 enum Actions {
+    DownLoad(ImageID),
     Load(ImageID),
     Resize(ImageIDDiscriminants, [Size; 2]),
     UpdateTokens(String),
@@ -59,11 +63,15 @@ fn default_sizes() -> FxHashMap<ImageIDDiscriminants, [Size; 2]> {
 }
 
 const CALCULATE_OBSTRUCTION: bool = true;
-const CACHE_SIZE: usize = 384;
+const MAX_CONCURRENT_LOADS: usize = 20;
 
 pub struct RatatuiImage {
-    sizes:         FxHashMap<ImageIDDiscriminants, [Size; 2]>,
-    hashed_images: FxIndexMap<ImageID, Option<SlicedProtocol>>,
+    sizes:           FxHashMap<ImageIDDiscriminants, [Size; 2]>,
+    hashed_images:   FxHashMap<ImageID, SlicedProtocol>,
+    load_queue:      VecDeque<ImageID>,
+    loading_ids:     FxHashSet<ImageID>,
+    downloading_ids: FxHashSet<ImageID>,
+    download_errors: FxHashSet<ImageID>,
 
     draw_queue:    Vec<(ImageID, Rect, Option<SignedPosition>)>,
     overlay_areas: Vec<Rect>,
@@ -79,15 +87,18 @@ pub struct RatatuiImage {
 }
 impl RatatuiImage {
     pub fn new(cache_dir: &Path) -> Self {
-        let (tx_main, rx_main) = mpsc::channel();
-        let tx_load = Self::start_load_thread(&tx_main, cache_dir);
+        let (rx_main, tx_load) = Self::start_load_thread(cache_dir);
 
         Self {
             sizes: default_sizes(),
-            hashed_images: FxIndexMap::with_capacity_and_hasher(
-                CACHE_SIZE,
+            hashed_images: FxHashMap::default(),
+            load_queue: Default::default(),
+            loading_ids: FxHashSet::with_capacity_and_hasher(
+                MAX_CONCURRENT_LOADS,
                 rustc_hash::FxBuildHasher,
             ),
+            downloading_ids: FxHashSet::default(),
+            download_errors: Default::default(),
 
             draw_queue: vec![],
             overlay_areas: vec![],
@@ -103,8 +114,9 @@ impl RatatuiImage {
         }
     }
 
-    fn start_load_thread(tx_main: &Sender<LoadResult>, cache_dir: &Path) -> Sender<Actions> {
+    fn start_load_thread(cache_dir: &Path) -> (Receiver<LoadResult>, Sender<Actions>) {
         let (tx_load, rx_load) = mpsc::channel::<Actions>();
+        let (tx_main, rx_main) = mpsc::channel::<LoadResult>();
 
         let tx_main = tx_main.clone();
         let picker = Picker::from_query_stdio().unwrap_or_else(|_| {
@@ -122,93 +134,92 @@ impl RatatuiImage {
                     Actions::Load(image_id) => {
                         let tx_main = tx_main.clone();
 
+                        let size = sizes[&image_id.discriminant()][matches!(
+                            image_id,
+                            ImageID::Movie(_, _, true)
+                                | ImageID::Collection(_, true)
+                                | ImageID::Custom(_, true)
+                        )
+                            as usize];
+
+                        if size.width == 0 || size.height == 0 {
+                            _ = tx_main.send((image_id, Err(anyhow!("Size not initialized."))));
+                            continue;
+                        }
+
                         let path = Self::path_from_image_id(&image_id, &cache_dir);
+                        let picker = picker.clone();
+                        thread::spawn(move || {
+                            let result = (|| -> anyhow::Result<_> {
+                                let result = image::ImageReader::open(&path);
+                                if let Err(err) = result {
+                                    bail!("Failed to open {:?}: {}", image_id, err);
+                                }
 
-                        if path.is_file() {
-                            let size = sizes[&image_id.discriminant()][matches!(
-                                image_id,
-                                ImageID::Movie(_, _, true)
-                                    | ImageID::Collection(_, true)
-                                    | ImageID::Custom(_, true)
-                            )
-                                as usize];
+                                let result = result.unwrap().decode();
+                                if let Err(err) = result {
+                                    bail!("Failed to decode {:?}: {}", image_id, err);
+                                }
 
-                            if size.width == 0 || size.height == 0 {
-                                _ = tx_main.send((image_id, Err(anyhow!("Size not initialized."))));
-                                continue;
-                            }
+                                let protocol = SlicedProtocol::new_with_resize(
+                                    &picker,
+                                    result.unwrap(),
+                                    size,
+                                    Resize::Scale(Some(ratatui_image::FilterType::Triangle)),
+                                )?;
 
-                            let picker = picker.clone();
-                            thread::spawn(move || {
-                                let result = (|| -> anyhow::Result<_> {
-                                    let result = image::ImageReader::open(&path);
-                                    if let Err(err) = result {
-                                        bail!("Failed to open {:?}: {}", image_id, err);
-                                    }
+                                Ok(Either::Left(protocol))
+                            })();
 
-                                    let result = result.unwrap().decode();
-                                    if let Err(err) = result {
-                                        bail!("Failed to decode {:?}: {}", image_id, err);
-                                    }
+                            tx_main.send((image_id, result))
+                        });
+                    }
+                    Actions::DownLoad(image_id) => {
+                        let tx_main = tx_main.clone();
 
-                                    let protocol = SlicedProtocol::new_with_resize(
-                                        &picker,
-                                        result.unwrap(),
-                                        size,
-                                        Resize::Scale(Some(ratatui_image::FilterType::Triangle)),
-                                    )?;
-
-                                    Ok(Ok(protocol))
-                                })();
-
-                                tx_main.send((image_id, result))
-                            });
-                        } else {
-                            let cache_dir = cache_dir.clone();
-                            let tmdb_access_token = tmdb_access_token.as_ref().unwrap().clone();
-                            thread::spawn(move || {
-                                let result = match &image_id {
-                                    ImageID::Movie(id, Some(path), backdrop) =>
-                                        tmdb::movie::get_custom_artwork(
-                                            &cache_dir,
-                                            tmdb_access_token.as_str(),
-                                            Some(*id),
-                                            path,
-                                            *backdrop,
-                                        ),
-                                    &ImageID::Movie(id, None, backdrop) =>
-                                        tmdb::movie::get_movie_artworks(
-                                            &cache_dir,
-                                            tmdb_access_token.as_str(),
-                                            None,
-                                            id,
-                                            Some(backdrop),
-                                        ),
-                                    &ImageID::Collection(id, false) =>
-                                        tmdb::collection::get_collection_artwork(
-                                            &cache_dir,
-                                            tmdb_access_token.as_str(),
-                                            id,
-                                        ),
-                                    &ImageID::Person(id) => tmdb::movie::get_person_artwork(
+                        let cache_dir = cache_dir.clone();
+                        let tmdb_access_token = tmdb_access_token.as_ref().unwrap().clone();
+                        thread::spawn(move || {
+                            let result = match &image_id {
+                                ImageID::Movie(id, Some(path), backdrop) =>
+                                    tmdb::movie::get_custom_artwork(
+                                        &cache_dir,
+                                        tmdb_access_token.as_str(),
+                                        Some(*id),
+                                        path,
+                                        *backdrop,
+                                    ),
+                                &ImageID::Movie(id, None, backdrop) =>
+                                    tmdb::movie::get_movie_artworks(
+                                        &cache_dir,
+                                        tmdb_access_token.as_str(),
+                                        None,
+                                        id,
+                                        Some(backdrop),
+                                    ),
+                                &ImageID::Collection(id, false) =>
+                                    tmdb::collection::get_collection_artwork(
                                         &cache_dir,
                                         tmdb_access_token.as_str(),
                                         id,
                                     ),
-                                    ImageID::Custom(path, backdrop) =>
-                                        tmdb::movie::get_custom_artwork(
-                                            &cache_dir,
-                                            tmdb_access_token.as_str(),
-                                            None,
-                                            path,
-                                            *backdrop,
-                                        ),
-                                    _ => Ok(false),
-                                };
+                                &ImageID::Person(id) => tmdb::movie::get_person_artwork(
+                                    &cache_dir,
+                                    tmdb_access_token.as_str(),
+                                    id,
+                                ),
+                                ImageID::Custom(path, backdrop) => tmdb::movie::get_custom_artwork(
+                                    &cache_dir,
+                                    tmdb_access_token.as_str(),
+                                    None,
+                                    path,
+                                    *backdrop,
+                                ),
+                                _ => Ok(false),
+                            };
 
-                                tx_main.send((image_id, result.map(|x| Err(x))))
-                            });
-                        }
+                            tx_main.send((image_id, result.map(|x| Either::Right(x))))
+                        });
                     }
                     Actions::Resize(id, new_sizes) => {
                         *sizes.get_mut(&id).unwrap() = new_sizes;
@@ -220,7 +231,7 @@ impl RatatuiImage {
             }
         });
 
-        tx_load
+        (rx_main, tx_load)
     }
 
     fn path_from_image_id(image_id: &ImageID, cache_dir: &Path) -> PathBuf {
@@ -252,12 +263,23 @@ impl RatatuiImage {
         if let Err(error) = fs::remove_file(path) {
             error!("Error while trying to delete {image_id:?}: {error:#?}");
         }
+
+        self.download_errors.remove(&image_id);
+        self.loading_ids.remove(&image_id);
+        self.hashed_images.remove(&image_id);
     }
 
     pub fn hash_image(&mut self, image_id: ImageID) {
-        self.hashed_images.insert(image_id.clone(), None);
-
-        _ = self.tx_load.send(Actions::Load(image_id));
+        if Self::path_from_image_id(&image_id, &self.cache_dir).is_file() {
+            self.load_queue.push_back(image_id);
+        } else {
+            if !self.downloading_ids.contains(&image_id)
+                && !self.download_errors.contains(&image_id)
+            {
+                self.downloading_ids.insert(image_id.clone());
+                _ = self.tx_load.send(Actions::DownLoad(image_id));
+            }
+        }
     }
 
     pub fn update(&mut self) {
@@ -271,48 +293,48 @@ impl RatatuiImage {
         }
 
         for (image_id, result) in self.rx_main.try_iter() {
-            if let Ok(protocol) = result {
-                if self.hashed_images.contains_key(&image_id) {
-                    if let Ok(protocol) = protocol {
-                        _ = self
-                            .hashed_images
-                            .get_mut(&image_id)
-                            .unwrap()
-                            .insert(protocol);
-                    } else if let Err(result) = protocol {
-                        if result {
-                            // downloaded successfully
-                            match image_id {
-                                ImageID::Movie(id, path, backdrop) => {
-                                    _ = self
-                                        .tx_load
-                                        .send(Actions::Load(ImageID::Movie(id, path, backdrop)));
-                                }
-                                ImageID::Collection(id, _) =>
-                                    _ = self
-                                        .tx_load
-                                        .send(Actions::Load(ImageID::Collection(id, false))),
-                                ImageID::Person(id) =>
-                                    _ = self.tx_load.send(Actions::Load(ImageID::Person(id))),
-                                ImageID::Custom(path, backdrop) =>
-                                    _ = self
-                                        .tx_load
-                                        .send(Actions::Load(ImageID::Custom(path, backdrop))),
-                            }
+            match result {
+                Ok(protocol) => match protocol {
+                    Either::Left(protocol) => {
+                        self.loading_ids.remove(&image_id);
+                        _ = self.hashed_images.insert(image_id, protocol)
+                    }
+                    Either::Right(downloaded_successfully) =>
+                        if downloaded_successfully {
+                            self.downloading_ids.remove(&image_id);
+                            self.load_queue.push_back(image_id);
                         } else {
                             error!("Unable to download {image_id:?}");
-                        }
-                    }
+
+                            if !self.download_errors.contains(&image_id) {
+                                info!("retrying...");
+                                self.download_errors.insert(image_id.clone());
+
+                                let tx_load_cloned = self.tx_load.clone();
+                                thread::spawn(move || {
+                                    thread::sleep(Duration::from_secs(2));
+                                    _ = tx_load_cloned.send(Actions::DownLoad(image_id));
+                                });
+                            } else {
+                                self.downloading_ids.remove(&image_id);
+                            }
+                        },
+                },
+                Err(error) => {
+                    error!("error loading image {image_id:?}: {error:#?}");
+
+                    self.loading_ids.remove(&image_id);
                 }
-            } else if let Err(error) = result {
-                error!("error loading image {image_id:?}: {error:#?}");
-                _ = self.tx_load.send(Actions::Load(image_id));
             }
         }
 
-        while self.hashed_images.len() > CACHE_SIZE {
-            _ = self.hashed_images.shift_remove_index(0).unwrap();
+        while (MAX_CONCURRENT_LOADS - self.loading_ids.len()).min(self.load_queue.len()) > 0 {
+            let image_id = self.load_queue.pop_front().unwrap();
+            if self.tx_load.send(Actions::Load(image_id.clone())).is_ok() {
+                self.loading_ids.insert(image_id);
+            }
         }
+        self.load_queue.clear();
     }
 
     pub fn draw_image(
@@ -348,30 +370,31 @@ impl RatatuiImage {
             }
         }
 
-        if self.hashed_images.contains_key(&image_id) {
-            self.hashed_images.move_index(
-                self.hashed_images.get_index_of(&image_id).unwrap(),
-                self.hashed_images.len() - 1,
-            );
-
-            if let Some(protocol) = self.hashed_images.get(&image_id).unwrap() {
-                if !unobstructed && CALCULATE_OBSTRUCTION {
-                    self.draw_queue.push((image_id, buffer_area, sliced_pos));
-                } else {
-                    let Size { width, height } = protocol.size();
-
-                    let centered_area =
-                        buffer_area.centered(constraint!(== width), constraint!(== height));
-                    SlicedImage::new(
-                        protocol,
-                        sliced_pos.unwrap_or(SignedPosition { x: 0, y: 0 }),
-                    )
-                    .render(centered_area, buffer);
-                }
+        if let Some(protocol) = self.hashed_images.get(&image_id) {
+            if !unobstructed && CALCULATE_OBSTRUCTION {
+                self.draw_queue.push((image_id, buffer_area, sliced_pos));
             } else {
-                Fill::new(" ")
-                    .bg(tailwind::GRAY.c950)
-                    .render(buffer_area, buffer);
+                let Size { width, height } = protocol.size();
+
+                let centered_area =
+                    buffer_area.centered(constraint!(== width), constraint!(== height));
+                SlicedImage::new(
+                    protocol,
+                    sliced_pos.unwrap_or(SignedPosition { x: 0, y: 0 }),
+                )
+                .render(centered_area, buffer);
+            }
+        } else {
+            if !self.loading_ids.contains(&image_id) && !self.downloading_ids.contains(&image_id) {
+                self.hash_image(image_id.clone());
+            }
+
+            Fill::new(" ")
+                .bg(tailwind::GRAY.c950)
+                .render(buffer_area, buffer);
+
+            if !self.download_errors.contains(&image_id) || self.downloading_ids.contains(&image_id)
+            {
                 StatefulWidget::render(
                     Throbber::default()
                         .throbber_set(BRAILLE_SIX_DOUBLE)
@@ -380,23 +403,7 @@ impl RatatuiImage {
                     buffer,
                     &mut self.throbber_state,
                 );
-
-                self.images_drawn = false;
             }
-        } else {
-            self.hash_image(image_id);
-
-            Fill::new(" ")
-                .bg(tailwind::GRAY.c950)
-                .render(buffer_area, buffer);
-            StatefulWidget::render(
-                Throbber::default()
-                    .throbber_set(BRAILLE_SIX_DOUBLE)
-                    .style(Style::new().fg(tailwind::CYAN.c600).bold()),
-                buffer_area.centered(constraint!(==1), constraint!(==1)),
-                buffer,
-                &mut self.throbber_state,
-            );
 
             self.images_drawn = false;
         }
@@ -413,20 +420,18 @@ impl RatatuiImage {
 
         if self.overlay_areas.is_empty() {
             for (image_id, area, sliced_pos) in &self.draw_queue {
-                if let Some(value) = self.hashed_images.get(image_id) {
-                    if let Some(protocol) = value {
-                        let Size { width, height } = protocol.size();
+                if let Some(protocol) = self.hashed_images.get(image_id) {
+                    let Size { width, height } = protocol.size();
 
-                        let centered_area =
-                            area.centered(constraint!(== width), constraint!(== height));
-                        frame.render_widget(
-                            SlicedImage::new(
-                                protocol,
-                                sliced_pos.unwrap_or(SignedPosition { x: 0, y: 0 }),
-                            ),
-                            centered_area,
-                        );
-                    }
+                    let centered_area =
+                        area.centered(constraint!(== width), constraint!(== height));
+                    frame.render_widget(
+                        SlicedImage::new(
+                            protocol,
+                            sliced_pos.unwrap_or(SignedPosition { x: 0, y: 0 }),
+                        ),
+                        centered_area,
+                    );
                 }
             }
         } else {
@@ -439,20 +444,18 @@ impl RatatuiImage {
                 .partition(|x| self.overlay_areas.iter().any(|y| y.intersects(x.1)));
 
             for (image_id, area, sliced_pos) in unobstructed {
-                if let Some(value) = self.hashed_images.get(image_id) {
-                    if let Some(protocol) = value {
-                        let Size { width, height } = protocol.size();
+                if let Some(protocol) = self.hashed_images.get(image_id) {
+                    let Size { width, height } = protocol.size();
 
-                        let centered_area =
-                            area.centered(constraint!(== width), constraint!(== height));
-                        frame.render_widget(
-                            SlicedImage::new(
-                                protocol,
-                                sliced_pos.unwrap_or(SignedPosition { x: 0, y: 0 }),
-                            ),
-                            centered_area,
-                        );
-                    }
+                    let centered_area =
+                        area.centered(constraint!(== width), constraint!(== height));
+                    frame.render_widget(
+                        SlicedImage::new(
+                            protocol,
+                            sliced_pos.unwrap_or(SignedPosition { x: 0, y: 0 }),
+                        ),
+                        centered_area,
+                    );
                 }
             }
 
@@ -503,27 +506,25 @@ impl RatatuiImage {
                     areas = new_areas;
                 }
 
-                if let Some(value) = self.hashed_images.get(image_id) {
-                    if let Some(protocol) = value {
-                        let Size { width, height } = protocol.size();
-                        let centered_big_area =
-                            big_area.centered(constraint!(== width), constraint!(== height));
+                if let Some(protocol) = self.hashed_images.get(image_id) {
+                    let Size { width, height } = protocol.size();
+                    let centered_big_area =
+                        big_area.centered(constraint!(== width), constraint!(== height));
 
-                        for area in areas.into_iter().filter(|x| x.height > 0 && x.width > 1) {
-                            frame.render_widget(
-                                SlicedImage::new(
-                                    protocol,
-                                    helpers::signed_pos_add(
-                                        sliced_pos.unwrap_or(SignedPosition { x: 0, y: 0 }),
-                                        helpers::signed_subtract_pos(
-                                            centered_big_area.as_position(),
-                                            area.as_position(),
-                                        ),
+                    for area in areas.into_iter().filter(|x| x.height > 0 && x.width > 1) {
+                        frame.render_widget(
+                            SlicedImage::new(
+                                protocol,
+                                helpers::signed_pos_add(
+                                    sliced_pos.unwrap_or(SignedPosition { x: 0, y: 0 }),
+                                    helpers::signed_subtract_pos(
+                                        centered_big_area.as_position(),
+                                        area.as_position(),
                                     ),
                                 ),
-                                area,
-                            );
-                        }
+                            ),
+                            area,
+                        );
                     }
                 }
             }
