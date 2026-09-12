@@ -43,11 +43,11 @@ impl OMDBTokens {
         .context("OMDB: error decoding utf8")
     }
 
-    pub fn set_creds(&mut self, key: String) -> anyhow::Result<()> {
+    pub fn set_creds(&mut self, key: String, save: bool) -> anyhow::Result<()> {
         self.key = key;
         self.status = true;
 
-        self.save_creds()
+        if save { self.save_creds() } else { Ok(()) }
     }
 
     fn save_creds(&self) -> anyhow::Result<()> {

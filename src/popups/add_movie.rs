@@ -247,6 +247,7 @@ impl AddMoviePopup {
                 if self.take_rating {
                     Phase::GetRating
                 } else {
+                    self.date = chrono::Local::now().to_utc();
                     self.request_details(
                         self.search_results.as_ref().unwrap()[self.scrollview.selected_index].id,
                     );

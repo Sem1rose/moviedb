@@ -1,8 +1,10 @@
 mod history_syncer;
+mod tokens_refresher;
 
 use history_syncer::HistorySyncerProcessor;
 use itertools::Itertools;
 use strum::{EnumCount, EnumDiscriminants, EnumIter, IntoEnumIterator};
+use tokens_refresher::TokensRefresherProcessor;
 
 use crate::{image_backend::RatatuiImage, key_event_handler::KeyEventHandler};
 
@@ -10,6 +12,7 @@ use crate::{image_backend::RatatuiImage, key_event_handler::KeyEventHandler};
 #[strum_discriminants(derive(Hash))]
 pub enum Processor {
     HistorySyncer(Box<HistorySyncerProcessor>),
+    TokensRefresher(Box<TokensRefresherProcessor>),
 }
 
 impl Processor {
@@ -20,12 +23,15 @@ impl Processor {
     fn as_trait(&self) -> &dyn ProcessorTrait {
         match self {
             Processor::HistorySyncer(history_syncer_processsor) => &**history_syncer_processsor,
+            Processor::TokensRefresher(tokens_refresher_processor) => &**tokens_refresher_processor,
         }
     }
 
     fn as_trait_mut(&mut self) -> &mut dyn ProcessorTrait {
         match self {
             Processor::HistorySyncer(history_syncer_processsor) => &mut **history_syncer_processsor,
+            Processor::TokensRefresher(tokens_refresher_processor) =>
+                &mut **tokens_refresher_processor,
         }
     }
 

@@ -36,7 +36,7 @@ pub struct OMDBInitPopup {
 
     rx_init: Option<Receiver<anyhow::Result<String>>>,
 
-    pub tokens: Option<String>,
+    pub user_tokens: Option<String>,
 }
 
 impl OMDBInitPopup {
@@ -77,7 +77,7 @@ impl PopupTrait for OMDBInitPopup {
                     if let Ok(tokens) = result {
                         self.done = !tokens.is_empty();
                         self.started = !self.done;
-                        self.tokens = Some(tokens);
+                        self.user_tokens = Some(tokens);
                     } else {
                         self.done = false;
                         self.started = true;
@@ -140,7 +140,8 @@ impl PopupTrait for OMDBInitPopup {
                 key_event_handler.bind_enter((None, None), "Confirm".into(), |app, _| {
                     if let Some(Popup::OMDBInit(omdb_init_popup)) = app.drawer.active_popup.as_mut()
                     {
-                        omdb_init_popup.tokens = Some(omdb_init_popup.input.lines()[0].clone());
+                        omdb_init_popup.user_tokens =
+                            Some(omdb_init_popup.input.lines()[0].clone());
                         omdb_init_popup.done = true;
                         omdb_init_popup.started = false;
                     }
@@ -219,7 +220,8 @@ impl PopupTrait for OMDBInitPopup {
                         if let Some(Popup::OMDBInit(omdb_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
-                            omdb_init_popup.tokens = Some(omdb_init_popup.input.lines()[0].clone());
+                            omdb_init_popup.user_tokens =
+                                Some(omdb_init_popup.input.lines()[0].clone());
                             omdb_init_popup.done = true;
                             omdb_init_popup.started = false;
                         }

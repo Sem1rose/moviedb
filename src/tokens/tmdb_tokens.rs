@@ -66,7 +66,7 @@ impl TMDBTokens {
         .context("TMDB: Error deserializing user tokens")
     }
 
-    pub fn set_creds(&mut self, user_tokens: UserTokens) -> anyhow::Result<()> {
+    pub fn set_creds(&mut self, user_tokens: UserTokens, save: bool) -> anyhow::Result<()> {
         self.user_tokens = user_tokens;
         self.status = if self.user_tokens.has_session_id() {
             Some(true)
@@ -76,7 +76,7 @@ impl TMDBTokens {
             None
         };
 
-        self.save_creds()
+        if save { self.save_creds() } else { Ok(()) }
     }
 
     fn save_creds(&self) -> anyhow::Result<()> {

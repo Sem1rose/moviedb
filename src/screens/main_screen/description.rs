@@ -49,10 +49,10 @@ impl CreditsTab {
         }
     }
 
-    pub fn reset(&mut self) {
-        self.cast_list.reset();
-        self.crew_list.reset();
-    }
+    // pub fn reset(&mut self) {
+    //     self.cast_list.reset();
+    //     self.crew_list.reset();
+    // }
 }
 
 const DESCRIPTION_TABS: [&str; 3] = ["Overview", "Plays", "Credits"];

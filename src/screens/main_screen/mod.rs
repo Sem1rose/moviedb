@@ -7,7 +7,7 @@ use std::{
 
 use chrono::{DateTime, Datelike, TimeDelta, Utc};
 use itertools::Itertools;
-use log::{error, info};
+use log::error;
 use nucleo_matcher::{Config as MatcherConfig, Matcher, pattern::Atom};
 use ratatui::{
     Frame,
@@ -625,11 +625,14 @@ impl MainScreen {
                         !self.lists[&self.selected_list].readonly,
                     _ => true,
                 },
-                Sort::ListOrder => !matches!(self.selected_list, ListID::All | ListID::Watched | ListID::Watchlist | ListID::Collection(_)),
+                Sort::ListOrder => !matches!(
+                    self.selected_list,
+                    ListID::All | ListID::Watched | ListID::Watchlist | ListID::Collection(_)
+                ),
                 Sort::ReleaseDate => true,
                 Sort::Rating(_) => true,
                 Sort::Name => true,
-                Sort::FirstWatched => {
+                Sort::FirstWatched =>
                     if matches!(self.selected_list, ListID::Watchlist) {
                         false
                     } else {
@@ -637,9 +640,8 @@ impl MainScreen {
                         self.get_list_ids()
                             .iter()
                             .any(|x| watched_borrowed.contains_key(x))
-                    }
-                }
-                Sort::UserRating => {
+                    },
+                Sort::UserRating =>
                     if matches!(self.selected_list, ListID::Watchlist) {
                         false
                     } else {
@@ -647,8 +649,7 @@ impl MainScreen {
                         self.get_list_ids()
                             .iter()
                             .any(|x| watched_borrowed.contains_key(x))
-                    }
-                }
+                    },
                 Sort::Relevance => !self.search_input.is_empty(),
             })
             .collect_vec()
@@ -774,7 +775,8 @@ impl MainScreen {
             key_event_handler.bind_esc((Some(0), None), "Clear search".into(), |app, _| {
                 if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     if let Sort::Relevance = main_screen.sort {
-                        main_screen.sort = *main_screen.get_available_sort_options().first().unwrap();
+                        main_screen.sort =
+                            *main_screen.get_available_sort_options().first().unwrap();
                     }
 
                     main_screen.search_input = TextArea::from([""]);

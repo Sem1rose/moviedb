@@ -72,7 +72,8 @@ impl MainScreen {
 
                     if name.is_empty() || !filter {
                         if let Sort::Relevance = main_screen.sort {
-                            main_screen.sort = *main_screen.get_available_sort_options().first().unwrap();
+                            main_screen.sort =
+                                *main_screen.get_available_sort_options().first().unwrap();
                         }
                         main_screen.search_input = TextArea::from([""]);
                     } else if filter {
@@ -120,7 +121,8 @@ impl MainScreen {
 
                 if name.is_empty() || !filter {
                     if let Sort::Relevance = main_screen.sort {
-                        main_screen.sort = *main_screen.get_available_sort_options().first().unwrap();
+                        main_screen.sort =
+                            *main_screen.get_available_sort_options().first().unwrap();
                     }
                     main_screen.search_input = TextArea::from([""]);
                 } else if filter {
@@ -449,30 +451,30 @@ impl MainScreen {
                     for i in 0..len {
                         let index = i + scroll_pos;
                         let repr = *self.sort_popup.model.get_index(index).unwrap().0;
-                            key_event_handler.bind_mouse_button_down(
-                                ratatui::crossterm::event::MouseButton::Left,
-                                mouse_area,
-                                move |app, _| {
-                                    if let Some(Screens::MainScreen(main_screen)) =
-                                        app.drawer.current_screen.as_mut()
-                                    {
-                                        let new_sort = Sort::from_repr(repr).unwrap();
+                        key_event_handler.bind_mouse_button_down(
+                            ratatui::crossterm::event::MouseButton::Left,
+                            mouse_area,
+                            move |app, _| {
+                                if let Some(Screens::MainScreen(main_screen)) =
+                                    app.drawer.current_screen.as_mut()
+                                {
+                                    let new_sort = Sort::from_repr(repr).unwrap();
 
-                                        if main_screen.sort_popup.selected_index != index {
-                                            main_screen.sort = new_sort;
-                                            main_screen.sort_popup.selected_index = index;
-                                            main_screen.filter_sort_movies(true);
-                                        }
-
-                                        if !matches!(new_sort, Sort::Rating(_)) {
-                                            main_screen.tab = 0;
-                                            main_screen.item = 0;
-                                        } else {
-                                            main_screen.sort_popup.open_submenu(true);
-                                        }
+                                    if main_screen.sort_popup.selected_index != index {
+                                        main_screen.sort = new_sort;
+                                        main_screen.sort_popup.selected_index = index;
+                                        main_screen.filter_sort_movies(true);
                                     }
-                                },
-                            );
+
+                                    if !matches!(new_sort, Sort::Rating(_)) {
+                                        main_screen.tab = 0;
+                                        main_screen.item = 0;
+                                    } else {
+                                        main_screen.sort_popup.open_submenu(true);
+                                    }
+                                }
+                            },
+                        );
                         mouse_area = mouse_area.offset(Offset { x: 0, y: 1 });
                     }
                 } else {

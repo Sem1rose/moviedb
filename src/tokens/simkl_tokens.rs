@@ -68,9 +68,8 @@ impl SimklTokens {
         .context("Simkl: error parsing user tokens")
     }
 
-    pub fn set_creds(&mut self, user_tokens: UserTokens) -> anyhow::Result<()> {
+    pub fn set_creds(&mut self, user_tokens: UserTokens, save: bool) -> anyhow::Result<()> {
         self.user_tokens = user_tokens;
-
         self.status = if self.user_tokens.has_tokens() {
             Some(true)
         } else if self.user_tokens.has_secrets() {
@@ -79,7 +78,7 @@ impl SimklTokens {
             None
         };
 
-        self.save_creds()
+        if save { self.save_creds() } else { Ok(()) }
     }
 
     pub fn save_creds(&self) -> anyhow::Result<()> {

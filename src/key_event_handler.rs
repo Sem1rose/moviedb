@@ -16,7 +16,7 @@ pub enum Data {
 }
 
 type State = (Option<usize>, Option<usize>);
-type Callback = Box<dyn Fn(&mut App, Data)>;
+type Callback = Box<dyn FnMut(&mut App, Data)>;
 
 #[derive(PartialEq, Eq, Hash, Clone, Debug)]
 pub enum Bind {
@@ -75,7 +75,7 @@ impl KeyEventHandler {
             .insert((bind, state), (description, Box::new(callback)));
     }
 
-    pub fn bind_immediate(&mut self, callback: impl Fn(&mut App, Data) + 'static) {
+    pub fn bind_immediate(&mut self, callback: impl FnMut(&mut App, Data) + 'static) {
         self.execute_immediate.push(Box::new(callback));
     }
 

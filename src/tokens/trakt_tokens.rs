@@ -72,7 +72,7 @@ impl TraktTokens {
         .context("Trakt: error parsing user tokens")
     }
 
-    pub fn set_creds(&mut self, user_tokens: UserTokens) -> anyhow::Result<()> {
+    pub fn set_creds(&mut self, user_tokens: UserTokens, save: bool) -> anyhow::Result<()> {
         self.user_tokens = user_tokens;
         self.status = if self.user_tokens.has_tokens() && !self.user_tokens.should_refresh_tokens()
         {
@@ -83,7 +83,7 @@ impl TraktTokens {
             None
         };
 
-        self.save_creds()
+        if save { self.save_creds() } else { Ok(()) }
     }
 
     pub fn save_creds(&self) -> anyhow::Result<()> {
@@ -95,6 +95,10 @@ impl TraktTokens {
                 .context("Trakt: failed to encrypt user tokens")?,
         )
         .context("Trakt: failed to write encrypted file")
+    }
+
+    pub fn should_refresh_tokens(&self) -> bool {
+        self.user_tokens.should_refresh_tokens()
     }
 
     pub fn client_id(&self) -> &str {

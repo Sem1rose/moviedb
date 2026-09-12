@@ -2,7 +2,7 @@ use std::{cell::RefCell, fs, path::PathBuf, rc::Rc, thread, time::Duration};
 
 use anyhow::{anyhow, bail};
 use itertools::Itertools;
-use log::{error, info};
+use log::error;
 use ratatui::crossterm::event::{self, Event, KeyEvent, KeyEventState, KeyModifiers};
 use rustc_hash::FxHashMap;
 use strum::IntoDiscriminant;
@@ -17,7 +17,11 @@ use crate::{
     popups::Popup,
     processors::{Processor, ProcessorDiscriminants},
     screens::Screens,
-    tokens::*,
+    tokens::{
+        punch_play_tokens::UserTokens as PunchPlayUserTokens,
+        simkl_tokens::UserTokens as SimklUserTokens, tmdb_tokens::UserTokens as TMDBUserTokens,
+        trakt_tokens::UserTokens as TraktUserTokens, *,
+    },
     types::{
         Collection, Entry, FxIndexMap, HistoryEntry, ListID, ListItem, Movie, MovieDetailsResponse,
         Person, SyncItem, Term, initialize_terminal, try_restore_terminal,
@@ -127,7 +131,7 @@ impl App {
                 .map(|_| ())?;
 
             let mut executed_immediate = false;
-            for callback in self.key_event_handler.get_execute_immediates() {
+            for mut callback in self.key_event_handler.get_execute_immediates() {
                 callback(self, crate::key_event_handler::Data::None);
                 executed_immediate = true;
             }
@@ -138,7 +142,7 @@ impl App {
                 } else if self.drawer.check_refresh_delayed() {
                     Duration::from_millis(15)
                 } else {
-                    Duration::MAX
+                    Duration::from_millis(500)
                 })?
             {
                 if let Ok(event) = event::read() {
@@ -165,6 +169,9 @@ impl App {
                         self.simkl_tokens.clone(),
                         self.punch_play_tokens.clone(),
                     ),
+                Processor::TokensRefresher(tokens_refresher_processor) =>
+                    tokens_refresher_processor
+                        .initialize(self.punch_play_tokens.clone(), self.trakt_tokens.clone()),
             }
         }
     }
@@ -344,10 +351,12 @@ impl App {
                 }
             }
 
-            let watchlist = &mut main_screen.lists.get_mut(&ListID::Watchlist).unwrap().items;
-            if let Some(index) = watchlist.keys().position(|x| *x == movie_id) {
-                watchlist.swap_remove(&(index as u32));
-            }
+            main_screen
+                .lists
+                .get_mut(&ListID::Watchlist)
+                .unwrap()
+                .items
+                .shift_remove(&movie_id);
             main_screen.save_lists();
 
             if matches!(main_screen.selected_list, ListID::Watchlist) {
@@ -466,10 +475,12 @@ impl App {
                         }],
                     });
 
-                let watchlist = &mut main_screen.lists.get_mut(&ListID::Watchlist).unwrap().items;
-                if let Some(index) = watchlist.keys().position(|&x| x == movie_id) {
-                    watchlist.swap_remove(&(index as u32));
-                }
+                main_screen
+                    .lists
+                    .get_mut(&ListID::Watchlist)
+                    .unwrap()
+                    .items
+                    .shift_remove(&movie_id);
 
                 if SYNC {
                     if let Some(Processor::HistorySyncer(history_syncer_processor)) = self
@@ -493,13 +504,6 @@ impl App {
                 }
 
                 main_screen.filter_sort_movies(false);
-                main_screen.goto_index(
-                    main_screen
-                        .filtered_movies
-                        .iter()
-                        .position(|x| x.id == movie_id)
-                        .unwrap() as isize,
-                );
             } else {
                 if !main_screen.lists[&main_screen.selected_list]
                     .items
@@ -539,14 +543,15 @@ impl App {
 
                     main_screen.filter_sort_movies(false);
                 }
-                main_screen.goto_index(
-                    main_screen
-                        .filtered_movies
-                        .iter()
-                        .position(|x| x.id == movie_id)
-                        .unwrap() as isize,
-                );
             }
+
+            main_screen.goto_index(
+                main_screen
+                    .filtered_movies
+                    .iter()
+                    .position(|x| x.id == movie_id)
+                    .unwrap() as isize,
+            );
             main_screen.save_lists();
         }
 
@@ -907,53 +912,80 @@ impl App {
         self.save_data(true, false, false, false);
     }
 
-    pub fn set_tmdb_user_tokens(&mut self) {
-        if let Some(Popup::TMDBInit(tmdb_init_popup)) = self.drawer.active_popup.as_mut() {
-            if let Some(tokens) = tmdb_init_popup.user_tokens.take() {
-                self.tmdb_tokens.set_creds(tokens).unwrap();
-            }
+    pub fn set_tmdb_user_tokens(&mut self, user_tokens: TMDBUserTokens) {
+        if let Err(error) = self.tmdb_tokens.set_creds(user_tokens, true) {
+            error!("{error}");
+            return;
         }
         self.drawer
             .image_renderer
             .update_access_token(self.tmdb_tokens.access_token());
-        self.drawer.close_popup();
+        // if let Some(Popup::TMDBInit(tmdb_init_popup)) = self.drawer.active_popup.as_mut() {
+        //     if let Some(tokens) = tmdb_init_popup.user_tokens.take() {
+        //     }
+        // }
+        // self.drawer.close_popup();
     }
 
-    pub fn set_simkl_user_tokens(&mut self) {
-        if let Some(Popup::SimklInit(simkl_init_popup)) = self.drawer.active_popup.as_mut() {
-            if let Some(tokens) = simkl_init_popup.user_tokens.take() {
-                self.simkl_tokens.set_creds(tokens).unwrap();
-            }
+    pub fn set_simkl_user_tokens(&mut self, user_tokens: SimklUserTokens) {
+        if let Err(error) = self.simkl_tokens.set_creds(user_tokens, true) {
+            error!("{error}");
+            return;
         }
-        self.drawer.close_popup();
+        // if let Some(Popup::SimklInit(simkl_init_popup)) = self.drawer.active_popup.as_mut() {
+        //     if let Some(tokens) = simkl_init_popup.user_tokens.take() {
+        //     }
+        // }
+        // self.drawer.close_popup();
     }
 
-    pub fn set_punch_play_user_tokens(&mut self) {
-        if let Some(Popup::PunchPlayInit(punch_play_init_popup)) = self.drawer.active_popup.as_mut()
+    pub fn set_punch_play_user_tokens(&mut self, user_tokens: PunchPlayUserTokens) {
+        if let Err(error) = self.punch_play_tokens.set_creds(user_tokens, true) {
+            error!("{error}");
+            return;
+        }
+        let tokens = self.punch_play_tokens.clone();
+        if let Some(Processor::TokensRefresher(tokens_refresher_processor)) =
+            self.get_processor_mut(ProcessorDiscriminants::TokensRefresher)
         {
-            if let Some(tokens) = punch_play_init_popup.user_tokens.take() {
-                self.punch_play_tokens.set_creds(tokens).unwrap();
-            }
+            tokens_refresher_processor.update_punch_play_tokens(tokens);
         }
-        self.drawer.close_popup();
+        // if let Some(Popup::PunchPlayInit(punch_play_init_popup)) = self.drawer.active_popup.as_mut()
+        // {
+        //     if let Some(tokens) = punch_play_init_popup.user_tokens.take() {
+        //     }
+        // }
+        // self.drawer.close_popup();
     }
 
-    pub fn set_trakt_user_tokens(&mut self) {
-        if let Some(Popup::TraktInit(trakt_init_popup)) = self.drawer.active_popup.as_mut() {
-            if let Some(tokens) = trakt_init_popup.user_tokens.take() {
-                self.trakt_tokens.set_creds(tokens).unwrap();
-            }
+    pub fn set_trakt_user_tokens(&mut self, user_tokens: TraktUserTokens) {
+        if let Err(error) = self.trakt_tokens.set_creds(user_tokens, true) {
+            error!("{error}");
+            return;
         }
-        self.drawer.close_popup();
+        let tokens = self.trakt_tokens.clone();
+        if let Some(Processor::TokensRefresher(tokens_refresher_processor)) =
+            self.get_processor_mut(ProcessorDiscriminants::TokensRefresher)
+        {
+            tokens_refresher_processor.update_trakt_tokens(tokens);
+        }
+        // if let Some(Popup::TraktInit(trakt_init_popup)) = self.drawer.active_popup.as_mut() {
+        //     if let Some(tokens) = trakt_init_popup.user_tokens.take() {
+        //     }
+        // }
+        // self.drawer.close_popup();
     }
 
-    pub fn set_omdb_user_tokens(&mut self) {
-        if let Some(Popup::OMDBInit(omdb_init_popup)) = self.drawer.active_popup.as_mut() {
-            if let Some(tokens) = omdb_init_popup.tokens.take() {
-                self.omdb_tokens.set_creds(tokens).unwrap();
-            }
+    pub fn set_omdb_user_tokens(&mut self, user_tokens: String) {
+        if let Err(error) = self.omdb_tokens.set_creds(user_tokens, true) {
+            error!("{error}");
+            return;
         }
-        self.drawer.close_popup();
+        // if let Some(Popup::OMDBInit(omdb_init_popup)) = self.drawer.active_popup.as_mut() {
+        //     if let Some(tokens) = omdb_init_popup.tokens.take() {
+        //     }
+        // }
+        // self.drawer.close_popup();
     }
 
     pub fn _refetch_watched(&mut self) {
@@ -1053,14 +1085,14 @@ impl App {
     fn handle_event(&mut self, event: Event) {
         match event {
             Event::Key(event) => {
-                if let Some((callback, data)) =
+                if let Some((mut callback, data)) =
                     self.key_event_handler.handle_key_event(event, &self.drawer)
                 {
                     callback(self, data);
                 }
             }
             Event::Mouse(event) => {
-                if let Some((callback, data)) = self
+                if let Some((mut callback, data)) = self
                     .key_event_handler
                     .handle_mouse_event(event, &self.drawer)
                 {
@@ -1070,7 +1102,7 @@ impl App {
             Event::FocusGained => (),
             Event::FocusLost => (),
             Event::Paste(string) => {
-                if let Some(callback) = self.key_event_handler.try_get_key_bind(
+                if let Some(mut callback) = self.key_event_handler.try_get_key_bind(
                     crate::key_event_handler::Bind::Input,
                     self.key_event_handler.get_state(&self.drawer),
                 ) {

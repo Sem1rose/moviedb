@@ -1,25 +1,19 @@
 use ratatui::{
     Frame,
-    crossterm::event::KeyCode,
-    layout::{HorizontalAlignment, Layout, Margin, Offset, Rect, Size},
-    macros::{constraint, horizontal, line, vertical},
-    style::{
-        Modifier, Style, Styled, Stylize,
-        palette::{material, tailwind},
-    },
+    layout::{Margin, Offset, Rect, Size},
+    macros::{horizontal, vertical},
+    style::{Stylize, palette::tailwind},
     symbols::border,
     widgets::{Block, Borders, Padding},
 };
-use ratatui_textarea::{TextArea, WrapMode};
 use strum::{AsRefStr, EnumCount, EnumIter, IntoEnumIterator};
 
 use crate::{
     helpers,
     image_backend::RatatuiImage,
-    key_event_handler::{Data, KeyEventHandler},
+    key_event_handler::KeyEventHandler,
     popups::{Popup, PopupTrait},
-    types::Entry,
-    widgets::{self, Action, ActionType, ScrolledList},
+    widgets,
 };
 
 #[derive(Default, Clone, Copy, EnumCount, EnumIter, PartialEq, AsRefStr)]
@@ -98,7 +92,7 @@ impl PopupTrait for ManageListsPopup {
             }
         });
 
-        let [tabs_area, main_area] = horizontal![==13, >=1].areas(popup_area);
+        let [tabs_area, _main_area] = horizontal![==13, >=1].areas(popup_area);
 
         frame.render_widget(Block::new().bg(tailwind::STONE.c950), tabs_area);
 

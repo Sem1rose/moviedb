@@ -444,7 +444,7 @@ impl PopupTrait for ManagePlaysPopup {
 
                     let mut cell = Cell::new(" ");
                     cell.set_style(Style::new().bg(tailwind::SLATE.c900));
-                    let mut scrollbar_buffer = Buffer::empty(scrollbar_area);
+                    let mut scrollbar_buffer = Buffer::filled(scrollbar_area, cell.clone());
                     let mut list_buffer = Buffer::filled(list_block_inner, cell);
                     self.scrollview.render(
                         num_entries,
