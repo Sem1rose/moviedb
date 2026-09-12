@@ -22,7 +22,7 @@ use crate::{
     key_event_handler::{self, KeyEventHandler},
     popups::*,
     processors::Processor,
-    screens::{Screens, main_screen::MainScreen},
+    screens::{Screen, main_screen::MainScreen},
     tokens::{OMDBTokens, PunchPlayTokens, TMDBTokens, TraktTokens},
     types::{Entry, FxIndexMap, Movie},
 };
@@ -31,9 +31,9 @@ pub struct Drawer {
     pub refresh_immediate:  u8,
     show_term_size_warning: bool,
     pub active_popup:       Option<Popup>,
-    pub current_screen:     Option<Screens>,
+    pub current_screen:     Option<Screen>,
     pub popup_queue:        VecDeque<Popup>,
-    pub screen_queue:       Vec<Screens>,
+    pub screen_queue:       Vec<Screen>,
     pub _config:            Rc<RefCell<Config>>,
     pub image_renderer:     RatatuiImage,
 
@@ -91,7 +91,7 @@ impl Drawer {
 
             active_popup: None,
             current_screen: None,
-            screen_queue: vec![Screens::MainScreen(MainScreen::new(
+            screen_queue: vec![Screen::MainScreen(MainScreen::new(
                 home_dir,
                 _config.clone(),
             ))],
@@ -135,7 +135,7 @@ impl Drawer {
             self.render_term_size_warning(frame);
         } else if let Some(current_screen) = self.current_screen.as_mut() {
             match current_screen {
-                Screens::MainScreen(main_screen) => {
+                Screen::MainScreen(main_screen) => {
                     main_screen.render(frame, key_event_handler, &mut self.image_renderer);
                 }
             }
@@ -147,6 +147,7 @@ impl Drawer {
             popup.update();
 
             match popup {
+                Popup::Open(_) => (),
                 Popup::ManagePlays(_) => (),
                 Popup::ManageLists(_) => (),
                 Popup::DeleteMovie(_) => (),
@@ -220,7 +221,7 @@ impl Drawer {
                     if fetch_movies_popup.done {
                         key_event_handler.bind_immediate(|app, _| {
                             app.save_data(true, false, true, true);
-                            if let Some(Screens::MainScreen(main_screen)) =
+                            if let Some(Screen::MainScreen(main_screen)) =
                                 app.drawer.current_screen.as_mut()
                             {
                                 main_screen.filter_sort_movies(false);
@@ -263,7 +264,7 @@ impl Drawer {
                     });
                 } else if matches!(self.active_popup, Some(Popup::FetchMovies(_))) {
                     key_event_handler.bind_immediate(|app, _| {
-                        let lists = if let Some(Screens::MainScreen(main_screen)) =
+                        let lists = if let Some(Screen::MainScreen(main_screen)) =
                             app.drawer.current_screen.as_mut()
                         {
                             main_screen.lists.values().collect_vec()
@@ -291,16 +292,17 @@ impl Drawer {
             } else if !self.screen_queue.is_empty() {
                 self.current_screen = self.screen_queue.pop();
 
-                if matches!(self.current_screen, Some(Screens::MainScreen(_))) {
+                if matches!(self.current_screen, Some(Screen::MainScreen(_))) {
                     key_event_handler.bind_immediate(|app, _| {
                         app.initialize_processors();
-                        if let Some(Screens::MainScreen(main_screen)) =
+                        if let Some(Screen::MainScreen(main_screen)) =
                             app.drawer.current_screen.as_mut()
                         {
                             if main_screen.initialize(
                                 app.movies.clone(),
                                 app.watched.clone(),
                                 app.persons.clone(),
+                                app.collections.clone(),
                             ) {
                                 app.drawer.open_fetch_movies_popup();
                             }
@@ -351,7 +353,7 @@ impl Drawer {
     }
 
     pub fn open_change_artwork_popup(&mut self, tmdb_tokens: &TMDBTokens) {
-        if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_ref() {
+        if let Some(Screen::MainScreen(main_screen)) = self.current_screen.as_ref() {
             self.popup_queue.push_back(new_popup!(
                 ChangeArtworks,
                 ChangeArtworksPopup::new(
@@ -388,7 +390,7 @@ impl Drawer {
         trakt_tokens: TraktTokens,
         omdb_tokens: OMDBTokens,
     ) {
-        if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_mut() {
+        if let Some(Screen::MainScreen(main_screen)) = self.current_screen.as_mut() {
             self.popup_queue.push_back(Popup::AddMovie(Box::new(
                 AddMoviePopup::new_refetch_details(
                     main_screen.current_movie().unwrap().id,
@@ -403,7 +405,7 @@ impl Drawer {
     }
 
     pub fn open_manage_plays_popup(&mut self, watched: &FxIndexMap<u32, Entry>) {
-        if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_mut() {
+        if let Some(Screen::MainScreen(main_screen)) = self.current_screen.as_mut() {
             let entry = watched.get(&main_screen.current_movie().unwrap().id);
             self.popup_queue
                 .push_back(Popup::ManagePlays(Box::new(ManagePlaysPopup::new(
@@ -419,7 +421,7 @@ impl Drawer {
     }
 
     pub fn open_edit_movie_popup(&mut self, watched: &FxIndexMap<u32, Entry>) {
-        if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_mut() {
+        if let Some(Screen::MainScreen(main_screen)) = self.current_screen.as_mut() {
             let entry = &watched[&main_screen.current_movie().unwrap().id];
             self.popup_queue.push_back(Popup::ManagePlays(Box::new(
                 ManagePlaysPopup::new_edit_rating(entry),
@@ -427,8 +429,18 @@ impl Drawer {
         }
     }
 
+    pub fn open_open_popup(&mut self) {
+        if let Some(Screen::MainScreen(main_screen)) = self.current_screen.as_mut() {
+            self.popup_queue
+                .push_back(Popup::Open(Box::new(OpenPopup::new(
+                    main_screen.current_movie().unwrap().clone(),
+                    main_screen.selected_movie_rect.clone().unwrap(),
+                ))));
+        }
+    }
+
     pub fn open_delete_movie_popup(&mut self, movies: &FxIndexMap<u32, Movie>) {
-        if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_mut() {
+        if let Some(Screen::MainScreen(main_screen)) = self.current_screen.as_mut() {
             if let Some(name) = movies
                 .get(&main_screen.current_movie().unwrap().id)
                 .map(|x| &x.title)
@@ -440,7 +452,7 @@ impl Drawer {
     }
 
     pub fn open_advanced_filter_popup(&mut self) {
-        if let Some(Screens::MainScreen(main_screen)) = self.current_screen.as_mut() {
+        if let Some(Screen::MainScreen(main_screen)) = self.current_screen.as_mut() {
             self.popup_queue
                 .push_back(Popup::AdvancedFilter(Box::new(AdvancedFilterPopup::new(
                     &main_screen.filter_criteria,

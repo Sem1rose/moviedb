@@ -112,6 +112,7 @@ pub struct ListItem {
 #[derive(Serialize, Deserialize, Default, Debug, Clone)]
 pub struct List {
     pub id:       ListID,
+    pub temp:     Option<bool>,
     pub name:     String,
     #[serde(
         deserialize_with = "indexmap_deserializer",
@@ -140,6 +141,7 @@ impl List {
                 })
                 .collect(),
             readonly,
+            ..Default::default()
         }
     }
 
@@ -162,14 +164,15 @@ impl List {
                 })
                 .collect(),
             readonly,
+            ..Default::default()
         }
     }
 
     pub fn from_collection(value: tmdb::collection::smo::CollectionDetails) -> Self {
         Self {
-            id:       ListID::PunchPlay(value.id),
-            name:     value.name,
-            items:    value
+            id: ListID::PunchPlay(value.id),
+            name: value.name,
+            items: value
                 .parts
                 .iter()
                 .map(|x| {
@@ -183,6 +186,7 @@ impl List {
                 })
                 .collect(),
             readonly: true,
+            ..Default::default()
         }
     }
 }
@@ -434,12 +438,12 @@ pub struct Collection {
     pub name:  String,
     pub parts: Vec<u32>,
 }
-#[derive(Serialize, Clone, Deserialize, Debug)]
+#[derive(Serialize, Clone, Deserialize, Debug, Default)]
 pub struct Credits {
     pub cast: Vec<Role>,
     pub crew: Vec<Role>,
 }
-#[derive(Serialize, Clone, Deserialize, Debug)]
+#[derive(Serialize, Clone, Deserialize, Debug, Default)]
 pub struct Movie {
     pub id:               u32,
     pub title:            String,

@@ -16,7 +16,7 @@ use crate::{
     load_file, omdb,
     popups::Popup,
     processors::{Processor, ProcessorDiscriminants},
-    screens::Screens,
+    screens::Screen,
     tokens::{
         punch_play_tokens::UserTokens as PunchPlayUserTokens,
         simkl_tokens::UserTokens as SimklUserTokens, tmdb_tokens::UserTokens as TMDBUserTokens,
@@ -303,7 +303,7 @@ impl App {
     }
 
     pub fn add_play(&mut self) {
-        if let Some(Screens::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
+        if let Some(Screen::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
             let movie_id = main_screen.current_movie().unwrap().id;
             if let Some(Popup::ManagePlays(manage_plays_popup)) = self.drawer.active_popup.as_mut()
             {
@@ -459,7 +459,7 @@ impl App {
             }
         }
 
-        if let Some(Screens::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
+        if let Some(Screen::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
             if matches!(main_screen.selected_list, ListID::Watched) {
                 let new_play = self.watched.borrow().contains_key(&movie_id);
                 self.watched
@@ -630,7 +630,7 @@ impl App {
                 entry.override_poster = override_poster;
             });
 
-        if let Some(Screens::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
+        if let Some(Screen::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
             main_screen.filter_sort_movies(true);
         }
 
@@ -639,7 +639,7 @@ impl App {
     }
 
     pub fn edit_movie(&mut self) {
-        if let Some(Screens::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
+        if let Some(Screen::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
             if let Some(Popup::ManagePlays(manage_plays_popup)) = self.drawer.active_popup.as_ref()
             {
                 let rating = format!(
@@ -690,7 +690,7 @@ impl App {
     }
 
     pub fn remove_movie(&mut self) {
-        if let Some(Screens::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
+        if let Some(Screen::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
             let movie_id = main_screen.current_movie().unwrap().id;
             if matches!(main_screen.selected_list, ListID::Watched) {
                 self.watched
@@ -758,7 +758,7 @@ impl App {
     }
 
     pub fn edit_movie_play(&mut self) {
-        if let Some(Screens::MainScreen(main_screen)) = self.drawer.current_screen.as_ref() {
+        if let Some(Screen::MainScreen(main_screen)) = self.drawer.current_screen.as_ref() {
             let movie_id = main_screen.current_movie().unwrap().id;
 
             if let Some(Popup::ManagePlays(manage_plays_popup)) = self.drawer.active_popup.as_ref()
@@ -798,7 +798,7 @@ impl App {
 
     pub fn remove_movie_play(&mut self) {
         if let Some(Popup::ManagePlays(manage_plays_popup)) = self.drawer.active_popup.as_ref() {
-            let movie_id = if let Some(Screens::MainScreen(main_screen)) =
+            let movie_id = if let Some(Screen::MainScreen(main_screen)) =
                 self.drawer.current_screen.as_ref()
             {
                 main_screen.current_movie().unwrap().id
@@ -814,8 +814,7 @@ impl App {
             });
 
             if empty {
-                if let Some(Screens::MainScreen(main_screen)) = self.drawer.current_screen.as_mut()
-                {
+                if let Some(Screen::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
                     self.watched
                         .borrow_mut()
                         .swap_remove(&main_screen.current_movie().unwrap().id);
@@ -904,7 +903,7 @@ impl App {
         }
 
         if updated {
-            if let Some(Screens::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
+            if let Some(Screen::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
                 main_screen.filter_sort_movies(true);
             }
         }

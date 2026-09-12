@@ -18,7 +18,7 @@ use crate::{
     helpers,
     image_backend::{ImageID, RatatuiImage},
     key_event_handler::{self, KeyEventHandler},
-    screens::{Screens, main_screen::MainScreen},
+    screens::{Screen, main_screen::MainScreen},
     types::Movie,
     widgets::{self, Orientation, ScrolledList},
 };
@@ -95,7 +95,7 @@ impl MainScreen {
         area: Rect,
     ) {
         key_event_handler.bind_tab((Some(1), None), "Change focus".into(), |app, data| {
-            if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+            if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 match data {
                     key_event_handler::Data::Direction(true, _) => {
                         main_screen.tab += 1;
@@ -117,7 +117,7 @@ impl MainScreen {
             ratatui::crossterm::event::MouseButton::Left,
             area,
             |app, _| {
-                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     main_screen.tab = 1;
                     main_screen.item = 0;
                 }
@@ -286,7 +286,7 @@ impl MainScreen {
                     (Some(1), None),
                     "Change tab".into(),
                     move |app, data| {
-                        if let Some(Screens::MainScreen(main_screen)) =
+                        if let Some(Screen::MainScreen(main_screen)) =
                             app.drawer.current_screen.as_mut()
                         {
                             match data {
@@ -376,7 +376,7 @@ impl MainScreen {
                     ratatui::crossterm::event::MouseButton::Left,
                     mouse_area,
                     move |app, _| {
-                        if let Some(Screens::MainScreen(main_screen)) =
+                        if let Some(Screen::MainScreen(main_screen)) =
                             app.drawer.current_screen.as_mut()
                         {
                             main_screen.tab = 1;
@@ -470,7 +470,7 @@ impl MainScreen {
                         (Some(1), None),
                         "Scroll".into(),
                         move |app, data| {
-                            if let Some(Screens::MainScreen(main_screen)) =
+                            if let Some(Screen::MainScreen(main_screen)) =
                                 app.drawer.current_screen.as_mut()
                             {
                                 match data {
@@ -640,7 +640,7 @@ impl MainScreen {
 
         if num_plays > num_visible_plays {
             key_event_handler.bind_vertical((Some(1), None), "Scroll".into(), move |app, data| {
-                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     match data {
                         key_event_handler::Data::Direction(false, _) => {
                             if main_screen.movies_description.plays_tab.alignment_bottom
@@ -855,7 +855,7 @@ impl MainScreen {
         let num_crew = movie.credits.crew.len();
 
         key_event_handler.bind_vertical((Some(1), None), "Scroll".into(), move |app, data| {
-            if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+            if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 let list = main_screen
                     .movies_description
                     .credits_tab
@@ -882,7 +882,7 @@ impl MainScreen {
             }
         });
         key_event_handler.bind_key((Some(1), None), " ", "".into(), move |app, _| {
-            if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+            if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 main_screen
                     .movies_description
                     .credits_tab
@@ -976,7 +976,7 @@ impl MainScreen {
                     Padding::right(input_scrollbar_area.width - 1),
                 ),
                 move |app, _| {
-                    if let Some(Screens::MainScreen(main_screen)) =
+                    if let Some(Screen::MainScreen(main_screen)) =
                         app.drawer.current_screen.as_mut()
                     {
                         let list = main_screen
@@ -995,7 +995,7 @@ impl MainScreen {
                     Padding::left(input_scrollbar_area.width - 1),
                 ),
                 move |app, _| {
-                    if let Some(Screens::MainScreen(main_screen)) =
+                    if let Some(Screen::MainScreen(main_screen)) =
                         app.drawer.current_screen.as_mut()
                     {
                         let list = main_screen
@@ -1050,7 +1050,7 @@ impl MainScreen {
                             ratatui::crossterm::event::MouseButton::Left,
                             input_area,
                             move |app, _| {
-                                if let Some(Screens::MainScreen(main_screen)) =
+                                if let Some(Screen::MainScreen(main_screen)) =
                                     app.drawer.current_screen.as_mut()
                                 {
                                     main_screen.tab = 1;

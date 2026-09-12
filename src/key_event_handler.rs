@@ -192,7 +192,7 @@ impl KeyEventHandler {
             popup.get_state()
         } else if let Some(screen) = drawer.current_screen.as_ref() {
             match screen {
-                crate::screens::Screens::MainScreen(main_screen) => main_screen.get_state(),
+                crate::screens::Screen::MainScreen(main_screen) => main_screen.get_state(),
             }
         } else {
             (None, None)
@@ -270,7 +270,7 @@ impl KeyEventHandler {
             popup.get_state()
         } else if let Some(screen) = drawer.current_screen.as_ref() {
             match screen {
-                crate::screens::Screens::MainScreen(main_screen) => main_screen.get_state(),
+                crate::screens::Screen::MainScreen(main_screen) => main_screen.get_state(),
             }
         } else {
             return vec![];
@@ -493,7 +493,7 @@ impl KeyEventHandler {
             popup.get_state()
         } else if let Some(screen) = drawer.current_screen.as_ref() {
             match screen {
-                crate::screens::Screens::MainScreen(main_screen) => main_screen.get_state(),
+                crate::screens::Screen::MainScreen(main_screen) => main_screen.get_state(),
             }
         } else {
             (None, None)

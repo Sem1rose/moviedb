@@ -6,6 +6,7 @@ mod fetch_movies;
 mod manage_lists;
 mod manage_plays;
 mod omdb_init;
+mod open;
 mod out_of_box;
 mod punch_play_init;
 mod simkl_init;
@@ -20,6 +21,7 @@ pub use fetch_movies::FetchMoviesPopup;
 pub use manage_lists::ManageListsPopup;
 pub use manage_plays::ManagePlaysPopup;
 pub use omdb_init::OMDBInitPopup;
+pub use open::OpenPopup;
 pub use out_of_box::OutOfBoxPopup;
 pub use punch_play_init::{Phase as PunchPlayInitPopupPhase, PunchPlayInitPopup};
 pub use simkl_init::{Phase as SimklInitPopupPhase, SimklInitPopup};
@@ -42,6 +44,7 @@ pub enum Popup {
     OutOfBox(Box<OutOfBoxPopup>),
     AdvancedFilter(Box<AdvancedFilterPopup>),
     FetchMovies(Box<FetchMoviesPopup>),
+    Open(Box<OpenPopup>),
 }
 
 impl Popup {
@@ -60,6 +63,7 @@ impl Popup {
             Popup::OutOfBox(out_of_box_popup) => &**out_of_box_popup,
             Popup::AdvancedFilter(advanced_filter_popup) => &**advanced_filter_popup,
             Popup::FetchMovies(fetch_movies_popup) => &**fetch_movies_popup,
+            Popup::Open(open_popup) => &**open_popup,
         }
     }
 
@@ -78,6 +82,7 @@ impl Popup {
             Popup::OutOfBox(out_of_box_popup) => &mut **out_of_box_popup,
             Popup::AdvancedFilter(advanced_filter_popup) => &mut **advanced_filter_popup,
             Popup::FetchMovies(fetch_movies_popup) => &mut **fetch_movies_popup,
+            Popup::Open(open_popup) => &mut **open_popup,
         }
     }
 
@@ -106,8 +111,10 @@ impl Popup {
 
 pub trait PopupTrait {
     fn get_state(&self) -> (Option<usize>, Option<usize>);
-    fn update_next_frame(&self) -> bool;
-    fn update(&mut self);
+    fn update_next_frame(&self) -> bool {
+        false
+    }
+    fn update(&mut self) {}
     fn render(
         &mut self,
         frame: &mut ratatui::Frame,

@@ -19,11 +19,11 @@ use crate::{
     helpers,
     image_backend::{ImageID, RatatuiImage},
     key_event_handler::{self, KeyEventHandler},
-    screens::{Screens, main_screen::MainScreen},
+    screens::{Screen, main_screen::MainScreen},
 };
 
 pub const MOVIE_WIDGET_HEIGHT: usize = 11;
-const LIST_POSTER_WIDTH: usize = (MOVIE_WIDGET_HEIGHT - 2) * 4 / 3;
+pub const LIST_POSTER_WIDTH: usize = (MOVIE_WIDGET_HEIGHT - 2) * 4 / 3;
 
 impl MainScreen {
     pub fn render_movies_list(
@@ -39,7 +39,7 @@ impl MainScreen {
             let num_visible_items = self.movies_list.num_visible_items;
 
             key_event_handler.bind_tab((Some(0), None), "Change focus".into(), |app, data| {
-                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     match data {
                         key_event_handler::Data::Direction(true, _) => {
                             main_screen.tab += 1;
@@ -58,18 +58,18 @@ impl MainScreen {
             });
 
             key_event_handler.bind_key((Some(0), None), "gg", "Jump to top".into(), |app, _| {
-                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     main_screen.goto_index(0);
                 }
             });
             key_event_handler.bind_key((Some(0), None), 'G', "Jump to bottom".into(), |app, _| {
-                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     main_screen.goto_index(-1);
                 }
             });
 
             key_event_handler.bind_vertical((Some(0), None), "Scroll".into(), move |app, data| {
-                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     if let key_event_handler::Data::Direction(direction, modifiers) = data {
                         if modifiers.contains(KeyModifiers::SHIFT) {
                             if direction {
@@ -109,7 +109,7 @@ impl MainScreen {
             ratatui::crossterm::event::MouseButton::Left,
             helpers::add_padding(scrollbar_area, Padding::bottom(scrollbar_area.height - 1)),
             move |app, _| {
-                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     if main_screen.movies_list.alignment_opposite
                         && main_screen.movies_list.partially_visible
                     {
@@ -124,7 +124,7 @@ impl MainScreen {
             ratatui::crossterm::event::MouseButton::Left,
             helpers::add_padding(scrollbar_area, Padding::top(scrollbar_area.height - 1)),
             move |app, _| {
-                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     if !main_screen.movies_list.alignment_opposite
                         && main_screen.movies_list.partially_visible
                     {
@@ -138,8 +138,11 @@ impl MainScreen {
             },
         );
 
+        let mut selected_movie_rect = None;
+        let mut cell = Cell::new(" ");
+        cell.set_style(Style::new().bg(tailwind::SLATE.c900));
         let mut list_buffer = Buffer::empty(movies_area);
-        let mut scrollbar_buffer = Buffer::empty(scrollbar_area);
+        let mut scrollbar_buffer = Buffer::filled(scrollbar_area, cell);
         self.movies_list.update_for_area(area, num_items);
         self.movies_list.render_without_area_update(
             num_items,
@@ -154,6 +157,17 @@ impl MainScreen {
              index,
              selected,
              key_event_handler| {
+                if selected {
+                    let buffer_area = *buffer.area();
+                    let (_, input_area) = helpers::deconstruct_scrollview_area(
+                        buffer_area,
+                        self.movies_list.orientation,
+                        align_bottom,
+                        num_hidden_rows,
+                        buffer_y_negative_offset,
+                    );
+                    selected_movie_rect = Some(input_area);
+                }
                 self.draw_movie_widget(
                     index,
                     buffer,
@@ -168,6 +182,8 @@ impl MainScreen {
         );
         frame.buffer_mut().merge(&scrollbar_buffer);
         frame.buffer_mut().merge(&list_buffer);
+
+        self.selected_movie_rect = selected_movie_rect;
     }
 
     fn draw_movie_widget(
@@ -199,7 +215,7 @@ impl MainScreen {
             ratatui::crossterm::event::MouseButton::Left,
             input_area,
             move |app, _| {
-                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     main_screen.tab = 0;
                     main_screen.item = 0;
 
@@ -213,7 +229,7 @@ impl MainScreen {
             ratatui::crossterm::event::MouseButton::Right,
             input_area,
             move |app, data| {
-                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     main_screen.tab = 0;
                     main_screen.item = 0;
 

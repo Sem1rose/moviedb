@@ -16,7 +16,7 @@ use crate::{
     helpers,
     key_event_handler::{self, KeyEventHandler},
     pop_criterion,
-    screens::{Screens, main_screen::MainScreen},
+    screens::{Screen, main_screen::MainScreen},
     types::{FilterCriterion, RatingSource, Sort},
     widgets,
 };
@@ -31,7 +31,7 @@ impl MainScreen {
         let tab_selected = self.tab == 2;
 
         key_event_handler.bind_esc((Some(2), Some(0)), "Close".into(), |app, _| {
-            if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+            if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 main_screen.tab = 0;
                 main_screen.item = 0;
 
@@ -53,14 +53,14 @@ impl MainScreen {
             }
         });
         key_event_handler.bind_esc((Some(2), None), "Close".into(), |app, _| {
-            if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+            if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 main_screen.tab = 0;
                 main_screen.item = 0;
             }
         });
 
         key_event_handler.bind_tab((Some(2), None), "Change focus".into(), |app, data| {
-            if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+            if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 if main_screen.item == 0 {
                     let FilterCriterion::Title(name, filter) = pop_criterion!(
                         main_screen.filter_criteria,
@@ -107,7 +107,7 @@ impl MainScreen {
         });
 
         key_event_handler.bind_enter((Some(2), Some(0)), "Confirm".into(), |app, _| {
-            if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+            if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 main_screen.tab = 0;
                 main_screen.item = 0;
 
@@ -133,20 +133,20 @@ impl MainScreen {
             }
         });
         key_event_handler.bind_enter((Some(2), None), "Confirm".into(), |app, _| {
-            if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+            if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 main_screen.tab = 0;
                 main_screen.item = 0;
             }
         });
 
         key_event_handler.bind_key((Some(2), Some(1)), ',', "Close".into(), |app, _| {
-            if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+            if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 main_screen.tab = 0;
                 main_screen.item = 0;
             }
         });
         key_event_handler.bind_key((Some(2), Some(2)), ',', "Sort".into(), |app, _| {
-            if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+            if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 main_screen.item = 1;
                 // main_screen.sort_popup.reset_state();
             }
@@ -156,20 +156,20 @@ impl MainScreen {
             ' ',
             "Toggle sort order".into(),
             |app, _| {
-                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     main_screen.sort_ascending = !main_screen.sort_ascending;
                     main_screen.filter_sort_movies(true);
                 }
             },
         );
         key_event_handler.bind_key((Some(2), Some(1)), 'q', "Close".into(), |app, _| {
-            if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+            if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 main_screen.tab = 0;
                 main_screen.item = 0;
             }
         });
         key_event_handler.bind_key((Some(2), Some(2)), 'q', "Close".into(), |app, _| {
-            if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+            if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 main_screen.tab = 0;
                 main_screen.item = 0;
             }
@@ -185,7 +185,7 @@ impl MainScreen {
                 }
                 .into(),
                 |app, data| {
-                    if let Some(Screens::MainScreen(main_screen)) =
+                    if let Some(Screen::MainScreen(main_screen)) =
                         app.drawer.current_screen.as_mut()
                     {
                         match data {
@@ -210,7 +210,7 @@ impl MainScreen {
                 (Some(2), Some(1)),
                 "Navigate".into(),
                 |app, data| {
-                    if let Some(Screens::MainScreen(main_screen)) =
+                    if let Some(Screen::MainScreen(main_screen)) =
                         app.drawer.current_screen.as_mut()
                     {
                         if let key_event_handler::Data::Direction(true, _) = data {
@@ -221,7 +221,7 @@ impl MainScreen {
             );
         }
         key_event_handler.bind_horizontal((Some(2), Some(2)), "Navigate".into(), |app, data| {
-            if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+            if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 if let key_event_handler::Data::Direction(false, _) = data {
                     main_screen.item -= 1;
                 }
@@ -237,7 +237,7 @@ impl MainScreen {
             }
             .into(),
             |app, data| {
-                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     if let key_event_handler::Data::Direction(direction, _) = data {
                         main_screen.sort_popup.scroll(direction);
 
@@ -269,7 +269,7 @@ impl MainScreen {
             (Some(2), Some(2)),
             "Change sort order".into(),
             |app, data| {
-                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     match data {
                         key_event_handler::Data::Direction(false, _) => {
                             if !main_screen.sort_ascending {
@@ -290,7 +290,7 @@ impl MainScreen {
         );
 
         key_event_handler.bind_input_field((Some(2), Some(0)), "".into(), |app, data| {
-            if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+            if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 if let key_event_handler::Data::Key(key_event) = data {
                     main_screen.search_input.input(key_event);
 
@@ -363,7 +363,7 @@ impl MainScreen {
             ratatui::crossterm::event::MouseButton::Left,
             input_area,
             |app, _| {
-                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     main_screen.tab = 2;
                     main_screen.item = 0;
 
@@ -408,7 +408,7 @@ impl MainScreen {
             ratatui::crossterm::event::MouseButton::Left,
             sort_area,
             |app, _| {
-                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     main_screen.tab = 2;
                     main_screen.item = 1;
                     // main_screen.sort_popup.reset_state();
@@ -455,7 +455,7 @@ impl MainScreen {
                             ratatui::crossterm::event::MouseButton::Left,
                             mouse_area,
                             move |app, _| {
-                                if let Some(Screens::MainScreen(main_screen)) =
+                                if let Some(Screen::MainScreen(main_screen)) =
                                     app.drawer.current_screen.as_mut()
                                 {
                                     let new_sort = Sort::from_repr(repr).unwrap();
@@ -490,7 +490,7 @@ impl MainScreen {
                             ratatui::crossterm::event::MouseButton::Left,
                             mouse_area,
                             move |app, _| {
-                                if let Some(Screens::MainScreen(main_screen)) =
+                                if let Some(Screen::MainScreen(main_screen)) =
                                     app.drawer.current_screen.as_mut()
                                 {
                                     main_screen.tab = 0;
@@ -550,7 +550,7 @@ impl MainScreen {
             ratatui::crossterm::event::MouseButton::Left,
             direction_area,
             |app, _| {
-                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     main_screen.sort_ascending = !main_screen.sort_ascending;
                     main_screen.filter_sort_movies(true);
                 }

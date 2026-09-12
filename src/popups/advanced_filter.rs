@@ -24,7 +24,7 @@ use crate::{
     key_event_handler::{self, KeyEventHandler},
     pop_criterion,
     popups::{Popup, PopupTrait},
-    screens::Screens,
+    screens::Screen,
     types::{
         BoxedFn, BoxedMutFn, FilterCriterion, FilterCriterionDiscriminants, FxIndexMap, Movie,
         Person,
@@ -1620,7 +1620,7 @@ impl AdvancedFilterPopup {
             unreachable!()
         };
 
-        if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+        if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
             main_screen.filter_criteria = filter_criteria;
 
             if let Some(FilterCriterion::Title(name, filter)) =

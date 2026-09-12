@@ -25,11 +25,11 @@ use crate::{
     image_backend::RatatuiImage,
     key_event_handler::{self, KeyEventHandler},
     load_file,
-    screens::Screens,
+    screens::Screen,
     tokens::{PunchPlayTokens, SimklTokens, TMDBTokens},
     types::{
-        Entry, FilterCriterion, FxIndexMap, List, ListID, ListItem, Movie, Person, RatingSource,
-        Sort, pop_criterion,
+        Collection, Entry, FilterCriterion, FxIndexMap, List, ListID, ListItem, Movie, Person,
+        RatingSource, Sort, pop_criterion,
     },
     widgets::{ContextMenu, Orientation, ScrolledList},
 };
@@ -41,22 +41,24 @@ mod list;
 pub use description::*;
 pub use list::*;
 
-const CONTEXT_MENU_MODEL: [&str; 6] = [
+const CONTEXT_MENU_MODEL: [&str; 7] = [
     "Add play",
     "Edit",
+    "Open",
     "Manage plays",
     "Change artworks",
     "Refetch details",
     "Delete",
 ];
 pub struct MainScreen {
-    tab:                 usize,
-    item:                usize,
-    pub sort:            Sort,
-    pub drawing_images:  bool,
-    pub sort_ascending:  bool,
-    pub filter_criteria: Vec<FilterCriterion>,
-    pub search_input:    TextArea<'static>,
+    tab:                     usize,
+    item:                    usize,
+    pub sort:                Sort,
+    pub drawing_images:      bool,
+    pub sort_ascending:      bool,
+    pub filter_criteria:     Vec<FilterCriterion>,
+    pub search_input:        TextArea<'static>,
+    pub selected_movie_rect: Option<Rect>,
 
     pub selected_list: ListID,
     pub lists:         FxIndexMap<ListID, List>,
@@ -65,6 +67,7 @@ pub struct MainScreen {
     pub movies:          Rc<RefCell<FxIndexMap<u32, Movie>>>,
     pub watched:         Rc<RefCell<FxIndexMap<u32, Entry>>>,
     pub persons:         Rc<RefCell<FxIndexMap<u32, Person>>>,
+    pub collections:     Rc<RefCell<FxIndexMap<u32, Collection>>>,
     pub filtered_movies: Vec<Movie>,
 
     movies_list:        ScrolledList,
@@ -91,6 +94,7 @@ impl MainScreen {
             sort_ascending: false,
             search_input: TextArea::default(),
             filter_criteria: vec![],
+            selected_movie_rect: None,
             _config,
 
             selected_list: Default::default(),
@@ -103,6 +107,7 @@ impl MainScreen {
             movies: Default::default(),
             watched: Default::default(),
             persons: Default::default(),
+            collections: Default::default(),
             filtered_movies: vec![],
 
             movies_list: ScrolledList::new(Orientation::Vertical, MOVIE_WIDGET_HEIGHT as u16),
@@ -129,20 +134,23 @@ impl MainScreen {
         movies: Rc<RefCell<FxIndexMap<u32, Movie>>>,
         watched: Rc<RefCell<FxIndexMap<u32, Entry>>>,
         persons: Rc<RefCell<FxIndexMap<u32, Person>>>,
+        collections: Rc<RefCell<FxIndexMap<u32, Collection>>>,
     ) -> bool {
         self.movies = movies;
         self.watched = watched;
         self.persons = persons;
+        self.collections = collections;
 
         if self.lists.is_empty() || !self.lists.keys().any(|x| *x == ListID::Watchlist) {
             self.lists.insert_before(
                 0,
                 ListID::Watchlist,
                 List {
-                    id:       ListID::Watchlist,
-                    name:     "Watchlist".into(),
-                    items:    Default::default(),
+                    id: ListID::Watchlist,
+                    name: "Watchlist".into(),
+                    items: Default::default(),
                     readonly: false,
+                    ..Default::default()
                 },
             );
             self.save_lists();
@@ -165,7 +173,13 @@ impl MainScreen {
 
     pub fn save_lists(&self) {
         let path = &self.home_dir.join("lists.json");
-        match serde_json::to_string(&self.lists.values().collect_vec()) {
+        match serde_json::to_string(
+            &self
+                .lists
+                .values()
+                .filter(|x| !x.temp.unwrap_or_default())
+                .collect_vec(),
+        ) {
             Err(error) => {
                 error!("Error while trying to serialize {}: {error}", "lists")
             }
@@ -225,6 +239,108 @@ impl MainScreen {
         self.save_lists();
     }
 
+    pub fn open_list_by_id(&mut self, id: ListID, key_event_handler: &mut KeyEventHandler) -> bool {
+        if self.selected_list == id {
+            return false;
+        }
+
+        if matches!(id, ListID::Watched | ListID::All) || self.lists.contains_key(&id) {
+            self.selected_list = id;
+
+            if !self
+                .lists
+                .get(&id)
+                .map(|x| x.temp)
+                .flatten()
+                .unwrap_or_default()
+            {
+                self.lists.retain(|_, v| !v.temp.unwrap_or_default());
+            }
+
+            let available_sort_options = self.get_available_sort_options();
+            self.sort = *available_sort_options.first().unwrap();
+            // if !available_sort_options.contains(&self.sort) {
+            // }
+
+            let fetch_movies = {
+                let movies_borrowed = self.movies.borrow();
+                self.get_list_ids()
+                    .iter()
+                    .any(|x| !movies_borrowed.contains_key(x))
+            };
+            if fetch_movies {
+                key_event_handler.bind_immediate(|app, _| app.drawer.open_fetch_movies_popup());
+
+                false
+            } else {
+                self.filter_sort_movies(false);
+
+                true
+            }
+        } else {
+            false
+        }
+    }
+
+    pub fn open_new_temp_list(&mut self, id: ListID, key_event_handler: &mut KeyEventHandler) {
+        match id {
+            ListID::Collection(collection_id) => {
+                let collection = self
+                    .collections
+                    .borrow()
+                    .get(&collection_id)
+                    .unwrap()
+                    .clone();
+                self.lists.insert(
+                    id,
+                    List {
+                        id,
+                        temp: Some(true),
+                        name: collection.name.clone(),
+                        items: FxIndexMap::from_iter(collection.parts.iter().map(|&x| {
+                            (
+                                x,
+                                ListItem {
+                                    id:       x,
+                                    added_at: Default::default(),
+                                },
+                            )
+                        })),
+                        readonly: true,
+                    },
+                );
+
+                self.open_list_by_id(id, key_event_handler);
+            }
+            _ => (),
+        }
+    }
+
+    pub fn try_open_temp_list(&mut self, id: ListID, key_event_handler: &mut KeyEventHandler) {
+        if !self.open_list_by_id(id, key_event_handler) {
+            self.open_new_temp_list(id, key_event_handler)
+        }
+    }
+
+    pub fn open_list_and_select_movie(
+        &mut self,
+        list_id: ListID,
+        movie_id: u32,
+        key_event_handler: &mut KeyEventHandler,
+    ) -> bool {
+        if self.open_list_by_id(list_id, key_event_handler) {
+            let pos = self.filtered_movies.iter().position(|x| x.id == movie_id);
+            if let Some(index) = pos {
+                self.movies_list
+                    .goto_index(index, true, self.filtered_movies.len());
+            }
+
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn open_list(
         &mut self,
         index: usize,
@@ -258,58 +374,6 @@ impl MainScreen {
                 },
                 key_event_handler,
             )
-        }
-    }
-
-    pub fn open_list_by_id(&mut self, id: ListID, key_event_handler: &mut KeyEventHandler) -> bool {
-        if self.selected_list == id {
-            return false;
-        }
-
-        if matches!(id, ListID::Watched | ListID::All) || self.lists.contains_key(&id) {
-            self.selected_list = id;
-
-            let available_sort_options = self.get_available_sort_options();
-            if !available_sort_options.contains(&self.sort) {
-                self.sort = *available_sort_options.first().unwrap();
-            }
-
-            let fetch_movies = {
-                let movies_borrowed = self.movies.borrow();
-                self.get_list_ids()
-                    .iter()
-                    .any(|x| !movies_borrowed.contains_key(x))
-            };
-            if fetch_movies {
-                key_event_handler.bind_immediate(|app, _| app.drawer.open_fetch_movies_popup());
-
-                false
-            } else {
-                self.filter_sort_movies(false);
-
-                true
-            }
-        } else {
-            false
-        }
-    }
-
-    pub fn open_list_and_select_movie(
-        &mut self,
-        list_id: ListID,
-        movie_id: u32,
-        key_event_handler: &mut KeyEventHandler,
-    ) -> bool {
-        if self.open_list_by_id(list_id, key_event_handler) {
-            let pos = self.filtered_movies.iter().position(|x| x.id == movie_id);
-            if let Some(index) = pos {
-                self.movies_list
-                    .goto_index(index, true, self.filtered_movies.len());
-            }
-
-            true
-        } else {
-            false
         }
     }
 
@@ -773,7 +837,7 @@ impl MainScreen {
     ) {
         if !self.search_input.is_empty() {
             key_event_handler.bind_esc((Some(0), None), "Clear search".into(), |app, _| {
-                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     if let Sort::Relevance = main_screen.sort {
                         main_screen.sort =
                             *main_screen.get_available_sort_options().first().unwrap();
@@ -867,7 +931,7 @@ impl MainScreen {
 
         for i in 0..=(9.min(self.lists.len() + 2)) {
             key_event_handler.bind_key((Some(0), None), i, "".into(), move |app, _| {
-                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     main_screen.open_list(
                         i,
                         main_screen.current_movie().map(|x| x.id),
@@ -882,7 +946,7 @@ impl MainScreen {
             ListID::Local(_) | ListID::Watched | ListID::All
         ) {
             key_event_handler.bind_key((Some(0), None), 'R', "Update list".into(), |app, _| {
-                if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     match main_screen.selected_list {
                         _ => {
                             main_screen.refetch_current_list(
@@ -911,6 +975,9 @@ impl MainScreen {
                 );
             });
         }
+        key_event_handler.bind_key((Some(0), None), 'o', "Open".into(), |app, _| {
+            app.drawer.open_open_popup();
+        });
         key_event_handler.bind_key((Some(0), None), 'F', "Advanced Filter".into(), |app, _| {
             app.drawer.open_advanced_filter_popup();
         });
@@ -918,14 +985,14 @@ impl MainScreen {
             app.drawer.open_manage_lists_popup();
         });
         key_event_handler.bind_key((Some(0), None), ',', "Sort by".into(), |app, _| {
-            if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+            if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 main_screen.tab = 2;
                 main_screen.item = 1;
                 // main_screen.sort_popup.reset_state();
             }
         });
         key_event_handler.bind_key((Some(0), None), '/', "Find".into(), |app, _| {
-            if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+            if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 main_screen.tab = 2;
                 main_screen.item = 0;
 
@@ -941,7 +1008,7 @@ impl MainScreen {
             }
         });
         key_event_handler.bind_key((Some(0), None), 'f', "Filter".into(), |app, _| {
-            if let Some(Screens::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+            if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 main_screen.tab = 2;
                 main_screen.item = 0;
 
@@ -1015,7 +1082,7 @@ impl MainScreen {
                     ratatui::crossterm::event::MouseButton::Left,
                     frame.area(),
                     |app, _| {
-                        if let Some(Screens::MainScreen(main_screen)) =
+                        if let Some(Screen::MainScreen(main_screen)) =
                             app.drawer.current_screen.as_mut()
                         {
                             main_screen.context_menu_pos = None;
@@ -1026,7 +1093,7 @@ impl MainScreen {
                     ratatui::crossterm::event::MouseButton::Right,
                     frame.area(),
                     |app, _| {
-                        if let Some(Screens::MainScreen(main_screen)) =
+                        if let Some(Screen::MainScreen(main_screen)) =
                             app.drawer.current_screen.as_mut()
                         {
                             main_screen.context_menu_pos = None;
@@ -1035,7 +1102,7 @@ impl MainScreen {
                 );
 
                 key_event_handler.bind_esc((None, None), "Cancel".into(), |app, _| {
-                    if let Some(Screens::MainScreen(main_screen)) =
+                    if let Some(Screen::MainScreen(main_screen)) =
                         app.drawer.current_screen.as_mut()
                     {
                         main_screen.context_menu_pos = None;
@@ -1043,7 +1110,7 @@ impl MainScreen {
                 });
 
                 key_event_handler.bind_key((None, None), 'q', "Cancel".into(), |app, _| {
-                    if let Some(Screens::MainScreen(main_screen)) =
+                    if let Some(Screen::MainScreen(main_screen)) =
                         app.drawer.current_screen.as_mut()
                     {
                         main_screen.context_menu_pos = None;
@@ -1054,7 +1121,7 @@ impl MainScreen {
                     (None, None),
                     "Navigate".into(),
                     move |app, data| {
-                        if let Some(Screens::MainScreen(main_screen)) =
+                        if let Some(Screen::MainScreen(main_screen)) =
                             app.drawer.current_screen.as_mut()
                         {
                             if let key_event_handler::Data::Direction(dir, _) = data {
@@ -1073,7 +1140,7 @@ impl MainScreen {
                             |app, _| {
                                 app.drawer.open_add_play_popup();
 
-                                if let Some(Screens::MainScreen(main_screen)) =
+                                if let Some(Screen::MainScreen(main_screen)) =
                                     app.drawer.current_screen.as_mut()
                                 {
                                     main_screen.context_menu_pos = None;
@@ -1088,13 +1155,23 @@ impl MainScreen {
                             |app, _| {
                                 app.drawer.open_edit_movie_popup(&app.watched.borrow());
 
-                                if let Some(Screens::MainScreen(main_screen)) =
+                                if let Some(Screen::MainScreen(main_screen)) =
                                     app.drawer.current_screen.as_mut()
                                 {
                                     main_screen.context_menu_pos = None;
                                 }
                             },
                         );
+                    } else if CONTEXT_MENU_MODEL[i] == "Open" {
+                        key_event_handler.bind_key((None, None), 'o', "Open".into(), |app, _| {
+                            app.drawer.open_open_popup();
+
+                            if let Some(Screen::MainScreen(main_screen)) =
+                                app.drawer.current_screen.as_mut()
+                            {
+                                main_screen.context_menu_pos = None;
+                            }
+                        });
                     } else if CONTEXT_MENU_MODEL[i] == "Manage plays" {
                         key_event_handler.bind_key(
                             (None, None),
@@ -1103,7 +1180,7 @@ impl MainScreen {
                             |app, _| {
                                 app.drawer.open_add_play_popup();
 
-                                if let Some(Screens::MainScreen(main_screen)) =
+                                if let Some(Screen::MainScreen(main_screen)) =
                                     app.drawer.current_screen.as_mut()
                                 {
                                     main_screen.context_menu_pos = None;
@@ -1123,7 +1200,7 @@ impl MainScreen {
                                     app.omdb_tokens.clone(),
                                 );
 
-                                if let Some(Screens::MainScreen(main_screen)) =
+                                if let Some(Screen::MainScreen(main_screen)) =
                                     app.drawer.current_screen.as_mut()
                                 {
                                     main_screen.context_menu_pos = None;
@@ -1138,7 +1215,7 @@ impl MainScreen {
                             |app, _| {
                                 app.drawer.open_change_artwork_popup(&app.tmdb_tokens);
 
-                                if let Some(Screens::MainScreen(main_screen)) =
+                                if let Some(Screen::MainScreen(main_screen)) =
                                     app.drawer.current_screen.as_mut()
                                 {
                                     main_screen.context_menu_pos = None;
@@ -1153,7 +1230,7 @@ impl MainScreen {
                             |app, _| {
                                 app.drawer.open_delete_movie_popup(&app.movies.borrow());
 
-                                if let Some(Screens::MainScreen(main_screen)) =
+                                if let Some(Screen::MainScreen(main_screen)) =
                                     app.drawer.current_screen.as_mut()
                                 {
                                     main_screen.context_menu_pos = None;
@@ -1188,7 +1265,7 @@ impl MainScreen {
                 };
 
                 key_event_handler.bind_enter((None, None), "Choose".into(), |app, _| {
-                    if let Some(Screens::MainScreen(main_screen)) =
+                    if let Some(Screen::MainScreen(main_screen)) =
                         app.drawer.current_screen.as_mut()
                     {
                         main_screen.context_menu_pos = None;
@@ -1198,6 +1275,8 @@ impl MainScreen {
                             app.drawer.open_add_play_popup();
                         } else if CONTEXT_MENU_MODEL[i] == "Edit" {
                             app.drawer.open_edit_movie_popup(&app.watched.borrow());
+                        } else if CONTEXT_MENU_MODEL[i] == "Open" {
+                            app.drawer.open_open_popup();
                         } else if CONTEXT_MENU_MODEL[i] == "Manage plays" {
                             app.drawer.open_manage_plays_popup(&app.watched.borrow());
                         } else if CONTEXT_MENU_MODEL[i] == "Refetch details" {
@@ -1236,7 +1315,7 @@ impl MainScreen {
                             Padding::bottom(scrollbar_area.height - 1),
                         ),
                         move |app, _| {
-                            if let Some(Screens::MainScreen(main_screen)) =
+                            if let Some(Screen::MainScreen(main_screen)) =
                                 app.drawer.current_screen.as_mut()
                             {
                                 if main_screen.context_menu.scroll_pos > 0 {
@@ -1252,7 +1331,7 @@ impl MainScreen {
                             Padding::top(scrollbar_area.height - 1),
                         ),
                         move |app, _| {
-                            if let Some(Screens::MainScreen(main_screen)) =
+                            if let Some(Screen::MainScreen(main_screen)) =
                                 app.drawer.current_screen.as_mut()
                             {
                                 main_screen.context_menu.scroll_pos =
@@ -1275,6 +1354,8 @@ impl MainScreen {
                                 app.drawer.open_add_play_popup();
                             } else if CONTEXT_MENU_MODEL[option_index] == "Edit" {
                                 app.drawer.open_edit_movie_popup(&app.watched.borrow());
+                            } else if CONTEXT_MENU_MODEL[option_index] == "Open" {
+                                app.drawer.open_open_popup();
                             } else if CONTEXT_MENU_MODEL[option_index] == "Manage plays" {
                                 app.drawer.open_manage_plays_popup(&app.watched.borrow());
                             } else if CONTEXT_MENU_MODEL[option_index] == "Refetch details" {
@@ -1290,7 +1371,7 @@ impl MainScreen {
                                 app.drawer.open_delete_movie_popup(&app.movies.borrow());
                             }
 
-                            if let Some(Screens::MainScreen(main_screen)) =
+                            if let Some(Screen::MainScreen(main_screen)) =
                                 app.drawer.current_screen.as_mut()
                             {
                                 main_screen.context_menu_pos = None;
