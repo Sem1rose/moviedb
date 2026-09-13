@@ -1,5 +1,5 @@
 use chrono::{DateTime, Datelike, Utc};
-use itertools::{Itertools, izip};
+use itertools::Itertools;
 use ratatui::{
     Frame,
     buffer::{Buffer, Cell},
@@ -17,10 +17,10 @@ use ratatui_image::sliced::SignedPosition;
 use crate::{
     helpers,
     image_backend::{ImageID, RatatuiImage},
-    key_event_handler::{self, KeyEventHandler},
+    event_handler::{self, EventHandler},
     screens::{Screen, main_screen::MainScreen},
     types::Movie,
-    widgets::{self, Orientation, ScrolledList},
+    widgets::{Orientation, ScrolledList},
 };
 
 #[derive(Default)]
@@ -91,19 +91,19 @@ impl MainScreen {
         &mut self,
         frame: &mut Frame,
         image_renderer: &mut RatatuiImage,
-        key_event_handler: &mut KeyEventHandler,
+        key_event_handler: &mut EventHandler,
         area: Rect,
     ) {
         key_event_handler.bind_tab((Some(1), None), "Change focus".into(), |app, data| {
             if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 match data {
-                    key_event_handler::Data::Direction(true, _) => {
+                    event_handler::Data::Direction(true, _) => {
                         main_screen.tab += 1;
                         if main_screen.tab > 1 {
                             main_screen.tab = 0;
                         }
                     }
-                    key_event_handler::Data::Direction(false, _) => {
+                    event_handler::Data::Direction(false, _) => {
                         main_screen.tab = main_screen.tab.checked_sub(1).unwrap_or(1);
                     }
                     _ => (),
@@ -290,7 +290,7 @@ impl MainScreen {
                             app.drawer.current_screen.as_mut()
                         {
                             match data {
-                                key_event_handler::Data::Direction(true, _) => {
+                                event_handler::Data::Direction(true, _) => {
                                     main_screen.movies_description.selected_tab =
                                         main_screen.movies_description.available_tabs[(main_screen
                                             .movies_description
@@ -303,7 +303,7 @@ impl MainScreen {
                                             + 1)
                                         .min(num_available_tabs - 1)];
                                 }
-                                key_event_handler::Data::Direction(false, _) => {
+                                event_handler::Data::Direction(false, _) => {
                                     main_screen.movies_description.selected_tab =
                                         main_screen.movies_description.available_tabs[main_screen
                                             .movies_description
@@ -474,14 +474,14 @@ impl MainScreen {
                                 app.drawer.current_screen.as_mut()
                             {
                                 match data {
-                                    key_event_handler::Data::Direction(false, _) => {
+                                    event_handler::Data::Direction(false, _) => {
                                         main_screen.movies_description.overview_scroll =
                                             main_screen
                                                 .movies_description
                                                 .overview_scroll
                                                 .saturating_sub(1);
                                     }
-                                    key_event_handler::Data::Direction(true, _) => {
+                                    event_handler::Data::Direction(true, _) => {
                                         main_screen.movies_description.overview_scroll += 1;
                                     }
                                     _ => (),
@@ -568,37 +568,30 @@ impl MainScreen {
             .flex(ratatui::layout::Flex::SpaceEvenly)
             .split(helpers::add_padding(area, Padding::top(1)));
         let mut widgets = vec![];
-        let mut links = vec![];
         let mut labels = line!();
         for (name, rating) in ratings {
             let (bg, fg) = if name == "imdb" {
                 labels.push_span(span!("IMDB").fg(IMDB_COLORS.2));
-                links.push("".to_string());
 
                 (IMDB_COLORS.0, IMDB_COLORS.1)
             } else if name == "letterboxd" {
                 labels.push_span(span!("Letterboxd").fg(LETTERBOXD_COLORS.2));
-                links.push("".to_string());
 
                 (LETTERBOXD_COLORS.0, LETTERBOXD_COLORS.1)
             } else if name == "trakt" {
                 labels.push_span(span!("Trakt").fg(TRAKT_COLORS.2));
-                links.push("".to_string());
 
                 (TRAKT_COLORS.0, TRAKT_COLORS.1)
             } else if name == "tmdb" {
                 labels.push_span(span!("TMDB").fg(TMDB_COLORS.2));
-                links.push(format!("https://www.themoviedb.org/movie/{}", movie.id));
 
                 (TMDB_COLORS.0, TMDB_COLORS.1)
             } else if name == "popcorn" {
                 labels.push_span(span!("Popcorn").fg(POPCORN_COLORS.2));
-                links.push("".to_string());
 
                 (POPCORN_COLORS.0, POPCORN_COLORS.1)
             } else if name == "tomatoes" {
                 labels.push_span(span!("Tomatoes").fg(TOMATOES_COLORS.2));
-                links.push("".to_string());
 
                 (TOMATOES_COLORS.0, TOMATOES_COLORS.1)
             } else {
@@ -608,17 +601,9 @@ impl MainScreen {
             widgets.push(line!["".fg(bg), rating.bg(bg).fg(fg).bold(), "".fg(bg)]);
         }
 
-        for ((widget, label, link), &area) in
-            izip!(widgets.into_iter(), labels, links).zip(widget_areas.iter())
-        {
+        for ((widget, label), &area) in widgets.into_iter().zip(labels).zip(widget_areas.iter()) {
             frame.render_widget(label, area.offset(Offset::new(0, -1)));
-            frame.render_widget(
-                widgets::Hyperlink {
-                    text: widget.into(),
-                    url:  link,
-                },
-                area,
-            );
+            frame.render_widget(widget, area);
         }
     }
 
@@ -627,7 +612,7 @@ impl MainScreen {
         area: Rect,
         movie: &Movie,
         frame: &mut Frame,
-        key_event_handler: &mut KeyEventHandler,
+        key_event_handler: &mut EventHandler,
     ) {
         let movie_plays = &self.watched.borrow()[&movie.id].history;
         let tab_selected = self.tab == 1;
@@ -642,7 +627,7 @@ impl MainScreen {
             key_event_handler.bind_vertical((Some(1), None), "Scroll".into(), move |app, data| {
                 if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     match data {
-                        key_event_handler::Data::Direction(false, _) => {
+                        event_handler::Data::Direction(false, _) => {
                             if main_screen.movies_description.plays_tab.alignment_bottom
                                 && render_partially_visible_play
                             {
@@ -655,7 +640,7 @@ impl MainScreen {
                                     .saturating_sub(1);
                             }
                         }
-                        key_event_handler::Data::Direction(true, _) => {
+                        event_handler::Data::Direction(true, _) => {
                             if !main_screen.movies_description.plays_tab.alignment_bottom
                                 && render_partially_visible_play
                             {
@@ -849,7 +834,7 @@ impl MainScreen {
         movie: &Movie,
         image_renderer: &mut RatatuiImage,
         frame: &mut Frame,
-        key_event_handler: &mut KeyEventHandler,
+        key_event_handler: &mut EventHandler,
     ) {
         let num_cast = movie.credits.cast.len();
         let num_crew = movie.credits.crew.len();
@@ -867,13 +852,13 @@ impl MainScreen {
                             .selected_index,
                     );
                 match data {
-                    key_event_handler::Data::Direction(true, _) => {
+                    event_handler::Data::Direction(true, _) => {
                         list.selected_index = list.scroll_pos + list.num_visible_items - 1;
                         if !list.partially_visible {
                             list.scroll(true, num_cast);
                         }
                     }
-                    key_event_handler::Data::Direction(false, _) => {
+                    event_handler::Data::Direction(false, _) => {
                         list.selected_index = list.scroll_pos;
                         list.scroll(false, num_cast);
                     }

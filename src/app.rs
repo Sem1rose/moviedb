@@ -12,7 +12,7 @@ use crate::{
     drawer::Drawer,
     helpers,
     image_backend::ImageID,
-    key_event_handler::KeyEventHandler,
+    event_handler::EventHandler,
     load_file, omdb,
     popups::Popup,
     processors::{Processor, ProcessorDiscriminants},
@@ -42,7 +42,7 @@ pub struct App {
 
     terminal:              Term,
     pub drawer:            Drawer,
-    pub key_event_handler: KeyEventHandler,
+    pub key_event_handler: EventHandler,
     pub config:            Rc<RefCell<Config>>,
 
     pub tmdb_tokens:       TMDBTokens,
@@ -66,7 +66,7 @@ impl App {
 
         Self {
             terminal: initialize_terminal().expect("Unable to initialize terminal"),
-            key_event_handler: KeyEventHandler::default(),
+            key_event_handler: EventHandler::default(),
             drawer: Drawer::new(&home_dir, &cache_dir, config.clone()),
 
             config,
@@ -132,14 +132,14 @@ impl App {
 
             let mut executed_immediate = false;
             for mut callback in self.key_event_handler.get_execute_immediates() {
-                callback(self, crate::key_event_handler::Data::None);
+                callback(self, crate::event_handler::Data::None);
                 executed_immediate = true;
             }
 
             if !executed_immediate
-                && event::poll(if self.drawer.check_refresh_immediate() {
+                && event::poll(if self.drawer.should_refresh_immediate() {
                     Duration::ZERO
-                } else if self.drawer.check_refresh_delayed() {
+                } else if self.drawer.should_refresh_delayed() {
                     Duration::from_millis(15)
                 } else {
                     Duration::from_millis(500)
@@ -1101,14 +1101,14 @@ impl App {
             Event::FocusGained => (),
             Event::FocusLost => (),
             Event::Paste(string) => {
-                if let Some(mut callback) = self.key_event_handler.try_get_key_bind(
-                    crate::key_event_handler::Bind::Input,
-                    self.key_event_handler.get_state(&self.drawer),
-                ) {
+                if let Some(mut callback) = self
+                    .key_event_handler
+                    .try_get_bind(crate::event_handler::Bind::Input, self.drawer.state)
+                {
                     for c in string.chars() {
                         callback(
                             self,
-                            crate::key_event_handler::Data::Key(KeyEvent {
+                            crate::event_handler::Data::Key(KeyEvent {
                                 code:      event::KeyCode::Char(c),
                                 modifiers: KeyModifiers::NONE,
                                 kind:      event::KeyEventKind::Press,

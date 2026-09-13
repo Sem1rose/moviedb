@@ -23,7 +23,7 @@ use crate::{
     app::App,
     helpers,
     image_backend::RatatuiImage,
-    key_event_handler::{self, KeyEventHandler},
+    event_handler::{self, EventHandler},
     popups::{Popup, PopupTrait},
     tokens::tmdb_tokens::{TMDBTokens, UserTokens},
     widgets::{self, Action, ActionType, Hyperlink},
@@ -203,7 +203,7 @@ impl PopupTrait for TMDBInitPopup {
     fn render(
         &mut self,
         frame: &mut Frame,
-        key_event_handler: &mut KeyEventHandler,
+        key_event_handler: &mut EventHandler,
         image_renderer: &mut RatatuiImage,
     ) {
         key_event_handler.clear();
@@ -272,13 +272,13 @@ impl PopupTrait for TMDBInitPopup {
                     if let Some(Popup::TMDBInit(tmdb_init_popup)) = app.drawer.active_popup.as_mut()
                     {
                         match data {
-                            crate::key_event_handler::Data::Direction(true, _) => {
+                            crate::event_handler::Data::Direction(true, _) => {
                                 tmdb_init_popup.item += 1;
                                 if tmdb_init_popup.item > 1 {
                                     tmdb_init_popup.item = 0;
                                 }
                             }
-                            crate::key_event_handler::Data::Direction(false, _) => {
+                            crate::event_handler::Data::Direction(false, _) => {
                                 tmdb_init_popup.item =
                                     tmdb_init_popup.item.checked_sub(1).unwrap_or(1);
                             }
@@ -304,7 +304,7 @@ impl PopupTrait for TMDBInitPopup {
                 key_event_handler.bind_input_field((None, Some(0)), "".into(), |app, data| {
                     if let Some(Popup::TMDBInit(tmdb_init_popup)) = app.drawer.active_popup.as_mut()
                     {
-                        if let key_event_handler::Data::Key(key_event) = data {
+                        if let event_handler::Data::Key(key_event) = data {
                             tmdb_init_popup.input.input(key_event);
                         }
                     }
@@ -481,13 +481,13 @@ impl PopupTrait for TMDBInitPopup {
                             app.drawer.active_popup.as_mut()
                         {
                             match data {
-                                crate::key_event_handler::Data::Direction(true, _) => {
+                                crate::event_handler::Data::Direction(true, _) => {
                                     tmdb_init_popup.item += 1;
                                     if tmdb_init_popup.item > 1 {
                                         tmdb_init_popup.item = 0;
                                     }
                                 }
-                                crate::key_event_handler::Data::Direction(false, _) => {
+                                crate::event_handler::Data::Direction(false, _) => {
                                     tmdb_init_popup.item =
                                         tmdb_init_popup.item.checked_sub(1).unwrap_or(1);
                                 }

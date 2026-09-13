@@ -12,7 +12,7 @@ use crate::{
     app::App,
     helpers,
     image_backend::RatatuiImage,
-    key_event_handler::{self, Data, KeyEventHandler},
+    event_handler::{self, Data, EventHandler},
     popups::{
         OMDBInitPopup, Popup, PopupTrait, PunchPlayInitPopup, SimklInitPopup, TMDBInitPopup,
         TraktInitPopup,
@@ -43,7 +43,7 @@ impl PopupTrait for OutOfBoxPopup {
     fn render(
         &mut self,
         frame: &mut Frame,
-        key_event_handler: &mut KeyEventHandler,
+        key_event_handler: &mut EventHandler,
         image_renderer: &mut RatatuiImage,
     ) {
         key_event_handler.clear();
@@ -121,13 +121,13 @@ impl PopupTrait for OutOfBoxPopup {
         key_event_handler.bind_tab((None, None), "".into(), move |app, data| {
             if let Some(Popup::OutOfBox(out_of_box_popup)) = app.drawer.active_popup.as_mut() {
                 match data {
-                    crate::key_event_handler::Data::Direction(true, _) => {
+                    crate::event_handler::Data::Direction(true, _) => {
                         out_of_box_popup.tab += 1;
                         if out_of_box_popup.tab > 1 {
                             out_of_box_popup.tab = 0;
                         }
                     }
-                    crate::key_event_handler::Data::Direction(false, _) => {
+                    crate::event_handler::Data::Direction(false, _) => {
                         out_of_box_popup.tab = out_of_box_popup.tab.checked_sub(1).unwrap_or(1);
                     }
                     _ => {}
@@ -136,7 +136,7 @@ impl PopupTrait for OutOfBoxPopup {
         });
         let toggle_block = |area: Rect,
                             frame: &mut Frame,
-                            key_event_handler: &mut KeyEventHandler,
+                            key_event_handler: &mut EventHandler,
                             text: &'static str,
                             i: usize| {
             let tab_selected = self.tab == 0;
@@ -344,7 +344,7 @@ impl PopupTrait for OutOfBoxPopup {
                     };
 
                 match data {
-                    key_event_handler::Data::Direction(false, _) =>
+                    event_handler::Data::Direction(false, _) =>
                         if col > 0 {
                             for i in 0..=row {
                                 if let Some(index) = table_indices_cloned[col - 1][row - i] {
@@ -353,7 +353,7 @@ impl PopupTrait for OutOfBoxPopup {
                                 }
                             }
                         },
-                    key_event_handler::Data::Direction(true, _)
+                    event_handler::Data::Direction(true, _)
                         if col < table_indices_cloned.len() - 1 =>
                         for i in 0..=row {
                             if let Some(index) = table_indices_cloned[col + 1][row - i] {
@@ -388,11 +388,11 @@ impl PopupTrait for OutOfBoxPopup {
                     };
 
                 match data {
-                    key_event_handler::Data::Direction(false, _) =>
+                    event_handler::Data::Direction(false, _) =>
                         if row > 0 {
                             out_of_box_popup.item = table_indices[col][row - 1].unwrap();
                         },
-                    key_event_handler::Data::Direction(true, _) if row < COLUMNS - 1 =>
+                    event_handler::Data::Direction(true, _) if row < COLUMNS - 1 =>
                         if let Some(index) = table_indices[col][row + 1] {
                             out_of_box_popup.item = index;
                         },

@@ -18,6 +18,20 @@ pub enum Data {
 type State = (Option<usize>, Option<usize>);
 type Callback = Box<dyn FnMut(&mut App, Data)>;
 
+fn states_equal(current_state: &State, bind_state: &State) -> bool {
+    bind_state
+        .0
+        .map(|x| current_state.0.is_some() && x == current_state.0.unwrap())
+        .unwrap_or(true)
+        && bind_state
+            .1
+            .map(|x| current_state.1.is_some() && x == current_state.1.unwrap())
+            .unwrap_or(true)
+}
+fn state_key(s: &State) -> usize {
+    ((s.0.is_some() as usize) << 1) + s.1.is_some() as usize
+}
+
 #[derive(PartialEq, Eq, Hash, Clone, Debug)]
 pub enum Bind {
     Horizontal,
@@ -47,15 +61,15 @@ impl Bind {
 }
 
 #[derive(Default)]
-pub struct KeyEventHandler {
-    key_binds:         FxHashMap<(Bind, State), (String, Callback)>,
+pub struct EventHandler {
     execute_immediate: Vec<Callback>,
     mouse_binds:       FxHashMap<(usize, Bind, Rect), Callback>,
+    key_binds:         FxHashMap<(Bind, State), (String, Callback)>,
 
     semi_bind: Option<char>,
 }
 
-impl KeyEventHandler {
+impl EventHandler {
     pub fn clear(&mut self) {
         self.key_binds.clear();
         self.mouse_binds.clear();
@@ -172,54 +186,27 @@ impl KeyEventHandler {
     // }
 
     fn try_get_mouse_bind(&mut self, position: Position, bind: Bind) -> Option<Callback> {
-        let mut matches = self
+        let key = self
             .mouse_binds
             .keys()
             .filter(|(_, b, rect)| b == &bind && rect.contains(position))
-            .cloned()
-            .collect_vec();
-        matches.sort_by_key(|x| x.0);
-        matches.reverse();
-        if !matches.is_empty() {
-            return Some(self.mouse_binds.remove(&matches[0]).unwrap());
-        }
+            .sorted_by_key(|x| x.0)
+            .next_back()?;
 
-        None
+        self.mouse_binds.remove(&key.clone())
     }
 
-    pub fn get_state(&self, drawer: &Drawer) -> State {
-        if let Some(popup) = drawer.active_popup.as_ref() {
-            popup.get_state()
-        } else if let Some(screen) = drawer.current_screen.as_ref() {
-            match screen {
-                crate::screens::Screen::MainScreen(main_screen) => main_screen.get_state(),
-            }
-        } else {
-            (None, None)
-        }
-    }
-
-    pub fn try_get_key_bind(&mut self, bind: Bind, state: State) -> Option<Callback> {
-        let (key, _) = self
+    pub fn try_get_bind(&mut self, bind: Bind, state: State) -> Option<Callback> {
+        let key = self
             .key_binds
-            .iter()
-            .filter(|((b, s), _)| {
-                b == &bind
-                    && s.0
-                        .map(|x| state.0.is_some() && x == state.0.unwrap())
-                        .unwrap_or(true)
-                    && s.1
-                        .map(|x| state.1.is_some() && x == state.1.unwrap())
-                        .unwrap_or(true)
-            })
-            .sorted_by_key(|((_, s), _)| s.0.is_some() as usize * 2 + s.1.is_some() as usize)
-            .last()?;
+            .keys()
+            .filter(|(b, s)| b == &bind && states_equal(&state, s))
+            .sorted_by_key(|(_, s)| state_key(s))
+            .next_back()?;
 
-        if let Some((_, callback)) = self.key_binds.remove(&key.clone()) {
-            return Some(callback);
-        }
-
-        None
+        self.key_binds
+            .remove(&key.clone())
+            .map(|(_, callback)| callback)
     }
 
     fn try_get_keys_bind(&mut self, key: char, state: State) -> Option<Callback> {
@@ -229,7 +216,7 @@ impl KeyEventHandler {
             key.to_string()
         };
 
-        if let Some(callback) = self.try_get_key_bind(Bind::Key(key.clone()), state) {
+        if let Some(callback) = self.try_get_bind(Bind::Key(key.clone()), state) {
             self.semi_bind = None;
 
             return Some(callback);
@@ -238,159 +225,69 @@ impl KeyEventHandler {
             return None;
         }
 
-        if self
-            .key_binds
-            .iter()
-            .filter(|((bind, s), _)| {
-                (if let Bind::Key(k) = bind {
-                    k.starts_with(&key.clone())
-                } else {
-                    false
-                }) && s
-                    .0
-                    .map(|x| state.0.is_some() && x == state.0.unwrap())
-                    .unwrap_or(true)
-                    && s.1
-                        .map(|x| state.1.is_some() && x == state.1.unwrap())
-                        .unwrap_or(true)
-            })
-            .count()
-            > 0
-        {
+        if self.key_binds.iter().any(|((bind, s), _)| {
+            (if let Bind::Key(k) = bind {
+                k.starts_with(&key.clone())
+            } else {
+                false
+            }) && states_equal(&state, s)
+        }) {
             self.semi_bind = Some(key.chars().nth(0).unwrap());
-
-            return None;
         }
 
         None
     }
 
     pub fn get_key_binds_descriptions(&self, drawer: &Drawer, max: usize) -> Vec<(Bind, String)> {
-        let state = if let Some(popup) = drawer.active_popup.as_ref() {
-            popup.get_state()
-        } else if let Some(screen) = drawer.current_screen.as_ref() {
-            match screen {
-                crate::screens::Screen::MainScreen(main_screen) => main_screen.get_state(),
-            }
-        } else {
-            return vec![];
-        };
-
-        let mut binds = vec![];
-
-        if let Some(semi_bind) = self.semi_bind {
-            let matches = self
-                .key_binds
-                .iter()
-                .filter(|((bind, s), _)| {
-                    (if let Bind::Key(k) = bind {
+        let any_input = self
+            .key_binds
+            .iter()
+            .any(|((b, s), _)| matches!(b, Bind::Input) && states_equal(&drawer.state, s));
+        let binds = self
+            .key_binds
+            .iter()
+            .filter(|((bind, s), _)| {
+                (if let Some(semi_bind) = self.semi_bind {
+                    if let Bind::Key(k) = bind {
                         k.starts_with(&semi_bind.to_string())
                     } else {
                         false
-                    }) && s
-                        .0
-                        .map(|x| state.0.is_some() && x == state.0.unwrap())
-                        .unwrap_or(true)
-                        && s.1
-                            .map(|x| state.1.is_some() && x == state.1.unwrap())
-                            .unwrap_or(true)
-                })
-                .sorted_by_key(|((_, s), _)| s.0.is_some() as usize * 2 + s.1.is_some() as usize)
-                .collect_vec();
-            if !matches.is_empty() {
-                binds.extend(
-                    matches
-                        .iter()
-                        .map(|&((b, k), (d, _))| (b.clone(), *k, d.clone())),
-                );
-            }
-        } else {
-            for bind in [
-                Bind::Horizontal,
-                Bind::Vertical,
-                Bind::Enter,
-                Bind::Esc,
-                Bind::Tab,
-            ] {
-                let matches = self
-                    .key_binds
-                    .iter()
-                    .filter(|((b, s), _)| {
-                        b == &bind
-                            && s.0
-                                .map(|x| state.0.is_some() && x == state.0.unwrap())
-                                .unwrap_or(true)
-                            && s.1
-                                .map(|x| state.1.is_some() && x == state.1.unwrap())
-                                .unwrap_or(true)
-                    })
-                    .sorted_by_key(|((_, s), _)| {
-                        s.0.is_some() as usize * 2 + s.1.is_some() as usize
-                    })
-                    .collect_vec();
-                if !matches.is_empty() {
-                    binds.extend(
-                        matches
-                            .iter()
-                            .map(|&((_, k), (d, _))| (bind.clone(), *k, d.clone())),
-                    );
-                }
-            }
-
-            let input = self
-                .key_binds
-                .iter()
-                .filter(|((b, s), _)| {
-                    matches!(b, Bind::Input)
-                        && s.0
-                            .map(|x| state.0.is_some() && x == state.0.unwrap())
-                            .unwrap_or(true)
-                        && s.1
-                            .map(|x| state.1.is_some() && x == state.1.unwrap())
-                            .unwrap_or(true)
-                })
-                .count()
-                > 0;
-            if !input {
-                let matches = self
-                    .key_binds
-                    .iter()
-                    .filter(|((bind, s), _)| {
-                        matches!(bind, Bind::Key(_))
-                            && s.0
-                                .map(|x| state.0.is_some() && x == state.0.unwrap())
-                                .unwrap_or(true)
-                            && s.1
-                                .map(|x| state.1.is_some() && x == state.1.unwrap())
-                                .unwrap_or(true)
-                    })
-                    .sorted_by_key(|((_, s), _)| {
-                        s.0.is_some() as usize * 2 + s.1.is_some() as usize
-                    })
-                    .collect_vec();
-
-                if !matches.is_empty() {
-                    binds.extend(
-                        matches
-                            .iter()
-                            .map(|&((b, k), (d, _))| (b.clone(), *k, d.clone())),
-                    );
-                }
-            }
-        }
+                    }
+                } else {
+                    if !any_input {
+                        matches!(
+                            bind,
+                            Bind::Horizontal
+                                | Bind::Vertical
+                                | Bind::Enter
+                                | Bind::Esc
+                                | Bind::Tab
+                                | Bind::Key(_)
+                        )
+                    } else {
+                        matches!(
+                            bind,
+                            Bind::Horizontal | Bind::Vertical | Bind::Enter | Bind::Esc | Bind::Tab
+                        )
+                    }
+                }) && states_equal(&drawer.state, s)
+            })
+            .filter_map(
+                |((b, s), (d, _))| {
+                    if !d.is_empty() { Some((b, *s, d)) } else { None }
+                },
+            )
+            .sorted_by_key(|(b, _, _)| b.sort_key())
+            .sorted_by_key(|(_, s, _)| state_key(s))
+            .collect_vec();
 
         binds
             .into_iter()
-            .filter(|(_, _, d)| !d.is_empty())
-            .sorted_by_key(|(b, _, _)| b.sort_key())
             .chunk_by(|a| a.0.clone())
             .into_iter()
-            .filter_map(|(_, g)| {
-                g.sorted_by_key(|x| x.1.0.is_some() as usize * 2 + x.1.1.is_some() as usize)
-                    .last()
-            })
+            .filter_map(|(_, g)| g.last())
             .take(max)
-            .map(|(b, _, d)| (b, d))
+            .map(|(b, _, d)| (b.clone(), d.clone()))
             .collect()
     }
 
@@ -403,14 +300,12 @@ impl KeyEventHandler {
         event: KeyEvent,
         drawer: &Drawer,
     ) -> Option<(Callback, Data)> {
-        let state = self.get_state(drawer);
-
         match event.code {
             KeyCode::Tab | KeyCode::BackTab =>
                 if self.semi_bind.is_some() {
                     self.semi_bind = None;
                     None
-                } else if let Some(callback) = self.try_get_key_bind(Bind::Tab, state) {
+                } else if let Some(callback) = self.try_get_bind(Bind::Tab, drawer.state) {
                     Some((
                         callback,
                         Data::Direction(event.code == KeyCode::Tab, KeyModifiers::NONE),
@@ -422,7 +317,7 @@ impl KeyEventHandler {
                 if self.semi_bind.is_some() {
                     self.semi_bind = None;
                     None
-                } else if let Some(callback) = self.try_get_key_bind(Bind::Enter, state) {
+                } else if let Some(callback) = self.try_get_bind(Bind::Enter, drawer.state) {
                     Some((callback, Data::None))
                 } else {
                     None
@@ -431,7 +326,7 @@ impl KeyEventHandler {
                 if self.semi_bind.is_some() {
                     self.semi_bind = None;
                     None
-                } else if let Some(callback) = self.try_get_key_bind(Bind::Esc, state) {
+                } else if let Some(callback) = self.try_get_bind(Bind::Esc, drawer.state) {
                     Some((callback, Data::None))
                 } else {
                     None
@@ -440,7 +335,7 @@ impl KeyEventHandler {
                 if self.semi_bind.is_some() {
                     self.semi_bind = None;
                     None
-                } else if let Some(callback) = self.try_get_key_bind(Bind::Input, state) {
+                } else if let Some(callback) = self.try_get_bind(Bind::Input, drawer.state) {
                     Some((callback, Data::Key(event)))
                 } else {
                     None
@@ -449,7 +344,7 @@ impl KeyEventHandler {
                 if self.semi_bind.is_some() {
                     self.semi_bind = None;
                     None
-                } else if let Some(callback) = self.try_get_key_bind(Bind::Vertical, state) {
+                } else if let Some(callback) = self.try_get_bind(Bind::Vertical, drawer.state) {
                     Some((
                         callback,
                         Data::Direction(event.code == KeyCode::Down, event.modifiers),
@@ -461,9 +356,9 @@ impl KeyEventHandler {
                 if self.semi_bind.is_some() {
                     self.semi_bind = None;
                     None
-                } else if let Some(callback) = self.try_get_key_bind(Bind::Input, state) {
+                } else if let Some(callback) = self.try_get_bind(Bind::Input, drawer.state) {
                     Some((callback, Data::Key(event)))
-                } else if let Some(callback) = self.try_get_key_bind(Bind::Horizontal, state) {
+                } else if let Some(callback) = self.try_get_bind(Bind::Horizontal, drawer.state) {
                     Some((
                         callback,
                         Data::Direction(event.code == KeyCode::Right, event.modifiers),
@@ -472,9 +367,9 @@ impl KeyEventHandler {
                     None
                 },
             KeyCode::Char(key) => {
-                if let Some(callback) = self.try_get_key_bind(Bind::Input, state) {
+                if let Some(callback) = self.try_get_bind(Bind::Input, drawer.state) {
                     Some((callback, Data::Key(event)))
-                } else if let Some(callback) = self.try_get_keys_bind(key, state) {
+                } else if let Some(callback) = self.try_get_keys_bind(key, drawer.state) {
                     Some((callback, Data::Key(event)))
                 } else {
                     None
@@ -489,44 +384,34 @@ impl KeyEventHandler {
         event: MouseEvent,
         drawer: &Drawer,
     ) -> Option<(Callback, Data)> {
-        let state = if let Some(popup) = drawer.active_popup.as_ref() {
-            popup.get_state()
-        } else if let Some(screen) = drawer.current_screen.as_ref() {
-            match screen {
-                crate::screens::Screen::MainScreen(main_screen) => main_screen.get_state(),
-            }
-        } else {
-            (None, None)
-        };
-
         let position = Position {
             x: event.column,
             y: event.row,
         };
         match event.kind {
             MouseEventKind::ScrollDown => {
-                if let Some(callback) = self.try_get_key_bind(Bind::Vertical, state) {
+                if let Some(callback) = self.try_get_bind(Bind::Vertical, drawer.state) {
                     Some((callback, Data::Direction(true, event.modifiers)))
                 } else {
                     None
                 }
             }
             MouseEventKind::ScrollUp => {
-                if let Some(callback) = self.try_get_key_bind(Bind::Vertical, state) {
+                if let Some(callback) = self.try_get_bind(Bind::Vertical, drawer.state) {
                     Some((callback, Data::Direction(false, event.modifiers)))
                 } else {
                     None
                 }
             }
             MouseEventKind::ScrollRight => {
-                if let Some(callback) = self.try_get_key_bind(Bind::Horizontal, state) {
+                if let Some(callback) = self.try_get_bind(Bind::Horizontal, drawer.state) {
                     Some((callback, Data::Direction(true, event.modifiers)))
                 } else {
                     None
                 }
             }
             MouseEventKind::ScrollLeft => {
-                if let Some(callback) = self.try_get_key_bind(Bind::Horizontal, state) {
+                if let Some(callback) = self.try_get_bind(Bind::Horizontal, drawer.state) {
                     Some((callback, Data::Direction(false, event.modifiers)))
                 } else {
                     None

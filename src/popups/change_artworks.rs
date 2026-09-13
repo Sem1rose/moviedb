@@ -21,7 +21,7 @@ use tmdb::smo::MovieDetails as TMDBMovieDetails;
 use crate::{
     helpers,
     image_backend::{ImageID, RatatuiImage},
-    key_event_handler::{Data, KeyEventHandler},
+    event_handler::{Data, EventHandler},
     popups::{Popup, PopupTrait},
     types::Movie,
     widgets::{self, Action, ActionType, Direction, Orientation, ScrollGallery},
@@ -166,7 +166,7 @@ impl PopupTrait for ChangeArtworksPopup {
     fn render(
         &mut self,
         frame: &mut Frame,
-        key_event_handler: &mut KeyEventHandler,
+        key_event_handler: &mut EventHandler,
         image_renderer: &mut RatatuiImage,
     ) {
         key_event_handler.clear();

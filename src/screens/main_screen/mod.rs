@@ -23,7 +23,7 @@ use crate::{
     config::Config,
     helpers::{self, SuperOrd},
     image_backend::RatatuiImage,
-    key_event_handler::{self, KeyEventHandler},
+    event_handler::{self, EventHandler},
     load_file,
     screens::Screen,
     tokens::{PunchPlayTokens, SimklTokens, TMDBTokens},
@@ -239,7 +239,7 @@ impl MainScreen {
         self.save_lists();
     }
 
-    pub fn open_list_by_id(&mut self, id: ListID, key_event_handler: &mut KeyEventHandler) -> bool {
+    pub fn open_list_by_id(&mut self, id: ListID, key_event_handler: &mut EventHandler) -> bool {
         if self.selected_list == id {
             return false;
         }
@@ -282,7 +282,7 @@ impl MainScreen {
         }
     }
 
-    pub fn open_new_temp_list(&mut self, id: ListID, key_event_handler: &mut KeyEventHandler) {
+    pub fn open_new_temp_list(&mut self, id: ListID, key_event_handler: &mut EventHandler) {
         match id {
             ListID::Collection(collection_id) => {
                 let collection = self
@@ -310,14 +310,22 @@ impl MainScreen {
                     },
                 );
 
-                self.open_list_by_id(id, key_event_handler);
+                self.open_list_and_select_movie(
+                    id,
+                    self.current_movie().map(|x| x.id).unwrap_or_default(),
+                    key_event_handler,
+                );
             }
             _ => (),
         }
     }
 
-    pub fn try_open_temp_list(&mut self, id: ListID, key_event_handler: &mut KeyEventHandler) {
-        if !self.open_list_by_id(id, key_event_handler) {
+    pub fn try_open_temp_list(&mut self, id: ListID, key_event_handler: &mut EventHandler) {
+        if !self.open_list_and_select_movie(
+            id,
+            self.current_movie().map(|x| x.id).unwrap_or_default(),
+            key_event_handler,
+        ) {
             self.open_new_temp_list(id, key_event_handler)
         }
     }
@@ -326,7 +334,7 @@ impl MainScreen {
         &mut self,
         list_id: ListID,
         movie_id: u32,
-        key_event_handler: &mut KeyEventHandler,
+        key_event_handler: &mut EventHandler,
     ) -> bool {
         if self.open_list_by_id(list_id, key_event_handler) {
             let pos = self.filtered_movies.iter().position(|x| x.id == movie_id);
@@ -345,7 +353,7 @@ impl MainScreen {
         &mut self,
         index: usize,
         and_select_movie: Option<u32>,
-        key_event_handler: &mut KeyEventHandler,
+        key_event_handler: &mut EventHandler,
     ) -> bool {
         if index > self.lists.len() + 1 {
             return false;
@@ -832,7 +840,7 @@ impl MainScreen {
     pub fn render(
         &mut self,
         frame: &mut Frame,
-        key_event_handler: &mut KeyEventHandler,
+        key_event_handler: &mut EventHandler,
         image_renderer: &mut RatatuiImage,
     ) {
         if !self.search_input.is_empty() {
@@ -1124,7 +1132,7 @@ impl MainScreen {
                         if let Some(Screen::MainScreen(main_screen)) =
                             app.drawer.current_screen.as_mut()
                         {
-                            if let key_event_handler::Data::Direction(dir, _) = data {
+                            if let event_handler::Data::Direction(dir, _) = data {
                                 main_screen.context_menu.scroll(dir);
                             }
                         }

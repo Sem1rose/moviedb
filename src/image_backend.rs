@@ -65,6 +65,7 @@ fn default_sizes() -> FxHashMap<ImageIDDiscriminants, [Size; 2]> {
 const CALCULATE_OBSTRUCTION: bool = true;
 const MAX_CONCURRENT_LOADS: usize = 20;
 
+#[derive(Default)]
 pub struct RatatuiImage {
     sizes:           FxHashMap<ImageIDDiscriminants, [Size; 2]>,
     hashed_images:   FxHashMap<ImageID, SlicedProtocol>,
@@ -76,8 +77,8 @@ pub struct RatatuiImage {
     draw_queue:    Vec<(ImageID, Rect, Option<SignedPosition>)>,
     overlay_areas: Vec<Rect>,
 
-    tx_load: Sender<Actions>,
-    rx_main: Receiver<LoadResult>,
+    tx_load: Option<Sender<Actions>>,
+    rx_main: Option<Receiver<LoadResult>>,
 
     cache_dir: PathBuf,
 
@@ -87,34 +88,20 @@ pub struct RatatuiImage {
 }
 impl RatatuiImage {
     pub fn new(cache_dir: &Path) -> Self {
-        let (rx_main, tx_load) = Self::start_load_thread(cache_dir);
-
         Self {
             sizes: default_sizes(),
-            hashed_images: FxHashMap::default(),
-            load_queue: Default::default(),
             loading_ids: FxHashSet::with_capacity_and_hasher(
                 MAX_CONCURRENT_LOADS,
                 rustc_hash::FxBuildHasher,
             ),
-            downloading_ids: FxHashSet::default(),
-            download_errors: Default::default(),
-
-            draw_queue: vec![],
-            overlay_areas: vec![],
-
-            tx_load,
-            rx_main,
-
             cache_dir: cache_dir.to_path_buf(),
 
-            tick: 0,
-            throbber_state: Default::default(),
-            images_drawn: false,
+            ..Default::default()
         }
+        .start_load_thread(cache_dir)
     }
 
-    fn start_load_thread(cache_dir: &Path) -> (Receiver<LoadResult>, Sender<Actions>) {
+    fn start_load_thread(mut self, cache_dir: &Path) -> Self {
         let (tx_load, rx_load) = mpsc::channel::<Actions>();
         let (tx_main, rx_main) = mpsc::channel::<LoadResult>();
 
@@ -231,7 +218,10 @@ impl RatatuiImage {
             }
         });
 
-        (rx_main, tx_load)
+        self.rx_main = Some(rx_main);
+        self.tx_load = Some(tx_load);
+
+        self
     }
 
     fn path_from_image_id(image_id: &ImageID, cache_dir: &Path) -> PathBuf {
@@ -277,7 +267,9 @@ impl RatatuiImage {
                 && !self.download_errors.contains(&image_id)
             {
                 self.downloading_ids.insert(image_id.clone());
-                _ = self.tx_load.send(Actions::DownLoad(image_id));
+                if let Some(tx_load) = self.tx_load.as_ref() {
+                    _ = tx_load.send(Actions::DownLoad(image_id));
+                }
             }
         }
     }
@@ -292,46 +284,48 @@ impl RatatuiImage {
             self.throbber_state.calc_next();
         }
 
-        for (image_id, result) in self.rx_main.try_iter() {
-            match result {
-                Ok(protocol) => match protocol {
-                    Either::Left(protocol) => {
-                        self.loading_ids.remove(&image_id);
-                        _ = self.hashed_images.insert(image_id, protocol)
-                    }
-                    Either::Right(downloaded_successfully) =>
-                        if downloaded_successfully {
-                            self.downloading_ids.remove(&image_id);
-                            self.load_queue.push_back(image_id);
-                        } else {
-                            error!("Unable to download {image_id:?}");
-
-                            if !self.download_errors.contains(&image_id) {
-                                info!("retrying...");
-                                self.download_errors.insert(image_id.clone());
-
-                                let tx_load_cloned = self.tx_load.clone();
-                                thread::spawn(move || {
-                                    thread::sleep(Duration::from_secs(2));
-                                    _ = tx_load_cloned.send(Actions::DownLoad(image_id));
-                                });
-                            } else {
+        if let (Some(rx_main), Some(tx_load)) = (self.rx_main.as_ref(), self.tx_load.as_ref()) {
+            for (image_id, result) in rx_main.try_iter() {
+                match result {
+                    Ok(protocol) => match protocol {
+                        Either::Left(protocol) => {
+                            self.loading_ids.remove(&image_id);
+                            _ = self.hashed_images.insert(image_id, protocol)
+                        }
+                        Either::Right(downloaded_successfully) =>
+                            if downloaded_successfully {
                                 self.downloading_ids.remove(&image_id);
-                            }
-                        },
-                },
-                Err(error) => {
-                    error!("error loading image {image_id:?}: {error:#?}");
+                                self.load_queue.push_back(image_id);
+                            } else {
+                                error!("Unable to download {image_id:?}");
 
-                    self.loading_ids.remove(&image_id);
+                                if !self.download_errors.contains(&image_id) {
+                                    info!("retrying...");
+                                    self.download_errors.insert(image_id.clone());
+
+                                    let tx_load_cloned = tx_load.clone();
+                                    thread::spawn(move || {
+                                        thread::sleep(Duration::from_secs(2));
+                                        _ = tx_load_cloned.send(Actions::DownLoad(image_id));
+                                    });
+                                } else {
+                                    self.downloading_ids.remove(&image_id);
+                                }
+                            },
+                    },
+                    Err(error) => {
+                        error!("error loading image {image_id:?}: {error:#?}");
+
+                        self.loading_ids.remove(&image_id);
+                    }
                 }
             }
-        }
 
-        while (MAX_CONCURRENT_LOADS - self.loading_ids.len()).min(self.load_queue.len()) > 0 {
-            let image_id = self.load_queue.pop_front().unwrap();
-            if self.tx_load.send(Actions::Load(image_id.clone())).is_ok() {
-                self.loading_ids.insert(image_id);
+            while (MAX_CONCURRENT_LOADS - self.loading_ids.len()).min(self.load_queue.len()) > 0 {
+                let image_id = self.load_queue.pop_front().unwrap();
+                if tx_load.send(Actions::Load(image_id.clone())).is_ok() {
+                    self.loading_ids.insert(image_id);
+                }
             }
         }
         self.load_queue.clear();
@@ -354,9 +348,10 @@ impl RatatuiImage {
             let size = self.sizes.get_mut(&image_id.discriminant()).unwrap();
             if size[size_index] != buffer_area.as_size() {
                 size[size_index] = buffer_area.as_size();
-                _ = self
-                    .tx_load
-                    .send(Actions::Resize(image_id.discriminant(), *size));
+
+                if let Some(tx_load) = self.tx_load.as_ref() {
+                    _ = tx_load.send(Actions::Resize(image_id.discriminant(), *size));
+                }
 
                 self.hashed_images.retain(|k, _| {
                     ImageIDDiscriminants::from(k) != image_id.discriminant()
@@ -532,8 +527,8 @@ impl RatatuiImage {
     }
 
     pub fn update_access_token(&self, access_token: &str) {
-        _ = self
-            .tx_load
-            .send(Actions::UpdateTokens(access_token.to_string()))
+        if let Some(tx_load) = self.tx_load.as_ref() {
+            _ = tx_load.send(Actions::UpdateTokens(access_token.to_string()))
+        }
     }
 }

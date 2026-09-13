@@ -7,7 +7,7 @@ use ratatui::{
     widgets::{Fill, Widget},
 };
 
-use crate::{key_event_handler::KeyEventHandler, widgets::Orientation};
+use crate::{event_handler::EventHandler, widgets::Orientation};
 
 #[derive(Default)]
 pub struct ScrolledList {
@@ -160,8 +160,8 @@ impl ScrolledList {
         scrollbar_buffer: Option<&mut Buffer>,
         render_placeholder: bool,
         buffer: &mut Buffer,
-        key_event_handler: &mut KeyEventHandler,
-        mut render_callback: impl FnMut(&mut Buffer, u16, i32, bool, usize, bool, &mut KeyEventHandler),
+        key_event_handler: &mut EventHandler,
+        mut render_callback: impl FnMut(&mut Buffer, u16, i32, bool, usize, bool, &mut EventHandler),
     ) {
         let area = buffer.area;
         let partially_visible_item_dimension = match self.orientation {
@@ -327,8 +327,8 @@ impl ScrolledList {
         scrollbar_buffer: Option<&mut Buffer>,
         render_placeholder: bool,
         buffer: &mut Buffer,
-        key_event_handler: &mut KeyEventHandler,
-        render_callback: impl FnMut(&mut Buffer, u16, i32, bool, usize, bool, &mut KeyEventHandler),
+        key_event_handler: &mut EventHandler,
+        render_callback: impl FnMut(&mut Buffer, u16, i32, bool, usize, bool, &mut EventHandler),
     ) {
         self.update_for_area(buffer.area, num_items);
         self.render_without_area_update(

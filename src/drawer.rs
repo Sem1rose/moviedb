@@ -19,7 +19,7 @@ use crate::{
     config::Config,
     helpers::ellipsize_string,
     image_backend::RatatuiImage,
-    key_event_handler::{self, KeyEventHandler},
+    event_handler::{self, EventHandler},
     popups::*,
     processors::Processor,
     screens::{Screen, main_screen::MainScreen},
@@ -27,16 +27,18 @@ use crate::{
     types::{Entry, FxIndexMap, Movie},
 };
 
+#[derive(Default)]
 pub struct Drawer {
-    pub refresh_immediate:  u8,
     show_term_size_warning: bool,
-    pub active_popup:       Option<Popup>,
-    pub current_screen:     Option<Screen>,
-    pub popup_queue:        VecDeque<Popup>,
-    pub screen_queue:       Vec<Screen>,
-    pub _config:            Rc<RefCell<Config>>,
-    pub image_renderer:     RatatuiImage,
+    pub state:              (Option<usize>, Option<usize>),
 
+    pub active_popup:   Option<Popup>,
+    pub current_screen: Option<Screen>,
+    pub popup_queue:    VecDeque<Popup>,
+    pub screen_queue:   Vec<Screen>,
+    pub image_renderer: RatatuiImage,
+
+    // pub config:            Rc<RefCell<Config>>,
     home_dir:  PathBuf,
     cache_dir: PathBuf,
 }
@@ -53,25 +55,25 @@ macro_rules! new_popup {
 
 const MINTERMSIZE: [u32; 2] = [100, 30];
 impl Drawer {
-    pub fn new(home_dir: &Path, cache_dir: &Path, _config: Rc<RefCell<Config>>) -> Self {
-        let popup_queue = if _config.borrow().options.oob_done {
+    pub fn new(home_dir: &Path, cache_dir: &Path, config: Rc<RefCell<Config>>) -> Self {
+        let popup_queue = if config.borrow().options.oob_done {
             let mut popups = Vec::with_capacity(5);
-            if _config.borrow_mut().options.tmdb_enabled {
+            if config.borrow_mut().options.tmdb_enabled {
                 popups.push(new_popup!(TMDBInit, TMDBInitPopup::new(home_dir, false)));
             }
-            if _config.borrow_mut().options.simkl_enabled {
+            if config.borrow_mut().options.simkl_enabled {
                 popups.push(new_popup!(SimklInit, SimklInitPopup::new(home_dir, false)));
             }
-            if _config.borrow_mut().options.punch_play_enabled {
+            if config.borrow_mut().options.punch_play_enabled {
                 popups.push(new_popup!(
                     PunchPlayInit,
                     PunchPlayInitPopup::new(home_dir, false)
                 ));
             }
-            if _config.borrow_mut().options.trakt_enabled {
+            if config.borrow_mut().options.trakt_enabled {
                 popups.push(new_popup!(TraktInit, TraktInitPopup::new(home_dir, false)));
             }
-            if _config.borrow_mut().options.omdb_enabled {
+            if config.borrow_mut().options.omdb_enabled {
                 popups.push(new_popup!(OMDBInit, OMDBInitPopup::new(home_dir, false)));
             }
 
@@ -84,30 +86,26 @@ impl Drawer {
         Drawer {
             image_renderer: RatatuiImage::new(cache_dir),
 
-            refresh_immediate: 0,
             home_dir: home_dir.to_path_buf(),
             cache_dir: cache_dir.to_path_buf(),
-            show_term_size_warning: false,
 
-            active_popup: None,
-            current_screen: None,
             screen_queue: vec![Screen::MainScreen(MainScreen::new(
                 home_dir,
-                _config.clone(),
+                config.clone(),
             ))],
             popup_queue,
 
-            _config,
+            ..Default::default()
         }
     }
 
     pub fn render_app<'a>(
         &mut self,
         frame: &mut Frame,
-        key_event_handler: &mut KeyEventHandler,
+        key_event_handler: &mut EventHandler,
         mut processors: impl Iterator<Item = &'a Processor>,
     ) {
-        self.refresh_immediate = self.refresh_immediate.saturating_sub(1);
+        self.state = (None, None);
 
         self.check_term_size(frame);
         self.image_renderer.update();
@@ -118,6 +116,7 @@ impl Drawer {
         self.check_popups(key_event_handler);
         if !self.show_term_size_warning {
             if let Some(processor) = processors.next() {
+                self.state = processor.get_state();
                 processor.render(frame, key_event_handler, &mut self.image_renderer);
             } else if self.active_popup.is_some() {
                 self.draw_popup(frame, key_event_handler);
@@ -128,22 +127,25 @@ impl Drawer {
         self.image_renderer.render(frame);
     }
 
-    fn draw_current_screen(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
+    fn draw_current_screen(&mut self, frame: &mut Frame, key_event_handler: &mut EventHandler) {
         frame.render_widget(Block::new().bg(tailwind::SLATE.c900), frame.area());
 
         if self.show_term_size_warning {
+            self.state = (None, None);
             self.render_term_size_warning(frame);
         } else if let Some(current_screen) = self.current_screen.as_mut() {
             match current_screen {
                 Screen::MainScreen(main_screen) => {
+                    self.state = main_screen.get_state();
                     main_screen.render(frame, key_event_handler, &mut self.image_renderer);
                 }
             }
         }
     }
 
-    fn check_popups(&mut self, key_event_handler: &mut KeyEventHandler) {
+    fn check_popups(&mut self, key_event_handler: &mut EventHandler) {
         if let Some(popup) = self.active_popup.as_mut() {
+            self.state = popup.get_state();
             popup.update();
 
             match popup {
@@ -234,7 +236,7 @@ impl Drawer {
         }
     }
 
-    fn draw_popup(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
+    fn draw_popup(&mut self, frame: &mut Frame, key_event_handler: &mut EventHandler) {
         if let Some(active_popup) = self.active_popup.as_mut() {
             active_popup.render(frame, key_event_handler, &mut self.image_renderer);
         }
@@ -246,7 +248,7 @@ impl Drawer {
         }
     }
 
-    fn try_pop_queues(&mut self, key_event_handler: &mut KeyEventHandler) {
+    fn try_pop_queues(&mut self, key_event_handler: &mut EventHandler) {
         if self.active_popup.is_none() {
             if !self.popup_queue.is_empty() {
                 self.active_popup = self.popup_queue.pop_front();
@@ -469,11 +471,11 @@ impl Drawer {
         self.active_popup = None;
     }
 
-    pub fn check_refresh_immediate(&mut self) -> bool {
-        self.refresh_immediate > 0
+    pub fn should_refresh_immediate(&mut self) -> bool {
+        false
     }
 
-    pub fn check_refresh_delayed(&mut self) -> bool {
+    pub fn should_refresh_delayed(&mut self) -> bool {
         (if let Some(active_popup) = self.active_popup.as_ref() {
             active_popup.update_next_frame()
         } else {
@@ -509,7 +511,7 @@ impl Drawer {
         frame.render_widget(text, area);
     }
 
-    fn render_footer(&mut self, frame: &mut Frame, key_event_handler: &mut KeyEventHandler) {
+    fn render_footer(&mut self, frame: &mut Frame, key_event_handler: &mut EventHandler) {
         let area = frame.area();
         let area = area
             .resize(Size::new(area.width, 2))
@@ -519,16 +521,16 @@ impl Drawer {
         frame.render_widget(Block::new().bg(tailwind::EMERALD.c950), area);
 
         // ↔⇆⬌⬍⮀⬅⬆⬇←↕→↓↹•↵⏎
-        let bind_to_string = |bind: key_event_handler::Bind| {
+        let bind_to_string = |bind: event_handler::Bind| {
             match bind {
-                key_event_handler::Bind::Horizontal => {
+                event_handler::Bind::Horizontal => {
                     span!(" ←→ ")
                 }
-                key_event_handler::Bind::Vertical => span!(" ↕ "),
-                key_event_handler::Bind::Enter => span!(" ↵ "),
-                key_event_handler::Bind::Esc => span!(" Esc "),
-                key_event_handler::Bind::Tab => span!(" ↹ "),
-                key_event_handler::Bind::Key(x) => {
+                event_handler::Bind::Vertical => span!(" ↕ "),
+                event_handler::Bind::Enter => span!(" ↵ "),
+                event_handler::Bind::Esc => span!(" Esc "),
+                event_handler::Bind::Tab => span!(" ↹ "),
+                event_handler::Bind::Key(x) => {
                     span!(format!(" {} ", if x == " " { "␣" } else { &x }))
                 }
                 _ => "_".into(),

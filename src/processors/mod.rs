@@ -6,7 +6,7 @@ use itertools::Itertools;
 use strum::{EnumCount, EnumDiscriminants, EnumIter, IntoEnumIterator};
 use tokens_refresher::TokensRefresherProcessor;
 
-use crate::{image_backend::RatatuiImage, key_event_handler::KeyEventHandler};
+use crate::{image_backend::RatatuiImage, event_handler::EventHandler};
 
 #[derive(EnumDiscriminants, EnumCount, EnumIter)]
 #[strum_discriminants(derive(Hash))]
@@ -35,7 +35,7 @@ impl Processor {
         }
     }
 
-    pub fn update(&mut self, key_event_handler: &mut KeyEventHandler) {
+    pub fn update(&mut self, key_event_handler: &mut EventHandler) {
         self.as_trait_mut().update(key_event_handler)
     }
 
@@ -43,10 +43,14 @@ impl Processor {
         self.as_trait().needs_render()
     }
 
+    pub fn get_state(&self) -> (Option<usize>, Option<usize>) {
+        self.as_trait().get_state()
+    }
+
     pub fn render(
         &self,
         frame: &mut ratatui::Frame,
-        key_event_handler: &mut KeyEventHandler,
+        key_event_handler: &mut EventHandler,
         image_renderer: &mut RatatuiImage,
     ) {
         self.as_trait()
@@ -55,12 +59,17 @@ impl Processor {
 }
 
 pub trait ProcessorTrait {
-    fn update(&mut self, key_event_handler: &mut KeyEventHandler);
-    fn needs_render(&self) -> bool;
+    fn update(&mut self, key_event_handler: &mut EventHandler);
+    fn needs_render(&self) -> bool {
+        false
+    }
+    fn get_state(&self) -> (Option<usize>, Option<usize>) {
+        (None, None)
+    }
     fn render(
         &self,
         frame: &mut ratatui::Frame,
-        key_event_handler: &mut KeyEventHandler,
+        key_event_handler: &mut EventHandler,
         image_renderer: &mut RatatuiImage,
     );
 }

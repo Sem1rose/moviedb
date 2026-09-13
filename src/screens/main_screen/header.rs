@@ -14,7 +14,7 @@ use strum::IntoEnumIterator;
 
 use crate::{
     helpers,
-    key_event_handler::{self, KeyEventHandler},
+    event_handler::{self, EventHandler},
     pop_criterion,
     screens::{Screen, main_screen::MainScreen},
     types::{FilterCriterion, RatingSource, Sort},
@@ -26,7 +26,7 @@ impl MainScreen {
         &mut self,
         frame: &mut Frame,
         area: Rect,
-        key_event_handler: &mut KeyEventHandler,
+        key_event_handler: &mut EventHandler,
     ) -> Rect {
         let tab_selected = self.tab == 2;
 
@@ -92,13 +92,13 @@ impl MainScreen {
                 }
 
                 match data {
-                    key_event_handler::Data::Direction(true, _) => {
+                    event_handler::Data::Direction(true, _) => {
                         main_screen.item += 1;
                         if main_screen.item > 2 {
                             main_screen.item = 0;
                         }
                     }
-                    key_event_handler::Data::Direction(false, _) => {
+                    event_handler::Data::Direction(false, _) => {
                         main_screen.item = main_screen.item.checked_sub(1).unwrap_or(2);
                     }
                     _ => (),
@@ -189,10 +189,10 @@ impl MainScreen {
                         app.drawer.current_screen.as_mut()
                     {
                         match data {
-                            key_event_handler::Data::Direction(false, _) => {
+                            event_handler::Data::Direction(false, _) => {
                                 main_screen.sort_popup.open_submenu(true);
                             }
-                            key_event_handler::Data::Direction(true, _) => {
+                            event_handler::Data::Direction(true, _) => {
                                 if main_screen.sort_popup.opened_submenu.is_some() {
                                     main_screen.sort_popup.close_submenu();
                                 } else {
@@ -213,7 +213,7 @@ impl MainScreen {
                     if let Some(Screen::MainScreen(main_screen)) =
                         app.drawer.current_screen.as_mut()
                     {
-                        if let key_event_handler::Data::Direction(true, _) = data {
+                        if let event_handler::Data::Direction(true, _) = data {
                             main_screen.item += 1;
                         }
                     }
@@ -222,7 +222,7 @@ impl MainScreen {
         }
         key_event_handler.bind_horizontal((Some(2), Some(2)), "Navigate".into(), |app, data| {
             if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                if let key_event_handler::Data::Direction(false, _) = data {
+                if let event_handler::Data::Direction(false, _) = data {
                     main_screen.item -= 1;
                 }
             }
@@ -238,7 +238,7 @@ impl MainScreen {
             .into(),
             |app, data| {
                 if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                    if let key_event_handler::Data::Direction(direction, _) = data {
+                    if let event_handler::Data::Direction(direction, _) = data {
                         main_screen.sort_popup.scroll(direction);
 
                         main_screen.sort = if let Some(submenu_id) =
@@ -271,13 +271,13 @@ impl MainScreen {
             |app, data| {
                 if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     match data {
-                        key_event_handler::Data::Direction(false, _) => {
+                        event_handler::Data::Direction(false, _) => {
                             if !main_screen.sort_ascending {
                                 main_screen.sort_ascending = true;
                                 main_screen.filter_sort_movies(true);
                             }
                         }
-                        key_event_handler::Data::Direction(true, _)
+                        event_handler::Data::Direction(true, _)
                             if main_screen.sort_ascending =>
                         {
                             main_screen.sort_ascending = false;
@@ -291,7 +291,7 @@ impl MainScreen {
 
         key_event_handler.bind_input_field((Some(2), Some(0)), "".into(), |app, data| {
             if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                if let key_event_handler::Data::Key(key_event) = data {
+                if let event_handler::Data::Key(key_event) = data {
                     main_screen.search_input.input(key_event);
 
                     let FilterCriterion::Title(_, filter) = pop_criterion!(

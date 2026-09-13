@@ -16,7 +16,7 @@ use strum::AsRefStr;
 use crate::{
     helpers,
     image_backend::RatatuiImage,
-    key_event_handler::KeyEventHandler,
+    event_handler::EventHandler,
     processors::{Processor, ProcessorDiscriminants, ProcessorTrait},
     tokens::{
         punch_play_tokens::{PunchPlayTokens, UserTokens as PunchPlayUserTokens},
@@ -155,7 +155,7 @@ impl TokensRefresherProcessor {
 }
 
 impl ProcessorTrait for TokensRefresherProcessor {
-    fn update(&mut self, key_event_handler: &mut KeyEventHandler) {
+    fn update(&mut self, key_event_handler: &mut EventHandler) {
         if !self.initialized {
             return;
         }
@@ -215,10 +215,14 @@ impl ProcessorTrait for TokensRefresherProcessor {
         !self.errored.is_empty()
     }
 
+    fn get_state(&self) -> (Option<usize>, Option<usize>) {
+        (None, Some(self.item))
+    }
+
     fn render(
         &self,
         frame: &mut ratatui::Frame,
-        key_event_handler: &mut KeyEventHandler,
+        key_event_handler: &mut EventHandler,
         image_renderer: &mut RatatuiImage,
     ) {
         if let Some((tokens, error)) = self.errored.first() {
@@ -238,7 +242,7 @@ impl ProcessorTrait for TokensRefresherProcessor {
                 if let Some(Processor::TokensRefresher(tokens_refresher_processor)) =
                     app.get_processor_mut(ProcessorDiscriminants::TokensRefresher)
                 {
-                    if let crate::key_event_handler::Data::Direction(dir, _) = data {
+                    if let crate::event_handler::Data::Direction(dir, _) = data {
                         tokens_refresher_processor.item = dir as usize;
                     }
                 }
@@ -284,7 +288,7 @@ impl ProcessorTrait for TokensRefresherProcessor {
             let popup_area = widgets::window(
                 frame,
                 helpers::centered_area(11, 44, frame.area()),
-                " Error ",
+                " Token refresher error ",
                 true,
             );
             image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));

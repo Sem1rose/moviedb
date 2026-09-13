@@ -14,7 +14,7 @@ use ratatui::{
 };
 use rustc_hash::FxHashMap;
 
-use crate::{key_event_handler::KeyEventHandler, types::FxIndexMap, widgets::Orientation};
+use crate::{event_handler::EventHandler, types::FxIndexMap, widgets::Orientation};
 
 #[derive(Default)]
 pub struct ContextMenu {
@@ -164,7 +164,7 @@ impl ContextMenu {
         &mut self,
         position: Position,
         frame: &mut Frame,
-        key_event_handler: &mut KeyEventHandler,
+        key_event_handler: &mut EventHandler,
     ) -> FxHashMap<Vec<usize>, (Rect, usize)> {
         let model_len = self.model.len();
         if self.selected_index < self.scroll_pos
@@ -327,7 +327,7 @@ impl ContextMenu {
         &mut self,
         dropdown_widget_area: Rect,
         frame: &mut Frame,
-        key_event_handler: &mut KeyEventHandler,
+        key_event_handler: &mut EventHandler,
     ) -> FxHashMap<Vec<usize>, (Rect, usize)> {
         self.width = dropdown_widget_area.width;
         let result = self.render(

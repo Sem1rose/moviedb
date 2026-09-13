@@ -8,7 +8,7 @@ use ratatui::{
 };
 
 use crate::{
-    key_event_handler::KeyEventHandler,
+    event_handler::EventHandler,
     widgets::{Direction, Orientation},
 };
 
@@ -181,7 +181,7 @@ impl ScrollGallery {
         area: Rect,
         scrollbar_area: Rect,
         frame: &mut Frame,
-        key_event_handler: &mut KeyEventHandler,
+        key_event_handler: &mut EventHandler,
         mut render_callback: impl FnMut(
             &mut Buffer,
             u16,
@@ -190,7 +190,7 @@ impl ScrollGallery {
             usize,
             bool,
             bool,
-            &mut KeyEventHandler,
+            &mut EventHandler,
         ),
     ) {
         let num_rows = if self.items_per_row != 0 {
@@ -296,7 +296,7 @@ impl ScrollGallery {
         area: Rect,
         scrollbar_area: Rect,
         frame: &mut Frame,
-        key_event_handler: &mut KeyEventHandler,
+        key_event_handler: &mut EventHandler,
         render_callback: impl FnMut(
             &mut Buffer,
             u16,
@@ -305,7 +305,7 @@ impl ScrollGallery {
             usize,
             bool,
             bool,
-            &mut KeyEventHandler,
+            &mut EventHandler,
         ),
     ) {
         self.update_for_area(area, num_items);

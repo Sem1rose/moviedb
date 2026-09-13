@@ -17,7 +17,7 @@ use ratatui_textarea::{TextArea, WrapMode};
 use crate::{
     helpers,
     image_backend::RatatuiImage,
-    key_event_handler::{Data, KeyEventHandler},
+    event_handler::{Data, EventHandler},
     popups::{Popup, PopupTrait},
     types::Entry,
     widgets::{self, Action, ActionType, Orientation, ScrolledList},
@@ -173,7 +173,7 @@ impl PopupTrait for ManagePlaysPopup {
     fn render(
         &mut self,
         frame: &mut Frame,
-        key_event_handler: &mut KeyEventHandler,
+        key_event_handler: &mut EventHandler,
         image_renderer: &mut RatatuiImage,
     ) {
         key_event_handler.clear();

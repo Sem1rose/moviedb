@@ -3,7 +3,7 @@ mod config;
 mod drawer;
 mod helpers;
 mod image_backend;
-mod key_event_handler;
+mod event_handler;
 mod omdb;
 mod popups;
 mod processors;

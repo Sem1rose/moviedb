@@ -24,7 +24,7 @@ use crate::{
     app::App,
     helpers,
     image_backend::RatatuiImage,
-    key_event_handler::{self, KeyEventHandler},
+    event_handler::{self, EventHandler},
     popups::{Popup, PopupTrait},
     tokens::trakt_tokens::{TraktTokens, UserTokens},
     widgets::{self, Action, ActionType, Hyperlink},
@@ -243,7 +243,7 @@ impl PopupTrait for TraktInitPopup {
     fn render(
         &mut self,
         frame: &mut Frame,
-        key_event_handler: &mut KeyEventHandler,
+        key_event_handler: &mut EventHandler,
         image_renderer: &mut RatatuiImage,
     ) {
         key_event_handler.clear();
@@ -315,13 +315,13 @@ impl PopupTrait for TraktInitPopup {
                         app.drawer.active_popup.as_mut()
                     {
                         match data {
-                            crate::key_event_handler::Data::Direction(true, _) => {
+                            crate::event_handler::Data::Direction(true, _) => {
                                 trakt_init_popup.item += 1;
                                 if trakt_init_popup.item > 2 {
                                     trakt_init_popup.item = 0;
                                 }
                             }
-                            crate::key_event_handler::Data::Direction(false, _) => {
+                            crate::event_handler::Data::Direction(false, _) => {
                                 trakt_init_popup.item =
                                     trakt_init_popup.item.checked_sub(1).unwrap_or(2);
                             }
@@ -374,7 +374,7 @@ impl PopupTrait for TraktInitPopup {
                     if let Some(Popup::TraktInit(trakt_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
-                        if let key_event_handler::Data::Key(key_event) = data {
+                        if let event_handler::Data::Key(key_event) = data {
                             trakt_init_popup.input0.input(key_event);
                         }
                     }
@@ -383,7 +383,7 @@ impl PopupTrait for TraktInitPopup {
                     if let Some(Popup::TraktInit(trakt_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
-                        if let key_event_handler::Data::Key(key_event) = data {
+                        if let event_handler::Data::Key(key_event) = data {
                             trakt_init_popup.input1.input(key_event);
                         }
                     }
@@ -484,13 +484,13 @@ impl PopupTrait for TraktInitPopup {
                         app.drawer.active_popup.as_mut()
                     {
                         match data {
-                            crate::key_event_handler::Data::Direction(true, _) => {
+                            crate::event_handler::Data::Direction(true, _) => {
                                 trakt_init_popup.item += 1;
                                 if trakt_init_popup.item > 3 {
                                     trakt_init_popup.item = 0;
                                 }
                             }
-                            crate::key_event_handler::Data::Direction(false, _) => {
+                            crate::event_handler::Data::Direction(false, _) => {
                                 trakt_init_popup.item =
                                     trakt_init_popup.item.checked_sub(1).unwrap_or(3);
                             }
@@ -558,7 +558,7 @@ impl PopupTrait for TraktInitPopup {
                     if let Some(Popup::TraktInit(trakt_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
-                        if let key_event_handler::Data::Key(key_event) = data {
+                        if let event_handler::Data::Key(key_event) = data {
                             trakt_init_popup.input0.input(key_event);
                         }
                     }
@@ -718,13 +718,13 @@ impl PopupTrait for TraktInitPopup {
                             app.drawer.active_popup.as_mut()
                         {
                             match data {
-                                crate::key_event_handler::Data::Direction(true, _) => {
+                                crate::event_handler::Data::Direction(true, _) => {
                                     trakt_init_popup.item += 1;
                                     if trakt_init_popup.item > 1 {
                                         trakt_init_popup.item = 0;
                                     }
                                 }
-                                crate::key_event_handler::Data::Direction(false, _) => {
+                                crate::event_handler::Data::Direction(false, _) => {
                                     trakt_init_popup.item =
                                         trakt_init_popup.item.checked_sub(1).unwrap_or(1);
                                 }

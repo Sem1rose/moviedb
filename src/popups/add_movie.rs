@@ -40,7 +40,7 @@ use crate::{
     app::App,
     helpers,
     image_backend::{ImageID, RatatuiImage},
-    key_event_handler::{self, KeyEventHandler},
+    event_handler::{self, EventHandler},
     omdb::MovieDetails as OMDBMovieDetails,
     popups::{Popup, PopupTrait},
     tokens::{OMDBTokens, PunchPlayTokens, TMDBTokens, TraktTokens},
@@ -395,7 +395,7 @@ impl PopupTrait for AddMoviePopup {
     fn render(
         &mut self,
         frame: &mut Frame,
-        key_event_handler: &mut KeyEventHandler,
+        key_event_handler: &mut EventHandler,
         image_renderer: &mut RatatuiImage,
     ) {
         key_event_handler.clear();
@@ -426,7 +426,7 @@ impl PopupTrait for AddMoviePopup {
                             if let Some(Popup::AddMovie(add_movie_popup)) =
                                 app.drawer.active_popup.as_mut()
                             {
-                                if let key_event_handler::Data::Direction(direction, _) = data {
+                                if let event_handler::Data::Direction(direction, _) = data {
                                     add_movie_popup.scrollview.scroll(direction, num_results);
                                 }
                             }
@@ -444,7 +444,7 @@ impl PopupTrait for AddMoviePopup {
                 key_event_handler.bind_input_field((None, None), "".into(), |app, data| {
                     if let Some(Popup::AddMovie(add_movie_popup)) = app.drawer.active_popup.as_mut()
                     {
-                        if let key_event_handler::Data::Key(key_event) = data {
+                        if let event_handler::Data::Key(key_event) = data {
                             let old_query = add_movie_popup.input0.lines()[0].clone();
                             add_movie_popup.input0.input(key_event);
                             let input_empty = add_movie_popup.input0.lines()[0].trim().is_empty();
@@ -721,13 +721,13 @@ impl PopupTrait for AddMoviePopup {
                     if let Some(Popup::AddMovie(add_movie_popup)) = app.drawer.active_popup.as_mut()
                     {
                         match data {
-                            crate::key_event_handler::Data::Direction(true, _) => {
+                            crate::event_handler::Data::Direction(true, _) => {
                                 add_movie_popup.item += 1;
                                 if add_movie_popup.item > 3 {
                                     add_movie_popup.item = 0;
                                 }
                             }
-                            crate::key_event_handler::Data::Direction(false, _) => {
+                            crate::event_handler::Data::Direction(false, _) => {
                                 add_movie_popup.item =
                                     add_movie_popup.item.checked_sub(1).unwrap_or(3);
                             }
@@ -752,7 +752,7 @@ impl PopupTrait for AddMoviePopup {
                 key_event_handler.bind_horizontal((None, Some(3)), "".into(), |app, data| {
                     if let Some(Popup::AddMovie(add_movie_popup)) = app.drawer.active_popup.as_mut()
                     {
-                        if let crate::key_event_handler::Data::Direction(true, _) = data {
+                        if let crate::event_handler::Data::Direction(true, _) = data {
                             add_movie_popup.item = 4;
                         }
                     }
@@ -760,7 +760,7 @@ impl PopupTrait for AddMoviePopup {
                 key_event_handler.bind_horizontal((None, Some(4)), "".into(), |app, data| {
                     if let Some(Popup::AddMovie(add_movie_popup)) = app.drawer.active_popup.as_mut()
                     {
-                        if let crate::key_event_handler::Data::Direction(false, _) = data {
+                        if let crate::event_handler::Data::Direction(false, _) = data {
                             add_movie_popup.item = 3;
                         }
                     }
@@ -769,7 +769,7 @@ impl PopupTrait for AddMoviePopup {
                 key_event_handler.bind_vertical((None, Some(1)), "".into(), |app, data| {
                     if let Some(Popup::AddMovie(add_movie_popup)) = app.drawer.active_popup.as_mut()
                     {
-                        if let crate::key_event_handler::Data::Direction(true, _) = data {
+                        if let crate::event_handler::Data::Direction(true, _) = data {
                             add_movie_popup.item = 2;
                         }
                     }
@@ -777,7 +777,7 @@ impl PopupTrait for AddMoviePopup {
                 key_event_handler.bind_vertical((None, Some(2)), "".into(), |app, data| {
                     if let Some(Popup::AddMovie(add_movie_popup)) = app.drawer.active_popup.as_mut()
                     {
-                        if let crate::key_event_handler::Data::Direction(false, _) = data {
+                        if let crate::event_handler::Data::Direction(false, _) = data {
                             add_movie_popup.item = 1;
                         }
                     }
@@ -833,7 +833,7 @@ impl PopupTrait for AddMoviePopup {
                 key_event_handler.bind_input_field((None, Some(1)), "".into(), |app, data| {
                     if let Some(Popup::AddMovie(add_movie_popup)) = app.drawer.active_popup.as_mut()
                     {
-                        if let key_event_handler::Data::Key(key_event) = data {
+                        if let event_handler::Data::Key(key_event) = data {
                             let parsed = add_movie_popup.input0.lines()[0]
                                 .parse::<f64>()
                                 .unwrap_or(0.0);
@@ -854,7 +854,7 @@ impl PopupTrait for AddMoviePopup {
                 key_event_handler.bind_input_field((None, Some(2)), "".into(), |app, data| {
                     if let Some(Popup::AddMovie(add_movie_popup)) = app.drawer.active_popup.as_mut()
                     {
-                        if let key_event_handler::Data::Key(key_event) = data {
+                        if let event_handler::Data::Key(key_event) = data {
                             add_movie_popup.input1.input(key_event);
                         }
                     }
@@ -1046,7 +1046,7 @@ impl PopupTrait for AddMoviePopup {
                 key_event_handler.bind_horizontal((None, None), "Navigate".into(), |app, data| {
                     if let Some(Popup::AddMovie(add_movie_popup)) = app.drawer.active_popup.as_mut()
                     {
-                        if let crate::key_event_handler::Data::Direction(dir, _) = data {
+                        if let crate::event_handler::Data::Direction(dir, _) = data {
                             add_movie_popup.item = dir as usize;
                         }
                     }
@@ -1160,7 +1160,7 @@ impl PopupTrait for AddMoviePopup {
                             if let Some(Popup::AddMovie(add_movie_popup)) =
                                 app.drawer.active_popup.as_mut()
                             {
-                                if let crate::key_event_handler::Data::Direction(dir, _) = data {
+                                if let crate::event_handler::Data::Direction(dir, _) = data {
                                     add_movie_popup.item = dir as usize;
                                 }
                             }

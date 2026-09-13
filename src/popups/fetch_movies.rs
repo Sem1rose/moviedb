@@ -20,7 +20,7 @@ use crate::{
     app::App,
     helpers,
     image_backend::RatatuiImage,
-    key_event_handler::KeyEventHandler,
+    event_handler::EventHandler,
     popups::PopupTrait,
     tokens::{OMDBTokens, PunchPlayTokens, TraktTokens, tmdb_tokens::TMDBTokens},
     types::{Collection, Entry, FxIndexMap, List, Movie, MovieDetailsResponse, Person},
@@ -261,7 +261,7 @@ impl PopupTrait for FetchMoviesPopup {
     fn render(
         &mut self,
         frame: &mut Frame,
-        key_event_handler: &mut KeyEventHandler,
+        key_event_handler: &mut EventHandler,
         image_renderer: &mut RatatuiImage,
     ) {
         if !self.started {

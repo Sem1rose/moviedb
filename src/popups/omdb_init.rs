@@ -17,7 +17,7 @@ use throbber_widgets_tui::{Throbber, ThrobberState};
 use crate::{
     helpers,
     image_backend::RatatuiImage,
-    key_event_handler::{self, KeyEventHandler},
+    event_handler::{self, EventHandler},
     popups::{Popup, PopupTrait},
     tokens::omdb_tokens::OMDBTokens,
     widgets::{self, Action, ActionType},
@@ -90,7 +90,7 @@ impl PopupTrait for OMDBInitPopup {
     fn render(
         &mut self,
         frame: &mut Frame,
-        key_event_handler: &mut KeyEventHandler,
+        key_event_handler: &mut EventHandler,
         image_renderer: &mut RatatuiImage,
     ) {
         key_event_handler.clear();
@@ -123,13 +123,13 @@ impl PopupTrait for OMDBInitPopup {
             key_event_handler.bind_tab((None, None), "".into(), |app, data| {
                 if let Some(Popup::OMDBInit(omdb_init_popup)) = app.drawer.active_popup.as_mut() {
                     match data {
-                        crate::key_event_handler::Data::Direction(true, _) => {
+                        crate::event_handler::Data::Direction(true, _) => {
                             omdb_init_popup.item += 1;
                             if omdb_init_popup.item > 1 {
                                 omdb_init_popup.item = 0;
                             }
                         }
-                        crate::key_event_handler::Data::Direction(false, _) => {
+                        crate::event_handler::Data::Direction(false, _) => {
                             omdb_init_popup.item = omdb_init_popup.item.checked_sub(1).unwrap_or(1);
                         }
                         _ => {}
@@ -154,7 +154,7 @@ impl PopupTrait for OMDBInitPopup {
             });
             key_event_handler.bind_input_field((None, Some(0)), "".into(), |app, data| {
                 if let Some(Popup::OMDBInit(omdb_init_popup)) = app.drawer.active_popup.as_mut() {
-                    if let key_event_handler::Data::Key(key_event) = data {
+                    if let event_handler::Data::Key(key_event) = data {
                         omdb_init_popup.input.input(key_event);
                     }
                 }

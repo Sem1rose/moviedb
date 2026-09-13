@@ -24,7 +24,7 @@ use crate::{
     app::App,
     helpers,
     image_backend::RatatuiImage,
-    key_event_handler::{self, KeyEventHandler},
+    event_handler::{self, EventHandler},
     popups::{Popup, PopupTrait},
     tokens::punch_play_tokens::{PunchPlayTokens, UserTokens},
     widgets::{self, Action, ActionType, Hyperlink},
@@ -237,7 +237,7 @@ impl PopupTrait for PunchPlayInitPopup {
     fn render(
         &mut self,
         frame: &mut Frame,
-        key_event_handler: &mut KeyEventHandler,
+        key_event_handler: &mut EventHandler,
         image_renderer: &mut RatatuiImage,
     ) {
         key_event_handler.clear();
@@ -305,13 +305,13 @@ impl PopupTrait for PunchPlayInitPopup {
                             app.drawer.active_popup.as_mut()
                         {
                             match data {
-                                crate::key_event_handler::Data::Direction(true, _) => {
+                                crate::event_handler::Data::Direction(true, _) => {
                                     punch_play_init_popup.item += 1;
                                     if punch_play_init_popup.item > 1 {
                                         punch_play_init_popup.item = 0;
                                     }
                                 }
-                                crate::key_event_handler::Data::Direction(false, _) => {
+                                crate::event_handler::Data::Direction(false, _) => {
                                     punch_play_init_popup.item =
                                         punch_play_init_popup.item.checked_sub(1).unwrap_or(1);
                                 }
@@ -357,13 +357,13 @@ impl PopupTrait for PunchPlayInitPopup {
                         app.drawer.active_popup.as_mut()
                     {
                         match data {
-                            crate::key_event_handler::Data::Direction(true, _) => {
+                            crate::event_handler::Data::Direction(true, _) => {
                                 punch_play_init_popup.item += 1;
                                 if punch_play_init_popup.item > 2 {
                                     punch_play_init_popup.item = 0;
                                 }
                             }
-                            crate::key_event_handler::Data::Direction(false, _) => {
+                            crate::event_handler::Data::Direction(false, _) => {
                                 punch_play_init_popup.item =
                                     punch_play_init_popup.item.checked_sub(1).unwrap_or(2);
                             }
@@ -417,7 +417,7 @@ impl PopupTrait for PunchPlayInitPopup {
                     if let Some(Popup::PunchPlayInit(punch_play_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
-                        if let key_event_handler::Data::Key(key_event) = data {
+                        if let event_handler::Data::Key(key_event) = data {
                             punch_play_init_popup.input0.input(key_event);
                         }
                     }
@@ -426,7 +426,7 @@ impl PopupTrait for PunchPlayInitPopup {
                     if let Some(Popup::PunchPlayInit(punch_play_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
-                        if let key_event_handler::Data::Key(key_event) = data {
+                        if let event_handler::Data::Key(key_event) = data {
                             punch_play_init_popup.input1.input(key_event);
                         }
                     }
@@ -634,13 +634,13 @@ impl PopupTrait for PunchPlayInitPopup {
                             app.drawer.active_popup.as_mut()
                         {
                             match data {
-                                crate::key_event_handler::Data::Direction(true, _) => {
+                                crate::event_handler::Data::Direction(true, _) => {
                                     punch_play_init_popup.item += 1;
                                     if punch_play_init_popup.item > 1 {
                                         punch_play_init_popup.item = 0;
                                     }
                                 }
-                                crate::key_event_handler::Data::Direction(false, _) => {
+                                crate::event_handler::Data::Direction(false, _) => {
                                     punch_play_init_popup.item =
                                         punch_play_init_popup.item.checked_sub(1).unwrap_or(1);
                                 }

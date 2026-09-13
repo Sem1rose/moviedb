@@ -214,7 +214,7 @@ pub fn window(frame: &mut Frame, area: Rect, title: &str, and_a_half: bool) -> R
     popup_area
 }
 
-fn scroll_bar(
+pub fn scroll_bar(
     orientation: Orientation,
     items_count: usize,
     scroll_pos: usize,

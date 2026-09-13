@@ -21,7 +21,7 @@ use crate::{
     app::App,
     helpers,
     image_backend::RatatuiImage,
-    key_event_handler::{self, KeyEventHandler},
+    event_handler::{self, EventHandler},
     pop_criterion,
     popups::{Popup, PopupTrait},
     screens::Screen,
@@ -204,7 +204,7 @@ impl Widget {
 
     fn bind(
         &mut self,
-        key_event_handler: &mut KeyEventHandler,
+        key_event_handler: &mut EventHandler,
         valid: bool,
         area: Rect,
         selected_item: usize,
@@ -307,7 +307,7 @@ impl Widget {
                                     num_visible_items,
                                     ..
                                 } => match data {
-                                    crate::key_event_handler::Data::Direction(true, _) =>
+                                    crate::event_handler::Data::Direction(true, _) =>
                                         if *current_selected < filtered_items.len() - 1 {
                                             *current_selected += 1;
                                             if *current_selected < *scroll_pos
@@ -318,7 +318,7 @@ impl Widget {
                                                     .saturating_sub(*num_visible_items - 1)
                                             }
                                         },
-                                    crate::key_event_handler::Data::Direction(false, _) => {
+                                    crate::event_handler::Data::Direction(false, _) => {
                                         *current_selected = current_selected.saturating_sub(1);
                                         if *current_selected < *scroll_pos {
                                             *scroll_pos -= 1
@@ -385,7 +385,7 @@ impl Widget {
                             if let Some(Popup::AdvancedFilter(advanced_filter_popup)) =
                                 app.drawer.active_popup.as_mut()
                             {
-                                if let key_event_handler::Data::Key(key_event) = data {
+                                if let event_handler::Data::Key(key_event) = data {
                                     if let Widget::Dropdown {
                                         text_input,
                                         items,
@@ -578,7 +578,7 @@ impl Widget {
                         if let Some(Popup::AdvancedFilter(advanced_filter_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
-                            if let key_event_handler::Data::Key(key_event) = data {
+                            if let event_handler::Data::Key(key_event) = data {
                                 if let Widget::TextInput { text_input, .. } =
                                     advanced_filter_popup.get_widget_at_mut(item).unwrap()
                                 {
@@ -647,7 +647,7 @@ impl Widget {
     fn render(
         &mut self,
         frame: &mut Frame,
-        key_event_handler: &mut KeyEventHandler,
+        key_event_handler: &mut EventHandler,
         area: Rect,
         selected_item: usize,
         tab_selected: bool,
@@ -1658,7 +1658,7 @@ impl PopupTrait for AdvancedFilterPopup {
     fn render(
         &mut self,
         frame: &mut Frame,
-        key_event_handler: &mut KeyEventHandler,
+        key_event_handler: &mut EventHandler,
         image_renderer: &mut RatatuiImage,
     ) {
         key_event_handler.clear();
@@ -1690,7 +1690,7 @@ impl PopupTrait for AdvancedFilterPopup {
                 app.drawer.active_popup.as_mut()
             {
                 match data {
-                    crate::key_event_handler::Data::Direction(true, _) => {
+                    crate::event_handler::Data::Direction(true, _) => {
                         advanced_filter_popup.dropdown_selected_item = None;
 
                         advanced_filter_popup.item = 0;
@@ -1708,7 +1708,7 @@ impl PopupTrait for AdvancedFilterPopup {
                             advanced_filter_popup.tab = 1;
                         }
                     }
-                    crate::key_event_handler::Data::Direction(false, _) => {
+                    crate::event_handler::Data::Direction(false, _) => {
                         advanced_filter_popup.dropdown_selected_item = None;
 
                         advanced_filter_popup.item = 0;
@@ -1807,13 +1807,13 @@ impl PopupTrait for AdvancedFilterPopup {
                         app.drawer.active_popup.as_mut()
                     {
                         match data {
-                            crate::key_event_handler::Data::Direction(true, _) => {
+                            crate::event_handler::Data::Direction(true, _) => {
                                 advanced_filter_popup.item += 1;
                                 if advanced_filter_popup.item > 1 {
                                     advanced_filter_popup.item = 1;
                                 }
                             }
-                            crate::key_event_handler::Data::Direction(false, _) => {
+                            crate::event_handler::Data::Direction(false, _) => {
                                 advanced_filter_popup.item =
                                     advanced_filter_popup.item.saturating_sub(1);
                             }
@@ -1933,11 +1933,11 @@ impl PopupTrait for AdvancedFilterPopup {
                         app.drawer.active_popup.as_mut()
                     {
                         match data {
-                            crate::key_event_handler::Data::Direction(false, _) => {
+                            crate::event_handler::Data::Direction(false, _) => {
                                 advanced_filter_popup.item =
                                     advanced_filter_popup.item.saturating_sub(1);
                             }
-                            crate::key_event_handler::Data::Direction(true, _)
+                            crate::event_handler::Data::Direction(true, _)
                                 if advanced_filter_popup.item < last_item =>
                                 advanced_filter_popup.item += 1,
                             _ => (),
@@ -2069,7 +2069,7 @@ impl PopupTrait for AdvancedFilterPopup {
                             app.drawer.active_popup.as_mut()
                         {
                             match data {
-                                crate::key_event_handler::Data::Direction(true, _) => {
+                                crate::event_handler::Data::Direction(true, _) => {
                                     advanced_filter_popup.dropdown_selected_item =
                                         advanced_filter_popup.dropdown_selected_item.map(|x| {
                                             if x < advanced_filter_popup.available_criteria.len()
@@ -2094,7 +2094,7 @@ impl PopupTrait for AdvancedFilterPopup {
                                             }
                                         });
                                 }
-                                crate::key_event_handler::Data::Direction(false, _) => {
+                                crate::event_handler::Data::Direction(false, _) => {
                                     advanced_filter_popup.dropdown_selected_item =
                                         advanced_filter_popup
                                             .dropdown_selected_item

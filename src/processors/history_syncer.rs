@@ -17,7 +17,7 @@ use toml::Value;
 use crate::{
     helpers,
     image_backend::RatatuiImage,
-    key_event_handler::KeyEventHandler,
+    event_handler::EventHandler,
     processors::{Processor, ProcessorDiscriminants, ProcessorTrait},
     tokens::{PunchPlayTokens, SimklTokens, tmdb_tokens::TMDBTokens},
     types::{SyncItem, SyncSource},
@@ -611,7 +611,7 @@ impl HistorySyncerProcessor {
 }
 
 impl ProcessorTrait for HistorySyncerProcessor {
-    fn update(&mut self, _key_event_handler: &mut KeyEventHandler) {
+    fn update(&mut self, _key_event_handler: &mut EventHandler) {
         if !self.initialized || self.idle {
             return;
         }
@@ -654,19 +654,56 @@ impl ProcessorTrait for HistorySyncerProcessor {
         !self.errors.is_empty()
     }
 
+    fn get_state(&self) -> (Option<usize>, Option<usize>) {
+        (None, Some(self.item))
+    }
+
     fn render(
         &self,
         frame: &mut ratatui::Frame,
-        key_event_handler: &mut KeyEventHandler,
+        key_event_handler: &mut EventHandler,
         image_renderer: &mut RatatuiImage,
     ) {
         if let Some((source, item, error)) = self.errors.first() {
             key_event_handler.clear();
+            key_event_handler.bind_tab((None, None), "Navigate".into(), |app, _| {
+                if let Some(Processor::HistorySyncer(history_syncer_processor)) =
+                    app.get_processor_mut(ProcessorDiscriminants::HistorySyncer)
+                {
+                    history_syncer_processor.item = (history_syncer_processor.item == 0) as usize;
+                }
+            });
+            key_event_handler.bind_horizontal((None, None), "Navigate".into(), |app, data| {
+                if let Some(Processor::HistorySyncer(history_syncer_processor)) =
+                    app.get_processor_mut(ProcessorDiscriminants::HistorySyncer)
+                {
+                    if let crate::event_handler::Data::Direction(dir, _) = data {
+                        history_syncer_processor.item = dir as usize;
+                    }
+                }
+            });
+
+            key_event_handler.bind_enter((None, Some(0)), "Retry".into(), |app, _| {
+                if let Some(Processor::HistorySyncer(history_syncer_processor)) =
+                    app.get_processor_mut(ProcessorDiscriminants::HistorySyncer)
+                {
+                    let (source, item, _) = history_syncer_processor.errors.remove(0);
+                    history_syncer_processor.retry_sync(source, item);
+                }
+            });
+            key_event_handler.bind_enter((None, Some(1)), "Skip".into(), |app, _| {
+                if let Some(Processor::HistorySyncer(history_syncer_processor)) =
+                    app.get_processor_mut(ProcessorDiscriminants::HistorySyncer)
+                {
+                    let _ = history_syncer_processor.errors.remove(0);
+                    history_syncer_processor.progress += 1;
+                }
+            });
 
             let popup_area = widgets::window(
                 frame,
                 helpers::centered_area(11, 44, frame.area()),
-                " Error ",
+                " History syncer error ",
                 true,
             );
             image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
@@ -690,40 +727,6 @@ impl ProcessorTrait for HistorySyncerProcessor {
                 .centered(),
                 message_area,
             );
-
-            key_event_handler.bind_tab((None, None), "Navigate".into(), |app, _| {
-                if let Some(Processor::HistorySyncer(history_syncer_processor)) =
-                    app.get_processor_mut(ProcessorDiscriminants::HistorySyncer)
-                {
-                    history_syncer_processor.item = (history_syncer_processor.item == 0) as usize;
-                }
-            });
-            key_event_handler.bind_horizontal((None, None), "Navigate".into(), |app, data| {
-                if let Some(Processor::HistorySyncer(history_syncer_processor)) =
-                    app.get_processor_mut(ProcessorDiscriminants::HistorySyncer)
-                {
-                    if let crate::key_event_handler::Data::Direction(dir, _) = data {
-                        history_syncer_processor.item = dir as usize;
-                    }
-                }
-            });
-
-            key_event_handler.bind_enter((None, Some(0)), "Retry".into(), |app, _| {
-                if let Some(Processor::HistorySyncer(history_syncer_processor)) =
-                    app.get_processor_mut(ProcessorDiscriminants::HistorySyncer)
-                {
-                    let (source, item, _) = history_syncer_processor.errors.remove(0);
-                    history_syncer_processor.retry_sync(source, item);
-                }
-            });
-            key_event_handler.bind_enter((None, Some(1)), "Skip".into(), |app, _| {
-                if let Some(Processor::HistorySyncer(history_syncer_processor)) =
-                    app.get_processor_mut(ProcessorDiscriminants::HistorySyncer)
-                {
-                    let _ = history_syncer_processor.errors.remove(0);
-                    history_syncer_processor.progress += 1;
-                }
-            });
 
             let actions_mouse_areas = widgets::actions(
                 [

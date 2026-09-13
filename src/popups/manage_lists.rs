@@ -11,7 +11,7 @@ use strum::{AsRefStr, EnumCount, EnumIter, IntoEnumIterator};
 use crate::{
     helpers,
     image_backend::RatatuiImage,
-    key_event_handler::KeyEventHandler,
+    event_handler::EventHandler,
     popups::{Popup, PopupTrait},
     widgets,
 };
@@ -54,7 +54,7 @@ impl PopupTrait for ManageListsPopup {
     fn render(
         &mut self,
         frame: &mut Frame,
-        key_event_handler: &mut KeyEventHandler,
+        key_event_handler: &mut EventHandler,
         image_renderer: &mut RatatuiImage,
     ) {
         key_event_handler.clear();

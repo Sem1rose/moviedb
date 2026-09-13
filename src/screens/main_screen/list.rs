@@ -18,7 +18,7 @@ use ratatui_image::sliced::SignedPosition;
 use crate::{
     helpers,
     image_backend::{ImageID, RatatuiImage},
-    key_event_handler::{self, KeyEventHandler},
+    event_handler::{self, EventHandler},
     screens::{Screen, main_screen::MainScreen},
 };
 
@@ -30,7 +30,7 @@ impl MainScreen {
         &mut self,
         frame: &mut Frame,
         image_renderer: &mut RatatuiImage,
-        key_event_handler: &mut KeyEventHandler,
+        key_event_handler: &mut EventHandler,
         area: Rect,
     ) {
         let num_items = self.filtered_movies.len();
@@ -41,13 +41,13 @@ impl MainScreen {
             key_event_handler.bind_tab((Some(0), None), "Change focus".into(), |app, data| {
                 if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     match data {
-                        key_event_handler::Data::Direction(true, _) => {
+                        event_handler::Data::Direction(true, _) => {
                             main_screen.tab += 1;
                             if main_screen.tab > 1 {
                                 main_screen.tab = 0;
                             }
                         }
-                        key_event_handler::Data::Direction(false, _) => {
+                        event_handler::Data::Direction(false, _) => {
                             main_screen.tab = main_screen.tab.checked_sub(1).unwrap_or(1);
                         }
                         _ => (),
@@ -70,7 +70,7 @@ impl MainScreen {
 
             key_event_handler.bind_vertical((Some(0), None), "Scroll".into(), move |app, data| {
                 if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                    if let key_event_handler::Data::Direction(direction, modifiers) = data {
+                    if let event_handler::Data::Direction(direction, modifiers) = data {
                         if modifiers.contains(KeyModifiers::SHIFT) {
                             if direction {
                                 main_screen.goto_index(
@@ -195,7 +195,7 @@ impl MainScreen {
         buffer_negative_offset: i32,
         align_opposite: bool,
         image_renderer: &mut RatatuiImage,
-        key_event_handler: &mut KeyEventHandler,
+        key_event_handler: &mut EventHandler,
     ) {
         let buffer_area = *buffer.area();
         let (visible_area, input_area) = helpers::deconstruct_scrollview_area(
@@ -237,7 +237,7 @@ impl MainScreen {
                         .movies_list
                         .goto_index(movie_index, false, num_items);
 
-                    if let key_event_handler::Data::Mouse(mouse_event) = data {
+                    if let event_handler::Data::Mouse(mouse_event) = data {
                         main_screen.context_menu_pos =
                             Some(Position::new(mouse_event.column, mouse_event.row));
                         main_screen.context_menu.reset_state();
