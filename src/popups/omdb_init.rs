@@ -15,9 +15,9 @@ use ratatui_textarea::{TextArea, WrapMode};
 use throbber_widgets_tui::{Throbber, ThrobberState};
 
 use crate::{
+    event_handler::{self, EventHandler},
     helpers,
     image_backend::RatatuiImage,
-    event_handler::{self, EventHandler},
     popups::{Popup, PopupTrait},
     tokens::omdb_tokens::OMDBTokens,
     widgets::{self, Action, ActionType},

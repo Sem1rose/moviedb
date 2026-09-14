@@ -15,9 +15,9 @@ use ratatui::{
 use ratatui_textarea::{TextArea, WrapMode};
 
 use crate::{
+    event_handler::{Data, EventHandler},
     helpers,
     image_backend::RatatuiImage,
-    event_handler::{Data, EventHandler},
     popups::{Popup, PopupTrait},
     types::Entry,
     widgets::{self, Action, ActionType, Orientation, ScrolledList},
@@ -230,27 +230,11 @@ impl PopupTrait for ManagePlaysPopup {
                     }
                 });
 
-                if num_entries != 0 {
-                    key_event_handler.bind_vertical(
-                        (Some(0), None),
-                        "Scroll".into(),
-                        move |app, data| {
-                            if let Some(Popup::ManagePlays(manage_plays_popup)) =
-                                app.drawer.active_popup.as_mut()
-                            {
-                                manage_plays_popup.item = 0;
-                                manage_plays_popup.confirm_delete = false;
-
-                                if let Data::Direction(direction, _) = data {
-                                    manage_plays_popup.scrollview.scroll(direction, num_entries);
-                                }
-                            }
-                        },
-                    );
-
+                if num_entries > 0 {
                     key_event_handler.bind_horizontal(
                         (Some(0), None),
                         "Select".into(),
+                        None,
                         move |app, data| {
                             if let Some(Popup::ManagePlays(manage_plays_popup)) =
                                 app.drawer.active_popup.as_mut()
@@ -441,6 +425,28 @@ impl PopupTrait for ManagePlaysPopup {
                     let scrollbar_area = list_area
                         .offset(Offset::new(list_area.width as i32 - 1, 1))
                         .resize(Size::new(1, list_area.height - 2));
+
+                    if num_entries > 0 {
+                        key_event_handler.bind_vertical(
+                            (Some(0), None),
+                            "Scroll".into(),
+                            Some(list_area),
+                            move |app, data| {
+                                if let Some(Popup::ManagePlays(manage_plays_popup)) =
+                                    app.drawer.active_popup.as_mut()
+                                {
+                                    manage_plays_popup.item = 0;
+                                    manage_plays_popup.confirm_delete = false;
+
+                                    if let Data::Direction(direction, _) = data {
+                                        manage_plays_popup
+                                            .scrollview
+                                            .scroll(direction, num_entries);
+                                    }
+                                }
+                            },
+                        );
+                    }
 
                     let mut cell = Cell::new(" ");
                     cell.set_style(Style::new().bg(tailwind::SLATE.c900));
@@ -772,6 +778,7 @@ impl PopupTrait for ManagePlaysPopup {
                     key_event_handler.bind_horizontal(
                         (None, Some(2)),
                         "Navigate".into(),
+                        None,
                         |app, data| {
                             if let Some(Popup::ManagePlays(manage_plays_popup)) =
                                 app.drawer.active_popup.as_mut()
@@ -785,6 +792,7 @@ impl PopupTrait for ManagePlaysPopup {
                     key_event_handler.bind_horizontal(
                         (None, Some(3)),
                         "Navigate".into(),
+                        None,
                         |app, data| {
                             if let Some(Popup::ManagePlays(manage_plays_popup)) =
                                 app.drawer.active_popup.as_mut()
@@ -890,24 +898,34 @@ impl PopupTrait for ManagePlaysPopup {
                     }
                 }
 
-                key_event_handler.bind_vertical((None, Some(0)), "Navigate".into(), |app, data| {
-                    if let Some(Popup::ManagePlays(manage_plays_popup)) =
-                        app.drawer.active_popup.as_mut()
-                    {
-                        if let Data::Direction(true, _) = data {
-                            manage_plays_popup.item = 1;
+                key_event_handler.bind_vertical(
+                    (None, Some(0)),
+                    "Navigate".into(),
+                    None,
+                    |app, data| {
+                        if let Some(Popup::ManagePlays(manage_plays_popup)) =
+                            app.drawer.active_popup.as_mut()
+                        {
+                            if let Data::Direction(true, _) = data {
+                                manage_plays_popup.item = 1;
+                            }
                         }
-                    }
-                });
-                key_event_handler.bind_vertical((None, Some(1)), "Navigate".into(), |app, data| {
-                    if let Some(Popup::ManagePlays(manage_plays_popup)) =
-                        app.drawer.active_popup.as_mut()
-                    {
-                        if let Data::Direction(false, _) = data {
-                            manage_plays_popup.item = 0;
+                    },
+                );
+                key_event_handler.bind_vertical(
+                    (None, Some(1)),
+                    "Navigate".into(),
+                    None,
+                    |app, data| {
+                        if let Some(Popup::ManagePlays(manage_plays_popup)) =
+                            app.drawer.active_popup.as_mut()
+                        {
+                            if let Data::Direction(false, _) = data {
+                                manage_plays_popup.item = 0;
+                            }
                         }
-                    }
-                });
+                    },
+                );
 
                 key_event_handler.bind_input_field((None, Some(0)), "".into(), |app, data| {
                     if let Some(Popup::ManagePlays(manage_plays_popup)) =

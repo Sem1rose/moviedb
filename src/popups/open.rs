@@ -11,9 +11,9 @@ use ratatui::{
 use webbrowser;
 
 use crate::{
+    event_handler::{self, EventHandler},
     helpers,
     image_backend::RatatuiImage,
-    event_handler::{self, EventHandler},
     popups::{Popup, PopupTrait},
     screens::Screen,
     types::Movie,
@@ -124,33 +124,6 @@ impl PopupTrait for OpenPopup {
                 app.drawer.close_popup();
             },
         );
-        key_event_handler.bind_vertical((None, None), "Scroll".into(), move |app, data| {
-            if let Some(Popup::Open(open_popup)) = app.drawer.active_popup.as_mut() {
-                match data {
-                    event_handler::Data::Direction(dir, _) =>
-                        if dir {
-                            if open_popup.item < open_popup.model.len() - 1 {
-                                let num_visible_items = MAX_NUM_ITEMS.min(open_popup.model.len());
-                                open_popup.item += 1;
-                                if open_popup.item < open_popup.scroll_pos
-                                    || open_popup.item - open_popup.scroll_pos >= num_visible_items
-                                {
-                                    open_popup.scroll_pos =
-                                        open_popup.item.saturating_sub(num_visible_items - 1)
-                                }
-                            }
-                        } else {
-                            if open_popup.item > 0 {
-                                open_popup.item -= 1;
-                                if open_popup.item < open_popup.scroll_pos {
-                                    open_popup.scroll_pos -= 1
-                                }
-                            }
-                        },
-                    _ => (),
-                }
-            }
-        });
         key_event_handler.bind_enter((None, None), "Open".into(), move |app, _| {
             if let Some(Popup::Open(open_popup)) = app.drawer.active_popup.as_ref() {
                 if open_popup.model[open_popup.item] == "Collection" {
@@ -178,6 +151,42 @@ impl PopupTrait for OpenPopup {
                 20,
                 self.model.len().min(MAX_NUM_ITEMS) as u16 * 2 + 1,
             ));
+
+        key_event_handler.bind_vertical(
+            (None, None),
+            "Scroll".into(),
+            Some(popup_area),
+            move |app, data| {
+                if let Some(Popup::Open(open_popup)) = app.drawer.active_popup.as_mut() {
+                    match data {
+                        event_handler::Data::Direction(dir, _) =>
+                            if dir {
+                                if open_popup.item < open_popup.model.len() - 1 {
+                                    let num_visible_items =
+                                        MAX_NUM_ITEMS.min(open_popup.model.len());
+                                    open_popup.item += 1;
+                                    if open_popup.item < open_popup.scroll_pos
+                                        || open_popup.item - open_popup.scroll_pos
+                                            >= num_visible_items
+                                    {
+                                        open_popup.scroll_pos =
+                                            open_popup.item.saturating_sub(num_visible_items - 1)
+                                    }
+                                }
+                            } else {
+                                if open_popup.item > 0 {
+                                    open_popup.item -= 1;
+                                    if open_popup.item < open_popup.scroll_pos {
+                                        open_popup.scroll_pos -= 1
+                                    }
+                                }
+                            },
+                        _ => (),
+                    }
+                }
+            },
+        );
+
         frame.render_widget(Clear, popup_area);
         let mut area = popup_area.resize(Size {
             width:  popup_area.width,

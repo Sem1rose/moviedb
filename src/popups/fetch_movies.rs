@@ -18,9 +18,9 @@ use throbber_widgets_tui::{Throbber, ThrobberState};
 
 use crate::{
     app::App,
+    event_handler::EventHandler,
     helpers,
     image_backend::RatatuiImage,
-    event_handler::EventHandler,
     popups::PopupTrait,
     tokens::{OMDBTokens, PunchPlayTokens, TraktTokens, tmdb_tokens::TMDBTokens},
     types::{Collection, Entry, FxIndexMap, List, Movie, MovieDetailsResponse, Person},

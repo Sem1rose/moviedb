@@ -17,9 +17,9 @@ use ratatui::{
 
 use crate::{
     config::Config,
+    event_handler::{self, EventHandler},
     helpers::ellipsize_string,
     image_backend::RatatuiImage,
-    event_handler::{self, EventHandler},
     popups::*,
     processors::Processor,
     screens::{Screen, main_screen::MainScreen},

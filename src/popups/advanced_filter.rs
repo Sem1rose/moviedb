@@ -19,9 +19,9 @@ use strum::IntoEnumIterator;
 
 use crate::{
     app::App,
+    event_handler::{self, EventHandler},
     helpers,
     image_backend::RatatuiImage,
-    event_handler::{self, EventHandler},
     pop_criterion,
     popups::{Popup, PopupTrait},
     screens::Screen,
@@ -295,6 +295,16 @@ impl Widget {
                 key_event_handler.bind_vertical(
                     (Some(2), Some(item)),
                     "Choose".into(),
+                    Some(if selected && tab_selected {
+                        let num_visible_items =
+                            (*num_visible_items).min(filtered_items.len() - *scroll_pos);
+                        area.resize(Size::new(
+                            area.width,
+                            area.height + num_visible_items as u16 + 1,
+                        ))
+                    } else {
+                        area
+                    }),
                     move |app, data| {
                         if let Some(Popup::AdvancedFilter(advanced_filter_popup)) =
                             app.drawer.active_popup.as_mut()
@@ -1802,6 +1812,7 @@ impl PopupTrait for AdvancedFilterPopup {
             key_event_handler.bind_horizontal(
                 (Some(this_tab), None),
                 "Navigate".into(),
+                None,
                 move |app, data| {
                     if let Some(Popup::AdvancedFilter(advanced_filter_popup)) =
                         app.drawer.active_popup.as_mut()
@@ -1928,6 +1939,7 @@ impl PopupTrait for AdvancedFilterPopup {
             key_event_handler.bind_horizontal(
                 (Some(this_tab), None),
                 "Navigate".into(),
+                None,
                 move |app, data| {
                     if let Some(Popup::AdvancedFilter(advanced_filter_popup)) =
                         app.drawer.active_popup.as_mut()
@@ -2040,7 +2052,12 @@ impl PopupTrait for AdvancedFilterPopup {
 
         {
             let this_tab = 1;
+            let selected = self.item == 0;
             let tab_selected = self.tab == this_tab;
+
+            let [message_area, _, dropdown_area] = horizontal![==20, ==1, ==20]
+                .flex(ratatui::layout::Flex::Center)
+                .areas(dropdown_area);
 
             if self.dropdown_selected_item.is_some() {
                 key_event_handler.bind_enter(
@@ -2064,6 +2081,14 @@ impl PopupTrait for AdvancedFilterPopup {
                 key_event_handler.bind_vertical(
                     (Some(this_tab), Some(0)),
                     "Choose".into(),
+                    Some(if selected && tab_selected {
+                        dropdown_area.resize(Size::new(
+                            dropdown_area.width,
+                            dropdown_area.height + self.dropdown_num_visible_items as u16 + 1,
+                        ))
+                    } else {
+                        dropdown_area
+                    }),
                     move |app, data| {
                         if let Some(Popup::AdvancedFilter(advanced_filter_popup)) =
                             app.drawer.active_popup.as_mut()
@@ -2156,16 +2181,11 @@ impl PopupTrait for AdvancedFilterPopup {
                 });
             }
 
-            let [message_area, _, dropdown_area] = horizontal![==20, ==1, ==20]
-                .flex(ratatui::layout::Flex::Center)
-                .areas(dropdown_area);
-
             frame.render_widget(
                 "Add a new Criterion:",
                 helpers::add_padding(message_area, Padding::top(1)),
             );
 
-            let selected = self.item == 0;
             widgets::dropdown(
                 true,
                 tab_selected && selected,

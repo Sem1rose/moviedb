@@ -16,9 +16,9 @@ use ratatui::{
 use ratatui_image::sliced::SignedPosition;
 
 use crate::{
+    event_handler::{self, EventHandler},
     helpers,
     image_backend::{ImageID, RatatuiImage},
-    event_handler::{self, EventHandler},
     screens::{Screen, main_screen::MainScreen},
 };
 
@@ -35,6 +35,7 @@ impl MainScreen {
     ) {
         let num_items = self.filtered_movies.len();
 
+        let [movies_area, scrollbar_area] = horizontal![>=0, ==1].areas(area);
         if !self.filtered_movies.is_empty() {
             let num_visible_items = self.movies_list.num_visible_items;
 
@@ -68,75 +69,78 @@ impl MainScreen {
                 }
             });
 
-            key_event_handler.bind_vertical((Some(0), None), "Scroll".into(), move |app, data| {
-                if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                    if let event_handler::Data::Direction(direction, modifiers) = data {
-                        if modifiers.contains(KeyModifiers::SHIFT) {
-                            if direction {
-                                main_screen.goto_index(
-                                    (main_screen.movies_list.selected_index
-                                        + num_visible_items.saturating_sub(1))
-                                        as isize,
-                                );
+            key_event_handler.bind_vertical(
+                (Some(0), None),
+                "Scroll".into(),
+                Some(area),
+                move |app, data| {
+                    if let Some(Screen::MainScreen(main_screen)) =
+                        app.drawer.current_screen.as_mut()
+                    {
+                        main_screen.tab = 0;
+                        main_screen.item = 0;
+                        if let event_handler::Data::Direction(direction, modifiers) = data {
+                            if modifiers.contains(KeyModifiers::SHIFT) {
+                                if direction {
+                                    main_screen.goto_index(
+                                        (main_screen.movies_list.selected_index
+                                            + num_visible_items.saturating_sub(1))
+                                            as isize,
+                                    );
+                                } else {
+                                    main_screen.goto_index(
+                                        main_screen
+                                            .movies_list
+                                            .selected_index
+                                            .saturating_sub(num_visible_items.saturating_sub(1))
+                                            as isize,
+                                    );
+                                }
                             } else {
-                                main_screen.goto_index(
-                                    main_screen
-                                        .movies_list
-                                        .selected_index
-                                        .saturating_sub(num_visible_items.saturating_sub(1))
-                                        as isize,
-                                );
+                                main_screen.movies_list.scroll(direction, num_items);
                             }
-                        } else {
-                            main_screen.movies_list.scroll(direction, num_items);
                         }
                     }
-                }
-            });
-        }
+                },
+            );
 
-        if self.movies_list.selected_index >= num_items {
-            self.movies_list.selected_index = num_items.saturating_sub(1);
-            self.movies_list.scroll_pos = self
-                .movies_list
-                .selected_index
-                .saturating_sub(self.movies_list.num_visible_items.saturating_sub(1));
-        }
-
-        let [movies_area, scrollbar_area] = horizontal![>=0, ==1].areas(area);
-
-        key_event_handler.bind_mouse_button_down(
-            ratatui::crossterm::event::MouseButton::Left,
-            helpers::add_padding(scrollbar_area, Padding::bottom(scrollbar_area.height - 1)),
-            move |app, _| {
-                if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                    if main_screen.movies_list.alignment_opposite
-                        && main_screen.movies_list.partially_visible
+            key_event_handler.bind_mouse_button_down(
+                ratatui::crossterm::event::MouseButton::Left,
+                helpers::add_padding(scrollbar_area, Padding::bottom(scrollbar_area.height - 1)),
+                move |app, _| {
+                    if let Some(Screen::MainScreen(main_screen)) =
+                        app.drawer.current_screen.as_mut()
                     {
-                        main_screen.movies_list.alignment_opposite = false;
-                    } else if main_screen.movies_list.scroll_pos > 0 {
-                        main_screen.movies_list.scroll_pos -= 1;
+                        if main_screen.movies_list.alignment_opposite
+                            && main_screen.movies_list.partially_visible
+                        {
+                            main_screen.movies_list.alignment_opposite = false;
+                        } else if main_screen.movies_list.scroll_pos > 0 {
+                            main_screen.movies_list.scroll_pos -= 1;
+                        }
                     }
-                }
-            },
-        );
-        key_event_handler.bind_mouse_button_down(
-            ratatui::crossterm::event::MouseButton::Left,
-            helpers::add_padding(scrollbar_area, Padding::top(scrollbar_area.height - 1)),
-            move |app, _| {
-                if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                    if !main_screen.movies_list.alignment_opposite
-                        && main_screen.movies_list.partially_visible
+                },
+            );
+            key_event_handler.bind_mouse_button_down(
+                ratatui::crossterm::event::MouseButton::Left,
+                helpers::add_padding(scrollbar_area, Padding::top(scrollbar_area.height - 1)),
+                move |app, _| {
+                    if let Some(Screen::MainScreen(main_screen)) =
+                        app.drawer.current_screen.as_mut()
                     {
-                        main_screen.movies_list.alignment_opposite = true;
-                    } else if main_screen.movies_list.scroll_pos
-                        < num_items.saturating_sub(main_screen.movies_list.num_visible_items)
-                    {
-                        main_screen.movies_list.scroll_pos += 1;
+                        if !main_screen.movies_list.alignment_opposite
+                            && main_screen.movies_list.partially_visible
+                        {
+                            main_screen.movies_list.alignment_opposite = true;
+                        } else if main_screen.movies_list.scroll_pos
+                            < num_items.saturating_sub(main_screen.movies_list.num_visible_items)
+                        {
+                            main_screen.movies_list.scroll_pos += 1;
+                        }
                     }
-                }
-            },
-        );
+                },
+            );
+        }
 
         let mut selected_movie_rect = None;
         let mut cell = Cell::new(" ");

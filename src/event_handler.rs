@@ -77,6 +77,10 @@ impl EventHandler {
         self.bind_key((None, None), 'q', "Quit".into(), |app, _| app.quit = true);
     }
 
+    pub fn bind_immediate(&mut self, callback: impl FnMut(&mut App, Data) + 'static) {
+        self.execute_immediate.push(Box::new(callback));
+    }
+
     fn add_key_bind(
         &mut self,
         state: State,
@@ -89,26 +93,36 @@ impl EventHandler {
             .insert((bind, state), (description, Box::new(callback)));
     }
 
-    pub fn bind_immediate(&mut self, callback: impl FnMut(&mut App, Data) + 'static) {
-        self.execute_immediate.push(Box::new(callback));
-    }
-
     pub fn bind_horizontal(
         &mut self,
         state: State,
         description: String,
-        callback: impl Fn(&mut App, Data) + 'static,
+        area: Option<Rect>,
+        callback: impl Fn(&mut App, Data) + Clone + 'static,
     ) {
-        self.add_key_bind(state, description, callback, Bind::Horizontal)
+        self.add_key_bind(state, description, callback.clone(), Bind::Horizontal);
+        if let Some(area) = area {
+            self.mouse_binds.insert(
+                (self.mouse_binds.len(), Bind::Horizontal, area),
+                Box::new(callback),
+            );
+        }
     }
 
     pub fn bind_vertical(
         &mut self,
         state: State,
         description: String,
-        callback: impl Fn(&mut App, Data) + 'static,
+        area: Option<Rect>,
+        callback: impl Fn(&mut App, Data) + Clone + 'static,
     ) {
-        self.add_key_bind(state, description, callback, Bind::Vertical)
+        self.add_key_bind(state, description, callback.clone(), Bind::Vertical);
+        if let Some(area) = area {
+            self.mouse_binds.insert(
+                (self.mouse_binds.len(), Bind::Vertical, area),
+                Box::new(callback),
+            );
+        }
     }
 
     pub fn bind_tab(
@@ -390,29 +404,37 @@ impl EventHandler {
         };
         match event.kind {
             MouseEventKind::ScrollDown => {
-                if let Some(callback) = self.try_get_bind(Bind::Vertical, drawer.state) {
+                if let Some(callback) = self.try_get_mouse_bind(position, Bind::Vertical) {
                     Some((callback, Data::Direction(true, event.modifiers)))
+                // } else if let Some(callback) = self.try_get_bind(Bind::Vertical, drawer.state) {
+                //     Some((callback, Data::Direction(true, event.modifiers)))
                 } else {
                     None
                 }
             }
             MouseEventKind::ScrollUp => {
-                if let Some(callback) = self.try_get_bind(Bind::Vertical, drawer.state) {
+                if let Some(callback) = self.try_get_mouse_bind(position, Bind::Vertical) {
                     Some((callback, Data::Direction(false, event.modifiers)))
+                // } else if let Some(callback) = self.try_get_bind(Bind::Vertical, drawer.state) {
+                //     Some((callback, Data::Direction(false, event.modifiers)))
                 } else {
                     None
                 }
             }
             MouseEventKind::ScrollRight => {
-                if let Some(callback) = self.try_get_bind(Bind::Horizontal, drawer.state) {
+                if let Some(callback) = self.try_get_mouse_bind(position, Bind::Horizontal) {
                     Some((callback, Data::Direction(true, event.modifiers)))
+                // } else if let Some(callback) = self.try_get_bind(Bind::Horizontal, drawer.state) {
+                //     Some((callback, Data::Direction(true, event.modifiers)))
                 } else {
                     None
                 }
             }
             MouseEventKind::ScrollLeft => {
-                if let Some(callback) = self.try_get_bind(Bind::Horizontal, drawer.state) {
-                    Some((callback, Data::Direction(false, event.modifiers)))
+                if let Some(callback) = self.try_get_mouse_bind(position, Bind::Horizontal) {
+                    Some((callback, Data::Direction(true, event.modifiers)))
+                // } else if let Some(callback) = self.try_get_bind(Bind::Horizontal, drawer.state) {
+                //     Some((callback, Data::Direction(false, event.modifiers)))
                 } else {
                     None
                 }

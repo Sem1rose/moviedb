@@ -6,7 +6,7 @@ use itertools::Itertools;
 use strum::{EnumCount, EnumDiscriminants, EnumIter, IntoEnumIterator};
 use tokens_refresher::TokensRefresherProcessor;
 
-use crate::{image_backend::RatatuiImage, event_handler::EventHandler};
+use crate::{event_handler::EventHandler, image_backend::RatatuiImage};
 
 #[derive(EnumDiscriminants, EnumCount, EnumIter)]
 #[strum_discriminants(derive(Hash))]

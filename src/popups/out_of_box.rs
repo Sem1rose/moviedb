@@ -10,9 +10,9 @@ use ratatui::{
 
 use crate::{
     app::App,
+    event_handler::{self, Data, EventHandler},
     helpers,
     image_backend::RatatuiImage,
-    event_handler::{self, Data, EventHandler},
     popups::{
         OMDBInitPopup, Popup, PopupTrait, PunchPlayInitPopup, SimklInitPopup, TMDBInitPopup,
         TraktInitPopup,
@@ -321,85 +321,95 @@ impl PopupTrait for OutOfBoxPopup {
         }
 
         let table_indices_cloned = table_indices.clone();
-        key_event_handler.bind_vertical((Some(0), None), "Scroll".into(), move |app, data| {
-            if let Some(Popup::OutOfBox(out_of_box_popup)) = app.drawer.active_popup.as_mut() {
-                let row = (out_of_box_popup.item
-                    - if out_of_box_popup.item >= NUM_REQUIRED_CHOICES {
-                        NUM_REQUIRED_CHOICES
-                    } else {
-                        0
-                    })
-                    % COLUMNS;
-                let col = (out_of_box_popup.item
-                    - if out_of_box_popup.item >= NUM_REQUIRED_CHOICES {
-                        NUM_REQUIRED_CHOICES
-                    } else {
-                        0
-                    })
-                    / COLUMNS
-                    + if out_of_box_popup.item >= NUM_REQUIRED_CHOICES {
-                        NUM_REQUIRED_CHOICES.div_ceil(COLUMNS)
-                    } else {
-                        0
-                    };
+        key_event_handler.bind_vertical(
+            (Some(0), None),
+            "Scroll".into(),
+            Some(popup_area),
+            move |app, data| {
+                if let Some(Popup::OutOfBox(out_of_box_popup)) = app.drawer.active_popup.as_mut() {
+                    let row = (out_of_box_popup.item
+                        - if out_of_box_popup.item >= NUM_REQUIRED_CHOICES {
+                            NUM_REQUIRED_CHOICES
+                        } else {
+                            0
+                        })
+                        % COLUMNS;
+                    let col = (out_of_box_popup.item
+                        - if out_of_box_popup.item >= NUM_REQUIRED_CHOICES {
+                            NUM_REQUIRED_CHOICES
+                        } else {
+                            0
+                        })
+                        / COLUMNS
+                        + if out_of_box_popup.item >= NUM_REQUIRED_CHOICES {
+                            NUM_REQUIRED_CHOICES.div_ceil(COLUMNS)
+                        } else {
+                            0
+                        };
 
-                match data {
-                    event_handler::Data::Direction(false, _) =>
-                        if col > 0 {
+                    match data {
+                        event_handler::Data::Direction(false, _) =>
+                            if col > 0 {
+                                for i in 0..=row {
+                                    if let Some(index) = table_indices_cloned[col - 1][row - i] {
+                                        out_of_box_popup.item = index;
+                                        break;
+                                    }
+                                }
+                            },
+                        event_handler::Data::Direction(true, _)
+                            if col < table_indices_cloned.len() - 1 =>
                             for i in 0..=row {
-                                if let Some(index) = table_indices_cloned[col - 1][row - i] {
+                                if let Some(index) = table_indices_cloned[col + 1][row - i] {
                                     out_of_box_popup.item = index;
                                     break;
                                 }
-                            }
-                        },
-                    event_handler::Data::Direction(true, _)
-                        if col < table_indices_cloned.len() - 1 =>
-                        for i in 0..=row {
-                            if let Some(index) = table_indices_cloned[col + 1][row - i] {
-                                out_of_box_popup.item = index;
-                                break;
-                            }
-                        },
-                    _ => (),
+                            },
+                        _ => (),
+                    }
                 }
-            }
-        });
-        key_event_handler.bind_horizontal((Some(0), None), "Scroll".into(), move |app, data| {
-            if let Some(Popup::OutOfBox(out_of_box_popup)) = app.drawer.active_popup.as_mut() {
-                let row = (out_of_box_popup.item
-                    - if out_of_box_popup.item >= NUM_REQUIRED_CHOICES {
-                        NUM_REQUIRED_CHOICES
-                    } else {
-                        0
-                    })
-                    % COLUMNS;
-                let col = (out_of_box_popup.item
-                    - if out_of_box_popup.item >= NUM_REQUIRED_CHOICES {
-                        NUM_REQUIRED_CHOICES
-                    } else {
-                        0
-                    })
-                    / COLUMNS
-                    + if out_of_box_popup.item >= NUM_REQUIRED_CHOICES {
-                        NUM_REQUIRED_CHOICES.div_ceil(COLUMNS)
-                    } else {
-                        0
-                    };
+            },
+        );
+        key_event_handler.bind_horizontal(
+            (Some(0), None),
+            "Scroll".into(),
+            Some(popup_area),
+            move |app, data| {
+                if let Some(Popup::OutOfBox(out_of_box_popup)) = app.drawer.active_popup.as_mut() {
+                    let row = (out_of_box_popup.item
+                        - if out_of_box_popup.item >= NUM_REQUIRED_CHOICES {
+                            NUM_REQUIRED_CHOICES
+                        } else {
+                            0
+                        })
+                        % COLUMNS;
+                    let col = (out_of_box_popup.item
+                        - if out_of_box_popup.item >= NUM_REQUIRED_CHOICES {
+                            NUM_REQUIRED_CHOICES
+                        } else {
+                            0
+                        })
+                        / COLUMNS
+                        + if out_of_box_popup.item >= NUM_REQUIRED_CHOICES {
+                            NUM_REQUIRED_CHOICES.div_ceil(COLUMNS)
+                        } else {
+                            0
+                        };
 
-                match data {
-                    event_handler::Data::Direction(false, _) =>
-                        if row > 0 {
-                            out_of_box_popup.item = table_indices[col][row - 1].unwrap();
-                        },
-                    event_handler::Data::Direction(true, _) if row < COLUMNS - 1 =>
-                        if let Some(index) = table_indices[col][row + 1] {
-                            out_of_box_popup.item = index;
-                        },
-                    _ => (),
+                    match data {
+                        event_handler::Data::Direction(false, _) =>
+                            if row > 0 {
+                                out_of_box_popup.item = table_indices[col][row - 1].unwrap();
+                            },
+                        event_handler::Data::Direction(true, _) if row < COLUMNS - 1 =>
+                            if let Some(index) = table_indices[col][row + 1] {
+                                out_of_box_popup.item = index;
+                            },
+                        _ => (),
+                    }
                 }
-            }
-        });
+            },
+        );
 
         let confirm_mouse_area = widgets::action(
             Action::new(" Confirm ", ActionType::Default, self.tab == 1, true),

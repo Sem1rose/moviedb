@@ -21,9 +21,9 @@ use strum::IntoEnumIterator;
 
 use crate::{
     config::Config,
+    event_handler::{self, EventHandler},
     helpers::{self, SuperOrd},
     image_backend::RatatuiImage,
-    event_handler::{self, EventHandler},
     load_file,
     screens::Screen,
     tokens::{PunchPlayTokens, SimklTokens, TMDBTokens},
@@ -1084,8 +1084,31 @@ impl MainScreen {
             }
 
             if !self.context_menu_model.is_empty() {
-                key_event_handler.clear();
+                let width = self.context_menu.width;
+                let height = self
+                    .context_menu
+                    .model
+                    .len()
+                    .min(self.context_menu.num_visible_items) as u16;
 
+                let x = if pos.x + width > frame.area().width {
+                    frame.area().width - width
+                } else {
+                    pos.x
+                };
+                let y = if pos.y + height > frame.area().height - 4 {
+                    frame.area().height - 4 - height
+                } else {
+                    pos.y
+                };
+                let popup_area = Rect {
+                    x,
+                    y,
+                    width,
+                    height: height + 2,
+                };
+
+                key_event_handler.clear();
                 key_event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     frame.area(),
@@ -1128,6 +1151,7 @@ impl MainScreen {
                 key_event_handler.bind_vertical(
                     (None, None),
                     "Navigate".into(),
+                    Some(popup_area),
                     move |app, data| {
                         if let Some(Screen::MainScreen(main_screen)) =
                             app.drawer.current_screen.as_mut()
@@ -1247,30 +1271,6 @@ impl MainScreen {
                         );
                     }
                 }
-
-                let width = self.context_menu.width;
-                let height = self
-                    .context_menu
-                    .model
-                    .len()
-                    .min(self.context_menu.num_visible_items) as u16;
-
-                let x = if pos.x + width > frame.area().width {
-                    frame.area().width - width
-                } else {
-                    pos.x
-                };
-                let y = if pos.y + height > frame.area().height - 4 {
-                    frame.area().height - 4 - height
-                } else {
-                    pos.y
-                };
-                let popup_area = Rect {
-                    x,
-                    y,
-                    width,
-                    height: height + 2,
-                };
 
                 key_event_handler.bind_enter((None, None), "Choose".into(), |app, _| {
                     if let Some(Screen::MainScreen(main_screen)) =

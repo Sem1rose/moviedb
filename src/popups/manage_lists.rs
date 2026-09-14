@@ -9,9 +9,9 @@ use ratatui::{
 use strum::{AsRefStr, EnumCount, EnumIter, IntoEnumIterator};
 
 use crate::{
+    event_handler::EventHandler,
     helpers,
     image_backend::RatatuiImage,
-    event_handler::EventHandler,
     popups::{Popup, PopupTrait},
     widgets,
 };
@@ -82,7 +82,7 @@ impl PopupTrait for ManageListsPopup {
             |_, _| {},
         );
 
-        key_event_handler.bind_vertical((None, None), "".into(), |app, _| {
+        key_event_handler.bind_vertical((None, None), "".into(), None, |app, _| {
             if let Some(Popup::ManageLists(manage_lists_popup)) = app.drawer.active_popup.as_mut() {
                 manage_lists_popup.screen = if manage_lists_popup.screen == Screen::Add {
                     Screen::Overview

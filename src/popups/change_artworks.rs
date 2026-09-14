@@ -9,7 +9,7 @@ use ratatui::{
     Frame,
     buffer::{Buffer, Cell},
     layout::{HorizontalAlignment, Margin, Offset, Rect, Size},
-    macros::{constraint, line, vertical},
+    macros::{constraint, horizontal, line, vertical},
     style::{Style, Stylize, palette::tailwind},
     symbols::border,
     widgets::{Block, Borders, Fill, Padding, Widget},
@@ -19,9 +19,9 @@ use throbber_widgets_tui::{Throbber, ThrobberState, symbols::throbber};
 use tmdb::smo::MovieDetails as TMDBMovieDetails;
 
 use crate::{
+    event_handler::{Data, EventHandler},
     helpers,
     image_backend::{ImageID, RatatuiImage},
-    event_handler::{Data, EventHandler},
     popups::{Popup, PopupTrait},
     types::Movie,
     widgets::{self, Action, ActionType, Direction, Orientation, ScrollGallery},
@@ -364,42 +364,52 @@ impl PopupTrait for ChangeArtworksPopup {
                     + poster_path.as_ref().map(|_| 1).unwrap_or_default()
             };
 
-            key_event_handler.bind_horizontal((None, None), "Scroll".into(), move |app, data| {
-                if let Some(Popup::ChangeArtworks(change_artworks_popup)) =
-                    app.drawer.active_popup.as_mut()
-                {
-                    change_artworks_popup.gallery.scroll(
-                        match data {
-                            Data::Direction(b, _) =>
-                                if b {
-                                    Direction::Right
-                                } else {
-                                    Direction::Left
-                                },
-                            _ => unreachable!(),
-                        },
-                        num_items,
-                    );
-                }
-            });
-            key_event_handler.bind_vertical((None, None), "Scroll".into(), move |app, data| {
-                if let Some(Popup::ChangeArtworks(change_artworks_popup)) =
-                    app.drawer.active_popup.as_mut()
-                {
-                    change_artworks_popup.gallery.scroll(
-                        match data {
-                            Data::Direction(b, _) =>
-                                if b {
-                                    Direction::Down
-                                } else {
-                                    Direction::Up
-                                },
-                            _ => unreachable!(),
-                        },
-                        num_items,
-                    );
-                }
-            });
+            key_event_handler.bind_horizontal(
+                (None, None),
+                "Scroll".into(),
+                Some(main_area),
+                move |app, data| {
+                    if let Some(Popup::ChangeArtworks(change_artworks_popup)) =
+                        app.drawer.active_popup.as_mut()
+                    {
+                        change_artworks_popup.gallery.scroll(
+                            match data {
+                                Data::Direction(b, _) =>
+                                    if b {
+                                        Direction::Right
+                                    } else {
+                                        Direction::Left
+                                    },
+                                _ => unreachable!(),
+                            },
+                            num_items,
+                        );
+                    }
+                },
+            );
+            key_event_handler.bind_vertical(
+                (None, None),
+                "Scroll".into(),
+                Some(main_area),
+                move |app, data| {
+                    if let Some(Popup::ChangeArtworks(change_artworks_popup)) =
+                        app.drawer.active_popup.as_mut()
+                    {
+                        change_artworks_popup.gallery.scroll(
+                            match data {
+                                Data::Direction(b, _) =>
+                                    if b {
+                                        Direction::Down
+                                    } else {
+                                        Direction::Up
+                                    },
+                                _ => unreachable!(),
+                            },
+                            num_items,
+                        );
+                    }
+                },
+            );
             key_event_handler.bind_key((None, None), ' ', "Select".into(), |app, _| {
                 if let Some(Popup::ChangeArtworks(change_artworks_popup)) =
                     app.drawer.active_popup.as_mut()
@@ -429,13 +439,10 @@ impl PopupTrait for ChangeArtworksPopup {
                 app.drawer.close_popup();
             });
 
-            let scrollbar_area = main_area
-                .offset(Offset::new(main_area.width as i32 - 1, 0))
-                .resize(Size::new(1, main_area.height));
-
+            let [gallery_area, scrollbar_area] = horizontal![>=1, ==1].areas(main_area);
             self.gallery.render(
                 num_items,
-                main_area,
+                gallery_area,
                 scrollbar_area,
                 frame,
                 key_event_handler,

@@ -15,9 +15,9 @@ use strum::IntoEnumIterator;
 use toml::Value;
 
 use crate::{
+    event_handler::EventHandler,
     helpers,
     image_backend::RatatuiImage,
-    event_handler::EventHandler,
     processors::{Processor, ProcessorDiscriminants, ProcessorTrait},
     tokens::{PunchPlayTokens, SimklTokens, tmdb_tokens::TMDBTokens},
     types::{SyncItem, SyncSource},
@@ -673,15 +673,20 @@ impl ProcessorTrait for HistorySyncerProcessor {
                     history_syncer_processor.item = (history_syncer_processor.item == 0) as usize;
                 }
             });
-            key_event_handler.bind_horizontal((None, None), "Navigate".into(), |app, data| {
-                if let Some(Processor::HistorySyncer(history_syncer_processor)) =
-                    app.get_processor_mut(ProcessorDiscriminants::HistorySyncer)
-                {
-                    if let crate::event_handler::Data::Direction(dir, _) = data {
-                        history_syncer_processor.item = dir as usize;
+            key_event_handler.bind_horizontal(
+                (None, None),
+                "Navigate".into(),
+                None,
+                |app, data| {
+                    if let Some(Processor::HistorySyncer(history_syncer_processor)) =
+                        app.get_processor_mut(ProcessorDiscriminants::HistorySyncer)
+                    {
+                        if let crate::event_handler::Data::Direction(dir, _) = data {
+                            history_syncer_processor.item = dir as usize;
+                        }
                     }
-                }
-            });
+                },
+            );
 
             key_event_handler.bind_enter((None, Some(0)), "Retry".into(), |app, _| {
                 if let Some(Processor::HistorySyncer(history_syncer_processor)) =

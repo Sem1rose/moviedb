@@ -22,9 +22,9 @@ use trakt::{self, smo::TokenResponse};
 
 use crate::{
     app::App,
+    event_handler::{self, EventHandler},
     helpers,
     image_backend::RatatuiImage,
-    event_handler::{self, EventHandler},
     popups::{Popup, PopupTrait},
     tokens::trakt_tokens::{TraktTokens, UserTokens},
     widgets::{self, Action, ActionType, Hyperlink},

@@ -7,9 +7,9 @@ use ratatui::{
 };
 
 use crate::{
+    event_handler::{self, EventHandler},
     helpers,
     image_backend::RatatuiImage,
-    event_handler::{self, EventHandler},
     popups::{Popup, PopupTrait},
     widgets::{self, Action, ActionType},
 };
@@ -54,7 +54,7 @@ impl PopupTrait for DeleteMoviePopup {
                 app.drawer.close_popup();
             },
         );
-        key_event_handler.bind_horizontal((None, None), "Navigate".into(), |app, data| {
+        key_event_handler.bind_horizontal((None, None), "Navigate".into(), None, |app, data| {
             if let Some(Popup::DeleteMovie(delete_movie_popup)) = app.drawer.active_popup.as_mut() {
                 match data {
                     event_handler::Data::Direction(true, _) => {

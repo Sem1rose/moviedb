@@ -22,9 +22,9 @@ use throbber_widgets_tui::{Throbber, ThrobberState};
 
 use crate::{
     app::App,
+    event_handler::{self, EventHandler},
     helpers,
     image_backend::RatatuiImage,
-    event_handler::{self, EventHandler},
     popups::{Popup, PopupTrait},
     tokens::punch_play_tokens::{PunchPlayTokens, UserTokens},
     widgets::{self, Action, ActionType, Hyperlink},

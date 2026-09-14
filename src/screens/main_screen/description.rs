@@ -15,9 +15,9 @@ use ratatui::{
 use ratatui_image::sliced::SignedPosition;
 
 use crate::{
+    event_handler::{self, EventHandler},
     helpers,
     image_backend::{ImageID, RatatuiImage},
-    event_handler::{self, EventHandler},
     screens::{Screen, main_screen::MainScreen},
     types::Movie,
     widgets::{Orientation, ScrolledList},
@@ -285,6 +285,7 @@ impl MainScreen {
                 key_event_handler.bind_horizontal(
                     (Some(1), None),
                     "Change tab".into(),
+                    None,
                     move |app, data| {
                         if let Some(Screen::MainScreen(main_screen)) =
                             app.drawer.current_screen.as_mut()
@@ -405,8 +406,6 @@ impl MainScreen {
 
             match DESCRIPTION_TABS[self.movies_description.selected_tab] {
                 "Overview" => {
-                    frame.render_widget(Fill::new(" ").bg(tailwind::SLATE.c900), description_area);
-
                     let mut overview_lines =
                         helpers::wrap_text(&movie.overview, description_area.width as usize)
                             .into_iter()
@@ -454,41 +453,44 @@ impl MainScreen {
                             .into_iter()
                             .map(|x| Line::from_iter(x).centered()),
                     );
+                    let max_scroll = overview_lines
+                        .len()
+                        .saturating_sub(description_area.height as usize);
                     self.movies_description.overview_scroll =
-                        self.movies_description.overview_scroll.min(
-                            overview_lines
-                                .len()
-                                .saturating_sub(description_area.height as usize),
+                        self.movies_description.overview_scroll.min(max_scroll);
+                    if max_scroll > 0 {
+                        key_event_handler.bind_vertical(
+                            (Some(1), None),
+                            "Scroll".into(),
+                            Some(description_area),
+                            move |app, data| {
+                                if let Some(Screen::MainScreen(main_screen)) =
+                                    app.drawer.current_screen.as_mut()
+                                {
+                                    main_screen.tab = 1;
+                                    main_screen.item = 0;
+                                    match data {
+                                        event_handler::Data::Direction(false, _) => {
+                                            main_screen.movies_description.overview_scroll =
+                                                main_screen
+                                                    .movies_description
+                                                    .overview_scroll
+                                                    .saturating_sub(1);
+                                        }
+                                        event_handler::Data::Direction(true, _) => {
+                                            main_screen.movies_description.overview_scroll += 1;
+                                        }
+                                        _ => (),
+                                    }
+                                }
+                            },
                         );
+                    }
+
                     let text = Text::from_iter(
                         overview_lines.split_off(self.movies_description.overview_scroll),
                     );
-
                     frame.render_widget(text, description_area);
-
-                    key_event_handler.bind_vertical(
-                        (Some(1), None),
-                        "Scroll".into(),
-                        move |app, data| {
-                            if let Some(Screen::MainScreen(main_screen)) =
-                                app.drawer.current_screen.as_mut()
-                            {
-                                match data {
-                                    event_handler::Data::Direction(false, _) => {
-                                        main_screen.movies_description.overview_scroll =
-                                            main_screen
-                                                .movies_description
-                                                .overview_scroll
-                                                .saturating_sub(1);
-                                    }
-                                    event_handler::Data::Direction(true, _) => {
-                                        main_screen.movies_description.overview_scroll += 1;
-                                    }
-                                    _ => (),
-                                }
-                            }
-                        },
-                    );
                 }
                 "Plays" => self.draw_plays_tab(description_area, &movie, frame, key_event_handler),
                 "Credits" => self.draw_credits_tab(
@@ -624,35 +626,45 @@ impl MainScreen {
             num_visible_plays + if render_partially_visible_play { 1 } else { 0 };
 
         if num_plays > num_visible_plays {
-            key_event_handler.bind_vertical((Some(1), None), "Scroll".into(), move |app, data| {
-                if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                    match data {
-                        event_handler::Data::Direction(false, _) => {
-                            if main_screen.movies_description.plays_tab.alignment_bottom
-                                && render_partially_visible_play
-                            {
-                                main_screen.movies_description.plays_tab.alignment_bottom = false;
-                            } else {
-                                main_screen.movies_description.plays_tab.scroll_pos = main_screen
-                                    .movies_description
-                                    .plays_tab
-                                    .scroll_pos
-                                    .saturating_sub(1);
+            key_event_handler.bind_vertical(
+                (Some(1), None),
+                "Scroll".into(),
+                None,
+                move |app, data| {
+                    if let Some(Screen::MainScreen(main_screen)) =
+                        app.drawer.current_screen.as_mut()
+                    {
+                        match data {
+                            event_handler::Data::Direction(false, _) => {
+                                if main_screen.movies_description.plays_tab.alignment_bottom
+                                    && render_partially_visible_play
+                                {
+                                    main_screen.movies_description.plays_tab.alignment_bottom =
+                                        false;
+                                } else {
+                                    main_screen.movies_description.plays_tab.scroll_pos =
+                                        main_screen
+                                            .movies_description
+                                            .plays_tab
+                                            .scroll_pos
+                                            .saturating_sub(1);
+                                }
                             }
-                        }
-                        event_handler::Data::Direction(true, _) => {
-                            if !main_screen.movies_description.plays_tab.alignment_bottom
-                                && render_partially_visible_play
-                            {
-                                main_screen.movies_description.plays_tab.alignment_bottom = true;
-                            } else {
-                                main_screen.movies_description.plays_tab.scroll_pos += 1;
+                            event_handler::Data::Direction(true, _) => {
+                                if !main_screen.movies_description.plays_tab.alignment_bottom
+                                    && render_partially_visible_play
+                                {
+                                    main_screen.movies_description.plays_tab.alignment_bottom =
+                                        true;
+                                } else {
+                                    main_screen.movies_description.plays_tab.scroll_pos += 1;
+                                }
                             }
+                            _ => (),
                         }
-                        _ => (),
                     }
-                }
-            });
+                },
+            );
 
             self.movies_description.plays_tab.scroll_pos =
                 self.movies_description.plays_tab.scroll_pos.min(
@@ -839,33 +851,6 @@ impl MainScreen {
         let num_cast = movie.credits.cast.len();
         let num_crew = movie.credits.crew.len();
 
-        key_event_handler.bind_vertical((Some(1), None), "Scroll".into(), move |app, data| {
-            if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                let list = main_screen
-                    .movies_description
-                    .credits_tab
-                    .get_child_list_mut(
-                        main_screen
-                            .movies_description
-                            .credits_tab
-                            .main_list
-                            .selected_index,
-                    );
-                match data {
-                    event_handler::Data::Direction(true, _) => {
-                        list.selected_index = list.scroll_pos + list.num_visible_items - 1;
-                        if !list.partially_visible {
-                            list.scroll(true, num_cast);
-                        }
-                    }
-                    event_handler::Data::Direction(false, _) => {
-                        list.selected_index = list.scroll_pos;
-                        list.scroll(false, num_cast);
-                    }
-                    _ => (),
-                }
-            }
-        });
         key_event_handler.bind_key((Some(1), None), " ", "".into(), move |app, _| {
             if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 main_screen
@@ -942,6 +927,17 @@ impl MainScreen {
                 &movie.credits.crew
             };
 
+            let (_, input_list_area) = helpers::deconstruct_scrollview_area(
+                list_area,
+                self.movies_description.credits_tab.main_list.orientation,
+                align_bottom,
+                if align_bottom {
+                    num_hidden_rows.saturating_sub(PERSON_POSTER_SIZE.height + 1)
+                } else {
+                    num_hidden_rows
+                },
+                buffer_negative_y_offset,
+            );
             let (visible_scrollbar_area, input_scrollbar_area) =
                 helpers::deconstruct_scrollview_area(
                     scrollbar_area,
@@ -954,6 +950,48 @@ impl MainScreen {
                     },
                     buffer_negative_y_offset,
                 );
+            key_event_handler.bind_vertical(
+                (Some(1), None),
+                "Scroll".into(),
+                Some(input_list_area.union(input_scrollbar_area)),
+                move |app, data| {
+                    if let Some(Screen::MainScreen(main_screen)) =
+                        app.drawer.current_screen.as_mut()
+                    {
+                        main_screen.tab = 1;
+                        main_screen.item = 0;
+
+                        main_screen
+                            .movies_description
+                            .credits_tab
+                            .main_list
+                            .selected_index = cast_or_crew;
+                        let list = main_screen
+                            .movies_description
+                            .credits_tab
+                            .get_child_list_mut(
+                                main_screen
+                                    .movies_description
+                                    .credits_tab
+                                    .main_list
+                                    .selected_index,
+                            );
+                        match data {
+                            event_handler::Data::Direction(true, _) => {
+                                list.selected_index = list.scroll_pos + list.num_visible_items - 1;
+                                if !list.partially_visible {
+                                    list.scroll(true, num_cast);
+                                }
+                            }
+                            event_handler::Data::Direction(false, _) => {
+                                list.selected_index = list.scroll_pos;
+                                list.scroll(false, num_cast);
+                            }
+                            _ => (),
+                        }
+                    }
+                },
+            );
             key_event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,
                 helpers::add_padding(

@@ -1,9 +1,9 @@
 mod app;
 mod config;
 mod drawer;
+mod event_handler;
 mod helpers;
 mod image_backend;
-mod event_handler;
 mod omdb;
 mod popups;
 mod processors;

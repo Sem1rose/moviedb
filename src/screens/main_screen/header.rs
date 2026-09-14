@@ -1,6 +1,6 @@
 use ratatui::{
     Frame,
-    layout::{Offset, Rect},
+    layout::{Offset, Rect, Size},
     macros::{horizontal, line},
     style::{
         Stylize,
@@ -13,9 +13,8 @@ use ratatui_textarea::TextArea;
 use strum::IntoEnumIterator;
 
 use crate::{
-    helpers,
     event_handler::{self, EventHandler},
-    pop_criterion,
+    helpers, pop_criterion,
     screens::{Screen, main_screen::MainScreen},
     types::{FilterCriterion, RatingSource, Sort},
     widgets,
@@ -29,6 +28,9 @@ impl MainScreen {
         key_event_handler: &mut EventHandler,
     ) -> Rect {
         let tab_selected = self.tab == 2;
+        let sort_max_width = Sort::iter().map(|x| x.as_ref().len()).max().unwrap() + 4;
+        let [_, input_area, _, sort_area, _, direction_area, _] =
+            horizontal![>=1, <=25, ==1, ==sort_max_width as u16, ==1, ==3, ==1].areas(area);
 
         key_event_handler.bind_esc((Some(2), Some(0)), "Close".into(), |app, _| {
             if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
@@ -184,6 +186,7 @@ impl MainScreen {
                     "Close submenu"
                 }
                 .into(),
+                None,
                 |app, data| {
                     if let Some(Screen::MainScreen(main_screen)) =
                         app.drawer.current_screen.as_mut()
@@ -209,6 +212,7 @@ impl MainScreen {
             key_event_handler.bind_horizontal(
                 (Some(2), Some(1)),
                 "Navigate".into(),
+                None,
                 |app, data| {
                     if let Some(Screen::MainScreen(main_screen)) =
                         app.drawer.current_screen.as_mut()
@@ -220,66 +224,31 @@ impl MainScreen {
                 },
             );
         }
-        key_event_handler.bind_horizontal((Some(2), Some(2)), "Navigate".into(), |app, data| {
-            if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                if let event_handler::Data::Direction(false, _) = data {
-                    main_screen.item -= 1;
-                }
-            }
-        });
-
-        key_event_handler.bind_vertical(
-            (Some(2), Some(1)),
-            if self.sort_popup.opened_submenu.is_none() {
-                "Change sort"
-            } else {
-                "Change rating source"
-            }
-            .into(),
+        key_event_handler.bind_horizontal(
+            (Some(2), Some(2)),
+            "Navigate".into(),
+            None,
             |app, data| {
                 if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                    if let event_handler::Data::Direction(direction, _) = data {
-                        main_screen.sort_popup.scroll(direction);
-
-                        main_screen.sort = if let Some(submenu_id) =
-                            main_screen.sort_popup.opened_submenu.as_ref()
-                        {
-                            Sort::Rating(
-                                RatingSource::from_repr(
-                                    main_screen.sort_popup.submenus[submenu_id].id_from_index(
-                                        main_screen.sort_popup.submenus[submenu_id].selected_index,
-                                    ),
-                                )
-                                .unwrap(),
-                            )
-                        } else {
-                            Sort::from_repr(
-                                main_screen
-                                    .sort_popup
-                                    .id_from_index(main_screen.sort_popup.selected_index),
-                            )
-                            .unwrap()
-                        };
+                    if let event_handler::Data::Direction(false, _) = data {
+                        main_screen.item -= 1;
                     }
-                    main_screen.filter_sort_movies(true);
                 }
             },
         );
+
         key_event_handler.bind_vertical(
             (Some(2), Some(2)),
             "Change sort order".into(),
+            Some(direction_area),
             |app, data| {
                 if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     match data {
-                        event_handler::Data::Direction(false, _) => {
-                            if !main_screen.sort_ascending {
-                                main_screen.sort_ascending = true;
-                                main_screen.filter_sort_movies(true);
-                            }
+                        event_handler::Data::Direction(false, _) if !main_screen.sort_ascending => {
+                            main_screen.sort_ascending = true;
+                            main_screen.filter_sort_movies(true);
                         }
-                        event_handler::Data::Direction(true, _)
-                            if main_screen.sort_ascending =>
-                        {
+                        event_handler::Data::Direction(true, _) if main_screen.sort_ascending => {
                             main_screen.sort_ascending = false;
                             main_screen.filter_sort_movies(true);
                         }
@@ -318,11 +287,6 @@ impl MainScreen {
                 }
             }
         });
-
-        let sort_max_width = Sort::iter().map(|x| x.as_ref().len()).max().unwrap() + 4;
-
-        let [_, input_area, _, sort_area, _, direction_area, _] =
-            horizontal![>=1, <=25, ==1, ==sort_max_width as u16, ==1, ==3, ==1].areas(area);
 
         let filter = if let Some(FilterCriterion::Title(n, f)) =
             pop_criterion!(self.filter_criteria, FilterCriterion::Title(_, _))
@@ -440,7 +404,40 @@ impl MainScreen {
                     .unwrap()
                     .selected_index = source as usize;
             };
+        }
+        key_event_handler.bind_vertical(
+            (Some(2), Some(1)),
+            "Change sort".into(),
+            Some(if self.item == 1 && tab_selected {
+                sort_area.resize(Size::new(
+                    sort_area.width,
+                    sort_area.height + self.sort_popup.num_visible_items as u16 + 1,
+                ))
+            } else {
+                sort_area
+            }),
+            |app, data| {
+                if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                    let sort = main_screen.sort;
+                    if let event_handler::Data::Direction(direction, _) = data {
+                        main_screen.sort_popup.close_submenu();
+                        main_screen.sort_popup.scroll(direction);
 
+                        main_screen.sort = Sort::from_repr(
+                            main_screen
+                                .sort_popup
+                                .id_from_index(main_screen.sort_popup.selected_index),
+                        )
+                        .unwrap();
+                    }
+                    if sort != main_screen.sort {
+                        main_screen.filter_sort_movies(true);
+                    }
+                }
+            },
+        );
+
+        if tab_selected && self.item == 1 {
             let areas = self
                 .sort_popup
                 .render_dropdown(sort_area, frame, key_event_handler);
@@ -478,6 +475,43 @@ impl MainScreen {
                         mouse_area = mouse_area.offset(Offset { x: 0, y: 1 });
                     }
                 } else {
+                    key_event_handler.bind_vertical(
+                        (Some(2), Some(1)),
+                        "Change rating source".into(),
+                        Some(mouse_area.offset(Offset::new(-1, -1)).resize(Size::new(
+                            mouse_area.width + 2,
+                            self.sort_popup.num_visible_items as u16 + 2,
+                        ))),
+                        |app, data| {
+                            if let Some(Screen::MainScreen(main_screen)) =
+                                app.drawer.current_screen.as_mut()
+                            {
+                                let sort = main_screen.sort;
+                                if let event_handler::Data::Direction(direction, _) = data {
+                                    main_screen.sort_popup.scroll(direction);
+
+                                    if let Some(submenu_id) =
+                                        main_screen.sort_popup.opened_submenu.as_ref()
+                                    {
+                                        main_screen.sort = Sort::Rating(
+                                            RatingSource::from_repr(
+                                                main_screen.sort_popup.submenus[submenu_id]
+                                                    .id_from_index(
+                                                        main_screen.sort_popup.submenus[submenu_id]
+                                                            .selected_index,
+                                                    ),
+                                            )
+                                            .unwrap(),
+                                        );
+                                    }
+                                }
+                                if sort != main_screen.sort {
+                                    main_screen.filter_sort_movies(true);
+                                }
+                            }
+                        },
+                    );
+
                     let scroll_pos = self
                         .sort_popup
                         .submenus

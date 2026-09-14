@@ -14,9 +14,9 @@ use rustc_hash::FxHashSet;
 use strum::AsRefStr;
 
 use crate::{
+    event_handler::EventHandler,
     helpers,
     image_backend::RatatuiImage,
-    event_handler::EventHandler,
     processors::{Processor, ProcessorDiscriminants, ProcessorTrait},
     tokens::{
         punch_play_tokens::{PunchPlayTokens, UserTokens as PunchPlayUserTokens},
@@ -238,15 +238,20 @@ impl ProcessorTrait for TokensRefresherProcessor {
                     }
                 }
             });
-            key_event_handler.bind_horizontal((None, None), "Navigate".into(), |app, data| {
-                if let Some(Processor::TokensRefresher(tokens_refresher_processor)) =
-                    app.get_processor_mut(ProcessorDiscriminants::TokensRefresher)
-                {
-                    if let crate::event_handler::Data::Direction(dir, _) = data {
-                        tokens_refresher_processor.item = dir as usize;
+            key_event_handler.bind_horizontal(
+                (None, None),
+                "Navigate".into(),
+                None,
+                |app, data| {
+                    if let Some(Processor::TokensRefresher(tokens_refresher_processor)) =
+                        app.get_processor_mut(ProcessorDiscriminants::TokensRefresher)
+                    {
+                        if let crate::event_handler::Data::Direction(dir, _) = data {
+                            tokens_refresher_processor.item = dir as usize;
+                        }
                     }
-                }
-            });
+                },
+            );
 
             key_event_handler.bind_enter((None, Some(0)), "Retry".into(), |app, _| {
                 if let Some(Processor::TokensRefresher(tokens_refresher_processor)) =

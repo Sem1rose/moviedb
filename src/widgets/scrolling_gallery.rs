@@ -297,16 +297,7 @@ impl ScrollGallery {
         scrollbar_area: Rect,
         frame: &mut Frame,
         key_event_handler: &mut EventHandler,
-        render_callback: impl FnMut(
-            &mut Buffer,
-            u16,
-            i32,
-            bool,
-            usize,
-            bool,
-            bool,
-            &mut EventHandler,
-        ),
+        render_callback: impl FnMut(&mut Buffer, u16, i32, bool, usize, bool, bool, &mut EventHandler),
     ) {
         self.update_for_area(area, num_items);
         self.render_without_area_update(

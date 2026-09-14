@@ -10,9 +10,9 @@ use strum::IntoDiscriminant;
 use crate::{
     config::Config,
     drawer::Drawer,
+    event_handler::EventHandler,
     helpers,
     image_backend::ImageID,
-    event_handler::EventHandler,
     load_file, omdb,
     popups::Popup,
     processors::{Processor, ProcessorDiscriminants},
