@@ -286,7 +286,7 @@ macro_rules! pop_criterion(
         {
             let position = $criteria.iter().position(|x| matches!(x, $p));
             if let Some(index) = position {
-                $criteria.remove(index)
+                $criteria.swap_remove(index)
             } else {
                 $d
             }
@@ -296,7 +296,7 @@ macro_rules! pop_criterion(
         {
             let position = $criteria.iter().position(|x| matches!(x, $p));
             if let Some(index) = position {
-                Some($criteria.remove(index))
+                Some($criteria.swap_remove(index))
             } else {
                 None
             }

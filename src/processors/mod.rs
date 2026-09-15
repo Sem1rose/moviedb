@@ -1,6 +1,8 @@
+mod file_writer;
 mod history_syncer;
 mod tokens_refresher;
 
+use file_writer::FileWriterProcessor;
 use history_syncer::HistorySyncerProcessor;
 use itertools::Itertools;
 use strum::{EnumCount, EnumDiscriminants, EnumIter, IntoEnumIterator};
@@ -11,6 +13,7 @@ use crate::{event_handler::EventHandler, image_backend::RatatuiImage};
 #[derive(EnumDiscriminants, EnumCount, EnumIter)]
 #[strum_discriminants(derive(Hash))]
 pub enum Processor {
+    FileWriter(Box<FileWriterProcessor>),
     HistorySyncer(Box<HistorySyncerProcessor>),
     TokensRefresher(Box<TokensRefresherProcessor>),
 }
@@ -22,6 +25,7 @@ impl Processor {
 
     fn as_trait(&self) -> &dyn ProcessorTrait {
         match self {
+            Processor::FileWriter(file_writer_processor) => &**file_writer_processor,
             Processor::HistorySyncer(history_syncer_processsor) => &**history_syncer_processsor,
             Processor::TokensRefresher(tokens_refresher_processor) => &**tokens_refresher_processor,
         }
@@ -29,6 +33,7 @@ impl Processor {
 
     fn as_trait_mut(&mut self) -> &mut dyn ProcessorTrait {
         match self {
+            Processor::FileWriter(file_writer_processor) => &mut **file_writer_processor,
             Processor::HistorySyncer(history_syncer_processsor) => &mut **history_syncer_processsor,
             Processor::TokensRefresher(tokens_refresher_processor) =>
                 &mut **tokens_refresher_processor,
@@ -66,10 +71,5 @@ pub trait ProcessorTrait {
     fn get_state(&self) -> (Option<usize>, Option<usize>) {
         (None, None)
     }
-    fn render(
-        &self,
-        frame: &mut ratatui::Frame,
-        key_event_handler: &mut EventHandler,
-        image_renderer: &mut RatatuiImage,
-    );
+    fn render(&self, _: &mut ratatui::Frame, _: &mut EventHandler, _: &mut RatatuiImage) {}
 }

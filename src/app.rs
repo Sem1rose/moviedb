@@ -131,8 +131,8 @@ impl App {
                 .map(|_| ())?;
 
             let mut executed_immediate = false;
-            for mut callback in self.key_event_handler.get_execute_immediates() {
-                callback(self, crate::event_handler::Data::None);
+            for callback in self.key_event_handler.get_execute_immediates() {
+                callback(self);
                 executed_immediate = true;
             }
 
@@ -172,6 +172,8 @@ impl App {
                 Processor::TokensRefresher(tokens_refresher_processor) =>
                     tokens_refresher_processor
                         .initialize(self.punch_play_tokens.clone(), self.trakt_tokens.clone()),
+                Processor::FileWriter(file_writer_processor) =>
+                    file_writer_processor.initialize(&self.home_dir),
             }
         }
     }
@@ -182,15 +184,68 @@ impl App {
         }
     }
 
-    // pub fn get_processor(&self, processor: ProcessorDiscriminants) -> Option<&Processor> {
-    //     self.processors.get(&processor)
-    // }
+    pub fn get_processor(&self, processor: ProcessorDiscriminants) -> Option<&Processor> {
+        self.processors.get(&processor)
+    }
+
     pub fn get_processor_mut(
         &mut self,
         processor: ProcessorDiscriminants,
     ) -> Option<&mut Processor> {
         self.terminal.backend_mut();
         self.processors.get_mut(&processor)
+    }
+
+    // pub fn initialize_data(
+    //     &mut self,
+    //     movies: Vec<Movie>,
+    //     watched: Vec<Entry>,
+    //     persons: Vec<Person>,
+    //     collections: Vec<Collection>,
+    // ) {
+    //     *self.movies.borrow_mut() = FxIndexMap::from_iter(movies.into_iter().map(|x| (x.id, x)));
+    //     *self.watched.borrow_mut() =
+    //         FxIndexMap::from_iter(watched.into_iter().map(|x| (x.movie_id, x)));
+    //     *self.persons.borrow_mut() = FxIndexMap::from_iter(persons.into_iter().map(|x| (x.id, x)));
+    //     *self.collections.borrow_mut() =
+    //         FxIndexMap::from_iter(collections.into_iter().map(|x| (x.id, x)));
+
+    //     self.drawer.close_popup();
+    // }
+
+    pub fn save_data(
+        &self,
+        save_movies: bool,
+        save_watched: bool,
+        save_persons: bool,
+        save_collections: bool,
+    ) {
+        let movies = if save_movies {
+            Some(self.movies.borrow().values().cloned().collect_vec())
+        } else {
+            None
+        };
+        let watched = if save_watched {
+            Some(self.watched.borrow().values().cloned().collect_vec())
+        } else {
+            None
+        };
+        let persons = if save_persons {
+            Some(self.persons.borrow().values().cloned().collect_vec())
+        } else {
+            None
+        };
+        let collections = if save_collections {
+            Some(self.collections.borrow().values().cloned().collect_vec())
+        } else {
+            None
+        };
+
+        if let Some(Processor::FileWriter(file_writer_processor)) =
+            self.get_processor(ProcessorDiscriminants::FileWriter)
+        {
+            file_writer_processor.save_data(movies, watched, persons, collections);
+        }
     }
 
     pub fn fetch_movie_details(
@@ -695,7 +750,7 @@ impl App {
             if matches!(main_screen.selected_list, ListID::Watched) {
                 self.watched
                     .borrow_mut()
-                    .swap_remove(&main_screen.current_movie().unwrap().id);
+                    .shift_remove(&main_screen.current_movie().unwrap().id);
 
                 if SYNC {
                     if let Some(Processor::HistorySyncer(history_syncer_processor)) = self
@@ -817,7 +872,7 @@ impl App {
                 if let Some(Screen::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
                     self.watched
                         .borrow_mut()
-                        .swap_remove(&main_screen.current_movie().unwrap().id);
+                        .shift_remove(&main_screen.current_movie().unwrap().id);
                     main_screen.filter_sort_movies(false);
 
                     if matches!(main_screen.selected_list, ListID::Watched) {
@@ -1043,44 +1098,6 @@ impl App {
         self.save_data(false, true, false, false);
     }
 
-    pub fn save_data(
-        &self,
-        save_movies: bool,
-        save_watched: bool,
-        save_persons: bool,
-        save_collections: bool,
-    ) {
-        macro_rules! save {
-            ($name:expr, $obj:expr) => {
-                let path = &self.home_dir.join(format!("{}.json", $name));
-                match serde_json::to_string_pretty(&$obj.collect_vec()) {
-                    Err(error) => {
-                        error!("Error while trying to serialize {}: {error}", $name)
-                    }
-                    Ok(serialized) => {
-                        _ = fs::rename(path, self.home_dir.join($name).with_extension("json.bak"));
-                        if let Err(error) = fs::write(path, serialized) {
-                            error!("Error while trying to save {}: {error}", $name)
-                        }
-                    }
-                }
-            };
-        }
-
-        if save_movies {
-            save!("movies", self.movies.borrow().values());
-        }
-        if save_watched {
-            save!("watched", self.watched.borrow().values());
-        }
-        if save_persons {
-            save!("persons", self.persons.borrow().values());
-        }
-        if save_collections {
-            save!("collections", self.collections.borrow().values());
-        }
-    }
-
     fn handle_event(&mut self, event: Event) {
         match event {
             Event::Key(event) => {
@@ -1091,9 +1108,7 @@ impl App {
                 }
             }
             Event::Mouse(event) => {
-                if let Some((mut callback, data)) = self
-                    .key_event_handler
-                    .handle_mouse_event(event, &self.drawer)
+                if let Some((mut callback, data)) = self.key_event_handler.handle_mouse_event(event)
                 {
                     callback(self, data);
                 }

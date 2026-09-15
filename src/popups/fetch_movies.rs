@@ -105,9 +105,9 @@ impl FetchMoviesPopup {
         trakt_tokens: TraktTokens,
         omdb_tokens: OMDBTokens,
         movies: Rc<RefCell<FxIndexMap<u32, Movie>>>,
-        collections: Rc<RefCell<FxIndexMap<u32, Collection>>>,
-        persons: Rc<RefCell<FxIndexMap<u32, Person>>>,
         watched: &FxIndexMap<u32, Entry>,
+        persons: Rc<RefCell<FxIndexMap<u32, Person>>>,
+        collections: Rc<RefCell<FxIndexMap<u32, Collection>>>,
         lists: &[&List],
     ) {
         let unfetched_movies = {

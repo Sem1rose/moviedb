@@ -133,13 +133,17 @@ impl MainScreen {
 
         let inner = helpers::add_padding(area, Padding::proportional(1));
         let backdrop_height = (inner.width as f32 * 9.0 / 16.0).ceil() as u16 >> 1;
-        let [backdrop_area, title_area, description_area] =
-            vertical![==backdrop_height, ==8, >=1].areas(inner);
+        let [backdrop_area, remaining_area] = vertical![==backdrop_height, >=1].areas(inner);
 
         frame.render_widget(Fill::new(" ").bg(tailwind::GRAY.c950), backdrop_area);
         if let Some(movie) = movie {
+            let no_date = !movie.released && movie.release_date == Default::default();
+
+            let [title_area, description_area] =
+                vertical![==if !no_date {8} else {7}, >=1].areas(remaining_area);
+
             let mut cell = Cell::new(" ");
-            cell.set_style(Style::new().bg(tailwind::SLATE.c900));
+            cell.set_style(Style::new().bg(tailwind::GRAY.c950));
             let mut image_buffer = Buffer::filled(backdrop_area, cell);
             image_renderer.draw_image(
                 ImageID::Movie(movie.id, movie.override_backdrop.clone(), true),
@@ -153,7 +157,10 @@ impl MainScreen {
                 vertical![==3, ==2, ==1, ==2].areas(title_area);
 
             let mut name = movie.title.clone();
-            name = helpers::ellipsize_string(&name, title_area.width as usize);
+            name = helpers::ellipsize_string(
+                &name,
+                title_area.width as usize - if no_date { 0 } else { 10 },
+            );
 
             let rating = self
                 .watched
@@ -189,14 +196,18 @@ impl MainScreen {
                 })
                 .unwrap_or(tailwind::GRAY.c300);
 
-            frame.render_widget(
+            let title_line = if !no_date {
                 line![
                     span!("     "),
-                    name.clone().bold(),
+                    name.bold(),
                     span!(" "),
                     movie.release_date.year().to_string().italic()
                 ]
-                .centered(),
+            } else {
+                line![name.bold()]
+            };
+            frame.render_widget(
+                title_line.centered(),
                 title_area.resize(Size::new(title_area.width, 1)),
             );
             frame.render_widget(

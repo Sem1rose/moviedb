@@ -44,7 +44,7 @@ pub struct TokensRefresherProcessor {
 
     skipped:             FxHashSet<Tokens>,
     errored:             Vec<(Tokens, String)>,
-    tx_refresh_response: Option<Sender<RefreshResponse>>,
+    tx_refresh_request:  Option<Sender<RefreshResponse>>,
     rx_refresh_response: Option<Receiver<RefreshResponse>>,
 
     punch_play_tokens: PunchPlayTokens,
@@ -57,7 +57,7 @@ impl TokensRefresherProcessor {
             return;
         }
 
-        let (tx_refresh_response, rx_refresh_response) = channel();
+        let (tx_refresh_request, rx_refresh_response) = channel();
 
         *self = Self {
             skipped: {
@@ -72,7 +72,7 @@ impl TokensRefresherProcessor {
 
                 skipped
             },
-            tx_refresh_response: Some(tx_refresh_response),
+            tx_refresh_request: Some(tx_refresh_request),
             rx_refresh_response: Some(rx_refresh_response),
 
             punch_play_tokens,
@@ -104,7 +104,7 @@ impl TokensRefresherProcessor {
     }
 
     fn refresh_tokens(&mut self, tokens: Tokens) {
-        let tx_refresh_response = self.tx_refresh_response.as_ref().unwrap().clone();
+        let tx_refresh_request = self.tx_refresh_request.as_ref().unwrap().clone();
         match tokens {
             Tokens::PunchPlay => {
                 info!("refreshing punch play");
@@ -112,7 +112,7 @@ impl TokensRefresherProcessor {
                 let client_secret = self.punch_play_tokens.client_secret_owned();
                 let refresh_token = self.punch_play_tokens.refresh_token_owned();
                 thread::spawn(move || {
-                    _ = tx_refresh_response.send(RefreshResponse::PunchPlay(
+                    _ = tx_refresh_request.send(RefreshResponse::PunchPlay(
                         punch_play::tokens::refresh_tokens(
                             &client_id,
                             &client_secret,
@@ -135,7 +135,7 @@ impl TokensRefresherProcessor {
                 let client_secret = self.trakt_tokens.client_secret_owned();
                 let refresh_token = self.trakt_tokens.refresh_token_owned();
                 thread::spawn(move || {
-                    _ = tx_refresh_response.send(RefreshResponse::Trakt(
+                    _ = tx_refresh_request.send(RefreshResponse::Trakt(
                         trakt::tokens::refresh_tokens(&client_id, &client_secret, &refresh_token)
                             .map(|x| TraktUserTokens {
                                 client_id,
@@ -187,7 +187,7 @@ impl ProcessorTrait for TokensRefresherProcessor {
                         self.skipped.insert(Tokens::PunchPlay);
                         self.active_refreshing -= 1;
 
-                        key_event_handler.bind_immediate(move |app, _| {
+                        key_event_handler.bind_immediate(move |app| {
                             app.set_punch_play_user_tokens(user_tokens.clone())
                         });
                     }
@@ -201,7 +201,7 @@ impl ProcessorTrait for TokensRefresherProcessor {
                         self.skipped.insert(Tokens::Trakt);
                         self.active_refreshing -= 1;
 
-                        key_event_handler.bind_immediate(move |app, _| {
+                        key_event_handler.bind_immediate(move |app| {
                             app.set_trakt_user_tokens(user_tokens.clone())
                         });
                     }

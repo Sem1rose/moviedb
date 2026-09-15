@@ -38,7 +38,7 @@ pub struct HistorySyncerProcessor {
 }
 
 impl HistorySyncerProcessor {
-    fn start_threads(
+    fn start_thread(
         mut self,
         tmdb_tokens: TMDBTokens,
         simkl_tokens: SimklTokens,
@@ -589,7 +589,7 @@ impl HistorySyncerProcessor {
 
             ..Default::default()
         }
-        .start_threads(tmdb_tokens, simkl_tokens, punch_play_tokens);
+        .start_thread(tmdb_tokens, simkl_tokens, punch_play_tokens);
     }
 
     fn retry_sync(&mut self, sync_source: SyncSource, sync_item: SyncItem) {

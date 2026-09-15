@@ -62,7 +62,7 @@ impl Bind {
 
 #[derive(Default)]
 pub struct EventHandler {
-    execute_immediate: Vec<Callback>,
+    execute_immediate: Vec<Box<dyn FnOnce(&mut App)>>,
     mouse_binds:       FxHashMap<(usize, Bind, Rect), Callback>,
     key_binds:         FxHashMap<(Bind, State), (String, Callback)>,
 
@@ -77,7 +77,7 @@ impl EventHandler {
         self.bind_key((None, None), 'q', "Quit".into(), |app, _| app.quit = true);
     }
 
-    pub fn bind_immediate(&mut self, callback: impl FnMut(&mut App, Data) + 'static) {
+    pub fn bind_immediate(&mut self, callback: impl FnOnce(&mut App) + 'static) {
         self.execute_immediate.push(Box::new(callback));
     }
 
@@ -85,7 +85,7 @@ impl EventHandler {
         &mut self,
         state: State,
         description: String,
-        callback: impl Fn(&mut App, Data) + 'static,
+        callback: impl FnMut(&mut App, Data) + Clone + 'static,
         bind: Bind,
     ) {
         _ = self
@@ -98,7 +98,7 @@ impl EventHandler {
         state: State,
         description: String,
         area: Option<Rect>,
-        callback: impl Fn(&mut App, Data) + Clone + 'static,
+        callback: impl FnMut(&mut App, Data) + Clone + 'static,
     ) {
         self.add_key_bind(state, description, callback.clone(), Bind::Horizontal);
         if let Some(area) = area {
@@ -114,7 +114,7 @@ impl EventHandler {
         state: State,
         description: String,
         area: Option<Rect>,
-        callback: impl Fn(&mut App, Data) + Clone + 'static,
+        callback: impl FnMut(&mut App, Data) + Clone + 'static,
     ) {
         self.add_key_bind(state, description, callback.clone(), Bind::Vertical);
         if let Some(area) = area {
@@ -129,7 +129,7 @@ impl EventHandler {
         &mut self,
         state: State,
         description: String,
-        callback: impl Fn(&mut App, Data) + 'static,
+        callback: impl FnMut(&mut App, Data) + Clone + 'static,
     ) {
         self.add_key_bind(state, description, callback, Bind::Tab)
     }
@@ -138,7 +138,7 @@ impl EventHandler {
         &mut self,
         state: State,
         description: String,
-        callback: impl Fn(&mut App, Data) + 'static,
+        callback: impl FnMut(&mut App, Data) + Clone + 'static,
     ) {
         self.add_key_bind(state, description, callback, Bind::Input)
     }
@@ -147,7 +147,7 @@ impl EventHandler {
         &mut self,
         state: State,
         description: String,
-        callback: impl Fn(&mut App, Data) + 'static,
+        callback: impl FnMut(&mut App, Data) + Clone + 'static,
     ) {
         self.add_key_bind(state, description, callback, Bind::Esc)
     }
@@ -156,7 +156,7 @@ impl EventHandler {
         &mut self,
         state: State,
         description: String,
-        callback: impl Fn(&mut App, Data) + 'static,
+        callback: impl FnMut(&mut App, Data) + Clone + 'static,
     ) {
         self.add_key_bind(state, description, callback, Bind::Enter)
     }
@@ -166,7 +166,7 @@ impl EventHandler {
         state: State,
         keys: impl ToString,
         description: String,
-        callback: impl Fn(&mut App, Data) + 'static,
+        callback: impl FnMut(&mut App, Data) + Clone + 'static,
     ) {
         self.add_key_bind(state, description, callback, Bind::Key(keys.to_string()))
     }
@@ -175,7 +175,7 @@ impl EventHandler {
         &mut self,
         button: MouseButton,
         area: Rect,
-        callback: impl Fn(&mut App, Data) + 'static,
+        callback: impl FnMut(&mut App, Data) + Clone + 'static,
     ) {
         if area.is_empty() {
             return;
@@ -305,7 +305,7 @@ impl EventHandler {
             .collect()
     }
 
-    pub fn get_execute_immediates(&mut self) -> Vec<Callback> {
+    pub fn get_execute_immediates(&mut self) -> Vec<Box<dyn FnOnce(&mut App)>> {
         self.execute_immediate.drain(..).collect()
     }
 
@@ -393,11 +393,7 @@ impl EventHandler {
         }
     }
 
-    pub fn handle_mouse_event(
-        &mut self,
-        event: MouseEvent,
-        drawer: &Drawer,
-    ) -> Option<(Callback, Data)> {
+    pub fn handle_mouse_event(&mut self, event: MouseEvent) -> Option<(Callback, Data)> {
         let position = Position {
             x: event.column,
             y: event.row,
@@ -406,8 +402,6 @@ impl EventHandler {
             MouseEventKind::ScrollDown => {
                 if let Some(callback) = self.try_get_mouse_bind(position, Bind::Vertical) {
                     Some((callback, Data::Direction(true, event.modifiers)))
-                // } else if let Some(callback) = self.try_get_bind(Bind::Vertical, drawer.state) {
-                //     Some((callback, Data::Direction(true, event.modifiers)))
                 } else {
                     None
                 }
@@ -415,8 +409,6 @@ impl EventHandler {
             MouseEventKind::ScrollUp => {
                 if let Some(callback) = self.try_get_mouse_bind(position, Bind::Vertical) {
                     Some((callback, Data::Direction(false, event.modifiers)))
-                // } else if let Some(callback) = self.try_get_bind(Bind::Vertical, drawer.state) {
-                //     Some((callback, Data::Direction(false, event.modifiers)))
                 } else {
                     None
                 }
@@ -424,8 +416,6 @@ impl EventHandler {
             MouseEventKind::ScrollRight => {
                 if let Some(callback) = self.try_get_mouse_bind(position, Bind::Horizontal) {
                     Some((callback, Data::Direction(true, event.modifiers)))
-                // } else if let Some(callback) = self.try_get_bind(Bind::Horizontal, drawer.state) {
-                //     Some((callback, Data::Direction(true, event.modifiers)))
                 } else {
                     None
                 }
@@ -433,8 +423,6 @@ impl EventHandler {
             MouseEventKind::ScrollLeft => {
                 if let Some(callback) = self.try_get_mouse_bind(position, Bind::Horizontal) {
                     Some((callback, Data::Direction(true, event.modifiers)))
-                // } else if let Some(callback) = self.try_get_bind(Bind::Horizontal, drawer.state) {
-                //     Some((callback, Data::Direction(false, event.modifiers)))
                 } else {
                     None
                 }

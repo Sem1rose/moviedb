@@ -262,7 +262,7 @@ impl Widget {
                                             .iter()
                                             .position(|x| *x == filtered_items[*current_selected])
                                         {
-                                            selected_items.remove(index);
+                                            selected_items.swap_remove(index);
                                         } else {
                                             selected_items.push(filtered_items[*current_selected]);
                                         }
@@ -362,7 +362,7 @@ impl Widget {
                                             .iter()
                                             .position(|x| *x == filtered_items[*current_selected])
                                         {
-                                            selected_items.remove(index);
+                                            selected_items.swap_remove(index);
                                         } else {
                                             selected_items.push(filtered_items[*current_selected]);
                                         }
@@ -421,7 +421,7 @@ impl Widget {
                                                     *x == filtered_items[*current_selected]
                                                 })
                                             {
-                                                selected_items.remove(index);
+                                                selected_items.swap_remove(index);
                                             } else {
                                                 selected_items
                                                     .push(filtered_items[*current_selected]);
@@ -508,7 +508,7 @@ impl Widget {
                                                     .iter()
                                                     .position(|x| *x == filtered_items[index])
                                                 {
-                                                    selected_items.remove(index);
+                                                    selected_items.swap_remove(index);
                                                 } else {
                                                     selected_items.push(filtered_items[index]);
                                                 }

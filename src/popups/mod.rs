@@ -32,6 +32,7 @@ use crate::image_backend::RatatuiImage;
 
 pub enum Popup {
     AddMovie(Box<AddMoviePopup>),
+    // AppInit(Box<AppInitPopup>),
     ManagePlays(Box<ManagePlaysPopup>),
     ManageLists(Box<ManageListsPopup>),
     ChangeArtworks(Box<ChangeArtworksPopup>),
@@ -51,6 +52,7 @@ impl Popup {
     fn as_trait(&self) -> &dyn PopupTrait {
         match self {
             Popup::AddMovie(add_movie_popup) => &**add_movie_popup,
+            // Popup::AppInit(app_init_popup) => &**app_init_popup,
             Popup::ManagePlays(manage_plays_popup) => &**manage_plays_popup,
             Popup::ManageLists(manage_lists_popup) => &**manage_lists_popup,
             Popup::ChangeArtworks(change_artwork_popup) => &**change_artwork_popup,
@@ -70,6 +72,7 @@ impl Popup {
     fn as_trait_mut(&mut self) -> &mut dyn PopupTrait {
         match self {
             Popup::AddMovie(add_movie_popup) => &mut **add_movie_popup,
+            // Popup::AppInit(app_init_popup) => &mut **app_init_popup,
             Popup::ManagePlays(manage_plays_popup) => &mut **manage_plays_popup,
             Popup::ManageLists(manage_lists_popup) => &mut **manage_lists_popup,
             Popup::ChangeArtworks(change_artwork_popup) => &mut **change_artwork_popup,

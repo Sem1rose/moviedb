@@ -5,7 +5,7 @@ use std::{
     rc::Rc,
 };
 
-use chrono::{DateTime, Datelike, TimeDelta, Utc};
+use chrono::{DateTime, Datelike, NaiveDate, TimeDelta, Utc};
 use itertools::Itertools;
 use log::error;
 use nucleo_matcher::{Config as MatcherConfig, Matcher, pattern::Atom};
@@ -259,8 +259,6 @@ impl MainScreen {
 
             let available_sort_options = self.get_available_sort_options();
             self.sort = *available_sort_options.first().unwrap();
-            // if !available_sort_options.contains(&self.sort) {
-            // }
 
             let fetch_movies = {
                 let movies_borrowed = self.movies.borrow();
@@ -269,7 +267,7 @@ impl MainScreen {
                     .any(|x| !movies_borrowed.contains_key(x))
             };
             if fetch_movies {
-                key_event_handler.bind_immediate(|app, _| app.drawer.open_fetch_movies_popup());
+                key_event_handler.bind_immediate(|app| app.drawer.open_fetch_movies_popup());
 
                 false
             } else {
@@ -692,7 +690,7 @@ impl MainScreen {
         Sort::iter()
             .filter(|x| match x {
                 Sort::MostRecent => match self.selected_list {
-                    ListID::Collection(_) => false,
+                    ListID::Collection(_) | ListID::All => false,
                     ListID::Local(_) | ListID::TMDB(_) | ListID::PunchPlay(_) =>
                         !self.lists[&self.selected_list].readonly,
                     _ => true,
@@ -735,14 +733,22 @@ impl MainScreen {
                         .borrow()
                         .get(&x.id)
                         .map(|x| x.get_user_rating())
-                        .unwrap_or(f64::NAN)
+                        .unwrap_or(if self.sort_ascending {
+                            f64::INFINITY
+                        } else {
+                            f64::NEG_INFINITY
+                        })
                         .total_cmp(
                             &self
                                 .watched
                                 .borrow()
                                 .get(&y.id)
                                 .map(|y| y.get_user_rating())
-                                .unwrap_or(f64::NAN),
+                                .unwrap_or(if self.sort_ascending {
+                                    f64::INFINITY
+                                } else {
+                                    f64::NEG_INFINITY
+                                }),
                         )
                 });
                 if !self.sort_ascending {
@@ -763,7 +769,17 @@ impl MainScreen {
                 }
             }
             Sort::ReleaseDate => {
-                self.filtered_movies.sort_by_key(|x| x.release_date);
+                self.filtered_movies.sort_by_key(|x| {
+                    if !x.released && x.release_date == Default::default() {
+                        if self.sort_ascending {
+                            NaiveDate::MAX
+                        } else {
+                            NaiveDate::MIN
+                        }
+                    } else {
+                        x.release_date
+                    }
+                });
                 if !self.sort_ascending {
                     self.filtered_movies.reverse();
                 }

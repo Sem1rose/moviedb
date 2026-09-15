@@ -57,7 +57,8 @@ const MINTERMSIZE: [u32; 2] = [100, 30];
 impl Drawer {
     pub fn new(home_dir: &Path, cache_dir: &Path, config: Rc<RefCell<Config>>) -> Self {
         let popup_queue = if config.borrow().options.oob_done {
-            let mut popups = Vec::with_capacity(5);
+            let mut popups = Vec::with_capacity(6);
+            // popups.push(new_popup!(AppInit, AppInitPopup::new(home_dir)));
             if config.borrow_mut().options.tmdb_enabled {
                 popups.push(new_popup!(TMDBInit, TMDBInitPopup::new(home_dir, false)));
             }
@@ -79,7 +80,10 @@ impl Drawer {
 
             popups
         } else {
-            vec![new_popup!(OutOfBox)]
+            vec![
+                // new_popup!(AppInit, AppInitPopup::new(home_dir)),
+                new_popup!(OutOfBox),
+            ]
         }
         .into();
 
@@ -149,37 +153,45 @@ impl Drawer {
             popup.update();
 
             match popup {
+                // Popup::AppInit(app_init_popup) =>
+                //     if app_init_popup.done {
+                //         let movies = mem::take(&mut app_init_popup.movies);
+                //         let watched = mem::take(&mut app_init_popup.watched);
+                //         let persons = mem::take(&mut app_init_popup.persons);
+                //         let collections = mem::take(&mut app_init_popup.collections);
+                //         key_event_handler.bind_immediate(move |app, _| {
+                //             app.initialize_data(movies, watched, persons, collections);
+                //         });
+                //     },
                 Popup::Open(_) => (),
                 Popup::ManagePlays(_) => (),
                 Popup::ManageLists(_) => (),
                 Popup::DeleteMovie(_) => (),
-                Popup::AddMovie(add_movie_popup) => {
+                Popup::AddMovie(add_movie_popup) =>
                     if let AddMoviePopupPhase::Done = add_movie_popup.phase {
                         let refetch_details = add_movie_popup.refetch_details;
-                        key_event_handler.bind_immediate(move |app, _| {
+                        key_event_handler.bind_immediate(move |app| {
                             if refetch_details {
                                 app.update_movie_details();
                             } else {
                                 app.add_movie();
                             }
                         });
-                    }
-                }
-                Popup::TMDBInit(tmdb_init_popup) => {
+                    },
+                Popup::TMDBInit(tmdb_init_popup) =>
                     if let TMDBInitPopupPhase::Done = tmdb_init_popup.phase {
                         let mut user_tokens = tmdb_init_popup.user_tokens.take();
-                        key_event_handler.bind_immediate(move |app, _| {
+                        key_event_handler.bind_immediate(move |app| {
                             if let Some(user_tokens) = user_tokens.take() {
                                 app.set_tmdb_user_tokens(user_tokens);
                             }
                         });
                         self.close_popup();
-                    }
-                }
+                    },
                 Popup::SimklInit(simkl_init_popup) =>
                     if let SimklInitPopupPhase::Done = simkl_init_popup.phase {
                         let mut user_tokens = simkl_init_popup.user_tokens.take();
-                        key_event_handler.bind_immediate(move |app, _| {
+                        key_event_handler.bind_immediate(move |app| {
                             if let Some(user_tokens) = user_tokens.take() {
                                 app.set_simkl_user_tokens(user_tokens);
                             }
@@ -189,28 +201,27 @@ impl Drawer {
                 Popup::PunchPlayInit(punch_play_init_popup) =>
                     if let PunchPlayInitPopupPhase::Done = punch_play_init_popup.phase {
                         let mut user_tokens = punch_play_init_popup.user_tokens.take();
-                        key_event_handler.bind_immediate(move |app, _| {
+                        key_event_handler.bind_immediate(move |app| {
                             if let Some(user_tokens) = user_tokens.take() {
                                 app.set_punch_play_user_tokens(user_tokens);
                             }
                         });
                         self.close_popup();
                     },
-                Popup::TraktInit(trakt_init_popup) => {
+                Popup::TraktInit(trakt_init_popup) =>
                     if let TraktInitPopupPhase::Done = trakt_init_popup.phase {
                         let mut user_tokens = trakt_init_popup.user_tokens.take();
-                        key_event_handler.bind_immediate(move |app, _| {
+                        key_event_handler.bind_immediate(move |app| {
                             if let Some(user_tokens) = user_tokens.take() {
                                 app.set_trakt_user_tokens(user_tokens);
                             }
                         });
                         self.close_popup();
-                    }
-                }
+                    },
                 Popup::OMDBInit(omdb_init_popup) =>
                     if omdb_init_popup.done {
                         let mut user_tokens = omdb_init_popup.user_tokens.take();
-                        key_event_handler.bind_immediate(move |app, _| {
+                        key_event_handler.bind_immediate(move |app| {
                             if let Some(user_tokens) = user_tokens.take() {
                                 app.set_omdb_user_tokens(user_tokens);
                             }
@@ -221,7 +232,7 @@ impl Drawer {
                 Popup::AdvancedFilter(_) => (),
                 Popup::FetchMovies(fetch_movies_popup) =>
                     if fetch_movies_popup.done {
-                        key_event_handler.bind_immediate(|app, _| {
+                        key_event_handler.bind_immediate(|app| {
                             app.save_data(true, false, true, true);
                             if let Some(Screen::MainScreen(main_screen)) =
                                 app.drawer.current_screen.as_mut()
@@ -254,7 +265,7 @@ impl Drawer {
                 self.active_popup = self.popup_queue.pop_front();
 
                 if matches!(self.active_popup, Some(Popup::AdvancedFilter(_))) {
-                    key_event_handler.bind_immediate(|app, _| {
+                    key_event_handler.bind_immediate(|app| {
                         if let Some(Popup::AdvancedFilter(advanced_filter_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
@@ -265,7 +276,7 @@ impl Drawer {
                         }
                     });
                 } else if matches!(self.active_popup, Some(Popup::FetchMovies(_))) {
-                    key_event_handler.bind_immediate(|app, _| {
+                    key_event_handler.bind_immediate(|app| {
                         let lists = if let Some(Screen::MainScreen(main_screen)) =
                             app.drawer.current_screen.as_mut()
                         {
@@ -283,9 +294,9 @@ impl Drawer {
                                 app.trakt_tokens.clone(),
                                 app.omdb_tokens.clone(),
                                 app.movies.clone(),
-                                app.collections.clone(),
-                                app.persons.clone(),
                                 &app.watched.borrow(),
+                                app.persons.clone(),
+                                app.collections.clone(),
                                 &lists,
                             );
                         }
@@ -295,7 +306,7 @@ impl Drawer {
                 self.current_screen = self.screen_queue.pop();
 
                 if matches!(self.current_screen, Some(Screen::MainScreen(_))) {
-                    key_event_handler.bind_immediate(|app, _| {
+                    key_event_handler.bind_immediate(|app| {
                         app.initialize_processors();
                         if let Some(Screen::MainScreen(main_screen)) =
                             app.drawer.current_screen.as_mut()

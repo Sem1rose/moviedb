@@ -213,6 +213,7 @@ impl MainScreen {
         let alt = movie_index & 1 == 1;
         let tab_selected = self.tab == 0;
         let movie = &self.filtered_movies[movie_index];
+        let no_date = !movie.released && movie.release_date == Default::default();
 
         let num_items = self.filtered_movies.len();
         key_event_handler.bind_mouse_button_down(
@@ -296,7 +297,12 @@ impl MainScreen {
         let mut description = vec![];
 
         const TITLE_LINES: usize = 2;
-        let mut title_lines = helpers::wrap_text(&movie.title, description_area.width as usize - 4);
+        let mut title_lines = helpers::wrap_text(
+            &movie.title,
+            description_area.width as usize
+                - if no_date { 0 } else { 5 }
+                - if movie.released { 0 } else { 15 },
+        );
         for _ in 0..(TITLE_LINES.saturating_sub(title_lines.len())) {
             description.push("".into());
         }
@@ -307,11 +313,16 @@ impl MainScreen {
         description.push(line!(
             helpers::ellipsize_string(
                 &title_lines.pop().unwrap(),
-                description_area.width as usize - 5 - if movie.released { 0 } else { 15 },
+                description_area.width as usize
+                    - if no_date { 0 } else { 5 }
+                    - if movie.released { 0 } else { 15 },
             )
             .bold(),
-            " ",
-            movie.release_date.year().to_string().italic(),
+            if !no_date {
+                format!(" {}", movie.release_date.year()).italic()
+            } else {
+                "".into()
+            },
             if !movie.released { span!(" - ") } else { "".into() },
             if !movie.released {
                 span!("Not released").italic().fg(tailwind::RED.c300)
