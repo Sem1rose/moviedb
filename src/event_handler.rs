@@ -7,8 +7,9 @@ use rustc_hash::FxHashMap;
 
 use crate::{app::App, drawer::Drawer};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub enum Data {
+    #[default]
     None,
     Direction(bool, KeyModifiers),
     Key(KeyEvent),

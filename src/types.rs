@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, io::stdout};
+use std::{cmp::Ordering, hash::Hash, io::stdout};
 
 use chrono::{DateTime, NaiveDate, TimeDelta, Utc};
 use indexmap::IndexMap;
@@ -686,7 +686,7 @@ impl std::cmp::PartialEq<Movie> for Movie {
     }
 }
 
-#[derive(Debug, Clone, Copy, EnumIter, AsRefStr)]
+#[derive(Debug, Clone, Copy, EnumIter, AsRefStr, PartialEq, Eq, Hash)]
 pub enum SyncSource {
     TMDB,
     Simkl,
@@ -694,7 +694,7 @@ pub enum SyncSource {
     // Trakt
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SyncItem {
     AddToWatched {
         movie_id: u32,
@@ -726,6 +726,37 @@ pub enum SyncItem {
     // EditPlay,
     // RemovePlay
 }
+
+impl Eq for SyncItem {}
+impl Hash for SyncItem {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            SyncItem::AddToWatched {
+                movie_id,
+                date,
+                rating: _,
+            } => (movie_id, date).hash(state),
+            SyncItem::AddToList {
+                list,
+                date,
+                movie_id,
+            } => (list, movie_id, date).hash(state),
+            SyncItem::AddPlay {
+                movie_id,
+                date,
+                rating: _,
+            } => (movie_id, date).hash(state),
+            SyncItem::Edit {
+                movie_id,
+                date,
+                rating: _,
+            } => (movie_id, date).hash(state),
+            SyncItem::RemoveFromWatched { movie_id } => movie_id.hash(state),
+            SyncItem::RemoveFromList { list, movie_id } => (list, movie_id).hash(state),
+        }
+    }
+}
+
 impl SyncItem {
     pub fn movie_id(&self) -> u32 {
         match self {

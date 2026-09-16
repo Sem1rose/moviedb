@@ -11,6 +11,7 @@ use ratatui::{
     widgets::Padding,
 };
 use reqwest::blocking::Response;
+use rustc_hash::FxHashSet;
 use strum::IntoEnumIterator;
 use toml::Value;
 
@@ -28,13 +29,12 @@ use crate::{
 pub struct HistorySyncerProcessor {
     item:        usize,
     initialized: bool,
-    progress:    u32,
-    count:       u32,
+    processing:  FxHashSet<(SyncItem, SyncSource)>,
     pub idle:    bool,
 
-    errors:           Vec<(SyncSource, SyncItem, String)>,
-    tx_sync_request:  Option<Sender<(SyncSource, SyncItem)>>,
-    rx_sync_response: Option<Receiver<(SyncSource, SyncItem, anyhow::Result<Response>)>>,
+    errors:           Vec<(SyncItem, SyncSource, String)>,
+    tx_sync_request:  Option<Sender<(SyncItem, SyncSource)>>,
+    rx_sync_response: Option<Receiver<(SyncItem, SyncSource, anyhow::Result<Response>)>>,
 }
 
 impl HistorySyncerProcessor {
@@ -44,14 +44,14 @@ impl HistorySyncerProcessor {
         simkl_tokens: SimklTokens,
         punch_play_tokens: PunchPlayTokens,
     ) -> Self {
-        let (tx_sync_request, rx_sync_request) = channel::<(SyncSource, SyncItem)>();
+        let (tx_sync_request, rx_sync_request) = channel::<(SyncItem, SyncSource)>();
         let (tx_sync_response, rx_sync_response) =
-            channel::<(SyncSource, SyncItem, anyhow::Result<Response>)>();
+            channel::<(SyncItem, SyncSource, anyhow::Result<Response>)>();
 
         thread::spawn(move || {
             let mut punch_play_watchlist_id = None;
 
-            for (source, item) in rx_sync_request.iter() {
+            for (item, source) in rx_sync_request.iter() {
                 match source {
                     SyncSource::TMDB =>
                         if tmdb_tokens.status.unwrap_or_default() {
@@ -66,8 +66,8 @@ impl HistorySyncerProcessor {
                                 } => {
                                     thread::spawn(move || {
                                         tx_sync_response.send((
-                                            source,
                                             item,
+                                            source,
                                             tmdb::movie::add_or_edit_rating(
                                                 tmdb_tokens.access_token(),
                                                 movie_id,
@@ -84,8 +84,8 @@ impl HistorySyncerProcessor {
                                     crate::types::ListID::Watchlist => {
                                         thread::spawn(move || {
                                             tx_sync_response.send((
-                                                source,
                                                 item,
+                                                source,
                                                 tmdb::movie::add_or_remove_watchlist(
                                                     tmdb_tokens.access_token(),
                                                     tmdb_tokens.account_id(),
@@ -98,8 +98,8 @@ impl HistorySyncerProcessor {
                                     crate::types::ListID::TMDB(list_id) => {
                                         thread::spawn(move || {
                                             tx_sync_response.send((
-                                                source,
                                                 item,
+                                                source,
                                                 tmdb::list::add_item_to_list(
                                                     tmdb_tokens.access_token(),
                                                     list_id,
@@ -117,8 +117,8 @@ impl HistorySyncerProcessor {
                                 } => {
                                     thread::spawn(move || {
                                         tx_sync_response.send((
-                                            source,
                                             item,
+                                            source,
                                             tmdb::movie::add_or_edit_rating(
                                                 tmdb_tokens.access_token(),
                                                 movie_id,
@@ -134,8 +134,8 @@ impl HistorySyncerProcessor {
                                 } => {
                                     thread::spawn(move || {
                                         tx_sync_response.send((
-                                            source,
                                             item,
+                                            source,
                                             tmdb::movie::add_or_edit_rating(
                                                 tmdb_tokens.access_token(),
                                                 movie_id,
@@ -147,8 +147,8 @@ impl HistorySyncerProcessor {
                                 SyncItem::RemoveFromWatched { movie_id } => {
                                     thread::spawn(move || {
                                         tx_sync_response.send((
-                                            source,
                                             item,
+                                            source,
                                             tmdb::movie::delete_rating(
                                                 tmdb_tokens.access_token(),
                                                 movie_id,
@@ -160,8 +160,8 @@ impl HistorySyncerProcessor {
                                     crate::types::ListID::Watchlist => {
                                         thread::spawn(move || {
                                             tx_sync_response.send((
-                                                source,
                                                 item,
+                                                source,
                                                 tmdb::movie::add_or_remove_watchlist(
                                                     tmdb_tokens.access_token(),
                                                     tmdb_tokens.account_id(),
@@ -174,8 +174,8 @@ impl HistorySyncerProcessor {
                                     crate::types::ListID::TMDB(list_id) => {
                                         thread::spawn(move || {
                                             tx_sync_response.send((
-                                                source,
                                                 item,
+                                                source,
                                                 tmdb::list::remove_item_from_list(
                                                     tmdb_tokens.access_token(),
                                                     list_id,
@@ -201,8 +201,8 @@ impl HistorySyncerProcessor {
                                 } => {
                                     thread::spawn(move || {
                                         tx_sync_response.send((
-                                            source,
                                             item,
+                                            source,
                                             simkl::movie::log_watched(
                                                 simkl_tokens.access_token(),
                                                 simkl_tokens.client_id(),
@@ -221,8 +221,8 @@ impl HistorySyncerProcessor {
                                     crate::types::ListID::Watchlist => {
                                         thread::spawn(move || {
                                             tx_sync_response.send((
-                                                source,
                                                 item,
+                                                source,
                                                 simkl::movie::add_movies_to_watchlist(
                                                     simkl_tokens.access_token(),
                                                     simkl_tokens.client_id(),
@@ -242,8 +242,8 @@ impl HistorySyncerProcessor {
                                 } => {
                                     thread::spawn(move || {
                                         tx_sync_response.send((
-                                            source,
                                             item,
+                                            source,
                                             simkl::movie::edit_watched(
                                                 simkl_tokens.access_token(),
                                                 simkl_tokens.client_id(),
@@ -261,8 +261,8 @@ impl HistorySyncerProcessor {
                                 } => {
                                     thread::spawn(move || {
                                         tx_sync_response.send((
-                                            source,
                                             item,
+                                            source,
                                             simkl::movie::edit_watched(
                                                 simkl_tokens.access_token(),
                                                 simkl_tokens.client_id(),
@@ -276,8 +276,8 @@ impl HistorySyncerProcessor {
                                 SyncItem::RemoveFromWatched { movie_id } => {
                                     thread::spawn(move || {
                                         tx_sync_response.send((
-                                            source,
                                             item,
+                                            source,
                                             simkl::movie::remove_movies_history_or_from_watchlist(
                                                 simkl_tokens.access_token(),
                                                 simkl_tokens.client_id(),
@@ -292,8 +292,8 @@ impl HistorySyncerProcessor {
                                     crate::types::ListID::Watchlist => {
                                         thread::spawn(move || {
                                             tx_sync_response.send((
-                                                source,
                                                 item,
+                                                source,
                                                 simkl::movie::remove_movies_history_or_from_watchlist(
                                                     simkl_tokens.access_token(),
                                                     simkl_tokens.client_id(),
@@ -320,7 +320,7 @@ impl HistorySyncerProcessor {
                                     rating,
                                 } => {
                                     thread::spawn(move || {
-                                        tx_sync_response.send((source, item, 'label: {
+                                        tx_sync_response.send((item, source, 'label: {
                                             let response = punch_play::movie::log_watch(
                                                 punch_play_tokens.access_token(),
                                                 movie_id,
@@ -385,8 +385,8 @@ impl HistorySyncerProcessor {
                                     crate::types::ListID::Watchlist => {
                                         thread::spawn(move || {
                                             tx_sync_response.send((
-                                                source,
                                                 item,
+                                                source,
                                                 'label: {
                                                     if punch_play_watchlist_id.is_none() {
                                                         match
@@ -427,8 +427,8 @@ impl HistorySyncerProcessor {
                                     crate::types::ListID::PunchPlay(list_id) => {
                                         thread::spawn(move || {
                                             tx_sync_response.send((
-                                                source,
                                                 item,
+                                                source,
                                                 punch_play::list::add_item_to_list(
                                                     punch_play_tokens.access_token(),
                                                     list_id,
@@ -446,7 +446,7 @@ impl HistorySyncerProcessor {
                                     rating,
                                 } => {
                                     thread::spawn(move || {
-                                        tx_sync_response.send((source, item, {
+                                        tx_sync_response.send((item, source, {
                                             let response = punch_play::movie::log_watch(
                                                 punch_play_tokens.access_token(),
                                                 movie_id,
@@ -479,8 +479,8 @@ impl HistorySyncerProcessor {
                                 } => {
                                     thread::spawn(move || {
                                         tx_sync_response.send((
-                                            source,
                                             item,
+                                            source,
                                             punch_play::movie::add_or_edit_rating(
                                                 punch_play_tokens.access_token(),
                                                 movie_id,
@@ -493,8 +493,8 @@ impl HistorySyncerProcessor {
                                 SyncItem::RemoveFromWatched { movie_id } => {
                                     thread::spawn(move || {
                                         tx_sync_response.send((
-                                            source,
                                             item,
+                                            source,
                                             punch_play::movie::add_or_edit_rating(
                                                 punch_play_tokens.access_token(),
                                                 movie_id,
@@ -508,8 +508,8 @@ impl HistorySyncerProcessor {
                                     crate::types::ListID::Watchlist => {
                                         thread::spawn(move || {
                                             tx_sync_response.send((
-                                                source,
                                                 item,
+                                                source,
                                                 'label: {
                                                     if punch_play_watchlist_id.is_none() {
                                                         match
@@ -549,8 +549,8 @@ impl HistorySyncerProcessor {
                                     crate::types::ListID::PunchPlay(list_id) => {
                                         thread::spawn(move || {
                                             tx_sync_response.send((
-                                                source,
                                                 item,
+                                                source,
                                                 punch_play::list::remove_item_from_list(
                                                     punch_play_tokens.access_token(),
                                                     list_id,
@@ -592,18 +592,20 @@ impl HistorySyncerProcessor {
         .start_thread(tmdb_tokens, simkl_tokens, punch_play_tokens);
     }
 
-    fn retry_sync(&mut self, sync_source: SyncSource, sync_item: SyncItem) {
+    fn retry_sync(&mut self, sync_item: SyncItem, sync_source: SyncSource) {
         if let Some(tx_sync_request) = self.tx_sync_request.as_ref() {
-            _ = tx_sync_request.send((sync_source, sync_item));
+            _ = tx_sync_request.send((sync_item, sync_source));
         }
     }
 
     pub fn add_sync_item(&mut self, sync_item: SyncItem) {
         if let Some(tx_sync_request) = self.tx_sync_request.as_ref() {
             for source in SyncSource::iter() {
-                if tx_sync_request.send((source, sync_item)).is_ok() {
-                    self.count += 1;
-                    self.idle = false;
+                if !self.processing.contains(&(sync_item, source)) {
+                    if tx_sync_request.send((sync_item, source)).is_ok() {
+                        self.processing.insert((sync_item, source));
+                        self.idle = false;
+                    }
                 }
             }
         }
@@ -616,13 +618,13 @@ impl ProcessorTrait for HistorySyncerProcessor {
             return;
         }
 
-        for (source, item, result) in self.rx_sync_response.as_ref().unwrap().try_iter() {
+        for (item, source, result) in self.rx_sync_response.as_ref().unwrap().try_iter() {
             match result {
                 Ok(response) =>
                     if !response.status().is_success() {
                         self.errors.push((
-                            source,
                             item,
+                            source,
                             format!(
                                 "{} {}",
                                 response.status(),
@@ -633,9 +635,9 @@ impl ProcessorTrait for HistorySyncerProcessor {
                             ),
                         ));
                     } else {
-                        self.progress += 1;
+                        self.processing.remove(&(item, source));
                     },
-                Err(error) => self.errors.push((source, item, format!("{:?}", error))),
+                Err(error) => self.errors.push((item, source, format!("{:?}", error))),
             }
         }
 
@@ -643,9 +645,7 @@ impl ProcessorTrait for HistorySyncerProcessor {
             self.item = 0;
         }
 
-        if self.progress == self.count {
-            self.progress = 0;
-            self.count = 0;
+        if self.processing.is_empty() {
             self.idle = true;
         }
     }
@@ -664,7 +664,7 @@ impl ProcessorTrait for HistorySyncerProcessor {
         key_event_handler: &mut EventHandler,
         image_renderer: &mut RatatuiImage,
     ) {
-        if let Some((source, item, error)) = self.errors.first() {
+        if let Some((item, source, error)) = self.errors.first() {
             key_event_handler.clear();
             key_event_handler.bind_tab((None, None), "Navigate".into(), |app, _| {
                 if let Some(Processor::HistorySyncer(history_syncer_processor)) =
@@ -700,8 +700,8 @@ impl ProcessorTrait for HistorySyncerProcessor {
                 if let Some(Processor::HistorySyncer(history_syncer_processor)) =
                     app.get_processor_mut(ProcessorDiscriminants::HistorySyncer)
                 {
-                    let _ = history_syncer_processor.errors.remove(0);
-                    history_syncer_processor.progress += 1;
+                    let (item, source, _) = history_syncer_processor.errors.remove(0);
+                    history_syncer_processor.processing.remove(&(item, source));
                 }
             });
 
@@ -752,12 +752,12 @@ impl ProcessorTrait for HistorySyncerProcessor {
                         if let Some(Processor::HistorySyncer(history_syncer_processor)) =
                             app.get_processor_mut(ProcessorDiscriminants::HistorySyncer)
                         {
-                            let (source, item, _) = history_syncer_processor.errors.remove(0);
+                            let (item, source, _) = history_syncer_processor.errors.remove(0);
 
                             if i == 0 {
-                                history_syncer_processor.retry_sync(source, item);
+                                history_syncer_processor.retry_sync(item, source);
                             } else {
-                                history_syncer_processor.progress += 1;
+                                history_syncer_processor.processing.remove(&(item, source));
                             }
                         }
                     },

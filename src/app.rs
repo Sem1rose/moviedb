@@ -51,7 +51,7 @@ pub struct App {
     pub trakt_tokens:      TraktTokens,
     pub omdb_tokens:       OMDBTokens,
 
-    processors: FxHashMap<ProcessorDiscriminants, Processor>,
+    pub processors: FxHashMap<ProcessorDiscriminants, Processor>,
 }
 
 impl App {
@@ -62,6 +62,9 @@ impl App {
         let cache_dir = dirs::cache_dir()
             .expect("Couldn't get user's cache dir")
             .join("moviedb");
+        _ = fs::create_dir(&home_dir);
+        _ = fs::create_dir(&cache_dir);
+
         let config = helpers::new_rc(Config::new(&home_dir));
 
         Self {
@@ -967,6 +970,7 @@ impl App {
     }
 
     pub fn set_tmdb_user_tokens(&mut self, user_tokens: TMDBUserTokens) {
+        // log::info!("{user_tokens:#?}");
         if let Err(error) = self.tmdb_tokens.set_creds(user_tokens, true) {
             error!("{error}");
             return;
@@ -974,26 +978,18 @@ impl App {
         self.drawer
             .image_renderer
             .update_access_token(self.tmdb_tokens.access_token());
-        // if let Some(Popup::TMDBInit(tmdb_init_popup)) = self.drawer.active_popup.as_mut() {
-        //     if let Some(tokens) = tmdb_init_popup.user_tokens.take() {
-        //     }
-        // }
-        // self.drawer.close_popup();
     }
 
     pub fn set_simkl_user_tokens(&mut self, user_tokens: SimklUserTokens) {
+        // log::info!("{user_tokens:#?}");
         if let Err(error) = self.simkl_tokens.set_creds(user_tokens, true) {
             error!("{error}");
             return;
         }
-        // if let Some(Popup::SimklInit(simkl_init_popup)) = self.drawer.active_popup.as_mut() {
-        //     if let Some(tokens) = simkl_init_popup.user_tokens.take() {
-        //     }
-        // }
-        // self.drawer.close_popup();
     }
 
     pub fn set_punch_play_user_tokens(&mut self, user_tokens: PunchPlayUserTokens) {
+        // log::info!("{user_tokens:#?}");
         if let Err(error) = self.punch_play_tokens.set_creds(user_tokens, true) {
             error!("{error}");
             return;
@@ -1004,15 +1000,10 @@ impl App {
         {
             tokens_refresher_processor.update_punch_play_tokens(tokens);
         }
-        // if let Some(Popup::PunchPlayInit(punch_play_init_popup)) = self.drawer.active_popup.as_mut()
-        // {
-        //     if let Some(tokens) = punch_play_init_popup.user_tokens.take() {
-        //     }
-        // }
-        // self.drawer.close_popup();
     }
 
     pub fn set_trakt_user_tokens(&mut self, user_tokens: TraktUserTokens) {
+        // log::info!("{user_tokens:#?}");
         if let Err(error) = self.trakt_tokens.set_creds(user_tokens, true) {
             error!("{error}");
             return;
@@ -1023,23 +1014,14 @@ impl App {
         {
             tokens_refresher_processor.update_trakt_tokens(tokens);
         }
-        // if let Some(Popup::TraktInit(trakt_init_popup)) = self.drawer.active_popup.as_mut() {
-        //     if let Some(tokens) = trakt_init_popup.user_tokens.take() {
-        //     }
-        // }
-        // self.drawer.close_popup();
     }
 
     pub fn set_omdb_user_tokens(&mut self, user_tokens: String) {
+        // log::info!("{user_tokens}");
         if let Err(error) = self.omdb_tokens.set_creds(user_tokens, true) {
             error!("{error}");
             return;
         }
-        // if let Some(Popup::OMDBInit(omdb_init_popup)) = self.drawer.active_popup.as_mut() {
-        //     if let Some(tokens) = omdb_init_popup.tokens.take() {
-        //     }
-        // }
-        // self.drawer.close_popup();
     }
 
     pub fn _refetch_watched(&mut self) {

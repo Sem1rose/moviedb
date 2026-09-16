@@ -88,6 +88,12 @@ pub struct RatatuiImage {
 }
 impl RatatuiImage {
     pub fn new(cache_dir: &Path) -> Self {
+        _ = fs::create_dir(cache_dir.join("backdrops"));
+        _ = fs::create_dir(cache_dir.join("posters"));
+        _ = fs::create_dir(cache_dir.join("collections"));
+        _ = fs::create_dir(cache_dir.join("persons"));
+        _ = fs::create_dir(cache_dir.join("custom"));
+
         Self {
             sizes: default_sizes(),
             loading_ids: FxHashSet::with_capacity_and_hasher(
