@@ -213,7 +213,9 @@ impl MainScreen {
         let alt = movie_index & 1 == 1;
         let tab_selected = self.tab == 0;
         let movie = &self.filtered_movies[movie_index];
-        let no_date = !movie.released && movie.release_date == Default::default();
+        let no_date = !movie.released
+            && (movie.release_date == Default::default()
+                || movie.release_date == chrono::NaiveDate::MIN);
 
         let num_items = self.filtered_movies.len();
         key_event_handler.bind_mouse_button_down(

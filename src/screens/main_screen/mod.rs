@@ -13,8 +13,7 @@ use ratatui::{
     Frame,
     layout::{Offset, Position, Rect},
     macros::{horizontal, vertical},
-    style::{Stylize, palette::tailwind},
-    widgets::{Block, Padding},
+    widgets::Padding,
 };
 use ratatui_textarea::TextArea;
 use strum::IntoEnumIterator;
@@ -1058,8 +1057,6 @@ impl MainScreen {
         let [header, vert, _] = vertical![==3, >=1, ==2].areas(frame_area);
 
         let [description, list] = horizontal![==vert.width * 3 / 8 - 1, >=0].areas(vert);
-
-        frame.render_widget(Block::new().bg(tailwind::SLATE.c900), header);
 
         self.drawing_images = false;
         self.render_movies_list(frame, image_renderer, key_event_handler, list);

@@ -481,8 +481,7 @@ impl From<TMDBMovieDetails> for Movie {
             id: tmdb_details.id,
             title: tmdb_details.title.clone(),
             external_ratings,
-            release_date: NaiveDate::parse_from_str(&tmdb_details.release_date, "%Y-%m-%d")
-                .unwrap_or_default(),
+            release_date: tmdb_details.release_date,
             language: tmdb_details.original_language.clone(),
             genres: tmdb_details
                 .genres

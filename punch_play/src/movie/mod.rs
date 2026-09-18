@@ -319,11 +319,16 @@ pub fn clear_history(access_token: &str, movie_id: u32) -> anyhow::Result<Respon
         format!("Bearer {}", access_token).parse().unwrap(),
     );
 
+    let body = json!({
+        "title": "null",
+        "year": 123
+    });
+
     crate::send_punch_play_request(
         &client,
         &format!("https://punchplay.tv/api/platform/v1/title/movie/{movie_id}/history"),
         &headers,
-        None,
+        Some(&body),
         None,
         Method::DELETE,
     )

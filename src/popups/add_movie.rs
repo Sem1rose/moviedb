@@ -4,7 +4,7 @@ use std::{
     thread,
 };
 
-use chrono::{DateTime, Datelike, Local, Utc};
+use chrono::{DateTime, Datelike, Local, NaiveDate, Utc};
 use itertools::Itertools;
 use log::error;
 use punch_play::{
@@ -31,10 +31,7 @@ use tmdb::{
     self,
     smo::{MovieDetails as TMDBMovieDetails, SearchResult as TMDBSearchResult},
 };
-use trakt::{
-    self,
-    smo::{MovieDetails as TraktMovieDetails, SearchResponseMovie as TraktSearchResponseMovie},
-};
+use trakt::{self, smo::MovieDetails as TraktMovieDetails};
 
 use crate::{
     app::App,
@@ -61,33 +58,36 @@ pub enum Phase {
 
 #[allow(clippy::upper_case_acronyms)]
 enum SearchResults {
-    Trakt(anyhow::Result<Vec<TraktSearchResponseMovie>>),
+    // Trakt(anyhow::Result<Vec<TraktSearchResponseMovie>>),
     PunchPlay(anyhow::Result<Vec<PunchPlayItemDetails>>),
     TMDB(anyhow::Result<Vec<TMDBSearchResult>>),
 }
 struct SearchResultMovie {
     title:        String,
-    release_year: u32,
+    released:     bool,
+    release_date: NaiveDate,
     rating:       f64,
     id:           u32,
     poster:       Option<String>,
 }
-impl From<TraktSearchResponseMovie> for SearchResultMovie {
-    fn from(value: TraktSearchResponseMovie) -> Self {
-        Self {
-            title:        value.title,
-            release_year: value.year.unwrap_or(1970) as u32,
-            rating:       value.rating,
-            id:           value.ids.tmdb,
-            poster:       None,
-        }
-    }
-}
+// impl From<TraktSearchResponseMovie> for SearchResultMovie {
+//     fn from(value: TraktSearchResponseMovie) -> Self {
+//         Self {
+//             title:        value.title,
+//             release_year: value.year.unwrap_or(1970) as u32,
+//             rating:       value.rating,
+//             id:           value.ids.tmdb,
+//             poster:       None,
+//         }
+//     }
+// }
 impl From<PunchPlayItemDetails> for SearchResultMovie {
     fn from(value: PunchPlayItemDetails) -> Self {
         Self {
             title:        value.name,
-            release_year: value.release_date.year() as u32,
+            released:     value.release_date != NaiveDate::MIN
+                && chrono::Utc::now().date_naive() > value.release_date,
+            release_date: value.release_date,
             rating:       value.community_rating,
             id:           value.tmdb_id,
             poster:       value.poster_path,
@@ -98,7 +98,9 @@ impl From<TMDBSearchResult> for SearchResultMovie {
     fn from(value: TMDBSearchResult) -> Self {
         Self {
             title:        value.title,
-            release_year: value.release_date.year() as u32,
+            released:     value.release_date != NaiveDate::MIN
+                && chrono::Utc::now().date_naive() > value.release_date,
+            release_date: value.release_date,
             rating:       value.vote_average.unwrap_or(0.0),
             id:           value.id,
             poster:       value.poster_path,
@@ -186,10 +188,10 @@ impl AddMoviePopup {
         let (tx_search_results, rx_search_results) = mpsc::channel();
 
         let search_string = self.input0.lines()[0].trim().to_string();
-        let trakt_status = self.trakt_tokens.status;
+        // let trakt_status = self.trakt_tokens.status;
         let punch_play_status = self.punch_play_tokens.status;
         let tmdb_status = self.tmdb_tokens.status;
-        let client_id = self.trakt_tokens.client_id_owned();
+        // let client_id = self.trakt_tokens.client_id_owned();
         let tmdb_access_token = self.tmdb_tokens.access_token_owned();
 
         thread::spawn(move || {
@@ -198,11 +200,11 @@ impl AddMoviePopup {
                     &tmdb_access_token,
                     &search_string,
                 )));
-            } else if trakt_status.is_some() {
-                _ = tx_search_results.send(SearchResults::Trakt(trakt::movie::find_movie(
-                    &client_id,
-                    &search_string,
-                )));
+            // } else if trakt_status.is_some() {
+            //     _ = tx_search_results.send(SearchResults::Trakt(trakt::movie::find_movie(
+            //         &client_id,
+            //         &search_string,
+            //     )));
             } else if punch_play_status.is_some() {
                 _ = tx_search_results.send(SearchResults::PunchPlay(
                     punch_play::movie::find_movie(&search_string),
@@ -353,14 +355,14 @@ impl PopupTrait for AddMoviePopup {
                                         None
                                     }
                                 },
-                            SearchResults::Trakt(trakt_results) => match trakt_results {
-                                Ok(results) =>
-                                    Some(results.into_iter().map(|x| x.into()).collect_vec()),
-                                Err(error) => {
-                                    error!("Trakt error while searching: {error:#?}");
-                                    None
-                                }
-                            },
+                            // SearchResults::Trakt(trakt_results) => match trakt_results {
+                            //     Ok(results) =>
+                            //         Some(results.into_iter().map(|x| x.into()).collect_vec()),
+                            //     Err(error) => {
+                            //         error!("Trakt error while searching: {error:#?}");
+                            //         None
+                            //     }
+                            // },
                         };
                         _ = self.rx_search_result.take();
                     }
@@ -532,8 +534,10 @@ impl PopupTrait for AddMoviePopup {
                             num_hidden_rows,
                             buffer_negative_offset,
                         );
-
                         let alternate = index & 1 == 1;
+
+                        let result = &self.search_results.as_ref().unwrap()[index];
+                        let no_date = result.release_date == NaiveDate::MIN;
 
                         key_event_handler.bind_mouse_button_down(
                             ratatui::crossterm::event::MouseButton::Left,
@@ -558,16 +562,15 @@ impl PopupTrait for AddMoviePopup {
                         for position in buffer_area.positions() {
                             buffer[position].set_symbol(" ").set_style(Style::new().bg(
                                 if selected {
-                                    tailwind::TEAL.c600
+                                    tailwind::TEAL.c700
                                 } else if !alternate {
-                                    tailwind::GRAY.c600
+                                    tailwind::SLATE.c900
                                 } else {
                                     tailwind::SLATE.c700
                                 },
                             ));
                         }
 
-                        let result = &self.search_results.as_ref().unwrap()[index];
                         for x in 0..buffer_area.width {
                             buffer[(buffer_area.x + x, buffer_area.y)]
                                 .set_symbol("▔")
@@ -588,43 +591,62 @@ impl PopupTrait for AddMoviePopup {
                         let [poster_area, _, description_area] = horizontal![==8, ==1, >=0]
                             .areas(helpers::add_padding(buffer_area, Padding::proportional(1)));
                         line![
-                            span!(&result.title)
-                                .fg(if selected {
-                                    material::CYAN.c100
-                                } else {
-                                    material::ORANGE.c400
-                                })
-                                .add_modifier(if selected {
-                                    Modifier::BOLD
-                                } else {
-                                    Modifier::empty()
-                                }),
-                            span!("  "),
-                            span!(result.release_year)
-                                .fg(if selected {
-                                    material::CYAN.c100
-                                } else {
-                                    material::ORANGE.c400
-                                })
-                                .add_modifier(if selected {
-                                    Modifier::BOLD
-                                } else {
-                                    Modifier::empty()
-                                })
-                                .italic(),
-                        ]
-                        .left_aligned()
-                        .render(description_area.offset(Offset::new(0, 2)), buffer);
-
-                        line![format!("{:.1}", result.rating)]
+                            helpers::ellipsize_string(
+                                &result.title,
+                                description_area.width as usize
+                                    - if no_date { 0 } else { 5 }
+                                    - if result.released { 0 } else { 15 },
+                            )
                             .fg(if selected {
                                 material::CYAN.c100
                             } else {
                                 material::ORANGE.c400
                             })
-                            .add_modifier(if selected { Modifier::BOLD } else { Modifier::empty() })
-                            .left_aligned()
-                            .render(description_area.offset(Offset::new(0, 4)), buffer);
+                            .add_modifier(if selected {
+                                Modifier::BOLD
+                            } else {
+                                Modifier::empty()
+                            }),
+                            if !no_date {
+                                format!(" {}", result.release_date.year())
+                                    .fg(if selected {
+                                        material::CYAN.c100
+                                    } else {
+                                        material::ORANGE.c400
+                                    })
+                                    .add_modifier(if selected {
+                                        Modifier::BOLD
+                                    } else {
+                                        Modifier::empty()
+                                    })
+                                    .italic()
+                            } else {
+                                "".into()
+                            },
+                            if !result.released { span!(" - ") } else { "".into() },
+                            if !result.released {
+                                "Not released".italic().fg(tailwind::RED.c300)
+                            } else {
+                                "".into()
+                            }
+                        ]
+                        .render(description_area.offset(Offset::new(0, 2)), buffer);
+
+                        if result.released {
+                            line![format!("{:.1}", result.rating)]
+                                .fg(if selected {
+                                    material::CYAN.c100
+                                } else {
+                                    material::ORANGE.c400
+                                })
+                                .add_modifier(if selected {
+                                    Modifier::BOLD
+                                } else {
+                                    Modifier::empty()
+                                })
+                                .left_aligned()
+                                .render(description_area.offset(Offset::new(0, 4)), buffer);
+                        }
 
                         if let Some(poster) = result.poster.clone() {
                             let mut cell = Cell::new(" ");

@@ -5,10 +5,8 @@ fn naive_date_deserializer<'de, D>(d: D) -> Result<NaiveDate, D::Error>
 where
     D: Deserializer<'de>,
 {
-    Deserialize::deserialize(d).and_then(|value: Option<&str>| {
-        value.map_or(Ok(Default::default()), |value| {
-            NaiveDate::parse_from_str(value, "%Y-%m-%d").map_err(serde::de::Error::custom)
-        })
+    Deserialize::deserialize(d).map(|value: &str| {
+        NaiveDate::parse_from_str(value, "%Y-%m-%d").unwrap_or(NaiveDate::MIN)
     })
 }
 
@@ -16,12 +14,10 @@ fn date_time_deserializer<'de, D>(d: D) -> Result<DateTime<Utc>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    Deserialize::deserialize(d).and_then(|value: Option<&str>| {
-        value.map_or(Ok(Default::default()), |value| {
-            DateTime::parse_from_rfc3339(value)
-                .map(|x| x.with_timezone(&Utc))
-                .map_err(serde::de::Error::custom)
-        })
+    Deserialize::deserialize(d).and_then(|value: &str| {
+        DateTime::parse_from_rfc3339(value)
+            .map(|x| x.with_timezone(&Utc))
+            .map_err(serde::de::Error::custom)
     })
 }
 
@@ -62,7 +58,7 @@ pub struct ItemDetails {
     #[serde(deserialize_with = "naive_date_deserializer", default)]
     pub release_date:      NaiveDate,
     pub popularity:        Option<f64>,
-    pub runtime_minutes:   u32,
+    pub runtime_minutes:   Option<u32>,
     pub genres:            Vec<String>,
     pub age_rating:        Option<String>,
     pub original_language: String,

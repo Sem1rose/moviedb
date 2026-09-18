@@ -137,7 +137,9 @@ impl MainScreen {
 
         frame.render_widget(Fill::new(" ").bg(tailwind::GRAY.c950), backdrop_area);
         if let Some(movie) = movie {
-            let no_date = !movie.released && movie.release_date == Default::default();
+            let no_date = !movie.released
+                && (movie.release_date == Default::default()
+                    || movie.release_date == chrono::NaiveDate::MIN);
 
             let [title_area, description_area] =
                 vertical![==if !no_date {8} else {7}, >=1].areas(remaining_area);
@@ -961,6 +963,32 @@ impl MainScreen {
                     },
                     buffer_negative_y_offset,
                 );
+            let scroll = move |main_screen: &mut MainScreen, data: event_handler::Data| {
+                let list = main_screen
+                    .movies_description
+                    .credits_tab
+                    .get_child_list_mut(
+                        main_screen
+                            .movies_description
+                            .credits_tab
+                            .main_list
+                            .selected_index,
+                    );
+                match data {
+                    event_handler::Data::Direction(true, _) => {
+                        list.selected_index = list.scroll_pos + list.num_visible_items - 1;
+                        if !list.partially_visible {
+                            list.scroll(true, num_cast);
+                        }
+                    }
+                    event_handler::Data::Direction(false, _) => {
+                        list.selected_index = list.scroll_pos;
+                        list.scroll(false, num_cast);
+                    }
+                    _ => (),
+                }
+            };
+            let _scroll = scroll.clone();
             key_event_handler.bind_vertical(
                 (Some(1), None),
                 "Scroll".into(),
@@ -977,29 +1005,22 @@ impl MainScreen {
                             .credits_tab
                             .main_list
                             .selected_index = cast_or_crew;
-                        let list = main_screen
-                            .movies_description
-                            .credits_tab
-                            .get_child_list_mut(
-                                main_screen
-                                    .movies_description
-                                    .credits_tab
-                                    .main_list
-                                    .selected_index,
-                            );
-                        match data {
-                            event_handler::Data::Direction(true, _) => {
-                                list.selected_index = list.scroll_pos + list.num_visible_items - 1;
-                                if !list.partially_visible {
-                                    list.scroll(true, num_cast);
-                                }
-                            }
-                            event_handler::Data::Direction(false, _) => {
-                                list.selected_index = list.scroll_pos;
-                                list.scroll(false, num_cast);
-                            }
-                            _ => (),
-                        }
+                        _scroll(main_screen, data);
+                    }
+                },
+            );
+            key_event_handler.bind_vertical(
+                (Some(1), None),
+                "Scroll".into(),
+                None,
+                move |app, data| {
+                    if let Some(Screen::MainScreen(main_screen)) =
+                        app.drawer.current_screen.as_mut()
+                    {
+                        main_screen.tab = 1;
+                        main_screen.item = 0;
+
+                        scroll(main_screen, data);
                     }
                 },
             );

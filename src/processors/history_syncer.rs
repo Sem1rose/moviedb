@@ -457,7 +457,7 @@ impl HistorySyncerProcessor {
                                                     if !response.status().is_success() {
                                                         Ok(response)
                                                     } else {
-                                                        let response2 =
+                                                        let response =
                                                             punch_play::movie::add_or_edit_rating(
                                                                 punch_play_tokens.access_token(),
                                                                 movie_id,
@@ -465,9 +465,9 @@ impl HistorySyncerProcessor {
                                                                 Some(date),
                                                             );
 
-                                                        response2
+                                                        response
                                                     },
-                                                res @ _ => res,
+                                                err @ _ => err,
                                             }
                                         }))
                                     });
@@ -492,16 +492,29 @@ impl HistorySyncerProcessor {
                                 }
                                 SyncItem::RemoveFromWatched { movie_id } => {
                                     thread::spawn(move || {
-                                        tx_sync_response.send((
-                                            item,
-                                            source,
-                                            punch_play::movie::add_or_edit_rating(
+                                        tx_sync_response.send((item, source, {
+                                            let response = punch_play::movie::add_or_edit_rating(
                                                 punch_play_tokens.access_token(),
                                                 movie_id,
                                                 None,
                                                 None,
-                                            ),
-                                        ))
+                                            );
+                                            match response {
+                                                Ok(response) =>
+                                                    if !response.status().is_success() {
+                                                        Ok(response)
+                                                    } else {
+                                                        let response =
+                                                            punch_play::movie::clear_history(
+                                                                punch_play_tokens.access_token(),
+                                                                movie_id,
+                                                            );
+
+                                                        response
+                                                    },
+                                                err @ _ => err,
+                                            }
+                                        }))
                                     });
                                 }
                                 SyncItem::RemoveFromList { list, movie_id } => match list {

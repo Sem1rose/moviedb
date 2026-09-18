@@ -5,6 +5,14 @@ use serde_json::Value;
 
 use crate::{collection::smo::CollectionDetails, movie::PaginatedResponse};
 
+fn date_serializer<'de, D>(d: D) -> Result<NaiveDate, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Deserialize::deserialize(d)
+        .map(|x: &str| NaiveDate::parse_from_str(x, "%Y-%m-%d").unwrap_or(NaiveDate::MIN))
+}
+
 #[derive(Deserialize, Clone, Debug)]
 pub struct MovieImage {
     // aspect_ratio: f32,
@@ -65,26 +73,20 @@ pub struct SearchResult {
     pub rating:            Option<f64>,
     pub poster_path:       Option<String>,
     pub backdrop_path:     Option<String>,
-    #[serde(deserialize_with = "custom_deserialize")]
+    #[serde(deserialize_with = "date_serializer")]
     pub release_date:      NaiveDate,
     // pub video:             bool,
     pub vote_average:      Option<f64>,
     pub vote_count:        u32,
     pub media_type:        Option<String>,
 }
-fn custom_deserialize<'de, D>(d: D) -> Result<NaiveDate, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    Deserialize::deserialize(d)
-        .map(|x: &str| NaiveDate::parse_from_str(x, "%Y-%m-%d").unwrap_or_default())
-}
 
 #[derive(Deserialize, Default, Debug, Clone)]
 pub struct MovieDetails {
     pub id:                    u32,
     pub imdb_id:               String,
-    pub release_date:          String,
+    #[serde(deserialize_with = "date_serializer")]
+    pub release_date:          NaiveDate,
     pub title:                 String,
     pub original_title:        String,
     pub tagline:               String,

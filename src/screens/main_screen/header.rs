@@ -288,6 +288,7 @@ impl MainScreen {
             }
         });
 
+        frame.render_widget(Block::new().bg(tailwind::SLATE.c950), area);
         let filter = if let Some(FilterCriterion::Title(n, f)) =
             pop_criterion!(self.filter_criteria, FilterCriterion::Title(_, _))
         {
