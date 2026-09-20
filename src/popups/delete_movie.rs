@@ -43,18 +43,18 @@ impl PopupTrait for DeleteMoviePopup {
     fn render(
         &mut self,
         frame: &mut Frame,
-        key_event_handler: &mut EventHandler,
+        event_handler: &mut EventHandler,
         image_renderer: &mut RatatuiImage,
     ) {
-        key_event_handler.clear();
-        key_event_handler.bind_mouse_button_down(
+        event_handler.clear();
+        event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
             frame.area(),
             |app, _| {
                 app.drawer.close_popup();
             },
         );
-        key_event_handler.bind_horizontal((None, None), "Navigate".into(), None, |app, data| {
+        event_handler.bind_horizontal((None, None), "Navigate".into(), None, |app, data| {
             if let Some(Popup::DeleteMovie(delete_movie_popup)) = app.drawer.active_popup.as_mut() {
                 match data {
                     event_handler::Data::Direction(true, _) => {
@@ -71,13 +71,13 @@ impl PopupTrait for DeleteMoviePopup {
                 }
             }
         });
-        key_event_handler.bind_esc((None, None), "Cancel".into(), |app, _| {
+        event_handler.bind_esc((None, None), "Cancel".into(), |app, _| {
             app.drawer.close_popup();
         });
-        key_event_handler.bind_enter((None, Some(0)), "Cancel".into(), |app, _| {
+        event_handler.bind_enter((None, Some(0)), "Cancel".into(), |app, _| {
             app.drawer.close_popup();
         });
-        key_event_handler.bind_enter((None, Some(1)), "Confirm".into(), |app, _| {
+        event_handler.bind_enter((None, Some(1)), "Confirm".into(), |app, _| {
             app.remove_movie();
             app.drawer.close_popup();
         });
@@ -89,7 +89,7 @@ impl PopupTrait for DeleteMoviePopup {
             true,
         );
         image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
-        key_event_handler.bind_mouse_button_down(
+        event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
             popup_area.outer(Margin::new(1, 1)),
             |_, _| {},
@@ -116,7 +116,7 @@ impl PopupTrait for DeleteMoviePopup {
             frame.buffer_mut(),
         );
         for (i, mouse_area) in actions_mouse_areas.into_iter().enumerate() {
-            key_event_handler.bind_mouse_button_down(
+            event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,
                 mouse_area,
                 move |app, _| {

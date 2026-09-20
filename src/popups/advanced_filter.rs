@@ -204,7 +204,7 @@ impl Widget {
 
     fn bind(
         &mut self,
-        key_event_handler: &mut EventHandler,
+        event_handler: &mut EventHandler,
         valid: bool,
         area: Rect,
         selected_item: usize,
@@ -231,7 +231,7 @@ impl Widget {
                 let dropdown_type = *dropdown_type;
                 let can_search = search_placeholder.is_some();
                 let input_empty = text_input.is_empty();
-                key_event_handler.bind_enter(
+                event_handler.bind_enter(
                     (Some(2), Some(item)),
                     if matches!(dropdown_type, DropdownType::MultipleChoice)
                         && can_search
@@ -292,7 +292,7 @@ impl Widget {
                     },
                 );
 
-                key_event_handler.bind_vertical(
+                event_handler.bind_vertical(
                     (Some(2), Some(item)),
                     "Choose".into(),
                     Some(if selected && tab_selected {
@@ -343,7 +343,7 @@ impl Widget {
                 );
 
                 if matches!(dropdown_type, DropdownType::MultipleChoice) && !can_search {
-                    key_event_handler.bind_key(
+                    event_handler.bind_key(
                         (Some(2), Some(item)),
                         ' ',
                         "Toggle".into(),
@@ -374,7 +374,7 @@ impl Widget {
                     );
                 }
 
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     area,
                     move |app, _| {
@@ -388,7 +388,7 @@ impl Widget {
                 );
 
                 if can_search {
-                    key_event_handler.bind_input_field(
+                    event_handler.bind_input_field(
                         (Some(2), Some(item)),
                         "".into(),
                         move |app, data| {
@@ -486,7 +486,7 @@ impl Widget {
                         .resize(Size::new(area.width - 2, 1));
                     for i in 0..num_visible_items {
                         let index = i + *scroll_pos;
-                        key_event_handler.bind_mouse_button_down(
+                        event_handler.bind_mouse_button_down(
                             ratatui::crossterm::event::MouseButton::Left,
                             mouse_area,
                             move |app, _| {
@@ -563,7 +563,7 @@ impl Widget {
                 let item = *item;
                 let text_input_type = *text_input_type;
 
-                key_event_handler.bind_enter(
+                event_handler.bind_enter(
                     (Some(2), Some(item)),
                     if last_item && valid { "Confirm" } else { "Select" }.into(),
                     move |app, _| {
@@ -581,7 +581,7 @@ impl Widget {
                     },
                 );
 
-                key_event_handler.bind_input_field(
+                event_handler.bind_input_field(
                     (Some(2), Some(item)),
                     "".into(),
                     move |app, data| {
@@ -638,7 +638,7 @@ impl Widget {
                         }
                     },
                 );
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     area,
                     move |app, _| {
@@ -657,7 +657,7 @@ impl Widget {
     fn render(
         &mut self,
         frame: &mut Frame,
-        key_event_handler: &mut EventHandler,
+        event_handler: &mut EventHandler,
         area: Rect,
         selected_item: usize,
         tab_selected: bool,
@@ -764,7 +764,7 @@ impl Widget {
                         num_visible_items: *num_visible_items,
                         ..Default::default()
                     }
-                    .render_dropdown(area, frame, key_event_handler)
+                    .render_dropdown(area, frame, event_handler)
                     .into_iter()
                     .nth(0)
                     .unwrap()
@@ -1668,21 +1668,21 @@ impl PopupTrait for AdvancedFilterPopup {
     fn render(
         &mut self,
         frame: &mut Frame,
-        key_event_handler: &mut EventHandler,
+        event_handler: &mut EventHandler,
         image_renderer: &mut RatatuiImage,
     ) {
-        key_event_handler.clear();
-        key_event_handler.bind_mouse_button_down(
+        event_handler.clear();
+        event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
             frame.area(),
             |app, _| {
                 app.drawer.close_popup();
             },
         );
-        key_event_handler.bind_esc((None, None), "Close".into(), |app, _| {
+        event_handler.bind_esc((None, None), "Close".into(), |app, _| {
             app.drawer.close_popup();
         });
-        key_event_handler.bind_key((None, None), 'q', "Close".into(), |app, _| {
+        event_handler.bind_key((None, None), 'q', "Close".into(), |app, _| {
             app.drawer.close_popup();
         });
 
@@ -1692,10 +1692,10 @@ impl PopupTrait for AdvancedFilterPopup {
                 _ => 3,
             };
 
-        // key_event_handler.bind_enter((Some(0), None), "Edit Criterion".into(), );
-        // key_event_handler.bind_key((Some(0), None), ' ', "Delete Criterion".into(), );
+        // event_handler.bind_enter((Some(0), None), "Edit Criterion".into(), );
+        // event_handler.bind_key((Some(0), None), ' ', "Delete Criterion".into(), );
 
-        key_event_handler.bind_tab((None, None), "Change focus".into(), move |app, data| {
+        event_handler.bind_tab((None, None), "Change focus".into(), move |app, data| {
             if let Some(Popup::AdvancedFilter(advanced_filter_popup)) =
                 app.drawer.active_popup.as_mut()
             {
@@ -1755,7 +1755,7 @@ impl PopupTrait for AdvancedFilterPopup {
             true,
         );
         image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
-        key_event_handler.bind_mouse_button_down(
+        event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
             popup_area.outer(Margin::new(1, 1)),
             |_, _| {},
@@ -1792,7 +1792,7 @@ impl PopupTrait for AdvancedFilterPopup {
             let this_tab = 3;
             let tab_selected = self.tab == this_tab;
 
-            key_event_handler.bind_enter(
+            event_handler.bind_enter(
                 (Some(this_tab), Some(0)),
                 "Confirm".into(),
                 move |app, _| {
@@ -1801,15 +1801,11 @@ impl PopupTrait for AdvancedFilterPopup {
                     app.drawer.close_popup();
                 },
             );
-            key_event_handler.bind_enter(
-                (Some(this_tab), Some(1)),
-                "Cancel".into(),
-                move |app, _| {
-                    app.drawer.close_popup();
-                },
-            );
+            event_handler.bind_enter((Some(this_tab), Some(1)), "Cancel".into(), move |app, _| {
+                app.drawer.close_popup();
+            });
 
-            key_event_handler.bind_horizontal(
+            event_handler.bind_horizontal(
                 (Some(this_tab), None),
                 "Navigate".into(),
                 None,
@@ -1856,7 +1852,7 @@ impl PopupTrait for AdvancedFilterPopup {
                 frame.buffer_mut(),
             );
             for (i, mouse_area) in actions_mouse_areas.into_iter().enumerate() {
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     mouse_area,
                     move |app, _| {
@@ -1873,7 +1869,7 @@ impl PopupTrait for AdvancedFilterPopup {
             let this_tab = 2;
             let tab_selected = self.tab == this_tab;
 
-            key_event_handler.bind_esc((Some(this_tab), None), "Back".into(), |app, _| {
+            event_handler.bind_esc((Some(this_tab), None), "Back".into(), |app, _| {
                 if let Some(Popup::AdvancedFilter(advanced_filter_popup)) =
                     app.drawer.active_popup.as_mut()
                 {
@@ -1936,7 +1932,7 @@ impl PopupTrait for AdvancedFilterPopup {
                 usize::MAX
             })();
 
-            key_event_handler.bind_horizontal(
+            event_handler.bind_horizontal(
                 (Some(this_tab), None),
                 "Navigate".into(),
                 None,
@@ -1983,7 +1979,7 @@ impl PopupTrait for AdvancedFilterPopup {
                 .enumerate()
                 .dropping(if valid { 0 } else { 1 })
             {
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     mouse_area,
                     move |app, _| {
@@ -2036,9 +2032,9 @@ impl PopupTrait for AdvancedFilterPopup {
                 for (area, (j, widget)) in areas.iter().step_by(2).zip(row.into_iter().enumerate())
                 {
                     if widget_visible[i][j] {
-                        widget.render(frame, key_event_handler, *area, self.item, tab_selected);
+                        widget.render(frame, event_handler, *area, self.item, tab_selected);
                         widget.bind(
-                            key_event_handler,
+                            event_handler,
                             valid,
                             *area,
                             self.item,
@@ -2060,7 +2056,7 @@ impl PopupTrait for AdvancedFilterPopup {
                 .areas(dropdown_area);
 
             if self.dropdown_selected_item.is_some() {
-                key_event_handler.bind_enter(
+                event_handler.bind_enter(
                     (Some(this_tab), Some(0)),
                     "Select".into(),
                     move |app, _| {
@@ -2078,7 +2074,7 @@ impl PopupTrait for AdvancedFilterPopup {
                         }
                     },
                 );
-                key_event_handler.bind_vertical(
+                event_handler.bind_vertical(
                     (Some(this_tab), Some(0)),
                     "Choose".into(),
                     Some(if selected && tab_selected {
@@ -2136,7 +2132,7 @@ impl PopupTrait for AdvancedFilterPopup {
                     },
                 );
             } else {
-                key_event_handler.bind_enter(
+                event_handler.bind_enter(
                     (Some(this_tab), Some(0)),
                     "Open Dropdown".into(),
                     |app, _| {
@@ -2164,7 +2160,7 @@ impl PopupTrait for AdvancedFilterPopup {
             }
 
             if self.dropdown_selected_item.is_some() {
-                key_event_handler.bind_esc((Some(this_tab), Some(0)), "Close".into(), |app, _| {
+                event_handler.bind_esc((Some(this_tab), Some(0)), "Close".into(), |app, _| {
                     if let Some(Popup::AdvancedFilter(advanced_filter_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -2172,7 +2168,7 @@ impl PopupTrait for AdvancedFilterPopup {
                     }
                 });
             } else if self.active_criterion.is_some() {
-                key_event_handler.bind_esc((Some(this_tab), Some(0)), "Clear".into(), |app, _| {
+                event_handler.bind_esc((Some(this_tab), Some(0)), "Clear".into(), |app, _| {
                     if let Some(Popup::AdvancedFilter(advanced_filter_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -2199,7 +2195,7 @@ impl PopupTrait for AdvancedFilterPopup {
                     dropdown_area.width as usize - 4,
                 ),
             );
-            key_event_handler.bind_mouse_button_down(
+            event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,
                 dropdown_area,
                 move |app, _| {
@@ -2273,13 +2269,13 @@ impl PopupTrait for AdvancedFilterPopup {
                         num_visible_items: self.dropdown_num_visible_items,
                         ..Default::default()
                     }
-                    .render_dropdown(dropdown_area, frame, key_event_handler)
+                    .render_dropdown(dropdown_area, frame, event_handler)
                     .into_iter()
                     .nth(0)
                     .unwrap()
                     .1;
                     for i in 0..len {
-                        key_event_handler.bind_mouse_button_down(
+                        event_handler.bind_mouse_button_down(
                             ratatui::crossterm::event::MouseButton::Left,
                             mouse_area,
                             move |app, _| {

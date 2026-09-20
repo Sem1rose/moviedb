@@ -16,6 +16,7 @@ use ratatui::{
 use ratatui_textarea::{TextArea, WrapMode};
 pub use scrolling_gallery::*;
 pub use scrolling_list::*;
+use throbber_widgets_tui::Set;
 
 use crate::helpers::add_padding;
 
@@ -24,6 +25,40 @@ mod scrolling_gallery;
 mod scrolling_list;
 
 pub use ratatui::layout::Direction as Orientation;
+
+pub const SNAKE_2X2_TOP: Set = Set {
+    full:    "⡖⢲",
+    empty:   "  ",
+    symbols: &[
+        "⠒⠒", "⠐⠲", " ⢲", " ⢰", " ⢠", " ⢀", "  ", "  ", "  ", "  ", "  ", "⡀ ", "⡄ ", "⡆ ", "⡖ ",
+        "⠖⠂",
+    ],
+};
+pub const SNAKE_2X2_BOTTOM: Set = Set {
+    full:    "⠧⠼",
+    empty:   "  ",
+    symbols: &[
+        "  ", "  ", "  ", " ⠈", " ⠘", " ⠸", " ⠼", "⠠⠴", "⠤⠤", "⠦⠄", "⠧ ", "⠇ ", "⠃ ", "⠁ ", "  ",
+        "  ",
+    ],
+};
+
+// pub const INSET_SNAKES_2X2_TOP: Set = Set {
+//     full:    "⣶⣶",
+//     empty:   "  ",
+//     symbols: &[
+//         "⡦⡄", "⢶⠄", "⢲⠂", "⢐⠒", " ⠲", " ⢰", " ⣠", " ⣄", "⠠⡄", "⢠⠄", "⢠ ", "⢀ ", "  ", "  ", "⡀⡀",
+//         "⡄⡄",
+//     ],
+// };
+// pub const INSET_SNAKES_2X2_BOTTOM: Set = Set {
+//     full:    "⠿⠿",
+//     empty:   "  ",
+//     symbols: &[
+//         "  ", "  ", "⠈ ", "⠘ ", "⠘⠂", "⠐⠃", " ⠋", " ⠙", " ⠸", " ⠴", "⠨⠤", "⠼⠄", "⠾⠂", "⠗⠃", "⠃⠃",
+//         "⠁⠁",
+//     ],
+// };
 
 pub enum Direction {
     Up,

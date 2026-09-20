@@ -261,14 +261,14 @@ impl PopupTrait for FetchMoviesPopup {
     fn render(
         &mut self,
         frame: &mut Frame,
-        key_event_handler: &mut EventHandler,
+        event_handler: &mut EventHandler,
         image_renderer: &mut RatatuiImage,
     ) {
         if !self.started {
             return;
         }
 
-        key_event_handler.clear();
+        event_handler.clear();
 
         let popup_area = widgets::window(
             frame,
@@ -281,7 +281,7 @@ impl PopupTrait for FetchMoviesPopup {
             self.errored.is_some(),
         );
         image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
-        key_event_handler.bind_mouse_button_down(
+        event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
             popup_area.outer(Margin::new(1, 1)),
             |_, _| {},

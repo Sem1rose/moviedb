@@ -626,7 +626,56 @@ impl HistorySyncerProcessor {
 }
 
 impl ProcessorTrait for HistorySyncerProcessor {
-    fn update(&mut self, _key_event_handler: &mut EventHandler) {
+    fn needs_render(&self) -> bool {
+        !self.errors.is_empty()
+    }
+
+    fn get_state(&self) -> (Option<usize>, Option<usize>) {
+        (None, Some(self.item))
+    }
+
+    fn active_operation(&self) -> Option<[String; 2]> {
+        self.processing.iter().next().map(|(i, s)| {
+            [
+                s.as_ref().to_string(),
+                match i {
+                    SyncItem::AddToWatched {
+                        movie_id,
+                        date: _,
+                        rating: _,
+                    } => format!("Adding {movie_id} to watched"),
+                    SyncItem::AddToList {
+                        list:
+                            crate::types::ListID::PunchPlay(list_id)
+                            | crate::types::ListID::TMDB(list_id),
+                        date: _,
+                        movie_id,
+                    } => format!("Adding {movie_id} to list {list_id}"),
+                    SyncItem::AddPlay {
+                        movie_id,
+                        date: _,
+                        rating: _,
+                    } => format!("Adding a new play for {movie_id}"),
+                    SyncItem::Edit {
+                        movie_id,
+                        date: _,
+                        rating: _,
+                    } => format!("Editing {movie_id}"),
+                    SyncItem::RemoveFromWatched { movie_id } =>
+                        format!("Removing {movie_id} from watched"),
+                    SyncItem::RemoveFromList {
+                        list:
+                            crate::types::ListID::PunchPlay(list_id)
+                            | crate::types::ListID::TMDB(list_id),
+                        movie_id,
+                    } => format!("Removing {movie_id} from list {list_id}"),
+                    _ => String::default(),
+                },
+            ]
+        })
+    }
+
+    fn update(&mut self, _event_handler: &mut EventHandler) {
         if !self.initialized || self.idle {
             return;
         }
@@ -663,45 +712,32 @@ impl ProcessorTrait for HistorySyncerProcessor {
         }
     }
 
-    fn needs_render(&self) -> bool {
-        !self.errors.is_empty()
-    }
-
-    fn get_state(&self) -> (Option<usize>, Option<usize>) {
-        (None, Some(self.item))
-    }
-
     fn render(
         &self,
         frame: &mut ratatui::Frame,
-        key_event_handler: &mut EventHandler,
         image_renderer: &mut RatatuiImage,
+        event_handler: &mut EventHandler,
     ) {
         if let Some((item, source, error)) = self.errors.first() {
-            key_event_handler.clear();
-            key_event_handler.bind_tab((None, None), "Navigate".into(), |app, _| {
+            event_handler.clear();
+            event_handler.bind_tab((None, None), "Navigate".into(), |app, _| {
                 if let Some(Processor::HistorySyncer(history_syncer_processor)) =
                     app.get_processor_mut(ProcessorDiscriminants::HistorySyncer)
                 {
                     history_syncer_processor.item = (history_syncer_processor.item == 0) as usize;
                 }
             });
-            key_event_handler.bind_horizontal(
-                (None, None),
-                "Navigate".into(),
-                None,
-                |app, data| {
-                    if let Some(Processor::HistorySyncer(history_syncer_processor)) =
-                        app.get_processor_mut(ProcessorDiscriminants::HistorySyncer)
-                    {
-                        if let crate::event_handler::Data::Direction(dir, _) = data {
-                            history_syncer_processor.item = dir as usize;
-                        }
+            event_handler.bind_horizontal((None, None), "Navigate".into(), None, |app, data| {
+                if let Some(Processor::HistorySyncer(history_syncer_processor)) =
+                    app.get_processor_mut(ProcessorDiscriminants::HistorySyncer)
+                {
+                    if let crate::event_handler::Data::Direction(dir, _) = data {
+                        history_syncer_processor.item = dir as usize;
                     }
-                },
-            );
+                }
+            });
 
-            key_event_handler.bind_enter((None, Some(0)), "Retry".into(), |app, _| {
+            event_handler.bind_enter((None, Some(0)), "Retry".into(), |app, _| {
                 if let Some(Processor::HistorySyncer(history_syncer_processor)) =
                     app.get_processor_mut(ProcessorDiscriminants::HistorySyncer)
                 {
@@ -709,7 +745,7 @@ impl ProcessorTrait for HistorySyncerProcessor {
                     history_syncer_processor.retry_sync(source, item);
                 }
             });
-            key_event_handler.bind_enter((None, Some(1)), "Skip".into(), |app, _| {
+            event_handler.bind_enter((None, Some(1)), "Skip".into(), |app, _| {
                 if let Some(Processor::HistorySyncer(history_syncer_processor)) =
                     app.get_processor_mut(ProcessorDiscriminants::HistorySyncer)
                 {
@@ -725,7 +761,7 @@ impl ProcessorTrait for HistorySyncerProcessor {
                 true,
             );
             image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
-            key_event_handler.bind_mouse_button_down(
+            event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,
                 popup_area.outer(Margin::new(1, 1)),
                 |_, _| {},
@@ -758,7 +794,7 @@ impl ProcessorTrait for HistorySyncerProcessor {
                 frame.buffer_mut(),
             );
             for (i, mouse_area) in actions_mouse_areas.into_iter().enumerate() {
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     mouse_area,
                     move |app, _| {

@@ -199,11 +199,11 @@ impl PopupTrait for AppInitPopup {
     fn render(
         &mut self,
         frame: &mut Frame,
-        key_event_handler: &mut EventHandler,
+        event_handler: &mut EventHandler,
         image_renderer: &mut RatatuiImage,
     ) {
-        key_event_handler.clear();
-        key_event_handler.bind_key((None, None), 'q', "Quit".into(), |app, _| {
+        event_handler.clear();
+        event_handler.bind_key((None, None), 'q', "Quit".into(), |app, _| {
             app.quit = true;
         });
         let popup_area = widgets::window(
@@ -213,7 +213,7 @@ impl PopupTrait for AppInitPopup {
             true,
         );
         image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
-        key_event_handler.bind_mouse_button_down(
+        event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
             popup_area.outer(Margin::new(1, 1)),
             |_, _| {},

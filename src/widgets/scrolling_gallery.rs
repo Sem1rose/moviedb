@@ -181,7 +181,7 @@ impl ScrollGallery {
         area: Rect,
         scrollbar_area: Rect,
         frame: &mut Frame,
-        key_event_handler: &mut EventHandler,
+        event_handler: &mut EventHandler,
         mut render_callback: impl FnMut(
             &mut Buffer,
             u16,
@@ -253,7 +253,7 @@ impl ScrollGallery {
                         index,
                         selected,
                         alternate,
-                        key_event_handler,
+                        event_handler,
                     );
 
                     if row_is_partially_visible {
@@ -296,7 +296,7 @@ impl ScrollGallery {
         area: Rect,
         scrollbar_area: Rect,
         frame: &mut Frame,
-        key_event_handler: &mut EventHandler,
+        event_handler: &mut EventHandler,
         render_callback: impl FnMut(&mut Buffer, u16, i32, bool, usize, bool, bool, &mut EventHandler),
     ) {
         self.update_for_area(area, num_items);
@@ -305,7 +305,7 @@ impl ScrollGallery {
             area,
             scrollbar_area,
             frame,
-            key_event_handler,
+            event_handler,
             render_callback,
         );
     }

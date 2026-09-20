@@ -91,10 +91,10 @@ impl MainScreen {
         &mut self,
         frame: &mut Frame,
         image_renderer: &mut RatatuiImage,
-        key_event_handler: &mut EventHandler,
+        event_handler: &mut EventHandler,
         area: Rect,
     ) {
-        key_event_handler.bind_tab((Some(1), None), "Change focus".into(), |app, data| {
+        event_handler.bind_tab((Some(1), None), "Change focus".into(), |app, data| {
             if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 match data {
                     event_handler::Data::Direction(true, _) => {
@@ -113,7 +113,7 @@ impl MainScreen {
             }
         });
 
-        key_event_handler.bind_mouse_button_down(
+        event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
             area,
             |app, _| {
@@ -295,7 +295,7 @@ impl MainScreen {
             }
 
             if num_available_tabs > 1 {
-                key_event_handler.bind_horizontal(
+                event_handler.bind_horizontal(
                     (Some(1), None),
                     "Change tab".into(),
                     None,
@@ -386,7 +386,7 @@ impl MainScreen {
                     height: 1,
                 });
 
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     mouse_area,
                     move |app, _| {
@@ -472,7 +472,7 @@ impl MainScreen {
                     self.movies_description.overview_scroll =
                         self.movies_description.overview_scroll.min(max_scroll);
                     if max_scroll > 0 {
-                        key_event_handler.bind_vertical(
+                        event_handler.bind_vertical(
                             (Some(1), None),
                             "Scroll".into(),
                             Some(description_area),
@@ -505,13 +505,13 @@ impl MainScreen {
                     );
                     frame.render_widget(text, description_area);
                 }
-                "Plays" => self.draw_plays_tab(description_area, &movie, frame, key_event_handler),
+                "Plays" => self.draw_plays_tab(description_area, &movie, frame, event_handler),
                 "Credits" => self.draw_credits_tab(
                     description_area,
                     &movie,
                     image_renderer,
                     frame,
-                    key_event_handler,
+                    event_handler,
                 ),
                 _ => (),
             };
@@ -627,7 +627,7 @@ impl MainScreen {
         area: Rect,
         movie: &Movie,
         frame: &mut Frame,
-        key_event_handler: &mut EventHandler,
+        event_handler: &mut EventHandler,
     ) {
         let movie_plays = &self.watched.borrow()[&movie.id].history;
         let tab_selected = self.tab == 1;
@@ -639,7 +639,7 @@ impl MainScreen {
             num_visible_plays + if render_partially_visible_play { 1 } else { 0 };
 
         if num_plays > num_visible_plays {
-            key_event_handler.bind_vertical(
+            event_handler.bind_vertical(
                 (Some(1), None),
                 "Scroll".into(),
                 None,
@@ -859,12 +859,12 @@ impl MainScreen {
         movie: &Movie,
         image_renderer: &mut RatatuiImage,
         frame: &mut Frame,
-        key_event_handler: &mut EventHandler,
+        event_handler: &mut EventHandler,
     ) {
         let num_cast = movie.credits.cast.len();
         let num_crew = movie.credits.crew.len();
 
-        key_event_handler.bind_key((Some(1), None), " ", "".into(), move |app, _| {
+        event_handler.bind_key((Some(1), None), " ", "".into(), move |app, _| {
             if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 main_screen
                     .movies_description
@@ -894,14 +894,14 @@ impl MainScreen {
             None,
             false,
             &mut buffer,
-            key_event_handler,
+            event_handler,
             |buffer,
              num_hidden_rows,
              buffer_negative_offset,
              align_opposite,
              index,
              _selected,
-             _key_event_handler| {
+             _event_handler| {
                 let buffer_area = *buffer.area();
 
                 for position in buffer_area.positions() {
@@ -989,7 +989,7 @@ impl MainScreen {
                 }
             };
             let _scroll = scroll.clone();
-            key_event_handler.bind_vertical(
+            event_handler.bind_vertical(
                 (Some(1), None),
                 "Scroll".into(),
                 Some(input_list_area.union(input_scrollbar_area)),
@@ -1009,7 +1009,7 @@ impl MainScreen {
                     }
                 },
             );
-            key_event_handler.bind_vertical(
+            event_handler.bind_vertical(
                 (Some(1), None),
                 "Scroll".into(),
                 None,
@@ -1024,7 +1024,7 @@ impl MainScreen {
                     }
                 },
             );
-            key_event_handler.bind_mouse_button_down(
+            event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,
                 helpers::add_padding(
                     input_scrollbar_area,
@@ -1043,7 +1043,7 @@ impl MainScreen {
                     }
                 },
             );
-            key_event_handler.bind_mouse_button_down(
+            event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,
                 helpers::add_padding(
                     input_scrollbar_area,
@@ -1077,14 +1077,14 @@ impl MainScreen {
                     Some(&mut scrollbar_buffer),
                     false,
                     &mut list_buffer,
-                    key_event_handler,
+                    event_handler,
                     |buffer,
                      num_hidden_columns,
                      buffer_negative_x_offset,
                      _align_right,
                      index,
                      _selected,
-                     key_event_handler| {
+                     event_handler| {
                         let alternate = index & 1 == 1;
                         let buffer_area = *buffer.area();
                         let visible_area = helpers::add_padding(
@@ -1101,7 +1101,7 @@ impl MainScreen {
                             y: buffer_negative_y_offset,
                         });
 
-                        key_event_handler.bind_mouse_button_down(
+                        event_handler.bind_mouse_button_down(
                             ratatui::crossterm::event::MouseButton::Left,
                             input_area,
                             move |app, _| {

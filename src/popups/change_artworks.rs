@@ -166,25 +166,25 @@ impl PopupTrait for ChangeArtworksPopup {
     fn render(
         &mut self,
         frame: &mut Frame,
-        key_event_handler: &mut EventHandler,
+        event_handler: &mut EventHandler,
         image_renderer: &mut RatatuiImage,
     ) {
-        key_event_handler.clear();
-        key_event_handler.bind_mouse_button_down(
+        event_handler.clear();
+        event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
             frame.area(),
             |app, _| {
                 app.drawer.close_popup();
             },
         );
-        key_event_handler.bind_key((None, None), 'q', "Close".into(), |app, _| {
+        event_handler.bind_key((None, None), 'q', "Close".into(), |app, _| {
             app.drawer.close_popup();
         });
-        key_event_handler.bind_esc((None, None), "Close".into(), |app, _| {
+        event_handler.bind_esc((None, None), "Close".into(), |app, _| {
             app.drawer.close_popup();
         });
 
-        key_event_handler.bind_tab((None, None), "Change tab".into(), |app, _| {
+        event_handler.bind_tab((None, None), "Change tab".into(), |app, _| {
             if let Some(Popup::ChangeArtworks(change_artworks_popup)) =
                 app.drawer.active_popup.as_mut()
             {
@@ -222,7 +222,7 @@ impl PopupTrait for ChangeArtworksPopup {
             false,
         );
         image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
-        key_event_handler.bind_mouse_button_down(
+        event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
             popup_area.outer(Margin::new(1, 1)),
             |_, _| {},
@@ -291,7 +291,7 @@ impl PopupTrait for ChangeArtworksPopup {
                 );
             }
 
-            key_event_handler.bind_mouse_button_down(
+            event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,
                 area,
                 move |app, _| {
@@ -333,7 +333,7 @@ impl PopupTrait for ChangeArtworksPopup {
             frame.buffer_mut(),
         );
         for (i, mouse_area) in actions_mouse_areas.into_iter().enumerate() {
-            key_event_handler.bind_mouse_button_down(
+            event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,
                 mouse_area,
                 move |app, _| {
@@ -364,7 +364,7 @@ impl PopupTrait for ChangeArtworksPopup {
                     + poster_path.as_ref().map(|_| 1).unwrap_or_default()
             };
 
-            key_event_handler.bind_horizontal(
+            event_handler.bind_horizontal(
                 (None, None),
                 "Scroll".into(),
                 Some(main_area),
@@ -387,7 +387,7 @@ impl PopupTrait for ChangeArtworksPopup {
                     }
                 },
             );
-            key_event_handler.bind_vertical(
+            event_handler.bind_vertical(
                 (None, None),
                 "Scroll".into(),
                 Some(main_area),
@@ -410,7 +410,7 @@ impl PopupTrait for ChangeArtworksPopup {
                     }
                 },
             );
-            key_event_handler.bind_key((None, None), ' ', "Select".into(), |app, _| {
+            event_handler.bind_key((None, None), ' ', "Select".into(), |app, _| {
                 if let Some(Popup::ChangeArtworks(change_artworks_popup)) =
                     app.drawer.active_popup.as_mut()
                 {
@@ -422,7 +422,7 @@ impl PopupTrait for ChangeArtworksPopup {
                     }
                 }
             });
-            key_event_handler.bind_enter((None, None), "Select & Confirm".into(), |app, _| {
+            event_handler.bind_enter((None, None), "Select & Confirm".into(), |app, _| {
                 if let Some(Popup::ChangeArtworks(change_artworks_popup)) =
                     app.drawer.active_popup.as_mut()
                 {
@@ -445,7 +445,7 @@ impl PopupTrait for ChangeArtworksPopup {
                 gallery_area,
                 scrollbar_area,
                 frame,
-                key_event_handler,
+                event_handler,
                 |buffer,
                  num_hidden_rows,
                  buffer_negative_offset,
@@ -453,7 +453,7 @@ impl PopupTrait for ChangeArtworksPopup {
                  index,
                  selected,
                  alternate,
-                 key_event_handler| {
+                 event_handler| {
                     let buffer_area = *buffer.area();
                     let (visible_area, input_area) = helpers::deconstruct_scrollview_area(
                         buffer_area,
@@ -463,7 +463,7 @@ impl PopupTrait for ChangeArtworksPopup {
                         buffer_negative_offset,
                     );
 
-                    key_event_handler.bind_mouse_button_down(
+                    event_handler.bind_mouse_button_down(
                         ratatui::crossterm::event::MouseButton::Left,
                         input_area,
                         move |app, _| {
@@ -581,7 +581,7 @@ impl PopupTrait for ChangeArtworksPopup {
                 },
             );
         } else {
-            frame.render_widget(Block::new().bg(tailwind::GRAY.c950), main_area);
+            frame.render_widget(Fill::new(" ").bg(tailwind::GRAY.c950), main_area);
             frame.render_stateful_widget(
                 Throbber::default()
                     .throbber_set(throbber::BRAILLE_SIX_DOUBLE)

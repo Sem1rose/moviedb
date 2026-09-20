@@ -397,21 +397,21 @@ impl PopupTrait for AddMoviePopup {
     fn render(
         &mut self,
         frame: &mut Frame,
-        key_event_handler: &mut EventHandler,
+        event_handler: &mut EventHandler,
         image_renderer: &mut RatatuiImage,
     ) {
-        key_event_handler.clear();
-        key_event_handler.bind_mouse_button_down(
+        event_handler.clear();
+        event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
             frame.area(),
             |app, _| {
                 app.drawer.close_popup();
             },
         );
-        key_event_handler.bind_esc((None, None), "Close".into(), |app, _| {
+        event_handler.bind_esc((None, None), "Close".into(), |app, _| {
             app.drawer.close_popup();
         });
-        key_event_handler.bind_key((None, None), 'q', "Close".into(), |app, _| {
+        event_handler.bind_key((None, None), 'q', "Close".into(), |app, _| {
             app.drawer.close_popup();
         });
 
@@ -420,7 +420,7 @@ impl PopupTrait for AddMoviePopup {
         match &self.phase {
             Phase::SelectMovie => {
                 let num_results = num_results.unwrap_or_default();
-                key_event_handler.bind_input_field((None, None), "".into(), |app, data| {
+                event_handler.bind_input_field((None, None), "".into(), |app, data| {
                     if let Some(Popup::AddMovie(add_movie_popup)) = app.drawer.active_popup.as_mut()
                     {
                         if let event_handler::Data::Key(key_event) = data {
@@ -449,7 +449,7 @@ impl PopupTrait for AddMoviePopup {
                     false,
                 );
                 image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     popup_area.outer(Margin::new(1, 1)),
                     |_, _| {},
@@ -457,7 +457,7 @@ impl PopupTrait for AddMoviePopup {
                 let [search_input_area, horiz] = vertical![==3, >=1].areas(popup_area);
                 let [results_list_area, scrollbar_area] = horizontal![>=1, ==1].areas(horiz);
                 if num_results > 0 {
-                    key_event_handler.bind_enter((None, None), "Select".into(), |app, _| {
+                    event_handler.bind_enter((None, None), "Select".into(), |app, _| {
                         if let Some(Popup::AddMovie(add_movie_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
@@ -466,7 +466,7 @@ impl PopupTrait for AddMoviePopup {
                     });
 
                     if num_results > 1 {
-                        key_event_handler.bind_vertical(
+                        event_handler.bind_vertical(
                             (None, None),
                             "Scroll".into(),
                             Some(horiz),
@@ -518,14 +518,14 @@ impl PopupTrait for AddMoviePopup {
                     Some(&mut scrollbar_buffer),
                     true,
                     &mut list_buffer,
-                    key_event_handler,
+                    event_handler,
                     |buffer,
                      num_hidden_rows,
                      buffer_negative_offset,
                      align_bottom,
                      index,
                      selected,
-                     key_event_handler| {
+                     event_handler| {
                         let buffer_area = *buffer.area();
                         let (visible_area, input_area) = helpers::deconstruct_scrollview_area(
                             buffer_area,
@@ -539,7 +539,7 @@ impl PopupTrait for AddMoviePopup {
                         let result = &self.search_results.as_ref().unwrap()[index];
                         let no_date = result.release_date == NaiveDate::MIN;
 
-                        key_event_handler.bind_mouse_button_down(
+                        event_handler.bind_mouse_button_down(
                             ratatui::crossterm::event::MouseButton::Left,
                             input_area,
                             move |app, _| {
@@ -698,7 +698,7 @@ impl PopupTrait for AddMoviePopup {
                 frame.buffer_mut().merge(&scrollbar_buffer);
                 frame.buffer_mut().merge(&list_buffer);
 
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     scrollbar_area.resize(Size::new(1, 1)),
                     move |app, _| {
@@ -715,7 +715,7 @@ impl PopupTrait for AddMoviePopup {
                         }
                     },
                 );
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     scrollbar_area
                         .resize(Size::new(1, 1))
@@ -742,7 +742,7 @@ impl PopupTrait for AddMoviePopup {
                 let rating_valid = self.validate_input_rating();
                 let date_valid = self.validate_input_date();
 
-                key_event_handler.bind_tab((None, None), "".into(), |app, data| {
+                event_handler.bind_tab((None, None), "".into(), |app, data| {
                     if let Some(Popup::AddMovie(add_movie_popup)) = app.drawer.active_popup.as_mut()
                     {
                         match data {
@@ -761,20 +761,20 @@ impl PopupTrait for AddMoviePopup {
                     }
                 });
 
-                key_event_handler.bind_esc((None, Some(0)), "Close".into(), |app, _| {
+                event_handler.bind_esc((None, Some(0)), "Close".into(), |app, _| {
                     app.drawer.close_popup();
                 });
-                key_event_handler.bind_esc((None, None), "Back".into(), |app, _| {
+                event_handler.bind_esc((None, None), "Back".into(), |app, _| {
                     if let Some(Popup::AddMovie(add_movie_popup)) = app.drawer.active_popup.as_mut()
                     {
                         add_movie_popup.item = 0;
                     }
                 });
-                key_event_handler.bind_esc((None, Some(4)), "Close".into(), |app, _| {
+                event_handler.bind_esc((None, Some(4)), "Close".into(), |app, _| {
                     app.drawer.close_popup();
                 });
 
-                key_event_handler.bind_horizontal((None, Some(3)), "".into(), None, |app, data| {
+                event_handler.bind_horizontal((None, Some(3)), "".into(), None, |app, data| {
                     if let Some(Popup::AddMovie(add_movie_popup)) = app.drawer.active_popup.as_mut()
                     {
                         if let crate::event_handler::Data::Direction(true, _) = data {
@@ -782,7 +782,7 @@ impl PopupTrait for AddMoviePopup {
                         }
                     }
                 });
-                key_event_handler.bind_horizontal((None, Some(4)), "".into(), None, |app, data| {
+                event_handler.bind_horizontal((None, Some(4)), "".into(), None, |app, data| {
                     if let Some(Popup::AddMovie(add_movie_popup)) = app.drawer.active_popup.as_mut()
                     {
                         if let crate::event_handler::Data::Direction(false, _) = data {
@@ -791,7 +791,7 @@ impl PopupTrait for AddMoviePopup {
                     }
                 });
 
-                key_event_handler.bind_vertical((None, Some(1)), "".into(), None, |app, data| {
+                event_handler.bind_vertical((None, Some(1)), "".into(), None, |app, data| {
                     if let Some(Popup::AddMovie(add_movie_popup)) = app.drawer.active_popup.as_mut()
                     {
                         if let crate::event_handler::Data::Direction(true, _) = data {
@@ -799,7 +799,7 @@ impl PopupTrait for AddMoviePopup {
                         }
                     }
                 });
-                key_event_handler.bind_vertical((None, Some(2)), "".into(), None, |app, data| {
+                event_handler.bind_vertical((None, Some(2)), "".into(), None, |app, data| {
                     if let Some(Popup::AddMovie(add_movie_popup)) = app.drawer.active_popup.as_mut()
                     {
                         if let crate::event_handler::Data::Direction(false, _) = data {
@@ -808,7 +808,7 @@ impl PopupTrait for AddMoviePopup {
                     }
                 });
 
-                key_event_handler.bind_enter((None, Some(0)), "Back".into(), |app, _| {
+                event_handler.bind_enter((None, Some(0)), "Back".into(), |app, _| {
                     if let Some(Popup::AddMovie(add_movie_popup)) = app.drawer.active_popup.as_mut()
                     {
                         add_movie_popup.item = 0;
@@ -817,7 +817,7 @@ impl PopupTrait for AddMoviePopup {
                     }
                 });
                 if rating_valid {
-                    key_event_handler.bind_enter((None, Some(1)), "".into(), |app, _| {
+                    event_handler.bind_enter((None, Some(1)), "".into(), |app, _| {
                         if let Some(Popup::AddMovie(add_movie_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
@@ -825,37 +825,29 @@ impl PopupTrait for AddMoviePopup {
                         }
                     });
                     if date_valid {
-                        key_event_handler.bind_enter(
-                            (None, Some(2)),
-                            "Confirm".into(),
-                            |app, _| {
-                                if let Some(Popup::AddMovie(add_movie_popup)) =
-                                    app.drawer.active_popup.as_mut()
-                                {
-                                    add_movie_popup.advance_phase();
-                                    add_movie_popup.throbber_visible = true;
-                                }
-                            },
-                        );
-                        key_event_handler.bind_enter(
-                            (None, Some(3)),
-                            "Confirm".into(),
-                            |app, _| {
-                                if let Some(Popup::AddMovie(add_movie_popup)) =
-                                    app.drawer.active_popup.as_mut()
-                                {
-                                    add_movie_popup.advance_phase();
-                                    add_movie_popup.throbber_visible = true;
-                                }
-                            },
-                        );
+                        event_handler.bind_enter((None, Some(2)), "Confirm".into(), |app, _| {
+                            if let Some(Popup::AddMovie(add_movie_popup)) =
+                                app.drawer.active_popup.as_mut()
+                            {
+                                add_movie_popup.advance_phase();
+                                add_movie_popup.throbber_visible = true;
+                            }
+                        });
+                        event_handler.bind_enter((None, Some(3)), "Confirm".into(), |app, _| {
+                            if let Some(Popup::AddMovie(add_movie_popup)) =
+                                app.drawer.active_popup.as_mut()
+                            {
+                                add_movie_popup.advance_phase();
+                                add_movie_popup.throbber_visible = true;
+                            }
+                        });
                     }
                 }
-                key_event_handler.bind_enter((None, Some(4)), "Cancel".into(), |app, _| {
+                event_handler.bind_enter((None, Some(4)), "Cancel".into(), |app, _| {
                     app.drawer.close_popup();
                 });
 
-                key_event_handler.bind_input_field((None, Some(1)), "".into(), |app, data| {
+                event_handler.bind_input_field((None, Some(1)), "".into(), |app, data| {
                     if let Some(Popup::AddMovie(add_movie_popup)) = app.drawer.active_popup.as_mut()
                     {
                         if let event_handler::Data::Key(key_event) = data {
@@ -876,7 +868,7 @@ impl PopupTrait for AddMoviePopup {
                         }
                     }
                 });
-                key_event_handler.bind_input_field((None, Some(2)), "".into(), |app, data| {
+                event_handler.bind_input_field((None, Some(2)), "".into(), |app, data| {
                     if let Some(Popup::AddMovie(add_movie_popup)) = app.drawer.active_popup.as_mut()
                     {
                         if let event_handler::Data::Key(key_event) = data {
@@ -892,7 +884,7 @@ impl PopupTrait for AddMoviePopup {
                     true,
                 );
                 image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     popup_area.outer(Margin::new(1, 1)),
                     |_, _| {},
@@ -916,7 +908,7 @@ impl PopupTrait for AddMoviePopup {
                     popup_area,
                     frame,
                 );
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     mouse_area,
                     |app, _| {
@@ -947,7 +939,7 @@ impl PopupTrait for AddMoviePopup {
                     frame.buffer_mut(),
                 );
                 for (i, mouse_area) in actions_mouse_areas.into_iter().enumerate() {
-                    key_event_handler.bind_mouse_button_down(
+                    event_handler.bind_mouse_button_down(
                         ratatui::crossterm::event::MouseButton::Left,
                         mouse_area,
                         move |app, _| {
@@ -979,7 +971,7 @@ impl PopupTrait for AddMoviePopup {
                     "Enter a rating",
                     None,
                 );
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     rating_input_area,
                     |app, _| {
@@ -1003,7 +995,7 @@ impl PopupTrait for AddMoviePopup {
                     "Now",
                     None,
                 );
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     date_input_area,
                     |app, _| {
@@ -1029,7 +1021,7 @@ impl PopupTrait for AddMoviePopup {
                     false,
                 );
                 image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     popup_area.outer(Margin::new(1, 1)),
                     |_, _| {},
@@ -1047,28 +1039,28 @@ impl PopupTrait for AddMoviePopup {
                 );
             }
             Phase::ConfirmRefetchDetails(_) => {
-                key_event_handler.bind_tab((None, None), "Navigate".into(), |app, _| {
+                event_handler.bind_tab((None, None), "Navigate".into(), |app, _| {
                     if let Some(Popup::AddMovie(add_movie_popup)) = app.drawer.active_popup.as_mut()
                     {
                         add_movie_popup.item = (add_movie_popup.item == 0) as usize;
                     }
                 });
 
-                key_event_handler.bind_esc((None, None), "Cancel".into(), |app, _| {
+                event_handler.bind_esc((None, None), "Cancel".into(), |app, _| {
                     app.drawer.close_popup();
                 });
 
-                key_event_handler.bind_enter((None, Some(0)), "Confirm".into(), |app, _| {
+                event_handler.bind_enter((None, Some(0)), "Confirm".into(), |app, _| {
                     if let Some(Popup::AddMovie(add_movie_popup)) = app.drawer.active_popup.as_mut()
                     {
                         add_movie_popup.advance_phase();
                     }
                 });
-                key_event_handler.bind_enter((None, Some(1)), "Cancel".into(), |app, _| {
+                event_handler.bind_enter((None, Some(1)), "Cancel".into(), |app, _| {
                     app.drawer.close_popup();
                 });
 
-                key_event_handler.bind_horizontal(
+                event_handler.bind_horizontal(
                     (None, None),
                     "Navigate".into(),
                     None,
@@ -1090,7 +1082,7 @@ impl PopupTrait for AddMoviePopup {
                     true,
                 );
                 image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     popup_area.outer(Margin::new(1, 1)),
                     |_, _| {},
@@ -1117,7 +1109,7 @@ impl PopupTrait for AddMoviePopup {
                     frame.buffer_mut(),
                 );
                 for (i, mouse_area) in actions_mouse_areas.into_iter().enumerate() {
-                    key_event_handler.bind_mouse_button_down(
+                    event_handler.bind_mouse_button_down(
                         ratatui::crossterm::event::MouseButton::Left,
                         mouse_area,
                         move |app, _| {
@@ -1142,7 +1134,7 @@ impl PopupTrait for AddMoviePopup {
                     true,
                 );
                 image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     popup_area.outer(Margin::new(1, 1)),
                     |_, _| {},
@@ -1166,25 +1158,25 @@ impl PopupTrait for AddMoviePopup {
                         helpers::add_padding(popup_area, Padding::right(1)),
                         frame,
                     );
-                    key_event_handler.bind_mouse_button_down(
+                    event_handler.bind_mouse_button_down(
                         ratatui::crossterm::event::MouseButton::Left,
                         mouse_area,
                         |app, _| {
                             app.drawer.close_popup();
                         },
                     );
-                    key_event_handler.bind_enter((None, None), "Cancel".into(), |app, _| {
+                    event_handler.bind_enter((None, None), "Cancel".into(), |app, _| {
                         app.drawer.close_popup();
                     });
                 } else {
-                    key_event_handler.bind_tab((None, None), "Navigate".into(), |app, _| {
+                    event_handler.bind_tab((None, None), "Navigate".into(), |app, _| {
                         if let Some(Popup::AddMovie(add_movie_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             add_movie_popup.item = (add_movie_popup.item == 0) as usize;
                         }
                     });
-                    key_event_handler.bind_horizontal(
+                    event_handler.bind_horizontal(
                         (None, None),
                         "Navigate".into(),
                         None,
@@ -1199,7 +1191,7 @@ impl PopupTrait for AddMoviePopup {
                         },
                     );
 
-                    key_event_handler.bind_enter((None, Some(0)), "Back".into(), |app, _| {
+                    event_handler.bind_enter((None, Some(0)), "Back".into(), |app, _| {
                         if let Some(Popup::AddMovie(add_movie_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
@@ -1208,7 +1200,7 @@ impl PopupTrait for AddMoviePopup {
                             add_movie_popup.input0 = TextArea::from([""]);
                         }
                     });
-                    key_event_handler.bind_enter((None, Some(1)), "Cancel".into(), |app, _| {
+                    event_handler.bind_enter((None, Some(1)), "Cancel".into(), |app, _| {
                         app.drawer.close_popup();
                     });
 
@@ -1224,7 +1216,7 @@ impl PopupTrait for AddMoviePopup {
                         frame.buffer_mut(),
                     );
                     for (i, mouse_area) in actions_mouse_areas.into_iter().enumerate() {
-                        key_event_handler.bind_mouse_button_down(
+                        event_handler.bind_mouse_button_down(
                             ratatui::crossterm::event::MouseButton::Left,
                             mouse_area,
                             move |app, _| {

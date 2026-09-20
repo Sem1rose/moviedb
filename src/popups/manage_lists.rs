@@ -54,18 +54,18 @@ impl PopupTrait for ManageListsPopup {
     fn render(
         &mut self,
         frame: &mut Frame,
-        key_event_handler: &mut EventHandler,
+        event_handler: &mut EventHandler,
         image_renderer: &mut RatatuiImage,
     ) {
-        key_event_handler.clear();
-        key_event_handler.bind_mouse_button_down(
+        event_handler.clear();
+        event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
             frame.area(),
             |app, _| {
                 app.drawer.close_popup();
             },
         );
-        key_event_handler.bind_key((None, None), 'q', "Close".into(), |app, _| {
+        event_handler.bind_key((None, None), 'q', "Close".into(), |app, _| {
             app.drawer.close_popup();
         });
 
@@ -76,13 +76,13 @@ impl PopupTrait for ManageListsPopup {
             false,
         );
         image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
-        key_event_handler.bind_mouse_button_down(
+        event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
             popup_area.outer(Margin::new(1, 1)),
             |_, _| {},
         );
 
-        key_event_handler.bind_vertical((None, None), "".into(), None, |app, _| {
+        event_handler.bind_vertical((None, None), "".into(), None, |app, _| {
             if let Some(Popup::ManageLists(manage_lists_popup)) = app.drawer.active_popup.as_mut() {
                 manage_lists_popup.screen = if manage_lists_popup.screen == Screen::Add {
                     Screen::Overview

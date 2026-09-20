@@ -223,18 +223,18 @@ impl PopupTrait for SimklInitPopup {
     fn render(
         &mut self,
         frame: &mut Frame,
-        key_event_handler: &mut EventHandler,
+        event_handler: &mut EventHandler,
         image_renderer: &mut RatatuiImage,
     ) {
-        key_event_handler.clear();
+        event_handler.clear();
         if self.can_close {
-            key_event_handler.bind_esc((None, None), "Close".into(), |app, _| {
+            event_handler.bind_esc((None, None), "Close".into(), |app, _| {
                 app.drawer.close_popup();
             });
-            key_event_handler.bind_key((None, None), 'q', "Close".into(), |app, _| {
+            event_handler.bind_key((None, None), 'q', "Close".into(), |app, _| {
                 app.drawer.close_popup();
             });
-            key_event_handler.bind_mouse_button_down(
+            event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,
                 frame.area(),
                 |app, _| {
@@ -242,10 +242,10 @@ impl PopupTrait for SimklInitPopup {
                 },
             );
         } else {
-            // key_event_handler.bind_esc((None, None), "Close".into(), |app, _| {
+            // event_handler.bind_esc((None, None), "Close".into(), |app, _| {
             //     app.quit = true;
             // });
-            key_event_handler.bind_key((None, None), 'q', "Quit".into(), |app, _| {
+            event_handler.bind_key((None, None), 'q', "Quit".into(), |app, _| {
                 app.quit = true;
             });
         }
@@ -262,7 +262,7 @@ impl PopupTrait for SimklInitPopup {
                     true,
                 );
                 image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     popup_area.outer(Margin::new(1, 1)),
                     |_, _| {},
@@ -286,7 +286,7 @@ impl PopupTrait for SimklInitPopup {
                 let inputs_valid =
                     !(self.client_id_input.is_empty() || self.client_secret_input.is_empty());
 
-                key_event_handler.bind_tab((None, None), "".into(), |app, data| {
+                event_handler.bind_tab((None, None), "".into(), |app, data| {
                     if let Some(Popup::SimklInit(simkl_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -305,14 +305,14 @@ impl PopupTrait for SimklInitPopup {
                         }
                     }
                 });
-                key_event_handler.bind_esc((None, None), "".into(), |app, _| {
+                event_handler.bind_esc((None, None), "".into(), |app, _| {
                     if let Some(Popup::SimklInit(simkl_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
                         simkl_init_popup.item = 4;
                     }
                 });
-                key_event_handler.bind_enter((None, None), "Next".into(), |app, _| {
+                event_handler.bind_enter((None, None), "Next".into(), |app, _| {
                     if let Some(Popup::SimklInit(simkl_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -320,14 +320,14 @@ impl PopupTrait for SimklInitPopup {
                     }
                 });
                 if inputs_valid {
-                    key_event_handler.bind_enter((None, Some(3)), "Confirm".into(), |app, _| {
+                    event_handler.bind_enter((None, Some(3)), "Confirm".into(), |app, _| {
                         if let Some(Popup::SimklInit(simkl_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             simkl_init_popup.advance_phase();
                         }
                     });
-                    key_event_handler.bind_enter((None, Some(4)), "Confirm".into(), |app, _| {
+                    event_handler.bind_enter((None, Some(4)), "Confirm".into(), |app, _| {
                         if let Some(Popup::SimklInit(simkl_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
@@ -335,10 +335,10 @@ impl PopupTrait for SimklInitPopup {
                         }
                     });
                 } else {
-                    key_event_handler.bind_enter((None, Some(4)), "".into(), |_, _| {});
+                    event_handler.bind_enter((None, Some(4)), "".into(), |_, _| {});
                 }
 
-                key_event_handler.bind_input_field((None, Some(0)), "".into(), |app, data| {
+                event_handler.bind_input_field((None, Some(0)), "".into(), |app, data| {
                     if let Some(Popup::SimklInit(simkl_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -347,7 +347,7 @@ impl PopupTrait for SimklInitPopup {
                         }
                     }
                 });
-                key_event_handler.bind_input_field((None, Some(1)), "".into(), |app, data| {
+                event_handler.bind_input_field((None, Some(1)), "".into(), |app, data| {
                     if let Some(Popup::SimklInit(simkl_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -356,7 +356,7 @@ impl PopupTrait for SimklInitPopup {
                         }
                     }
                 });
-                key_event_handler.bind_input_field((None, Some(2)), "".into(), |app, data| {
+                event_handler.bind_input_field((None, Some(2)), "".into(), |app, data| {
                     if let Some(Popup::SimklInit(simkl_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -365,7 +365,7 @@ impl PopupTrait for SimklInitPopup {
                         }
                     }
                 });
-                key_event_handler.bind_input_field((None, Some(3)), "".into(), |app, data| {
+                event_handler.bind_input_field((None, Some(3)), "".into(), |app, data| {
                     if let Some(Popup::SimklInit(simkl_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -382,7 +382,7 @@ impl PopupTrait for SimklInitPopup {
                     true,
                 );
                 image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     popup_area.outer(Margin::new(1, 1)),
                     |_, _| {},
@@ -404,7 +404,7 @@ impl PopupTrait for SimklInitPopup {
                     "Enter the Client ID",
                     None,
                 );
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     client_id_area,
                     |app, _| {
@@ -428,7 +428,7 @@ impl PopupTrait for SimklInitPopup {
                     "Enter the Client Secret",
                     None,
                 );
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     client_secret_area,
                     |app, _| {
@@ -454,7 +454,7 @@ impl PopupTrait for SimklInitPopup {
                     "moviedb",
                     None,
                 );
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     app_name_area,
                     |app, _| {
@@ -478,7 +478,7 @@ impl PopupTrait for SimklInitPopup {
                     "1.0",
                     None,
                 );
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     app_version_area,
                     |app, _| {
@@ -503,7 +503,7 @@ impl PopupTrait for SimklInitPopup {
                     frame,
                 );
                 if inputs_valid {
-                    key_event_handler.bind_mouse_button_down(
+                    event_handler.bind_mouse_button_down(
                         ratatui::crossterm::event::MouseButton::Left,
                         confirm_mouse_area,
                         |app, _| {
@@ -517,7 +517,7 @@ impl PopupTrait for SimklInitPopup {
                 }
             }
             Phase::Authorize(user_code) => {
-                key_event_handler.bind_esc((None, None), "".into(), |app, _| {
+                event_handler.bind_esc((None, None), "".into(), |app, _| {
                     if let Some(Popup::SimklInit(simkl_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -535,7 +535,7 @@ impl PopupTrait for SimklInitPopup {
                     false,
                 );
                 image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     popup_area.outer(Margin::new(1, 1)),
                     |_, _| {},
@@ -548,7 +548,7 @@ impl PopupTrait for SimklInitPopup {
                     popup_area,
                     frame,
                 );
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     back_mouse_area,
                     |app, _| {
@@ -614,17 +614,17 @@ impl PopupTrait for SimklInitPopup {
                         }
                     }
                 };
-                key_event_handler.bind_enter((None, None), "Back".into(), back);
-                key_event_handler.bind_esc((None, Some(0)), "Back".into(), back);
+                event_handler.bind_enter((None, None), "Back".into(), back);
+                event_handler.bind_esc((None, Some(0)), "Back".into(), back);
                 if self.status.is_some() {
-                    key_event_handler.bind_enter((None, Some(1)), "Skip".into(), |app, _| {
+                    event_handler.bind_enter((None, Some(1)), "Skip".into(), |app, _| {
                         if let Some(Popup::SimklInit(simkl_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             simkl_init_popup.phase = Phase::Done;
                         }
                     });
-                    key_event_handler.bind_tab((None, None), "".into(), |app, data| {
+                    event_handler.bind_tab((None, None), "".into(), |app, data| {
                         if let Some(Popup::SimklInit(simkl_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
@@ -652,7 +652,7 @@ impl PopupTrait for SimklInitPopup {
                     true,
                 );
                 image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     popup_area.outer(Margin::new(1, 1)),
                     |_, _| {},
@@ -676,7 +676,7 @@ impl PopupTrait for SimklInitPopup {
                         popup_area,
                         frame,
                     );
-                    key_event_handler.bind_mouse_button_down(
+                    event_handler.bind_mouse_button_down(
                         ratatui::crossterm::event::MouseButton::Left,
                         skip_mouse_area,
                         |app, _| {
@@ -696,7 +696,7 @@ impl PopupTrait for SimklInitPopup {
                     helpers::add_padding(popup_area, Padding::right(1)),
                     frame,
                 );
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     mouse_area,
                     back,

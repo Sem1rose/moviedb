@@ -203,18 +203,18 @@ impl PopupTrait for TMDBInitPopup {
     fn render(
         &mut self,
         frame: &mut Frame,
-        key_event_handler: &mut EventHandler,
+        event_handler: &mut EventHandler,
         image_renderer: &mut RatatuiImage,
     ) {
-        key_event_handler.clear();
+        event_handler.clear();
         if self.can_close {
-            key_event_handler.bind_esc((None, None), "Close".into(), |app, _| {
+            event_handler.bind_esc((None, None), "Close".into(), |app, _| {
                 app.drawer.close_popup();
             });
-            key_event_handler.bind_key((None, None), 'q', "Close".into(), |app, _| {
+            event_handler.bind_key((None, None), 'q', "Close".into(), |app, _| {
                 app.drawer.close_popup();
             });
-            key_event_handler.bind_mouse_button_down(
+            event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,
                 frame.area(),
                 |app, _| {
@@ -222,10 +222,10 @@ impl PopupTrait for TMDBInitPopup {
                 },
             );
         } else {
-            // key_event_handler.bind_esc((None, None), "Close".into(), |app, _| {
+            // event_handler.bind_esc((None, None), "Close".into(), |app, _| {
             //     app.quit = true;
             // });
-            key_event_handler.bind_key((None, None), 'q', "Quit".into(), |app, _| {
+            event_handler.bind_key((None, None), 'q', "Quit".into(), |app, _| {
                 app.quit = true;
             });
         }
@@ -245,7 +245,7 @@ impl PopupTrait for TMDBInitPopup {
                     true,
                 );
                 image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     popup_area.outer(Margin::new(1, 1)),
                     |_, _| {},
@@ -268,7 +268,7 @@ impl PopupTrait for TMDBInitPopup {
             Phase::GetAccessToken => {
                 let input_valid = !self.input.is_empty();
 
-                key_event_handler.bind_tab((None, None), "".into(), |app, data| {
+                event_handler.bind_tab((None, None), "".into(), |app, data| {
                     if let Some(Popup::TMDBInit(tmdb_init_popup)) = app.drawer.active_popup.as_mut()
                     {
                         match data {
@@ -286,14 +286,14 @@ impl PopupTrait for TMDBInitPopup {
                         }
                     }
                 });
-                key_event_handler.bind_esc((None, Some(0)), "".into(), |app, _| {
+                event_handler.bind_esc((None, Some(0)), "".into(), |app, _| {
                     if let Some(Popup::TMDBInit(tmdb_init_popup)) = app.drawer.active_popup.as_mut()
                     {
                         tmdb_init_popup.item = 1;
                     }
                 });
                 if input_valid {
-                    key_event_handler.bind_enter((None, None), "Confirm".into(), |app, _| {
+                    event_handler.bind_enter((None, None), "Confirm".into(), |app, _| {
                         if let Some(Popup::TMDBInit(tmdb_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
@@ -301,7 +301,7 @@ impl PopupTrait for TMDBInitPopup {
                         }
                     });
                 }
-                key_event_handler.bind_input_field((None, Some(0)), "".into(), |app, data| {
+                event_handler.bind_input_field((None, Some(0)), "".into(), |app, data| {
                     if let Some(Popup::TMDBInit(tmdb_init_popup)) = app.drawer.active_popup.as_mut()
                     {
                         if let event_handler::Data::Key(key_event) = data {
@@ -317,7 +317,7 @@ impl PopupTrait for TMDBInitPopup {
                     true,
                 );
                 image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     popup_area.outer(Margin::new(1, 1)),
                     |_, _| {},
@@ -339,7 +339,7 @@ impl PopupTrait for TMDBInitPopup {
                     "Enter the Access Token",
                     None,
                 );
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     input_area,
                     |app, _| {
@@ -364,7 +364,7 @@ impl PopupTrait for TMDBInitPopup {
                     frame,
                 );
                 if input_valid {
-                    key_event_handler.bind_mouse_button_down(
+                    event_handler.bind_mouse_button_down(
                         ratatui::crossterm::event::MouseButton::Left,
                         confirm_mouse_area,
                         |app, _| {
@@ -378,7 +378,7 @@ impl PopupTrait for TMDBInitPopup {
                 }
             }
             Phase::Authorize(authorization_url) => {
-                key_event_handler.bind_esc((None, None), "".into(), |app, _| {
+                event_handler.bind_esc((None, None), "".into(), |app, _| {
                     if let Some(Popup::TMDBInit(tmdb_init_popup)) = app.drawer.active_popup.as_mut()
                     {
                         tmdb_init_popup.item = 0;
@@ -396,7 +396,7 @@ impl PopupTrait for TMDBInitPopup {
                     false,
                 );
                 image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     popup_area.outer(Margin::new(1, 1)),
                     |_, _| {},
@@ -409,7 +409,7 @@ impl PopupTrait for TMDBInitPopup {
                     popup_area,
                     frame,
                 );
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     back_mouse_area,
                     |app, _| {
@@ -466,17 +466,17 @@ impl PopupTrait for TMDBInitPopup {
                         }
                     }
                 };
-                key_event_handler.bind_enter((None, None), "Back".into(), back);
-                key_event_handler.bind_esc((None, Some(0)), "Back".into(), back);
+                event_handler.bind_enter((None, None), "Back".into(), back);
+                event_handler.bind_esc((None, Some(0)), "Back".into(), back);
                 if self.status.is_some() {
-                    key_event_handler.bind_enter((None, Some(1)), "Skip".into(), |app, _| {
+                    event_handler.bind_enter((None, Some(1)), "Skip".into(), |app, _| {
                         if let Some(Popup::TMDBInit(tmdb_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             tmdb_init_popup.phase = Phase::Done;
                         }
                     });
-                    key_event_handler.bind_tab((None, None), "".into(), |app, data| {
+                    event_handler.bind_tab((None, None), "".into(), |app, data| {
                         if let Some(Popup::TMDBInit(tmdb_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
@@ -504,7 +504,7 @@ impl PopupTrait for TMDBInitPopup {
                     true,
                 );
                 image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     popup_area.outer(Margin::new(1, 1)),
                     |_, _| {},
@@ -528,7 +528,7 @@ impl PopupTrait for TMDBInitPopup {
                         popup_area,
                         frame,
                     );
-                    key_event_handler.bind_mouse_button_down(
+                    event_handler.bind_mouse_button_down(
                         ratatui::crossterm::event::MouseButton::Left,
                         skip_mouse_area,
                         |app, _| {
@@ -548,7 +548,7 @@ impl PopupTrait for TMDBInitPopup {
                     helpers::add_padding(popup_area, Padding::right(1)),
                     frame,
                 );
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     mouse_area,
                     back,

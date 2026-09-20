@@ -9,7 +9,6 @@ use anyhow::anyhow;
 use log::error;
 
 use crate::{
-    event_handler::EventHandler,
     processors::ProcessorTrait,
     types::{Collection, Entry, Movie, Person},
 };
@@ -109,7 +108,7 @@ impl FileWriterProcessor {
 }
 
 impl ProcessorTrait for FileWriterProcessor {
-    fn update(&mut self, _: &mut EventHandler) {
+    fn update(&mut self, _: &mut crate::event_handler::EventHandler) {
         if !self.initialized {
             return;
         }
@@ -120,5 +119,13 @@ impl ProcessorTrait for FileWriterProcessor {
                 Err(error) => error!("Error while executing operation: {error:?}"),
             }
         }
+    }
+
+    fn render(
+        &self,
+        _: &mut ratatui::Frame,
+        _: &mut crate::image_backend::RatatuiImage,
+        _: &mut crate::event_handler::EventHandler,
+    ) {
     }
 }

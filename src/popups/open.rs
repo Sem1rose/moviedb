@@ -104,27 +104,27 @@ impl PopupTrait for OpenPopup {
     fn render(
         &mut self,
         frame: &mut Frame,
-        key_event_handler: &mut EventHandler,
+        event_handler: &mut EventHandler,
         _image_renderer: &mut RatatuiImage,
     ) {
-        key_event_handler.clear();
-        key_event_handler.bind_esc((None, None), "Close".into(), |app, _| {
+        event_handler.clear();
+        event_handler.bind_esc((None, None), "Close".into(), |app, _| {
             app.drawer.close_popup();
         });
-        key_event_handler.bind_key((None, None), 'q', "Close".into(), |app, _| {
+        event_handler.bind_key((None, None), 'q', "Close".into(), |app, _| {
             app.drawer.close_popup();
         });
-        key_event_handler.bind_key((None, None), 'o', "Close".into(), |app, _| {
+        event_handler.bind_key((None, None), 'o', "Close".into(), |app, _| {
             app.drawer.close_popup();
         });
-        key_event_handler.bind_mouse_button_down(
+        event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
             frame.area(),
             |app, _| {
                 app.drawer.close_popup();
             },
         );
-        key_event_handler.bind_enter((None, None), "Open".into(), move |app, _| {
+        event_handler.bind_enter((None, None), "Open".into(), move |app, _| {
             if let Some(Popup::Open(open_popup)) = app.drawer.active_popup.as_ref() {
                 if open_popup.model[open_popup.item] == "Collection" {
                     if let Some(Screen::MainScreen(main_screen)) =
@@ -134,7 +134,7 @@ impl PopupTrait for OpenPopup {
                             crate::types::ListID::Collection(
                                 open_popup.selected_movie.tmdb_collection.unwrap(),
                             ),
-                            &mut app.key_event_handler,
+                            &mut app.event_handler,
                         );
                     }
                 } else {
@@ -152,7 +152,7 @@ impl PopupTrait for OpenPopup {
                 self.model.len().min(MAX_NUM_ITEMS) as u16 * 2 + 1,
             ));
 
-        key_event_handler.bind_vertical(
+        event_handler.bind_vertical(
             (None, None),
             "Scroll".into(),
             Some(popup_area),
@@ -294,7 +294,7 @@ impl PopupTrait for OpenPopup {
             } else {
                 helpers::add_padding(area, Padding::horizontal(1))
             };
-            key_event_handler.bind_mouse_button_down(
+            event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,
                 input_area,
                 move |app, _| {
@@ -308,7 +308,7 @@ impl PopupTrait for OpenPopup {
                                         crate::types::ListID::Collection(
                                             open_popup.selected_movie.tmdb_collection.unwrap(),
                                         ),
-                                        &mut app.key_event_handler,
+                                        &mut app.event_handler,
                                     );
                                 }
                             } else {

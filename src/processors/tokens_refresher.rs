@@ -40,7 +40,7 @@ enum RefreshResponse {
 pub struct TokensRefresherProcessor {
     item:              usize,
     initialized:       bool,
-    active_refreshing: usize,
+    active_refreshing: FxHashSet<Tokens>,
 
     skipped:             FxHashSet<Tokens>,
     errored:             Vec<(Tokens, String)>,
@@ -150,12 +150,27 @@ impl TokensRefresherProcessor {
             }
         }
 
-        self.active_refreshing += 1;
+        self.active_refreshing.insert(tokens);
     }
 }
 
 impl ProcessorTrait for TokensRefresherProcessor {
-    fn update(&mut self, key_event_handler: &mut EventHandler) {
+    fn needs_render(&self) -> bool {
+        !self.errored.is_empty()
+    }
+
+    fn get_state(&self) -> (Option<usize>, Option<usize>) {
+        (None, Some(self.item))
+    }
+
+    fn active_operation(&self) -> Option<[String; 2]> {
+        self.active_refreshing
+            .iter()
+            .next()
+            .map(|x| [x.as_ref().to_string(), String::from("Refreshing tokens")])
+    }
+
+    fn update(&mut self, event_handler: &mut EventHandler) {
         if !self.initialized {
             return;
         }
@@ -175,7 +190,7 @@ impl ProcessorTrait for TokensRefresherProcessor {
             self.item = 0;
         }
 
-        if self.active_refreshing == 0 {
+        if self.active_refreshing.is_empty() {
             return;
         }
 
@@ -185,9 +200,9 @@ impl ProcessorTrait for TokensRefresherProcessor {
                     Ok(user_tokens) => {
                         info!("successfully refreshed punchplay");
                         self.skipped.insert(Tokens::PunchPlay);
-                        self.active_refreshing -= 1;
+                        self.active_refreshing.remove(&Tokens::PunchPlay);
 
-                        key_event_handler.bind_immediate(move |app| {
+                        event_handler.bind_immediate(move |app| {
                             app.set_punch_play_user_tokens(user_tokens.clone())
                         });
                     }
@@ -199,9 +214,9 @@ impl ProcessorTrait for TokensRefresherProcessor {
                     Ok(user_tokens) => {
                         info!("successfully refreshed trakt");
                         self.skipped.insert(Tokens::Trakt);
-                        self.active_refreshing -= 1;
+                        self.active_refreshing.remove(&Tokens::Trakt);
 
-                        key_event_handler.bind_immediate(move |app| {
+                        event_handler.bind_immediate(move |app| {
                             app.set_trakt_user_tokens(user_tokens.clone())
                         });
                     }
@@ -211,23 +226,15 @@ impl ProcessorTrait for TokensRefresherProcessor {
         }
     }
 
-    fn needs_render(&self) -> bool {
-        !self.errored.is_empty()
-    }
-
-    fn get_state(&self) -> (Option<usize>, Option<usize>) {
-        (None, Some(self.item))
-    }
-
     fn render(
         &self,
         frame: &mut ratatui::Frame,
-        key_event_handler: &mut EventHandler,
         image_renderer: &mut RatatuiImage,
+        event_handler: &mut EventHandler,
     ) {
         if let Some((tokens, error)) = self.errored.first() {
-            key_event_handler.clear();
-            key_event_handler.bind_tab((None, None), "Navigate".into(), |app, _| {
+            event_handler.clear();
+            event_handler.bind_tab((None, None), "Navigate".into(), |app, _| {
                 if let Some(Processor::TokensRefresher(tokens_refresher_processor)) =
                     app.get_processor_mut(ProcessorDiscriminants::TokensRefresher)
                 {
@@ -238,49 +245,43 @@ impl ProcessorTrait for TokensRefresherProcessor {
                     }
                 }
             });
-            key_event_handler.bind_horizontal(
-                (None, None),
-                "Navigate".into(),
-                None,
-                |app, data| {
-                    if let Some(Processor::TokensRefresher(tokens_refresher_processor)) =
-                        app.get_processor_mut(ProcessorDiscriminants::TokensRefresher)
-                    {
-                        if let crate::event_handler::Data::Direction(dir, _) = data {
-                            tokens_refresher_processor.item = dir as usize;
-                        }
+            event_handler.bind_horizontal((None, None), "Navigate".into(), None, |app, data| {
+                if let Some(Processor::TokensRefresher(tokens_refresher_processor)) =
+                    app.get_processor_mut(ProcessorDiscriminants::TokensRefresher)
+                {
+                    if let crate::event_handler::Data::Direction(dir, _) = data {
+                        tokens_refresher_processor.item = dir as usize;
                     }
-                },
-            );
+                }
+            });
 
-            key_event_handler.bind_enter((None, Some(0)), "Retry".into(), |app, _| {
+            event_handler.bind_enter((None, Some(0)), "Retry".into(), |app, _| {
                 if let Some(Processor::TokensRefresher(tokens_refresher_processor)) =
                     app.get_processor_mut(ProcessorDiscriminants::TokensRefresher)
                 {
                     tokens_refresher_processor.item = 0;
                     let (tokens, _) = tokens_refresher_processor.errored.remove(0);
-                    tokens_refresher_processor.active_refreshing -= 1;
                     tokens_refresher_processor.refresh_tokens(tokens);
                 }
             });
-            key_event_handler.bind_enter((None, Some(1)), "Skip".into(), |app, _| {
+            event_handler.bind_enter((None, Some(1)), "Skip".into(), |app, _| {
                 if let Some(Processor::TokensRefresher(tokens_refresher_processor)) =
                     app.get_processor_mut(ProcessorDiscriminants::TokensRefresher)
                 {
                     tokens_refresher_processor.item = 0;
                     let (tokens, _) = tokens_refresher_processor.errored.remove(0);
-                    tokens_refresher_processor.active_refreshing -= 1;
+                    tokens_refresher_processor.active_refreshing.remove(&tokens);
                     tokens_refresher_processor.skipped.insert(tokens);
                 }
             });
             let tokens_cloned = *tokens;
-            key_event_handler.bind_enter((None, Some(2)), "Retry".into(), move |app, _| {
+            event_handler.bind_enter((None, Some(2)), "Retry".into(), move |app, _| {
                 if let Some(Processor::TokensRefresher(tokens_refresher_processor)) =
                     app.get_processor_mut(ProcessorDiscriminants::TokensRefresher)
                 {
                     tokens_refresher_processor.item = 0;
                     let (tokens, _) = tokens_refresher_processor.errored.remove(0);
-                    tokens_refresher_processor.active_refreshing -= 1;
+                    tokens_refresher_processor.active_refreshing.remove(&tokens);
                     tokens_refresher_processor.skipped.insert(tokens);
                 }
                 app.drawer.stash_current_popup();
@@ -297,7 +298,7 @@ impl ProcessorTrait for TokensRefresherProcessor {
                 true,
             );
             image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
-            key_event_handler.bind_mouse_button_down(
+            event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,
                 popup_area.outer(Margin::new(1, 1)),
                 |_, _| {},
@@ -321,7 +322,7 @@ impl ProcessorTrait for TokensRefresherProcessor {
                 frame,
             );
             let tokens_cloned = *tokens;
-            key_event_handler.bind_mouse_button_down(
+            event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,
                 mouse_area,
                 move |app, _| {
@@ -330,7 +331,7 @@ impl ProcessorTrait for TokensRefresherProcessor {
                     {
                         tokens_refresher_processor.item = 0;
                         let (tokens, _) = tokens_refresher_processor.errored.remove(0);
-                        tokens_refresher_processor.active_refreshing -= 1;
+                        tokens_refresher_processor.active_refreshing.remove(&tokens);
                         tokens_refresher_processor.skipped.insert(tokens);
                     }
                     app.drawer.stash_current_popup();
@@ -353,7 +354,7 @@ impl ProcessorTrait for TokensRefresherProcessor {
                 frame.buffer_mut(),
             );
             for (i, mouse_area) in actions_mouse_areas.into_iter().enumerate() {
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     mouse_area,
                     move |app, _| {
@@ -363,10 +364,10 @@ impl ProcessorTrait for TokensRefresherProcessor {
                             tokens_refresher_processor.item = 0;
                             let (tokens, _) = tokens_refresher_processor.errored.remove(0);
 
-                            tokens_refresher_processor.active_refreshing -= 1;
                             if i == 0 {
                                 tokens_refresher_processor.refresh_tokens(tokens);
                             } else {
+                                tokens_refresher_processor.active_refreshing.remove(&tokens);
                                 tokens_refresher_processor.skipped.insert(tokens);
                             }
                         }

@@ -160,7 +160,7 @@ impl ScrolledList {
         scrollbar_buffer: Option<&mut Buffer>,
         render_placeholder: bool,
         buffer: &mut Buffer,
-        key_event_handler: &mut EventHandler,
+        event_handler: &mut EventHandler,
         mut render_callback: impl FnMut(&mut Buffer, u16, i32, bool, usize, bool, &mut EventHandler),
     ) {
         let area = buffer.area;
@@ -252,7 +252,7 @@ impl ScrolledList {
                     self.alignment_opposite,
                     index,
                     selected,
-                    key_event_handler,
+                    event_handler,
                 );
 
                 if item_is_partially_visible {
@@ -327,7 +327,7 @@ impl ScrolledList {
         scrollbar_buffer: Option<&mut Buffer>,
         render_placeholder: bool,
         buffer: &mut Buffer,
-        key_event_handler: &mut EventHandler,
+        event_handler: &mut EventHandler,
         render_callback: impl FnMut(&mut Buffer, u16, i32, bool, usize, bool, &mut EventHandler),
     ) {
         self.update_for_area(buffer.area, num_items);
@@ -336,7 +336,7 @@ impl ScrolledList {
             scrollbar_buffer,
             render_placeholder,
             buffer,
-            key_event_handler,
+            event_handler,
             render_callback,
         );
     }

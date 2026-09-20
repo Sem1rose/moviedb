@@ -90,18 +90,18 @@ impl PopupTrait for OMDBInitPopup {
     fn render(
         &mut self,
         frame: &mut Frame,
-        key_event_handler: &mut EventHandler,
+        event_handler: &mut EventHandler,
         image_renderer: &mut RatatuiImage,
     ) {
-        key_event_handler.clear();
+        event_handler.clear();
         if self.can_close {
-            key_event_handler.bind_esc((None, None), "Close".into(), |app, _| {
+            event_handler.bind_esc((None, None), "Close".into(), |app, _| {
                 app.drawer.close_popup();
             });
-            key_event_handler.bind_key((None, None), 'q', "Close".into(), |app, _| {
+            event_handler.bind_key((None, None), 'q', "Close".into(), |app, _| {
                 app.drawer.close_popup();
             });
-            key_event_handler.bind_mouse_button_down(
+            event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,
                 frame.area(),
                 |app, _| {
@@ -109,10 +109,10 @@ impl PopupTrait for OMDBInitPopup {
                 },
             );
         } else {
-            // key_event_handler.bind_esc((None, None), "Close".into(), |app, _| {
+            // event_handler.bind_esc((None, None), "Close".into(), |app, _| {
             //     app.quit = true;
             // });
-            key_event_handler.bind_key((None, None), 'q', "Quit".into(), |app, _| {
+            event_handler.bind_key((None, None), 'q', "Quit".into(), |app, _| {
                 app.quit = true;
             });
         }
@@ -120,7 +120,7 @@ impl PopupTrait for OMDBInitPopup {
         if self.started {
             let input_valid = !self.input.is_empty();
 
-            key_event_handler.bind_tab((None, None), "".into(), |app, data| {
+            event_handler.bind_tab((None, None), "".into(), |app, data| {
                 if let Some(Popup::OMDBInit(omdb_init_popup)) = app.drawer.active_popup.as_mut() {
                     match data {
                         crate::event_handler::Data::Direction(true, _) => {
@@ -137,7 +137,7 @@ impl PopupTrait for OMDBInitPopup {
                 }
             });
             if input_valid {
-                key_event_handler.bind_enter((None, None), "Confirm".into(), |app, _| {
+                event_handler.bind_enter((None, None), "Confirm".into(), |app, _| {
                     if let Some(Popup::OMDBInit(omdb_init_popup)) = app.drawer.active_popup.as_mut()
                     {
                         omdb_init_popup.user_tokens =
@@ -147,12 +147,12 @@ impl PopupTrait for OMDBInitPopup {
                     }
                 });
             }
-            key_event_handler.bind_esc((None, Some(0)), "".into(), |app, _| {
+            event_handler.bind_esc((None, Some(0)), "".into(), |app, _| {
                 if let Some(Popup::OMDBInit(omdb_init_popup)) = app.drawer.active_popup.as_mut() {
                     omdb_init_popup.item = 1;
                 }
             });
-            key_event_handler.bind_input_field((None, Some(0)), "".into(), |app, data| {
+            event_handler.bind_input_field((None, Some(0)), "".into(), |app, data| {
                 if let Some(Popup::OMDBInit(omdb_init_popup)) = app.drawer.active_popup.as_mut() {
                     if let event_handler::Data::Key(key_event) = data {
                         omdb_init_popup.input.input(key_event);
@@ -167,7 +167,7 @@ impl PopupTrait for OMDBInitPopup {
                 true,
             );
             image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
-            key_event_handler.bind_mouse_button_down(
+            event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,
                 popup_area.outer(Margin::new(1, 1)),
                 |_, _| {},
@@ -189,7 +189,7 @@ impl PopupTrait for OMDBInitPopup {
                 "Enter the Key",
                 None,
             );
-            key_event_handler.bind_mouse_button_down(
+            event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,
                 helpers::add_padding(input_area, Padding::horizontal(2)),
                 |app, _| {
@@ -213,7 +213,7 @@ impl PopupTrait for OMDBInitPopup {
                 frame,
             );
             if input_valid {
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     confirm_mouse_area,
                     |app, _| {
@@ -236,7 +236,7 @@ impl PopupTrait for OMDBInitPopup {
                 false,
             );
             image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
-            key_event_handler.bind_mouse_button_down(
+            event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,
                 popup_area.outer(Margin::new(1, 1)),
                 |_, _| {},

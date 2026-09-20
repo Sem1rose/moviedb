@@ -25,14 +25,14 @@ impl MainScreen {
         &mut self,
         frame: &mut Frame,
         area: Rect,
-        key_event_handler: &mut EventHandler,
+        event_handler: &mut EventHandler,
     ) -> Rect {
         let tab_selected = self.tab == 2;
         let sort_max_width = Sort::iter().map(|x| x.as_ref().len()).max().unwrap() + 4;
         let [_, input_area, _, sort_area, _, direction_area, _] =
             horizontal![>=1, <=25, ==1, ==sort_max_width as u16, ==1, ==3, ==1].areas(area);
 
-        key_event_handler.bind_esc((Some(2), Some(0)), "Close".into(), |app, _| {
+        event_handler.bind_esc((Some(2), Some(0)), "Close".into(), |app, _| {
             if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 main_screen.tab = 0;
                 main_screen.item = 0;
@@ -54,14 +54,14 @@ impl MainScreen {
                 }
             }
         });
-        key_event_handler.bind_esc((Some(2), None), "Close".into(), |app, _| {
+        event_handler.bind_esc((Some(2), None), "Close".into(), |app, _| {
             if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 main_screen.tab = 0;
                 main_screen.item = 0;
             }
         });
 
-        key_event_handler.bind_tab((Some(2), None), "Change focus".into(), |app, data| {
+        event_handler.bind_tab((Some(2), None), "Change focus".into(), |app, data| {
             if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 if main_screen.item == 0 {
                     let FilterCriterion::Title(name, filter) = pop_criterion!(
@@ -108,7 +108,7 @@ impl MainScreen {
             }
         });
 
-        key_event_handler.bind_enter((Some(2), Some(0)), "Confirm".into(), |app, _| {
+        event_handler.bind_enter((Some(2), Some(0)), "Confirm".into(), |app, _| {
             if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 main_screen.tab = 0;
                 main_screen.item = 0;
@@ -134,26 +134,26 @@ impl MainScreen {
                 }
             }
         });
-        key_event_handler.bind_enter((Some(2), None), "Confirm".into(), |app, _| {
+        event_handler.bind_enter((Some(2), None), "Confirm".into(), |app, _| {
             if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 main_screen.tab = 0;
                 main_screen.item = 0;
             }
         });
 
-        key_event_handler.bind_key((Some(2), Some(1)), ',', "Close".into(), |app, _| {
+        event_handler.bind_key((Some(2), Some(1)), ',', "Close".into(), |app, _| {
             if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 main_screen.tab = 0;
                 main_screen.item = 0;
             }
         });
-        key_event_handler.bind_key((Some(2), Some(2)), ',', "Sort".into(), |app, _| {
+        event_handler.bind_key((Some(2), Some(2)), ',', "Sort".into(), |app, _| {
             if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 main_screen.item = 1;
                 // main_screen.sort_popup.reset_state();
             }
         });
-        key_event_handler.bind_key(
+        event_handler.bind_key(
             (Some(2), Some(2)),
             ' ',
             "Toggle sort order".into(),
@@ -164,13 +164,13 @@ impl MainScreen {
                 }
             },
         );
-        key_event_handler.bind_key((Some(2), Some(1)), 'q', "Close".into(), |app, _| {
+        event_handler.bind_key((Some(2), Some(1)), 'q', "Close".into(), |app, _| {
             if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 main_screen.tab = 0;
                 main_screen.item = 0;
             }
         });
-        key_event_handler.bind_key((Some(2), Some(2)), 'q', "Close".into(), |app, _| {
+        event_handler.bind_key((Some(2), Some(2)), 'q', "Close".into(), |app, _| {
             if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 main_screen.tab = 0;
                 main_screen.item = 0;
@@ -178,7 +178,7 @@ impl MainScreen {
         });
 
         if matches!(self.sort, Sort::Rating(_)) {
-            key_event_handler.bind_horizontal(
+            event_handler.bind_horizontal(
                 (Some(2), Some(1)),
                 if self.sort_popup.opened_submenu.is_none() {
                     "Open submenu/Navigate"
@@ -209,7 +209,7 @@ impl MainScreen {
                 },
             );
         } else {
-            key_event_handler.bind_horizontal(
+            event_handler.bind_horizontal(
                 (Some(2), Some(1)),
                 "Navigate".into(),
                 None,
@@ -224,20 +224,15 @@ impl MainScreen {
                 },
             );
         }
-        key_event_handler.bind_horizontal(
-            (Some(2), Some(2)),
-            "Navigate".into(),
-            None,
-            |app, data| {
-                if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                    if let event_handler::Data::Direction(false, _) = data {
-                        main_screen.item -= 1;
-                    }
+        event_handler.bind_horizontal((Some(2), Some(2)), "Navigate".into(), None, |app, data| {
+            if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                if let event_handler::Data::Direction(false, _) = data {
+                    main_screen.item -= 1;
                 }
-            },
-        );
+            }
+        });
 
-        key_event_handler.bind_vertical(
+        event_handler.bind_vertical(
             (Some(2), Some(2)),
             "Change sort order".into(),
             Some(direction_area),
@@ -258,7 +253,7 @@ impl MainScreen {
             },
         );
 
-        key_event_handler.bind_input_field((Some(2), Some(0)), "".into(), |app, data| {
+        event_handler.bind_input_field((Some(2), Some(0)), "".into(), |app, data| {
             if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                 if let event_handler::Data::Key(key_event) = data {
                     main_screen.search_input.input(key_event);
@@ -324,7 +319,7 @@ impl MainScreen {
             "Search",
             None,
         );
-        key_event_handler.bind_mouse_button_down(
+        event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
             input_area,
             |app, _| {
@@ -369,7 +364,7 @@ impl MainScreen {
             sort_area,
             helpers::ellipsize_string(self.sort.as_ref(), sort_area.width as usize - 4),
         );
-        key_event_handler.bind_mouse_button_down(
+        event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
             sort_area,
             |app, _| {
@@ -406,7 +401,7 @@ impl MainScreen {
                     .selected_index = source as usize;
             };
         }
-        key_event_handler.bind_vertical(
+        event_handler.bind_vertical(
             (Some(2), Some(1)),
             "Change sort".into(),
             Some(if self.item == 1 && tab_selected {
@@ -441,7 +436,7 @@ impl MainScreen {
         if tab_selected && self.item == 1 {
             let areas = self
                 .sort_popup
-                .render_dropdown(sort_area, frame, key_event_handler);
+                .render_dropdown(sort_area, frame, event_handler);
 
             for (k, (mut mouse_area, len)) in areas {
                 if k.is_empty() {
@@ -449,7 +444,7 @@ impl MainScreen {
                     for i in 0..len {
                         let index = i + scroll_pos;
                         let repr = *self.sort_popup.model.get_index(index).unwrap().0;
-                        key_event_handler.bind_mouse_button_down(
+                        event_handler.bind_mouse_button_down(
                             ratatui::crossterm::event::MouseButton::Left,
                             mouse_area,
                             move |app, _| {
@@ -476,7 +471,7 @@ impl MainScreen {
                         mouse_area = mouse_area.offset(Offset { x: 0, y: 1 });
                     }
                 } else {
-                    key_event_handler.bind_vertical(
+                    event_handler.bind_vertical(
                         (Some(2), Some(1)),
                         "Change rating source".into(),
                         Some(mouse_area.offset(Offset::new(-1, -1)).resize(Size::new(
@@ -521,7 +516,7 @@ impl MainScreen {
                         .scroll_pos;
                     for i in 0..len {
                         let index = i + scroll_pos;
-                        key_event_handler.bind_mouse_button_down(
+                        event_handler.bind_mouse_button_down(
                             ratatui::crossterm::event::MouseButton::Left,
                             mouse_area,
                             move |app, _| {
@@ -581,7 +576,7 @@ impl MainScreen {
                 }),
             direction_block.inner(direction_area),
         );
-        key_event_handler.bind_mouse_button_down(
+        event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
             direction_area,
             |app, _| {

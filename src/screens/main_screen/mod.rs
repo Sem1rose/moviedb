@@ -11,12 +11,16 @@ use log::error;
 use nucleo_matcher::{Config as MatcherConfig, Matcher, pattern::Atom};
 use ratatui::{
     Frame,
-    layout::{Offset, Position, Rect},
+    layout::{Offset, Position, Rect, Size},
     macros::{horizontal, vertical},
-    widgets::Padding,
+    style::{Style, Stylize, palette::tailwind},
+    symbols::border,
+    text::Text,
+    widgets::{Block, Borders, Clear, Fill, Padding},
 };
 use ratatui_textarea::TextArea;
 use strum::IntoEnumIterator;
+use throbber_widgets_tui::{Throbber, ThrobberState};
 
 use crate::{
     config::Config,
@@ -30,7 +34,7 @@ use crate::{
         Collection, Entry, FilterCriterion, FxIndexMap, List, ListID, ListItem, Movie, Person,
         RatingSource, Sort, pop_criterion,
     },
-    widgets::{ContextMenu, Orientation, ScrolledList},
+    widgets::{self, ContextMenu, Orientation, ScrolledList},
 };
 
 mod description;
@@ -49,6 +53,7 @@ const CONTEXT_MENU_MODEL: [&str; 7] = [
     "Refetch details",
     "Delete",
 ];
+#[derive(Default)]
 pub struct MainScreen {
     tab:                     usize,
     item:                    usize,
@@ -58,11 +63,12 @@ pub struct MainScreen {
     pub filter_criteria:     Vec<FilterCriterion>,
     pub search_input:        TextArea<'static>,
     pub selected_movie_rect: Option<Rect>,
+    tick:                    u64,
+    throbber_state:          ThrobberState,
 
     pub selected_list: ListID,
     pub lists:         FxIndexMap<ListID, List>,
 
-    pub _config:         Rc<RefCell<Config>>,
     pub movies:          Rc<RefCell<FxIndexMap<u32, Movie>>>,
     pub watched:         Rc<RefCell<FxIndexMap<u32, Entry>>>,
     pub persons:         Rc<RefCell<FxIndexMap<u32, Person>>>,
@@ -79,6 +85,10 @@ pub struct MainScreen {
     home_dir: PathBuf,
 }
 
+const PROCESSOR_INDICATOR_SIZE: Size = Size {
+    width:  32,
+    height: 4,
+};
 impl MainScreen {
     pub fn get_state(&self) -> (Option<usize>, Option<usize>) {
         (Some(self.tab), Some(self.item))
@@ -86,31 +96,14 @@ impl MainScreen {
 
     pub fn new(home_dir: &Path, _config: Rc<RefCell<Config>>) -> Self {
         Self {
-            tab: 0,
-            item: 0,
-            sort: Sort::default(),
-            drawing_images: false,
-            sort_ascending: false,
-            search_input: TextArea::default(),
-            filter_criteria: vec![],
-            selected_movie_rect: None,
-            _config,
-
-            selected_list: Default::default(),
             lists: FxIndexMap::from_iter(
                 load_file!("lists", home_dir)
                     .unwrap_or(vec![])
                     .into_iter()
                     .map(|x: List| (x.id, x)),
             ),
-            movies: Default::default(),
-            watched: Default::default(),
-            persons: Default::default(),
-            collections: Default::default(),
-            filtered_movies: vec![],
 
             movies_list: ScrolledList::new(Orientation::Vertical, MOVIE_WIDGET_HEIGHT as u16),
-            movies_description: Default::default(),
             sort_popup: ContextMenu::new(vec![], 6, None, false).with_submenu(
                 <usize>::from(Sort::Rating(Default::default())),
                 RatingSource::iter()
@@ -120,11 +113,11 @@ impl MainScreen {
                 6,
                 None,
             ),
-            context_menu_pos: None,
             context_menu: ContextMenu::new(vec![], 5, None, false),
-            context_menu_model: vec![],
 
             home_dir: home_dir.to_path_buf(),
+
+            ..Default::default()
         }
     }
 
@@ -238,7 +231,7 @@ impl MainScreen {
         self.save_lists();
     }
 
-    pub fn open_list_by_id(&mut self, id: ListID, key_event_handler: &mut EventHandler) -> bool {
+    pub fn open_list_by_id(&mut self, id: ListID, event_handler: &mut EventHandler) -> bool {
         if self.selected_list == id {
             return false;
         }
@@ -266,7 +259,7 @@ impl MainScreen {
                     .any(|x| !movies_borrowed.contains_key(x))
             };
             if fetch_movies {
-                key_event_handler.bind_immediate(|app| app.drawer.open_fetch_movies_popup());
+                event_handler.bind_immediate(|app| app.drawer.open_fetch_movies_popup());
 
                 false
             } else {
@@ -279,7 +272,7 @@ impl MainScreen {
         }
     }
 
-    pub fn open_new_temp_list(&mut self, id: ListID, key_event_handler: &mut EventHandler) {
+    pub fn open_new_temp_list(&mut self, id: ListID, event_handler: &mut EventHandler) {
         match id {
             ListID::Collection(collection_id) => {
                 let collection = self
@@ -310,20 +303,20 @@ impl MainScreen {
                 self.open_list_and_select_movie(
                     id,
                     self.current_movie().map(|x| x.id).unwrap_or_default(),
-                    key_event_handler,
+                    event_handler,
                 );
             }
             _ => (),
         }
     }
 
-    pub fn try_open_temp_list(&mut self, id: ListID, key_event_handler: &mut EventHandler) {
+    pub fn try_open_temp_list(&mut self, id: ListID, event_handler: &mut EventHandler) {
         if !self.open_list_and_select_movie(
             id,
             self.current_movie().map(|x| x.id).unwrap_or_default(),
-            key_event_handler,
+            event_handler,
         ) {
-            self.open_new_temp_list(id, key_event_handler)
+            self.open_new_temp_list(id, event_handler)
         }
     }
 
@@ -331,9 +324,9 @@ impl MainScreen {
         &mut self,
         list_id: ListID,
         movie_id: u32,
-        key_event_handler: &mut EventHandler,
+        event_handler: &mut EventHandler,
     ) -> bool {
-        if self.open_list_by_id(list_id, key_event_handler) {
+        if self.open_list_by_id(list_id, event_handler) {
             let pos = self.filtered_movies.iter().position(|x| x.id == movie_id);
             if let Some(index) = pos {
                 self.movies_list
@@ -350,7 +343,7 @@ impl MainScreen {
         &mut self,
         index: usize,
         and_select_movie: Option<u32>,
-        key_event_handler: &mut EventHandler,
+        event_handler: &mut EventHandler,
     ) -> bool {
         if index > self.lists.len() + 1 {
             return false;
@@ -366,7 +359,7 @@ impl MainScreen {
                     self.lists[index - 2].id
                 },
                 movie_id,
-                key_event_handler,
+                event_handler,
             )
         } else {
             self.open_list_by_id(
@@ -377,7 +370,7 @@ impl MainScreen {
                 } else {
                     self.lists[index - 2].id
                 },
-                key_event_handler,
+                event_handler,
             )
         }
     }
@@ -852,217 +845,12 @@ impl MainScreen {
         }
     }
 
-    pub fn render(
+    pub fn render_context_menu(
         &mut self,
         frame: &mut Frame,
-        key_event_handler: &mut EventHandler,
         image_renderer: &mut RatatuiImage,
+        event_handler: &mut EventHandler,
     ) {
-        if !self.search_input.is_empty() {
-            key_event_handler.bind_esc((Some(0), None), "Clear search".into(), |app, _| {
-                if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                    if let Sort::Relevance = main_screen.sort {
-                        main_screen.sort =
-                            *main_screen.get_available_sort_options().first().unwrap();
-                    }
-
-                    main_screen.search_input = TextArea::from([""]);
-                    let FilterCriterion::Title(_, filter) = pop_criterion!(
-                        main_screen.filter_criteria,
-                        FilterCriterion::Title(_, _),
-                        FilterCriterion::Title(String::new(), false)
-                    ) else {
-                        unreachable!()
-                    };
-                    if filter {
-                        main_screen.filter_sort_movies(true);
-                    }
-                }
-            });
-        }
-
-        if !self.filtered_movies.is_empty() {
-            for tab in 0..=1 {
-                key_event_handler.bind_key(
-                    (Some(tab), None),
-                    'r',
-                    "Refetch details".into(),
-                    |app, _| {
-                        app.drawer.open_refetch_details_popup(
-                            app.tmdb_tokens.clone(),
-                            app.punch_play_tokens.clone(),
-                            app.trakt_tokens.clone(),
-                            app.omdb_tokens.clone(),
-                        );
-                    },
-                );
-                key_event_handler.bind_key(
-                    (Some(tab), None),
-                    'm',
-                    "Change artworks".into(),
-                    |app, _| {
-                        app.drawer.open_change_artwork_popup(&app.tmdb_tokens);
-                    },
-                );
-
-                if matches!(self.current_movie(), Some(movie) if movie.released) {
-                    key_event_handler.bind_key(
-                        (Some(tab), None),
-                        'A',
-                        "Add play".into(),
-                        |app, _| {
-                            app.drawer.open_add_play_popup();
-                        },
-                    );
-                    key_event_handler.bind_key(
-                        (Some(tab), None),
-                        'E',
-                        "Manage plays".into(),
-                        |app, _| {
-                            app.drawer.open_manage_plays_popup(&app.watched.borrow());
-                        },
-                    );
-
-                    if self
-                        .watched
-                        .borrow()
-                        .contains_key(&self.current_movie().unwrap().id)
-                    {
-                        key_event_handler.bind_key(
-                            (Some(tab), None),
-                            'e',
-                            "Edit movie".into(),
-                            |app, _| {
-                                app.drawer.open_edit_movie_popup(&app.watched.borrow());
-                            },
-                        );
-                    }
-                }
-
-                if self.list_editable() {
-                    key_event_handler.bind_key(
-                        (Some(tab), None),
-                        'd',
-                        "Delete movie".into(),
-                        |app, _| {
-                            app.drawer.open_delete_movie_popup(&app.movies.borrow());
-                        },
-                    );
-                }
-            }
-        }
-
-        for i in 0..=(9.min(self.lists.len() + 2)) {
-            key_event_handler.bind_key((Some(0), None), i, "".into(), move |app, _| {
-                if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                    main_screen.open_list(
-                        i,
-                        main_screen.current_movie().map(|x| x.id),
-                        &mut app.key_event_handler,
-                    );
-                }
-            });
-        }
-
-        if !matches!(
-            self.selected_list,
-            ListID::Local(_) | ListID::Watched | ListID::All
-        ) {
-            key_event_handler.bind_key((Some(0), None), 'R', "Update list".into(), |app, _| {
-                if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                    match main_screen.selected_list {
-                        _ => {
-                            main_screen.refetch_current_list(
-                                &app.watched.borrow_mut(),
-                                &app.tmdb_tokens,
-                                &app.simkl_tokens,
-                                &app.punch_play_tokens,
-                            );
-                        }
-                    }
-
-                    app.drawer.open_fetch_movies_popup();
-                }
-            });
-        }
-
-        if self.list_editable() {
-            let take_rating = self.selected_list == ListID::Watched;
-            key_event_handler.bind_key((Some(0), None), 'a', "Add movie".into(), move |app, _| {
-                app.drawer.open_add_movie_popup(
-                    app.tmdb_tokens.clone(),
-                    app.punch_play_tokens.clone(),
-                    app.trakt_tokens.clone(),
-                    app.omdb_tokens.clone(),
-                    take_rating,
-                );
-            });
-        }
-        key_event_handler.bind_key((Some(0), None), 'o', "Open".into(), |app, _| {
-            app.drawer.open_open_popup();
-        });
-        key_event_handler.bind_key((Some(0), None), 'F', "Advanced Filter".into(), |app, _| {
-            app.drawer.open_advanced_filter_popup();
-        });
-        key_event_handler.bind_key((Some(0), None), 'l', "Manage lists".into(), |app, _| {
-            app.drawer.open_manage_lists_popup();
-        });
-        key_event_handler.bind_key((Some(0), None), ',', "Sort by".into(), |app, _| {
-            if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                main_screen.tab = 2;
-                main_screen.item = 1;
-                // main_screen.sort_popup.reset_state();
-            }
-        });
-        key_event_handler.bind_key((Some(0), None), '/', "Find".into(), |app, _| {
-            if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                main_screen.tab = 2;
-                main_screen.item = 0;
-
-                _ = pop_criterion!(main_screen.filter_criteria, FilterCriterion::Title(_, _));
-                main_screen
-                    .filter_criteria
-                    .push(FilterCriterion::Title("".into(), false));
-
-                if !main_screen.search_input.is_empty() {
-                    main_screen.search_input = TextArea::from([""]);
-                    main_screen.filter_sort_movies(true);
-                }
-            }
-        });
-        key_event_handler.bind_key((Some(0), None), 'f', "Filter".into(), |app, _| {
-            if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
-                main_screen.tab = 2;
-                main_screen.item = 0;
-
-                if let Sort::Relevance = main_screen.sort {
-                    main_screen.sort = *main_screen.get_available_sort_options().first().unwrap();
-                }
-                _ = pop_criterion!(main_screen.filter_criteria, FilterCriterion::Title(_, _));
-                main_screen
-                    .filter_criteria
-                    .push(FilterCriterion::Title("".into(), true));
-
-                if !main_screen.search_input.is_empty() {
-                    main_screen.search_input = TextArea::from([""]);
-                    main_screen.filter_sort_movies(true);
-                }
-            }
-        });
-
-        let frame_area = frame.area();
-
-        // let num_movies = ((frame_area.height - 5) as f32 / 9.0).floor() as usize;
-        // let footer_height = (((frame_area.height - 5) % 9) % num_movies as u16) + 2;
-        let [header, vert, _] = vertical![==3, >=1, ==2].areas(frame_area);
-
-        let [description, list] = horizontal![==vert.width * 3 / 8 - 1, >=0].areas(vert);
-
-        self.drawing_images = false;
-        self.render_movies_list(frame, image_renderer, key_event_handler, list);
-        self.render_movie_description(frame, image_renderer, key_event_handler, description);
-        self.render_header(frame, header, key_event_handler);
-
         if let Some(pos) = self.context_menu_pos {
             self.context_menu_model = CONTEXT_MENU_MODEL
                 .iter()
@@ -1121,8 +909,8 @@ impl MainScreen {
                     height: height + 2,
                 };
 
-                key_event_handler.clear();
-                key_event_handler.bind_mouse_button_down(
+                event_handler.clear();
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     frame.area(),
                     |app, _| {
@@ -1133,7 +921,7 @@ impl MainScreen {
                         }
                     },
                 );
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Right,
                     frame.area(),
                     |app, _| {
@@ -1145,7 +933,7 @@ impl MainScreen {
                     },
                 );
 
-                key_event_handler.bind_esc((None, None), "Cancel".into(), |app, _| {
+                event_handler.bind_esc((None, None), "Cancel".into(), |app, _| {
                     if let Some(Screen::MainScreen(main_screen)) =
                         app.drawer.current_screen.as_mut()
                     {
@@ -1153,7 +941,7 @@ impl MainScreen {
                     }
                 });
 
-                key_event_handler.bind_key((None, None), 'q', "Cancel".into(), |app, _| {
+                event_handler.bind_key((None, None), 'q', "Cancel".into(), |app, _| {
                     if let Some(Screen::MainScreen(main_screen)) =
                         app.drawer.current_screen.as_mut()
                     {
@@ -1161,7 +949,7 @@ impl MainScreen {
                     }
                 });
 
-                key_event_handler.bind_vertical(
+                event_handler.bind_vertical(
                     (None, None),
                     "Navigate".into(),
                     Some(popup_area),
@@ -1178,37 +966,27 @@ impl MainScreen {
 
                 for &i in &self.context_menu_model {
                     if CONTEXT_MENU_MODEL[i] == "Add play" {
-                        key_event_handler.bind_key(
-                            (None, None),
-                            'A',
-                            "Add play".into(),
-                            |app, _| {
-                                app.drawer.open_add_play_popup();
+                        event_handler.bind_key((None, None), 'A', "Add play".into(), |app, _| {
+                            app.drawer.open_add_play_popup();
 
-                                if let Some(Screen::MainScreen(main_screen)) =
-                                    app.drawer.current_screen.as_mut()
-                                {
-                                    main_screen.context_menu_pos = None;
-                                }
-                            },
-                        );
+                            if let Some(Screen::MainScreen(main_screen)) =
+                                app.drawer.current_screen.as_mut()
+                            {
+                                main_screen.context_menu_pos = None;
+                            }
+                        });
                     } else if CONTEXT_MENU_MODEL[i] == "Edit" {
-                        key_event_handler.bind_key(
-                            (None, None),
-                            'e',
-                            "Edit movie".into(),
-                            |app, _| {
-                                app.drawer.open_edit_movie_popup(&app.watched.borrow());
+                        event_handler.bind_key((None, None), 'e', "Edit movie".into(), |app, _| {
+                            app.drawer.open_edit_movie_popup(&app.watched.borrow());
 
-                                if let Some(Screen::MainScreen(main_screen)) =
-                                    app.drawer.current_screen.as_mut()
-                                {
-                                    main_screen.context_menu_pos = None;
-                                }
-                            },
-                        );
+                            if let Some(Screen::MainScreen(main_screen)) =
+                                app.drawer.current_screen.as_mut()
+                            {
+                                main_screen.context_menu_pos = None;
+                            }
+                        });
                     } else if CONTEXT_MENU_MODEL[i] == "Open" {
-                        key_event_handler.bind_key((None, None), 'o', "Open".into(), |app, _| {
+                        event_handler.bind_key((None, None), 'o', "Open".into(), |app, _| {
                             app.drawer.open_open_popup();
 
                             if let Some(Screen::MainScreen(main_screen)) =
@@ -1218,7 +996,7 @@ impl MainScreen {
                             }
                         });
                     } else if CONTEXT_MENU_MODEL[i] == "Manage plays" {
-                        key_event_handler.bind_key(
+                        event_handler.bind_key(
                             (None, None),
                             'E',
                             "Manage plays".into(),
@@ -1233,7 +1011,7 @@ impl MainScreen {
                             },
                         );
                     } else if CONTEXT_MENU_MODEL[i] == "Refetch details" {
-                        key_event_handler.bind_key(
+                        event_handler.bind_key(
                             (None, None),
                             'R',
                             "Refetch details".into(),
@@ -1253,7 +1031,7 @@ impl MainScreen {
                             },
                         );
                     } else if CONTEXT_MENU_MODEL[i] == "Change artworks" {
-                        key_event_handler.bind_key(
+                        event_handler.bind_key(
                             (None, None),
                             'm',
                             "Change artworks".into(),
@@ -1268,7 +1046,7 @@ impl MainScreen {
                             },
                         );
                     } else if CONTEXT_MENU_MODEL[i] == "Delete" {
-                        key_event_handler.bind_key(
+                        event_handler.bind_key(
                             (None, None),
                             'd',
                             "Delete movie".into(),
@@ -1285,7 +1063,7 @@ impl MainScreen {
                     }
                 }
 
-                key_event_handler.bind_enter((None, None), "Choose".into(), |app, _| {
+                event_handler.bind_enter((None, None), "Choose".into(), |app, _| {
                     if let Some(Screen::MainScreen(main_screen)) =
                         app.drawer.current_screen.as_mut()
                     {
@@ -1317,7 +1095,7 @@ impl MainScreen {
 
                 let (mut mouse_area, len) = self
                     .context_menu
-                    .render(popup_area.as_position(), frame, key_event_handler)
+                    .render(popup_area.as_position(), frame, event_handler)
                     .into_iter()
                     .nth(0)
                     .unwrap()
@@ -1329,7 +1107,7 @@ impl MainScreen {
                         popup_area,
                         Padding::new(popup_area.width - 1, 0, 1, 1),
                     );
-                    key_event_handler.bind_mouse_button_down(
+                    event_handler.bind_mouse_button_down(
                         ratatui::crossterm::event::MouseButton::Left,
                         helpers::add_padding(
                             scrollbar_area,
@@ -1345,7 +1123,7 @@ impl MainScreen {
                             }
                         },
                     );
-                    key_event_handler.bind_mouse_button_down(
+                    event_handler.bind_mouse_button_down(
                         ratatui::crossterm::event::MouseButton::Left,
                         helpers::add_padding(
                             scrollbar_area,
@@ -1367,7 +1145,7 @@ impl MainScreen {
 
                 for i in 0..len {
                     let option_index = self.context_menu_model[i + self.context_menu.scroll_pos];
-                    key_event_handler.bind_mouse_button_down(
+                    event_handler.bind_mouse_button_down(
                         ratatui::crossterm::event::MouseButton::Left,
                         mouse_area,
                         move |app, _| {
@@ -1403,5 +1181,336 @@ impl MainScreen {
                 }
             }
         }
+    }
+
+    fn render_processors_indicators(
+        &mut self,
+        list_area: Rect,
+        mut operations: impl Iterator<Item = [String; 2]>,
+        frame: &mut Frame,
+        event_handler: &mut EventHandler,
+    ) {
+        let mut next = operations.next();
+        if next.is_none() {
+            return;
+        }
+
+        let area = helpers::add_padding(
+            list_area,
+            Padding::new(list_area.width - PROCESSOR_INDICATOR_SIZE.width, 1, 0, 0),
+        );
+        for area in (0..(area.height / PROCESSOR_INDICATOR_SIZE.height)).map(|i| Rect {
+            x:      area.x,
+            y:      area.y + area.height - (i + 1) * PROCESSOR_INDICATOR_SIZE.height,
+            width:  area.width,
+            height: PROCESSOR_INDICATOR_SIZE.height,
+        }) {
+            event_handler.bind_mouse_button_down(
+                ratatui::crossterm::event::MouseButton::Left,
+                area,
+                |_, _| {},
+            );
+
+            let block = Block::bordered()
+                .borders(Borders::TOP | Borders::BOTTOM)
+                .border_set(border::PROPORTIONAL_WIDE)
+                .fg(tailwind::SKY.c950);
+            let inner_area = block.inner(area);
+            frame.render_widget(block, area);
+            frame.render_widget(Clear, inner_area);
+            frame.render_widget(Fill::new(" ").bg(tailwind::SKY.c950), inner_area);
+
+            let area = helpers::add_padding(inner_area, Padding::horizontal(1));
+            let [throbber_area, _, text_area] = horizontal![==2, ==1, >=1].areas(area);
+            frame.render_stateful_widget(
+                Throbber::default()
+                    .throbber_set(widgets::SNAKE_2X2_TOP)
+                    .style(
+                        Style::new()
+                            .fg(tailwind::CYAN.c600)
+                            .bg(tailwind::SLATE.c900)
+                            .bold(),
+                    ),
+                throbber_area,
+                &mut self.throbber_state,
+            );
+            frame.render_stateful_widget(
+                Throbber::default()
+                    .throbber_set(widgets::SNAKE_2X2_BOTTOM)
+                    .style(
+                        Style::new()
+                            .fg(tailwind::CYAN.c600)
+                            .bg(tailwind::SLATE.c900)
+                            .bold(),
+                    ),
+                helpers::add_padding(throbber_area, Padding::top(1)),
+                &mut self.throbber_state,
+            );
+            frame.render_widget(
+                Fill::new("▋")
+                    .bg(tailwind::SLATE.c900)
+                    .fg(tailwind::SKY.c950),
+                helpers::add_padding(
+                    throbber_area.offset(Offset { x: -1, y: 0 }),
+                    Padding::right(1),
+                ),
+            );
+            frame.render_widget(
+                Fill::new("▍")
+                    .fg(tailwind::SLATE.c900)
+                    .bg(tailwind::SKY.c950),
+                helpers::add_padding(
+                    throbber_area.offset(Offset { x: 2, y: 0 }),
+                    Padding::right(1),
+                ),
+            );
+
+            let lines = next.unwrap();
+            if lines[1].is_empty() {
+                let mut lines = helpers::wrap_text(&lines[0], text_area.width as usize);
+                lines.resize(text_area.height as usize, Default::default());
+                if let Some(line) = lines.iter_mut().next_back() {
+                    *line = helpers::ellipsize_string(line, text_area.width as usize);
+                }
+                frame.render_widget(
+                    Text::from_iter(lines).fg(tailwind::GRAY.c300).not_bold(),
+                    text_area,
+                );
+            } else {
+                let title = helpers::ellipsize_string(&lines[0], text_area.width as usize);
+                let desc = helpers::ellipsize_string(&lines[1], text_area.width as usize);
+                frame.render_widget(title.fg(tailwind::BLUE.c300).bold(), text_area);
+                frame.render_widget(
+                    desc.fg(tailwind::GRAY.c300).not_bold(),
+                    helpers::add_padding(text_area, Padding::top(1)),
+                );
+            }
+
+            next = operations.next();
+            if next.is_none() {
+                return;
+            }
+        }
+    }
+
+    pub fn render(
+        &mut self,
+        operations: impl Iterator<Item = [String; 2]>,
+        frame: &mut Frame,
+        image_renderer: &mut RatatuiImage,
+        event_handler: &mut EventHandler,
+    ) {
+        self.tick += 1;
+        if self.tick & 3 == 0 {
+            self.throbber_state.calc_next();
+        }
+
+        if !self.search_input.is_empty() {
+            event_handler.bind_esc((Some(0), None), "Clear search".into(), |app, _| {
+                if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                    if let Sort::Relevance = main_screen.sort {
+                        main_screen.sort =
+                            *main_screen.get_available_sort_options().first().unwrap();
+                    }
+
+                    main_screen.search_input = TextArea::from([""]);
+                    let FilterCriterion::Title(_, filter) = pop_criterion!(
+                        main_screen.filter_criteria,
+                        FilterCriterion::Title(_, _),
+                        FilterCriterion::Title(String::new(), false)
+                    ) else {
+                        unreachable!()
+                    };
+                    if filter {
+                        main_screen.filter_sort_movies(true);
+                    }
+                }
+            });
+        }
+
+        if !self.filtered_movies.is_empty() {
+            for tab in 0..=1 {
+                event_handler.bind_key(
+                    (Some(tab), None),
+                    'r',
+                    "Refetch details".into(),
+                    |app, _| {
+                        app.drawer.open_refetch_details_popup(
+                            app.tmdb_tokens.clone(),
+                            app.punch_play_tokens.clone(),
+                            app.trakt_tokens.clone(),
+                            app.omdb_tokens.clone(),
+                        );
+                    },
+                );
+                event_handler.bind_key(
+                    (Some(tab), None),
+                    'm',
+                    "Change artworks".into(),
+                    |app, _| {
+                        app.drawer.open_change_artwork_popup(&app.tmdb_tokens);
+                    },
+                );
+
+                if matches!(self.current_movie(), Some(movie) if movie.released) {
+                    event_handler.bind_key((Some(tab), None), 'A', "Add play".into(), |app, _| {
+                        app.drawer.open_add_play_popup();
+                    });
+                    event_handler.bind_key(
+                        (Some(tab), None),
+                        'E',
+                        "Manage plays".into(),
+                        |app, _| {
+                            app.drawer.open_manage_plays_popup(&app.watched.borrow());
+                        },
+                    );
+
+                    if self
+                        .watched
+                        .borrow()
+                        .contains_key(&self.current_movie().unwrap().id)
+                    {
+                        event_handler.bind_key(
+                            (Some(tab), None),
+                            'e',
+                            "Edit movie".into(),
+                            |app, _| {
+                                app.drawer.open_edit_movie_popup(&app.watched.borrow());
+                            },
+                        );
+                    }
+                }
+
+                if self.list_editable() {
+                    event_handler.bind_key(
+                        (Some(tab), None),
+                        'd',
+                        "Delete movie".into(),
+                        |app, _| {
+                            app.drawer.open_delete_movie_popup(&app.movies.borrow());
+                        },
+                    );
+                }
+            }
+        }
+
+        for i in 0..=(9.min(self.lists.len() + 2)) {
+            event_handler.bind_key((Some(0), None), i, "".into(), move |app, _| {
+                if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                    main_screen.open_list(
+                        i,
+                        main_screen.current_movie().map(|x| x.id),
+                        &mut app.event_handler,
+                    );
+                }
+            });
+        }
+
+        if !matches!(
+            self.selected_list,
+            ListID::Local(_) | ListID::Watched | ListID::All
+        ) {
+            event_handler.bind_key((Some(0), None), 'R', "Update list".into(), |app, _| {
+                if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                    match main_screen.selected_list {
+                        _ => {
+                            main_screen.refetch_current_list(
+                                &app.watched.borrow_mut(),
+                                &app.tmdb_tokens,
+                                &app.simkl_tokens,
+                                &app.punch_play_tokens,
+                            );
+                        }
+                    }
+
+                    app.drawer.open_fetch_movies_popup();
+                }
+            });
+        }
+
+        if self.list_editable() {
+            let take_rating = self.selected_list == ListID::Watched;
+            event_handler.bind_key((Some(0), None), 'a', "Add movie".into(), move |app, _| {
+                app.drawer.open_add_movie_popup(
+                    app.tmdb_tokens.clone(),
+                    app.punch_play_tokens.clone(),
+                    app.trakt_tokens.clone(),
+                    app.omdb_tokens.clone(),
+                    take_rating,
+                );
+            });
+        }
+        event_handler.bind_key((Some(0), None), 'o', "Open".into(), |app, _| {
+            app.drawer.open_open_popup();
+        });
+        event_handler.bind_key((Some(0), None), 'F', "Advanced Filter".into(), |app, _| {
+            app.drawer.open_advanced_filter_popup();
+        });
+        event_handler.bind_key((Some(0), None), 'l', "Manage lists".into(), |app, _| {
+            app.drawer.open_manage_lists_popup();
+        });
+        event_handler.bind_key((Some(0), None), ',', "Sort by".into(), |app, _| {
+            if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                main_screen.tab = 2;
+                main_screen.item = 1;
+                // main_screen.sort_popup.reset_state();
+            }
+        });
+        event_handler.bind_key((Some(0), None), '/', "Find".into(), |app, _| {
+            if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                main_screen.tab = 2;
+                main_screen.item = 0;
+
+                _ = pop_criterion!(main_screen.filter_criteria, FilterCriterion::Title(_, _));
+                main_screen
+                    .filter_criteria
+                    .push(FilterCriterion::Title("".into(), false));
+
+                if !main_screen.search_input.is_empty() {
+                    main_screen.search_input = TextArea::from([""]);
+                    main_screen.filter_sort_movies(true);
+                }
+            }
+        });
+        event_handler.bind_key((Some(0), None), 'f', "Filter".into(), |app, _| {
+            if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
+                main_screen.tab = 2;
+                main_screen.item = 0;
+
+                if let Sort::Relevance = main_screen.sort {
+                    main_screen.sort = *main_screen.get_available_sort_options().first().unwrap();
+                }
+                _ = pop_criterion!(main_screen.filter_criteria, FilterCriterion::Title(_, _));
+                main_screen
+                    .filter_criteria
+                    .push(FilterCriterion::Title("".into(), true));
+
+                if !main_screen.search_input.is_empty() {
+                    main_screen.search_input = TextArea::from([""]);
+                    main_screen.filter_sort_movies(true);
+                }
+            }
+        });
+
+        let frame_area = frame.area();
+
+        // let num_movies = ((frame_area.height - 5) as f32 / 9.0).floor() as usize;
+        // let footer_height = (((frame_area.height - 5) % 9) % num_movies as u16) + 2;
+        let [header_area, vert, _] = vertical![==3, >=1, ==2].areas(frame_area);
+
+        let [description_area, list_area] = horizontal![==vert.width * 3 / 8 - 1, >=0].areas(vert);
+
+        self.drawing_images = false;
+        self.render_movies_list(frame, image_renderer, event_handler, list_area);
+        self.render_movie_description(frame, image_renderer, event_handler, description_area);
+        self.render_header(frame, header_area, event_handler);
+
+        self.render_processors_indicators(
+            helpers::add_padding(list_area, Padding::right(1)),
+            operations,
+            frame,
+            event_handler,
+        );
+        self.render_context_menu(frame, image_renderer, event_handler);
     }
 }

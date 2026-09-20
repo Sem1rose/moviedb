@@ -30,7 +30,7 @@ impl MainScreen {
         &mut self,
         frame: &mut Frame,
         image_renderer: &mut RatatuiImage,
-        key_event_handler: &mut EventHandler,
+        event_handler: &mut EventHandler,
         area: Rect,
     ) {
         let num_items = self.filtered_movies.len();
@@ -39,7 +39,7 @@ impl MainScreen {
         if !self.filtered_movies.is_empty() {
             let num_visible_items = self.movies_list.num_visible_items;
 
-            key_event_handler.bind_tab((Some(0), None), "Change focus".into(), |app, data| {
+            event_handler.bind_tab((Some(0), None), "Change focus".into(), |app, data| {
                 if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     match data {
                         event_handler::Data::Direction(true, _) => {
@@ -58,18 +58,18 @@ impl MainScreen {
                 }
             });
 
-            key_event_handler.bind_key((Some(0), None), "gg", "Jump to top".into(), |app, _| {
+            event_handler.bind_key((Some(0), None), "gg", "Jump to top".into(), |app, _| {
                 if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     main_screen.goto_index(0);
                 }
             });
-            key_event_handler.bind_key((Some(0), None), 'G', "Jump to bottom".into(), |app, _| {
+            event_handler.bind_key((Some(0), None), 'G', "Jump to bottom".into(), |app, _| {
                 if let Some(Screen::MainScreen(main_screen)) = app.drawer.current_screen.as_mut() {
                     main_screen.goto_index(-1);
                 }
             });
 
-            key_event_handler.bind_vertical(
+            event_handler.bind_vertical(
                 (Some(0), None),
                 "Scroll".into(),
                 Some(area),
@@ -104,7 +104,7 @@ impl MainScreen {
                 },
             );
 
-            key_event_handler.bind_mouse_button_down(
+            event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,
                 helpers::add_padding(scrollbar_area, Padding::bottom(scrollbar_area.height - 1)),
                 move |app, _| {
@@ -121,7 +121,7 @@ impl MainScreen {
                     }
                 },
             );
-            key_event_handler.bind_mouse_button_down(
+            event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,
                 helpers::add_padding(scrollbar_area, Padding::top(scrollbar_area.height - 1)),
                 move |app, _| {
@@ -153,14 +153,14 @@ impl MainScreen {
             Some(&mut scrollbar_buffer),
             true,
             &mut list_buffer,
-            key_event_handler,
+            event_handler,
             |buffer,
              num_hidden_rows,
              buffer_y_negative_offset,
              align_bottom,
              index,
              selected,
-             key_event_handler| {
+             event_handler| {
                 if selected {
                     let buffer_area = *buffer.area();
                     let (_, input_area) = helpers::deconstruct_scrollview_area(
@@ -180,7 +180,7 @@ impl MainScreen {
                     buffer_y_negative_offset,
                     align_bottom,
                     image_renderer,
-                    key_event_handler,
+                    event_handler,
                 );
             },
         );
@@ -199,7 +199,7 @@ impl MainScreen {
         buffer_negative_offset: i32,
         align_opposite: bool,
         image_renderer: &mut RatatuiImage,
-        key_event_handler: &mut EventHandler,
+        event_handler: &mut EventHandler,
     ) {
         let buffer_area = *buffer.area();
         let (visible_area, input_area) = helpers::deconstruct_scrollview_area(
@@ -218,7 +218,7 @@ impl MainScreen {
                 || movie.release_date == chrono::NaiveDate::MIN);
 
         let num_items = self.filtered_movies.len();
-        key_event_handler.bind_mouse_button_down(
+        event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
             input_area,
             move |app, _| {
@@ -232,7 +232,7 @@ impl MainScreen {
                 }
             },
         );
-        key_event_handler.bind_mouse_button_down(
+        event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Right,
             input_area,
             move |app, data| {

@@ -40,10 +40,6 @@ impl Processor {
         }
     }
 
-    pub fn update(&mut self, key_event_handler: &mut EventHandler) {
-        self.as_trait_mut().update(key_event_handler)
-    }
-
     pub fn needs_render(&self) -> bool {
         self.as_trait().needs_render()
     }
@@ -52,24 +48,40 @@ impl Processor {
         self.as_trait().get_state()
     }
 
+    pub fn active_operation(&self) -> Option<[String; 2]> {
+        self.as_trait().active_operation()
+    }
+
+    pub fn update(&mut self, event_handler: &mut EventHandler) {
+        self.as_trait_mut().update(event_handler)
+    }
+
     pub fn render(
         &self,
         frame: &mut ratatui::Frame,
-        key_event_handler: &mut EventHandler,
         image_renderer: &mut RatatuiImage,
+        event_handler: &mut EventHandler,
     ) {
-        self.as_trait()
-            .render(frame, key_event_handler, image_renderer)
+        self.as_trait().render(frame, image_renderer, event_handler)
     }
 }
 
 pub trait ProcessorTrait {
-    fn update(&mut self, key_event_handler: &mut EventHandler);
     fn needs_render(&self) -> bool {
         false
     }
     fn get_state(&self) -> (Option<usize>, Option<usize>) {
         (None, None)
     }
-    fn render(&self, _: &mut ratatui::Frame, _: &mut EventHandler, _: &mut RatatuiImage) {}
+    fn active_operation(&self) -> Option<[String; 2]> {
+        None
+    }
+
+    fn update(&mut self, event_handler: &mut EventHandler);
+    fn render(
+        &self,
+        frame: &mut ratatui::Frame,
+        image_renderer: &mut RatatuiImage,
+        event_handler: &mut EventHandler,
+    );
 }

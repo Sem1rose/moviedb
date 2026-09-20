@@ -18,7 +18,7 @@ use ratatui::{
 use crate::{
     config::Config,
     event_handler::{self, EventHandler},
-    helpers::ellipsize_string,
+    helpers,
     image_backend::RatatuiImage,
     popups::*,
     processors::Processor,
@@ -38,7 +38,8 @@ pub struct Drawer {
     pub screen_queue:   Vec<Screen>,
     pub image_renderer: RatatuiImage,
 
-    // pub config:            Rc<RefCell<Config>>,
+    active_processor_operation: bool,
+
     home_dir:  PathBuf,
     cache_dir: PathBuf,
 }
@@ -58,7 +59,6 @@ impl Drawer {
     pub fn new(home_dir: &Path, cache_dir: &Path, config: Rc<RefCell<Config>>) -> Self {
         let popup_queue = if config.borrow().options.oob_done {
             let mut popups = Vec::with_capacity(6);
-            // popups.push(new_popup!(AppInit, AppInitPopup::new(home_dir)));
             if config.borrow_mut().options.tmdb_enabled {
                 popups.push(new_popup!(TMDBInit, TMDBInitPopup::new(home_dir, false)));
             }
@@ -80,10 +80,7 @@ impl Drawer {
 
             popups
         } else {
-            vec![
-                // new_popup!(AppInit, AppInitPopup::new(home_dir)),
-                new_popup!(OutOfBox),
-            ]
+            vec![new_popup!(OutOfBox)]
         }
         .into();
 
@@ -103,169 +100,101 @@ impl Drawer {
         }
     }
 
-    pub fn render_app<'a>(
+    pub fn render_app(
         &mut self,
         frame: &mut Frame,
-        key_event_handler: &mut EventHandler,
-        mut processors: impl Iterator<Item = &'a Processor>,
+        event_handler: &mut EventHandler,
+        processors: Vec<&Processor>,
     ) {
         self.state = (None, None);
 
         self.check_term_size(frame);
         self.image_renderer.update();
 
-        self.draw_current_screen(frame, key_event_handler);
+        self.draw_current_screen(&processors, frame, event_handler);
 
-        self.try_pop_queues(key_event_handler);
-        self.check_popups(key_event_handler);
+        self.try_pop_queues(event_handler);
+        self.check_popups(event_handler);
         if !self.show_term_size_warning {
-            if let Some(processor) = processors.next() {
+            if let Some(processor) = processors.iter().filter(|x| x.needs_render()).next() {
                 self.state = processor.get_state();
-                processor.render(frame, key_event_handler, &mut self.image_renderer);
+                processor.render(frame, &mut self.image_renderer, event_handler);
             } else if self.active_popup.is_some() {
-                self.draw_popup(frame, key_event_handler);
+                self.draw_popup(frame, event_handler);
             }
-            self.render_footer(frame, key_event_handler);
+
+            self.draw_footer(frame, event_handler);
         }
 
         self.image_renderer.render(frame);
     }
 
-    fn draw_current_screen(&mut self, frame: &mut Frame, key_event_handler: &mut EventHandler) {
+    fn check_term_size(&mut self, frame: &Frame) {
+        self.show_term_size_warning = (frame.area().width as u32) < MINTERMSIZE[0]
+            || (frame.area().height as u32) < MINTERMSIZE[1];
+    }
+
+    fn draw_term_size_warning(&mut self, frame: &mut Frame) {
+        let frame_area = frame.area();
+        let lines = vec![
+            line![
+                span!("Terminal is too small: "),
+                frame_area.width.to_string().red(),
+                span!("x"),
+                frame_area.height.to_string().red(),
+            ],
+            line!(),
+            line![
+                span!("Minimum size is: "),
+                MINTERMSIZE[0].to_string().green(),
+                span!("x"),
+                MINTERMSIZE[1].to_string().green(),
+            ],
+        ];
+        let area = frame_area.centered(constraint!(>= 0), constraint!(== lines.len() as u16));
+        let text = Text::from_iter(lines).centered();
+
+        frame.render_widget(text, area);
+    }
+
+    fn draw_current_screen(
+        &mut self,
+        processors: &[&Processor],
+        frame: &mut Frame,
+        event_handler: &mut EventHandler,
+    ) {
         frame.render_widget(Block::new().bg(tailwind::SLATE.c900), frame.area());
 
         if self.show_term_size_warning {
             self.state = (None, None);
-            self.render_term_size_warning(frame);
+            self.draw_term_size_warning(frame);
         } else if let Some(current_screen) = self.current_screen.as_mut() {
             match current_screen {
                 Screen::MainScreen(main_screen) => {
                     self.state = main_screen.get_state();
-                    main_screen.render(frame, key_event_handler, &mut self.image_renderer);
+                    let active_operations = processors
+                        .iter()
+                        .filter_map(|x| x.active_operation())
+                        .collect_vec();
+                    self.active_processor_operation = !active_operations.is_empty();
+                    main_screen.render(
+                        active_operations.into_iter(),
+                        frame,
+                        &mut self.image_renderer,
+                        event_handler,
+                    );
                 }
             }
         }
     }
 
-    fn check_popups(&mut self, key_event_handler: &mut EventHandler) {
-        if let Some(popup) = self.active_popup.as_mut() {
-            self.state = popup.get_state();
-            popup.update();
-
-            match popup {
-                // Popup::AppInit(app_init_popup) =>
-                //     if app_init_popup.done {
-                //         let movies = mem::take(&mut app_init_popup.movies);
-                //         let watched = mem::take(&mut app_init_popup.watched);
-                //         let persons = mem::take(&mut app_init_popup.persons);
-                //         let collections = mem::take(&mut app_init_popup.collections);
-                //         key_event_handler.bind_immediate(move |app, _| {
-                //             app.initialize_data(movies, watched, persons, collections);
-                //         });
-                //     },
-                Popup::Open(_) => (),
-                Popup::ManagePlays(_) => (),
-                Popup::ManageLists(_) => (),
-                Popup::DeleteMovie(_) => (),
-                Popup::AddMovie(add_movie_popup) =>
-                    if let AddMoviePopupPhase::Done = add_movie_popup.phase {
-                        let refetch_details = add_movie_popup.refetch_details;
-                        key_event_handler.bind_immediate(move |app| {
-                            if refetch_details {
-                                app.update_movie_details();
-                            } else {
-                                app.add_movie();
-                            }
-                        });
-                    },
-                Popup::TMDBInit(tmdb_init_popup) =>
-                    if let TMDBInitPopupPhase::Done = tmdb_init_popup.phase {
-                        let mut user_tokens = tmdb_init_popup.user_tokens.take();
-                        key_event_handler.bind_immediate(move |app| {
-                            if let Some(user_tokens) = user_tokens.take() {
-                                app.set_tmdb_user_tokens(user_tokens);
-                            }
-                        });
-                        self.close_popup();
-                    },
-                Popup::SimklInit(simkl_init_popup) =>
-                    if let SimklInitPopupPhase::Done = simkl_init_popup.phase {
-                        let mut user_tokens = simkl_init_popup.user_tokens.take();
-                        key_event_handler.bind_immediate(move |app| {
-                            if let Some(user_tokens) = user_tokens.take() {
-                                app.set_simkl_user_tokens(user_tokens);
-                            }
-                        });
-                        self.close_popup();
-                    },
-                Popup::PunchPlayInit(punch_play_init_popup) =>
-                    if let PunchPlayInitPopupPhase::Done = punch_play_init_popup.phase {
-                        let mut user_tokens = punch_play_init_popup.user_tokens.take();
-                        key_event_handler.bind_immediate(move |app| {
-                            if let Some(user_tokens) = user_tokens.take() {
-                                app.set_punch_play_user_tokens(user_tokens);
-                            }
-                        });
-                        self.close_popup();
-                    },
-                Popup::TraktInit(trakt_init_popup) =>
-                    if let TraktInitPopupPhase::Done = trakt_init_popup.phase {
-                        let mut user_tokens = trakt_init_popup.user_tokens.take();
-                        key_event_handler.bind_immediate(move |app| {
-                            if let Some(user_tokens) = user_tokens.take() {
-                                app.set_trakt_user_tokens(user_tokens);
-                            }
-                        });
-                        self.close_popup();
-                    },
-                Popup::OMDBInit(omdb_init_popup) =>
-                    if omdb_init_popup.done {
-                        let mut user_tokens = omdb_init_popup.user_tokens.take();
-                        key_event_handler.bind_immediate(move |app| {
-                            if let Some(user_tokens) = user_tokens.take() {
-                                app.set_omdb_user_tokens(user_tokens);
-                            }
-                        });
-                        self.close_popup();
-                    },
-                Popup::OutOfBox(_) => (),
-                Popup::AdvancedFilter(_) => (),
-                Popup::FetchMovies(fetch_movies_popup) =>
-                    if fetch_movies_popup.done {
-                        key_event_handler.bind_immediate(|app| {
-                            app.save_data(true, false, true, true);
-                            if let Some(Screen::MainScreen(main_screen)) =
-                                app.drawer.current_screen.as_mut()
-                            {
-                                main_screen.filter_sort_movies(false);
-                            }
-                            app.drawer.close_popup();
-                        });
-                    },
-                Popup::ChangeArtworks(_) => (),
-            }
-        }
-    }
-
-    fn draw_popup(&mut self, frame: &mut Frame, key_event_handler: &mut EventHandler) {
-        if let Some(active_popup) = self.active_popup.as_mut() {
-            active_popup.render(frame, key_event_handler, &mut self.image_renderer);
-        }
-    }
-
-    pub fn stash_current_popup(&mut self) {
-        if let Some(popup) = self.active_popup.take() {
-            self.popup_queue.push_front(popup);
-        }
-    }
-
-    fn try_pop_queues(&mut self, key_event_handler: &mut EventHandler) {
+    fn try_pop_queues(&mut self, event_handler: &mut EventHandler) {
         if self.active_popup.is_none() {
             if !self.popup_queue.is_empty() {
                 self.active_popup = self.popup_queue.pop_front();
 
                 if matches!(self.active_popup, Some(Popup::AdvancedFilter(_))) {
-                    key_event_handler.bind_immediate(|app| {
+                    event_handler.bind_immediate(|app| {
                         if let Some(Popup::AdvancedFilter(advanced_filter_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
@@ -276,7 +205,7 @@ impl Drawer {
                         }
                     });
                 } else if matches!(self.active_popup, Some(Popup::FetchMovies(_))) {
-                    key_event_handler.bind_immediate(|app| {
+                    event_handler.bind_immediate(|app| {
                         let lists = if let Some(Screen::MainScreen(main_screen)) =
                             app.drawer.current_screen.as_mut()
                         {
@@ -306,7 +235,7 @@ impl Drawer {
                 self.current_screen = self.screen_queue.pop();
 
                 if matches!(self.current_screen, Some(Screen::MainScreen(_))) {
-                    key_event_handler.bind_immediate(|app| {
+                    event_handler.bind_immediate(|app| {
                         app.initialize_processors();
                         if let Some(Screen::MainScreen(main_screen)) =
                             app.drawer.current_screen.as_mut()
@@ -323,6 +252,175 @@ impl Drawer {
                     });
                 }
             }
+        }
+    }
+
+    fn check_popups(&mut self, event_handler: &mut EventHandler) {
+        if let Some(popup) = self.active_popup.as_mut() {
+            self.state = popup.get_state();
+            popup.update();
+
+            match popup {
+                // Popup::AppInit(app_init_popup) =>
+                //     if app_init_popup.done {
+                //         let movies = mem::take(&mut app_init_popup.movies);
+                //         let watched = mem::take(&mut app_init_popup.watched);
+                //         let persons = mem::take(&mut app_init_popup.persons);
+                //         let collections = mem::take(&mut app_init_popup.collections);
+                //         event_handler.bind_immediate(move |app, _| {
+                //             app.initialize_data(movies, watched, persons, collections);
+                //         });
+                //     },
+                Popup::Open(_) => (),
+                Popup::ManagePlays(_) => (),
+                Popup::ManageLists(_) => (),
+                Popup::DeleteMovie(_) => (),
+                Popup::AddMovie(add_movie_popup) =>
+                    if let AddMoviePopupPhase::Done = add_movie_popup.phase {
+                        let refetch_details = add_movie_popup.refetch_details;
+                        event_handler.bind_immediate(move |app| {
+                            if refetch_details {
+                                app.update_movie_details();
+                            } else {
+                                app.add_movie();
+                            }
+                        });
+                    },
+                Popup::TMDBInit(tmdb_init_popup) =>
+                    if let TMDBInitPopupPhase::Done = tmdb_init_popup.phase {
+                        let mut user_tokens = tmdb_init_popup.user_tokens.take();
+                        event_handler.bind_immediate(move |app| {
+                            if let Some(user_tokens) = user_tokens.take() {
+                                app.set_tmdb_user_tokens(user_tokens);
+                            }
+                        });
+                        self.close_popup();
+                    },
+                Popup::SimklInit(simkl_init_popup) =>
+                    if let SimklInitPopupPhase::Done = simkl_init_popup.phase {
+                        let mut user_tokens = simkl_init_popup.user_tokens.take();
+                        event_handler.bind_immediate(move |app| {
+                            if let Some(user_tokens) = user_tokens.take() {
+                                app.set_simkl_user_tokens(user_tokens);
+                            }
+                        });
+                        self.close_popup();
+                    },
+                Popup::PunchPlayInit(punch_play_init_popup) =>
+                    if let PunchPlayInitPopupPhase::Done = punch_play_init_popup.phase {
+                        let mut user_tokens = punch_play_init_popup.user_tokens.take();
+                        event_handler.bind_immediate(move |app| {
+                            if let Some(user_tokens) = user_tokens.take() {
+                                app.set_punch_play_user_tokens(user_tokens);
+                            }
+                        });
+                        self.close_popup();
+                    },
+                Popup::TraktInit(trakt_init_popup) =>
+                    if let TraktInitPopupPhase::Done = trakt_init_popup.phase {
+                        let mut user_tokens = trakt_init_popup.user_tokens.take();
+                        event_handler.bind_immediate(move |app| {
+                            if let Some(user_tokens) = user_tokens.take() {
+                                app.set_trakt_user_tokens(user_tokens);
+                            }
+                        });
+                        self.close_popup();
+                    },
+                Popup::OMDBInit(omdb_init_popup) =>
+                    if omdb_init_popup.done {
+                        let mut user_tokens = omdb_init_popup.user_tokens.take();
+                        event_handler.bind_immediate(move |app| {
+                            if let Some(user_tokens) = user_tokens.take() {
+                                app.set_omdb_user_tokens(user_tokens);
+                            }
+                        });
+                        self.close_popup();
+                    },
+                Popup::OutOfBox(_) => (),
+                Popup::AdvancedFilter(_) => (),
+                Popup::FetchMovies(fetch_movies_popup) =>
+                    if fetch_movies_popup.done {
+                        event_handler.bind_immediate(|app| {
+                            app.save_data(true, false, true, true);
+                            if let Some(Screen::MainScreen(main_screen)) =
+                                app.drawer.current_screen.as_mut()
+                            {
+                                main_screen.filter_sort_movies(false);
+                            }
+                            app.drawer.close_popup();
+                        });
+                    },
+                Popup::ChangeArtworks(_) => (),
+            }
+        }
+    }
+
+    fn draw_popup(&mut self, frame: &mut Frame, event_handler: &mut EventHandler) {
+        if let Some(active_popup) = self.active_popup.as_mut() {
+            active_popup.render(frame, event_handler, &mut self.image_renderer);
+        }
+    }
+
+    fn draw_footer(&mut self, frame: &mut Frame, event_handler: &mut EventHandler) {
+        let area = frame.area();
+        let area = area
+            .resize(Size::new(area.width, 2))
+            .offset(Offset::new(0, area.height as i32 - 2));
+
+        frame.render_widget(Clear, area);
+        frame.render_widget(Block::new().bg(tailwind::EMERALD.c950), area);
+
+        // ↔⇆⬌⬍⮀⬅⬆⬇←↕→↓↹•↵⏎
+        let bind_to_string = |bind: event_handler::Bind| {
+            match bind {
+                event_handler::Bind::Horizontal => {
+                    span!(" ←→ ")
+                }
+                event_handler::Bind::Vertical => span!(" ↕ "),
+                event_handler::Bind::Enter => span!(" ↵ "),
+                event_handler::Bind::Esc => span!(" Esc "),
+                event_handler::Bind::Tab => span!(" ↹ "),
+                event_handler::Bind::Key(x) => {
+                    span!(format!(" {} ", if x == " " { "␣" } else { &x }))
+                }
+                _ => "_".into(),
+            }
+            .bold()
+            .fg(tailwind::AMBER.c600)
+        };
+
+        let num_items_per_row = area.width.div_ceil(20);
+        let binds = event_handler
+            .get_key_binds_descriptions(self, (num_items_per_row * area.height) as usize);
+
+        let len_item = area.width.div_ceil(num_items_per_row as u16);
+        let verts = (0..area.height)
+            .map(|i| Rect::new(area.x, area.y + i, area.width, 1))
+            .collect_vec();
+        let mut areas = verts.iter().flat_map(|&area| {
+            (0..num_items_per_row as u16)
+                .map(|i| {
+                    Rect::new(
+                        area.x + i * len_item,
+                        area.y,
+                        len_item.min(area.width - i * len_item - 1),
+                        area.height,
+                    )
+                })
+                .collect_vec()
+        });
+
+        binds.into_iter().for_each(|(bind, description)| {
+            let area = areas.next().unwrap();
+            let bind = bind_to_string(bind);
+            let desc = helpers::ellipsize_string(&description, area.width as usize - bind.width());
+            frame.render_widget(line![bind, span!(desc).fg(tailwind::SLATE.c500)], area);
+        });
+    }
+
+    pub fn stash_current_popup(&mut self) {
+        if let Some(popup) = self.active_popup.take() {
+            self.popup_queue.push_front(popup);
         }
     }
 
@@ -492,90 +590,6 @@ impl Drawer {
         } else {
             false
         }) | !self.image_renderer.images_drawn
-    }
-
-    fn check_term_size(&mut self, frame: &Frame) {
-        self.show_term_size_warning = (frame.area().width as u32) < MINTERMSIZE[0]
-            || (frame.area().height as u32) < MINTERMSIZE[1];
-    }
-
-    fn render_term_size_warning(&mut self, frame: &mut Frame) {
-        let frame_area = frame.area();
-        let lines = vec![
-            line![
-                span!("Terminal is too small: "),
-                frame_area.width.to_string().red(),
-                span!("x"),
-                frame_area.height.to_string().red(),
-            ],
-            line!(),
-            line![
-                span!("Minimum size is: "),
-                MINTERMSIZE[0].to_string().green(),
-                span!("x"),
-                MINTERMSIZE[1].to_string().green(),
-            ],
-        ];
-        let area = frame_area.centered(constraint!(>= 0), constraint!(== lines.len() as u16));
-        let text = Text::from_iter(lines).centered();
-
-        frame.render_widget(text, area);
-    }
-
-    fn render_footer(&mut self, frame: &mut Frame, key_event_handler: &mut EventHandler) {
-        let area = frame.area();
-        let area = area
-            .resize(Size::new(area.width, 2))
-            .offset(Offset::new(0, area.height as i32 - 2));
-
-        frame.render_widget(Clear, area);
-        frame.render_widget(Block::new().bg(tailwind::EMERALD.c950), area);
-
-        // ↔⇆⬌⬍⮀⬅⬆⬇←↕→↓↹•↵⏎
-        let bind_to_string = |bind: event_handler::Bind| {
-            match bind {
-                event_handler::Bind::Horizontal => {
-                    span!(" ←→ ")
-                }
-                event_handler::Bind::Vertical => span!(" ↕ "),
-                event_handler::Bind::Enter => span!(" ↵ "),
-                event_handler::Bind::Esc => span!(" Esc "),
-                event_handler::Bind::Tab => span!(" ↹ "),
-                event_handler::Bind::Key(x) => {
-                    span!(format!(" {} ", if x == " " { "␣" } else { &x }))
-                }
-                _ => "_".into(),
-            }
-            .bold()
-            .fg(tailwind::AMBER.c600)
-        };
-
-        let num_items_per_row = area.width.div_ceil(20);
-        let binds = key_event_handler
-            .get_key_binds_descriptions(self, (num_items_per_row * area.height) as usize);
-
-        let len_item = area.width.div_ceil(num_items_per_row as u16);
-        let verts = (0..area.height)
-            .map(|i| Rect::new(area.x, area.y + i, area.width, 1))
-            .collect_vec();
-        let mut areas = verts.iter().flat_map(|&area| {
-            (0..num_items_per_row as u16)
-                .map(|i| {
-                    Rect::new(
-                        area.x + i * len_item,
-                        area.y,
-                        len_item.min(area.width - i * len_item - 1),
-                        area.height,
-                    )
-                })
-                .collect_vec()
-        });
-
-        binds.into_iter().for_each(|(bind, description)| {
-            let area = areas.next().unwrap();
-            let bind = bind_to_string(bind);
-            let desc = ellipsize_string(&description, area.width as usize - bind.width());
-            frame.render_widget(line![bind, span!(desc).fg(tailwind::SLATE.c500)], area);
-        });
+            | self.active_processor_operation
     }
 }

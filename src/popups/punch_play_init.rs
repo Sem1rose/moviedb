@@ -237,18 +237,18 @@ impl PopupTrait for PunchPlayInitPopup {
     fn render(
         &mut self,
         frame: &mut Frame,
-        key_event_handler: &mut EventHandler,
+        event_handler: &mut EventHandler,
         image_renderer: &mut RatatuiImage,
     ) {
-        key_event_handler.clear();
+        event_handler.clear();
         if self.can_close {
-            key_event_handler.bind_esc((None, None), "Close".into(), |app, _| {
+            event_handler.bind_esc((None, None), "Close".into(), |app, _| {
                 app.drawer.close_popup();
             });
-            key_event_handler.bind_key((None, None), 'q', "Close".into(), |app, _| {
+            event_handler.bind_key((None, None), 'q', "Close".into(), |app, _| {
                 app.drawer.close_popup();
             });
-            key_event_handler.bind_mouse_button_down(
+            event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,
                 frame.area(),
                 |app, _| {
@@ -256,10 +256,10 @@ impl PopupTrait for PunchPlayInitPopup {
                 },
             );
         } else {
-            // key_event_handler.bind_esc((None, None), "Close".into(), |app, _| {
+            // event_handler.bind_esc((None, None), "Close".into(), |app, _| {
             //     app.quit = true;
             // });
-            key_event_handler.bind_key((None, None), 'q', "Quit".into(), |app, _| {
+            event_handler.bind_key((None, None), 'q', "Quit".into(), |app, _| {
                 app.quit = true;
             });
         }
@@ -280,7 +280,7 @@ impl PopupTrait for PunchPlayInitPopup {
                     true,
                 );
                 image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     popup_area.outer(Margin::new(1, 1)),
                     |_, _| {},
@@ -293,14 +293,14 @@ impl PopupTrait for PunchPlayInitPopup {
                 );
 
                 if matches!(self.phase, Phase::RefreshingTokens) {
-                    key_event_handler.bind_enter((None, Some(1)), "Skip".into(), |app, _| {
+                    event_handler.bind_enter((None, Some(1)), "Skip".into(), |app, _| {
                         if let Some(Popup::PunchPlayInit(punch_play_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             punch_play_init_popup.phase = Phase::Done;
                         }
                     });
-                    key_event_handler.bind_tab((None, None), "".into(), |app, data| {
+                    event_handler.bind_tab((None, None), "".into(), |app, data| {
                         if let Some(Popup::PunchPlayInit(punch_play_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
@@ -327,7 +327,7 @@ impl PopupTrait for PunchPlayInitPopup {
                         popup_area,
                         frame,
                     );
-                    key_event_handler.bind_mouse_button_down(
+                    event_handler.bind_mouse_button_down(
                         ratatui::crossterm::event::MouseButton::Left,
                         skip_mouse_area,
                         |app, _| {
@@ -352,7 +352,7 @@ impl PopupTrait for PunchPlayInitPopup {
                 let input_valid =
                     !(self.input0.lines()[0].is_empty() || self.input1.lines()[0].is_empty());
 
-                key_event_handler.bind_tab((None, None), "".into(), |app, data| {
+                event_handler.bind_tab((None, None), "".into(), |app, data| {
                     if let Some(Popup::PunchPlayInit(punch_play_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -371,7 +371,7 @@ impl PopupTrait for PunchPlayInitPopup {
                         }
                     }
                 });
-                key_event_handler.bind_esc((None, None), "".into(), |app, _| {
+                event_handler.bind_esc((None, None), "".into(), |app, _| {
                     if let Some(Popup::PunchPlayInit(punch_play_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -379,7 +379,7 @@ impl PopupTrait for PunchPlayInitPopup {
                     }
                 });
 
-                key_event_handler.bind_enter((None, None), "".into(), |app, _| {
+                event_handler.bind_enter((None, None), "".into(), |app, _| {
                     if let Some(Popup::PunchPlayInit(punch_play_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -387,33 +387,25 @@ impl PopupTrait for PunchPlayInitPopup {
                     }
                 });
                 if input_valid {
-                    key_event_handler.bind_enter(
-                        (None, Some(1)),
-                        "Confirm".into(),
-                        move |app, _| {
-                            if let Some(Popup::PunchPlayInit(punch_play_init_popup)) =
-                                app.drawer.active_popup.as_mut()
-                            {
-                                punch_play_init_popup.advance_phase();
-                            }
-                        },
-                    );
-                    key_event_handler.bind_enter(
-                        (None, Some(2)),
-                        "Confirm".into(),
-                        move |app, _| {
-                            if let Some(Popup::PunchPlayInit(punch_play_init_popup)) =
-                                app.drawer.active_popup.as_mut()
-                            {
-                                punch_play_init_popup.advance_phase();
-                            }
-                        },
-                    );
+                    event_handler.bind_enter((None, Some(1)), "Confirm".into(), move |app, _| {
+                        if let Some(Popup::PunchPlayInit(punch_play_init_popup)) =
+                            app.drawer.active_popup.as_mut()
+                        {
+                            punch_play_init_popup.advance_phase();
+                        }
+                    });
+                    event_handler.bind_enter((None, Some(2)), "Confirm".into(), move |app, _| {
+                        if let Some(Popup::PunchPlayInit(punch_play_init_popup)) =
+                            app.drawer.active_popup.as_mut()
+                        {
+                            punch_play_init_popup.advance_phase();
+                        }
+                    });
                 } else {
-                    key_event_handler.bind_enter((None, Some(2)), "".into(), |_, _| {});
+                    event_handler.bind_enter((None, Some(2)), "".into(), |_, _| {});
                 }
 
-                key_event_handler.bind_input_field((None, Some(0)), "".into(), |app, data| {
+                event_handler.bind_input_field((None, Some(0)), "".into(), |app, data| {
                     if let Some(Popup::PunchPlayInit(punch_play_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -422,7 +414,7 @@ impl PopupTrait for PunchPlayInitPopup {
                         }
                     }
                 });
-                key_event_handler.bind_input_field((None, Some(1)), "".into(), |app, data| {
+                event_handler.bind_input_field((None, Some(1)), "".into(), |app, data| {
                     if let Some(Popup::PunchPlayInit(punch_play_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -439,7 +431,7 @@ impl PopupTrait for PunchPlayInitPopup {
                     true,
                 );
                 image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     popup_area.outer(Margin::new(1, 1)),
                     |_, _| {},
@@ -461,7 +453,7 @@ impl PopupTrait for PunchPlayInitPopup {
                     "Enter the Client ID",
                     None,
                 );
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     ci_input_area,
                     |app, _| {
@@ -486,7 +478,7 @@ impl PopupTrait for PunchPlayInitPopup {
                     "Enter the Client Secret",
                     None,
                 );
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     cs_input_area,
                     |app, _| {
@@ -506,7 +498,7 @@ impl PopupTrait for PunchPlayInitPopup {
                     frame,
                 );
                 if input_valid {
-                    key_event_handler.bind_mouse_button_down(
+                    event_handler.bind_mouse_button_down(
                         ratatui::crossterm::event::MouseButton::Left,
                         mouse_area,
                         |app, _| {
@@ -520,7 +512,7 @@ impl PopupTrait for PunchPlayInitPopup {
                 }
             }
             Phase::Authorize(authorization_url) => {
-                key_event_handler.bind_esc((None, None), "".into(), |app, _| {
+                event_handler.bind_esc((None, None), "".into(), |app, _| {
                     if let Some(Popup::PunchPlayInit(punch_play_init_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -540,7 +532,7 @@ impl PopupTrait for PunchPlayInitPopup {
                     false,
                 );
                 image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     popup_area.outer(Margin::new(1, 1)),
                     |_, _| {},
@@ -553,7 +545,7 @@ impl PopupTrait for PunchPlayInitPopup {
                     popup_area,
                     frame,
                 );
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     back_mouse_area,
                     |app, _| {
@@ -619,17 +611,17 @@ impl PopupTrait for PunchPlayInitPopup {
                         }
                     }
                 };
-                key_event_handler.bind_enter((None, None), "Back".into(), back);
-                key_event_handler.bind_esc((None, Some(0)), "Back".into(), back);
+                event_handler.bind_enter((None, None), "Back".into(), back);
+                event_handler.bind_esc((None, Some(0)), "Back".into(), back);
                 if self.status.is_some() {
-                    key_event_handler.bind_enter((None, Some(1)), "Skip".into(), |app, _| {
+                    event_handler.bind_enter((None, Some(1)), "Skip".into(), |app, _| {
                         if let Some(Popup::PunchPlayInit(punch_play_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
                             punch_play_init_popup.phase = Phase::Done;
                         }
                     });
-                    key_event_handler.bind_tab((None, None), "".into(), |app, data| {
+                    event_handler.bind_tab((None, None), "".into(), |app, data| {
                         if let Some(Popup::PunchPlayInit(punch_play_init_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
@@ -657,7 +649,7 @@ impl PopupTrait for PunchPlayInitPopup {
                     true,
                 );
                 image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     popup_area.outer(Margin::new(1, 1)),
                     |_, _| {},
@@ -681,7 +673,7 @@ impl PopupTrait for PunchPlayInitPopup {
                         popup_area,
                         frame,
                     );
-                    key_event_handler.bind_mouse_button_down(
+                    event_handler.bind_mouse_button_down(
                         ratatui::crossterm::event::MouseButton::Left,
                         skip_mouse_area,
                         |app, _| {
@@ -701,7 +693,7 @@ impl PopupTrait for PunchPlayInitPopup {
                     helpers::add_padding(popup_area, Padding::right(1)),
                     frame,
                 );
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     mouse_area,
                     back,

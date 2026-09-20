@@ -174,18 +174,18 @@ impl PopupTrait for ManagePlaysPopup {
     fn render(
         &mut self,
         frame: &mut Frame,
-        key_event_handler: &mut EventHandler,
+        event_handler: &mut EventHandler,
         image_renderer: &mut RatatuiImage,
     ) {
-        key_event_handler.clear();
-        key_event_handler.bind_mouse_button_down(
+        event_handler.clear();
+        event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
             frame.area(),
             |app, _| {
                 app.drawer.close_popup();
             },
         );
-        key_event_handler.bind_key((None, None), 'q', "Close".into(), |app, _| {
+        event_handler.bind_key((None, None), 'q', "Close".into(), |app, _| {
             app.drawer.close_popup();
         });
 
@@ -193,7 +193,7 @@ impl PopupTrait for ManagePlaysPopup {
             Phase::Overview => {
                 let history_entries = self.entry.as_ref().unwrap().history.as_slice();
                 let num_entries = history_entries.len();
-                key_event_handler.bind_esc((None, None), "Back".into(), move |app, _| {
+                event_handler.bind_esc((None, None), "Back".into(), move |app, _| {
                     if let Some(Popup::ManagePlays(manage_plays_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -202,10 +202,10 @@ impl PopupTrait for ManagePlaysPopup {
                         manage_plays_popup.confirm = false;
                     }
                 });
-                key_event_handler.bind_esc((Some(2), None), "Back".into(), move |app, _| {
+                event_handler.bind_esc((Some(2), None), "Back".into(), move |app, _| {
                     app.drawer.close_popup();
                 });
-                key_event_handler.bind_tab((None, None), "Navigate".into(), move |app, data| {
+                event_handler.bind_tab((None, None), "Navigate".into(), move |app, data| {
                     if let Some(Popup::ManagePlays(manage_plays_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -310,7 +310,7 @@ impl PopupTrait for ManagePlaysPopup {
                     }
                 };
                 if num_entries > 0 {
-                    key_event_handler.bind_horizontal(
+                    event_handler.bind_horizontal(
                         (Some(0), None),
                         "Select".into(),
                         None,
@@ -340,8 +340,8 @@ impl PopupTrait for ManagePlaysPopup {
                         },
                     );
 
-                    key_event_handler.bind_enter((Some(0), Some(0)), "Edit".into(), _edit.clone());
-                    key_event_handler.bind_enter(
+                    event_handler.bind_enter((Some(0), Some(0)), "Edit".into(), _edit.clone());
+                    event_handler.bind_enter(
                         (Some(0), Some(1)),
                         if self.confirm { "Confirm" } else { "Delete" }.into(),
                         |app, _| {
@@ -364,49 +364,39 @@ impl PopupTrait for ManagePlaysPopup {
                             }
                         },
                     );
-                    key_event_handler.bind_enter(
+                    event_handler.bind_enter(
                         (Some(0), Some(2)),
                         if self.confirm { "Confirm" } else { "Sync" }.into(),
                         _sync.clone(),
                     );
 
-                    key_event_handler.bind_key((Some(0), None), 'e', "Edit".into(), _edit);
+                    event_handler.bind_key((Some(0), None), 'e', "Edit".into(), _edit);
                     if !self.confirm {
-                        key_event_handler.bind_key(
-                            (Some(0), None),
-                            'd',
-                            "Delete".into(),
-                            |app, _| {
-                                if let Some(Popup::ManagePlays(manage_plays_popup)) =
-                                    app.drawer.active_popup.as_mut()
-                                {
-                                    manage_plays_popup.item = 1;
-                                    manage_plays_popup.confirm = true;
-                                }
-                            },
-                        );
-                        key_event_handler.bind_key(
-                            (Some(0), None),
-                            's',
-                            "Sync".into(),
-                            |app, _| {
-                                if let Some(Popup::ManagePlays(manage_plays_popup)) =
-                                    app.drawer.active_popup.as_mut()
-                                {
-                                    manage_plays_popup.item = 2;
-                                    manage_plays_popup.confirm = true;
-                                }
-                            },
-                        );
+                        event_handler.bind_key((Some(0), None), 'd', "Delete".into(), |app, _| {
+                            if let Some(Popup::ManagePlays(manage_plays_popup)) =
+                                app.drawer.active_popup.as_mut()
+                            {
+                                manage_plays_popup.item = 1;
+                                manage_plays_popup.confirm = true;
+                            }
+                        });
+                        event_handler.bind_key((Some(0), None), 's', "Sync".into(), |app, _| {
+                            if let Some(Popup::ManagePlays(manage_plays_popup)) =
+                                app.drawer.active_popup.as_mut()
+                            {
+                                manage_plays_popup.item = 2;
+                                manage_plays_popup.confirm = true;
+                            }
+                        });
                     }
                 } else if self.tab == 0 {
                     self.tab = 1;
                 }
 
-                key_event_handler.bind_key((Some(0), None), 'a', "New".into(), _new.clone());
-                key_event_handler.bind_key((Some(1), None), 'a', "New".into(), _new.clone());
-                key_event_handler.bind_enter((Some(1), None), "New".into(), _new);
-                key_event_handler.bind_enter((Some(2), None), "Close".into(), |app, _| {
+                event_handler.bind_key((Some(0), None), 'a', "New".into(), _new.clone());
+                event_handler.bind_key((Some(1), None), 'a', "New".into(), _new.clone());
+                event_handler.bind_enter((Some(1), None), "New".into(), _new);
+                event_handler.bind_enter((Some(2), None), "Close".into(), |app, _| {
                     app.drawer.close_popup();
                 });
 
@@ -417,7 +407,7 @@ impl PopupTrait for ManagePlaysPopup {
                     true,
                 );
                 image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     popup_area.outer(Margin::new(1, 1)),
                     |_, _| {},
@@ -438,7 +428,7 @@ impl PopupTrait for ManagePlaysPopup {
                         .resize(Size::new(1, list_area.height - 2));
 
                     if num_entries > 1 {
-                        key_event_handler.bind_vertical(
+                        event_handler.bind_vertical(
                             (Some(0), None),
                             "Scroll".into(),
                             Some(list_area),
@@ -468,14 +458,14 @@ impl PopupTrait for ManagePlaysPopup {
                         Some(&mut scrollbar_buffer),
                         true,
                         &mut list_buffer,
-                        key_event_handler,
+                        event_handler,
                         |buffer,
                          num_hidden_rows,
                          buffer_negative_offset,
                          align_bottom,
                          index,
                          selected,
-                         key_event_handler| {
+                         event_handler| {
                             let buffer_area = *buffer.area();
                             let (_, input_area) = helpers::deconstruct_scrollview_area(
                                 buffer_area,
@@ -487,7 +477,7 @@ impl PopupTrait for ManagePlaysPopup {
 
                             let alternate = index & 1 == 1;
 
-                            key_event_handler.bind_mouse_button_down(
+                            event_handler.bind_mouse_button_down(
                                 ratatui::crossterm::event::MouseButton::Left,
                                 input_area,
                                 move |app, _| {
@@ -627,7 +617,7 @@ impl PopupTrait for ManagePlaysPopup {
                                     buffer,
                                 );
                                 for (i, mouse_area) in actions_mouse_areas.into_iter().enumerate() {
-                                    key_event_handler.bind_mouse_button_down(
+                                    event_handler.bind_mouse_button_down(
                                         ratatui::crossterm::event::MouseButton::Left,
                                         mouse_area,
                                         move |app, _| {
@@ -702,7 +692,7 @@ impl PopupTrait for ManagePlaysPopup {
                     frame.buffer_mut().merge(&list_buffer);
                     frame.buffer_mut().merge(&scrollbar_buffer);
 
-                    key_event_handler.bind_mouse_button_down(
+                    event_handler.bind_mouse_button_down(
                         ratatui::crossterm::event::MouseButton::Left,
                         scrollbar_area.resize(Size::new(1, 1)),
                         move |app, _| {
@@ -719,7 +709,7 @@ impl PopupTrait for ManagePlaysPopup {
                             }
                         },
                     );
-                    key_event_handler.bind_mouse_button_down(
+                    event_handler.bind_mouse_button_down(
                         ratatui::crossterm::event::MouseButton::Left,
                         scrollbar_area
                             .resize(Size::new(1, 1))
@@ -751,7 +741,7 @@ impl PopupTrait for ManagePlaysPopup {
                     helpers::add_padding(new_area, Padding::horizontal(1)),
                     frame,
                 );
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     add_mouse_area,
                     |app, _| {
@@ -774,7 +764,7 @@ impl PopupTrait for ManagePlaysPopup {
                     popup_area,
                     frame,
                 );
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     close_mouse_area,
                     |app, _| app.drawer.close_popup(),
@@ -788,7 +778,7 @@ impl PopupTrait for ManagePlaysPopup {
                 let one_shot = self.one_shot;
                 let mut last_item = 3;
 
-                key_event_handler.bind_esc((None, None), "Back".into(), |app, _| {
+                event_handler.bind_esc((None, None), "Back".into(), |app, _| {
                     if let Some(Popup::ManagePlays(manage_plays_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -796,14 +786,14 @@ impl PopupTrait for ManagePlaysPopup {
                     }
                 });
                 if one_shot {
-                    key_event_handler.bind_esc((None, Some(3)), "Close".into(), |app, _| {
+                    event_handler.bind_esc((None, Some(3)), "Close".into(), |app, _| {
                         app.drawer.close_popup();
                     });
-                    key_event_handler.bind_enter((None, Some(3)), "Close".into(), |app, _| {
+                    event_handler.bind_enter((None, Some(3)), "Close".into(), |app, _| {
                         app.drawer.close_popup();
                     });
 
-                    key_event_handler.bind_horizontal(
+                    event_handler.bind_horizontal(
                         (None, Some(2)),
                         "Navigate".into(),
                         None,
@@ -817,7 +807,7 @@ impl PopupTrait for ManagePlaysPopup {
                             }
                         },
                     );
-                    key_event_handler.bind_horizontal(
+                    event_handler.bind_horizontal(
                         (None, Some(3)),
                         "Navigate".into(),
                         None,
@@ -834,7 +824,7 @@ impl PopupTrait for ManagePlaysPopup {
 
                     last_item = 2;
                 } else {
-                    key_event_handler.bind_esc((None, Some(3)), "Back".into(), |app, _| {
+                    event_handler.bind_esc((None, Some(3)), "Back".into(), |app, _| {
                         if let Some(Popup::ManagePlays(manage_plays_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
@@ -844,7 +834,7 @@ impl PopupTrait for ManagePlaysPopup {
                             manage_plays_popup.phase = Phase::Overview;
                         }
                     });
-                    key_event_handler.bind_enter((None, Some(3)), "Back".into(), |app, _| {
+                    event_handler.bind_enter((None, Some(3)), "Back".into(), |app, _| {
                         if let Some(Popup::ManagePlays(manage_plays_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
@@ -856,7 +846,7 @@ impl PopupTrait for ManagePlaysPopup {
                     });
                 }
 
-                key_event_handler.bind_tab((None, None), "Navigate".into(), move |app, data| {
+                event_handler.bind_tab((None, None), "Navigate".into(), move |app, data| {
                     if let Some(Popup::ManagePlays(manage_plays_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -877,7 +867,7 @@ impl PopupTrait for ManagePlaysPopup {
                 });
 
                 if rating_valid {
-                    key_event_handler.bind_enter((None, Some(0)), "Next".into(), |app, _| {
+                    event_handler.bind_enter((None, Some(0)), "Next".into(), |app, _| {
                         if let Some(Popup::ManagePlays(manage_plays_popup)) =
                             app.drawer.active_popup.as_mut()
                         {
@@ -885,48 +875,44 @@ impl PopupTrait for ManagePlaysPopup {
                         }
                     });
                     if date_valid {
-                        key_event_handler.bind_enter(
-                            (None, None),
-                            "Confirm".into(),
-                            move |app, _| {
-                                if new_play {
-                                    app.add_play();
-                                } else {
-                                    if let Some(Popup::ManagePlays(manage_plays_popup)) =
-                                        app.drawer.active_popup.as_ref()
-                                    {
-                                        if manage_plays_popup.scrollview.selected_index == 0 {
-                                            app.edit_movie();
-                                        } else {
-                                            app.edit_movie_play();
-                                        }
+                        event_handler.bind_enter((None, None), "Confirm".into(), move |app, _| {
+                            if new_play {
+                                app.add_play();
+                            } else {
+                                if let Some(Popup::ManagePlays(manage_plays_popup)) =
+                                    app.drawer.active_popup.as_ref()
+                                {
+                                    if manage_plays_popup.scrollview.selected_index == 0 {
+                                        app.edit_movie();
+                                    } else {
+                                        app.edit_movie_play();
                                     }
                                 }
+                            }
 
-                                if one_shot {
-                                    app.drawer.close_popup();
-                                } else {
-                                    if let Some(Popup::ManagePlays(manage_plays_popup)) =
-                                        app.drawer.active_popup.as_mut()
-                                    {
-                                        manage_plays_popup.tab = 0;
-                                        manage_plays_popup.item = 0;
-                                        manage_plays_popup.confirm = false;
-                                        manage_plays_popup.phase = Phase::Overview;
+                            if one_shot {
+                                app.drawer.close_popup();
+                            } else {
+                                if let Some(Popup::ManagePlays(manage_plays_popup)) =
+                                    app.drawer.active_popup.as_mut()
+                                {
+                                    manage_plays_popup.tab = 0;
+                                    manage_plays_popup.item = 0;
+                                    manage_plays_popup.confirm = false;
+                                    manage_plays_popup.phase = Phase::Overview;
 
-                                        if manage_plays_popup.new_play {
-                                            manage_plays_popup.add_play();
-                                        } else {
-                                            manage_plays_popup.edit_play();
-                                        }
+                                    if manage_plays_popup.new_play {
+                                        manage_plays_popup.add_play();
+                                    } else {
+                                        manage_plays_popup.edit_play();
                                     }
                                 }
-                            },
-                        );
+                            }
+                        });
                     }
                 }
 
-                key_event_handler.bind_vertical(
+                event_handler.bind_vertical(
                     (None, Some(0)),
                     "Navigate".into(),
                     None,
@@ -940,7 +926,7 @@ impl PopupTrait for ManagePlaysPopup {
                         }
                     },
                 );
-                key_event_handler.bind_vertical(
+                event_handler.bind_vertical(
                     (None, Some(1)),
                     "Navigate".into(),
                     None,
@@ -955,7 +941,7 @@ impl PopupTrait for ManagePlaysPopup {
                     },
                 );
 
-                key_event_handler.bind_input_field((None, Some(0)), "".into(), |app, data| {
+                event_handler.bind_input_field((None, Some(0)), "".into(), |app, data| {
                     if let Some(Popup::ManagePlays(manage_plays_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -979,7 +965,7 @@ impl PopupTrait for ManagePlaysPopup {
                         }
                     }
                 });
-                key_event_handler.bind_input_field((None, Some(1)), "".into(), |app, data| {
+                event_handler.bind_input_field((None, Some(1)), "".into(), |app, data| {
                     if let Some(Popup::ManagePlays(manage_plays_popup)) =
                         app.drawer.active_popup.as_mut()
                     {
@@ -996,7 +982,7 @@ impl PopupTrait for ManagePlaysPopup {
                     true,
                 );
                 image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     popup_area.outer(Margin::new(1, 1)),
                     |_, _| {},
@@ -1017,7 +1003,7 @@ impl PopupTrait for ManagePlaysPopup {
                     "Enter a rating",
                     None,
                 );
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     helpers::add_padding(rating_input_area, Padding::horizontal(2)),
                     |app, _| {
@@ -1042,7 +1028,7 @@ impl PopupTrait for ManagePlaysPopup {
                     "Now",
                     None,
                 );
-                key_event_handler.bind_mouse_button_down(
+                event_handler.bind_mouse_button_down(
                     ratatui::crossterm::event::MouseButton::Left,
                     helpers::add_padding(date_input_area, Padding::horizontal(2)),
                     |app, _| {
@@ -1072,7 +1058,7 @@ impl PopupTrait for ManagePlaysPopup {
                         frame.buffer_mut(),
                     );
                     for (i, mouse_area) in actions_mouse_areas.into_iter().enumerate() {
-                        key_event_handler.bind_mouse_button_down(
+                        event_handler.bind_mouse_button_down(
                             ratatui::crossterm::event::MouseButton::Left,
                             mouse_area,
                             move |app, _| {
@@ -1098,7 +1084,7 @@ impl PopupTrait for ManagePlaysPopup {
                         popup_area,
                         frame,
                     );
-                    key_event_handler.bind_mouse_button_down(
+                    event_handler.bind_mouse_button_down(
                         ratatui::crossterm::event::MouseButton::Left,
                         back_mouse_area,
                         |app, _| {
@@ -1124,7 +1110,7 @@ impl PopupTrait for ManagePlaysPopup {
                         helpers::add_padding(popup_area, Padding::right(1)),
                         frame,
                     );
-                    key_event_handler.bind_mouse_button_down(
+                    event_handler.bind_mouse_button_down(
                         ratatui::crossterm::event::MouseButton::Left,
                         confirm_mouse_area,
                         move |app, _| {

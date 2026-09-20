@@ -40,10 +40,10 @@ pub struct App {
     pub persons:     Rc<RefCell<FxIndexMap<u32, Person>>>,
     pub collections: Rc<RefCell<FxIndexMap<u32, Collection>>>,
 
-    terminal:              Term,
-    pub drawer:            Drawer,
-    pub key_event_handler: EventHandler,
-    pub config:            Rc<RefCell<Config>>,
+    terminal:          Term,
+    pub drawer:        Drawer,
+    pub event_handler: EventHandler,
+    pub config:        Rc<RefCell<Config>>,
 
     pub tmdb_tokens:       TMDBTokens,
     pub simkl_tokens:      SimklTokens,
@@ -69,7 +69,7 @@ impl App {
 
         Self {
             terminal: initialize_terminal().expect("Unable to initialize terminal"),
-            key_event_handler: EventHandler::default(),
+            event_handler: EventHandler::default(),
             drawer: Drawer::new(&home_dir, &cache_dir, config.clone()),
 
             config,
@@ -119,7 +119,7 @@ impl App {
 
     pub fn run(&mut self) -> anyhow::Result<()> {
         loop {
-            self.key_event_handler.clear();
+            self.event_handler.clear();
 
             self.update_processors();
 
@@ -127,14 +127,14 @@ impl App {
                 .draw(|frame| {
                     self.drawer.render_app(
                         frame,
-                        &mut self.key_event_handler,
-                        self.processors.values().filter(|x| x.needs_render()),
+                        &mut self.event_handler,
+                        self.processors.values().collect_vec(),
                     );
                 })
                 .map(|_| ())?;
 
             let mut executed_immediate = false;
-            for callback in self.key_event_handler.get_execute_immediates() {
+            for callback in self.event_handler.get_execute_immediates() {
                 callback(self);
                 executed_immediate = true;
             }
@@ -183,7 +183,7 @@ impl App {
 
     fn update_processors(&mut self) {
         for processor in self.processors.values_mut() {
-            processor.update(&mut self.key_event_handler);
+            processor.update(&mut self.event_handler);
         }
     }
 
@@ -422,7 +422,7 @@ impl App {
                     main_screen.open_list_and_select_movie(
                         ListID::Watched,
                         movie_id,
-                        &mut self.key_event_handler,
+                        &mut self.event_handler,
                     );
                 }
             } else {
@@ -1084,14 +1084,13 @@ impl App {
         match event {
             Event::Key(event) => {
                 if let Some((mut callback, data)) =
-                    self.key_event_handler.handle_key_event(event, &self.drawer)
+                    self.event_handler.handle_key_event(event, &self.drawer)
                 {
                     callback(self, data);
                 }
             }
             Event::Mouse(event) => {
-                if let Some((mut callback, data)) = self.key_event_handler.handle_mouse_event(event)
-                {
+                if let Some((mut callback, data)) = self.event_handler.handle_mouse_event(event) {
                     callback(self, data);
                 }
             }
@@ -1099,7 +1098,7 @@ impl App {
             Event::FocusLost => (),
             Event::Paste(string) => {
                 if let Some(mut callback) = self
-                    .key_event_handler
+                    .event_handler
                     .try_get_bind(crate::event_handler::Bind::Input, self.drawer.state)
                 {
                     for c in string.chars() {

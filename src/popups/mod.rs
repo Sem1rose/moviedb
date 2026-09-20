@@ -104,11 +104,11 @@ impl Popup {
     pub fn render(
         &mut self,
         frame: &mut ratatui::Frame,
-        key_event_handler: &mut crate::event_handler::EventHandler,
+        event_handler: &mut crate::event_handler::EventHandler,
         image_renderer: &mut RatatuiImage,
     ) {
         self.as_trait_mut()
-            .render(frame, key_event_handler, image_renderer)
+            .render(frame, event_handler, image_renderer)
     }
 }
 
@@ -121,7 +121,7 @@ pub trait PopupTrait {
     fn render(
         &mut self,
         frame: &mut ratatui::Frame,
-        key_event_handler: &mut crate::event_handler::EventHandler,
+        event_handler: &mut crate::event_handler::EventHandler,
         image_renderer: &mut RatatuiImage,
     );
 }

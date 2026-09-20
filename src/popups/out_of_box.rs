@@ -43,14 +43,14 @@ impl PopupTrait for OutOfBoxPopup {
     fn render(
         &mut self,
         frame: &mut Frame,
-        key_event_handler: &mut EventHandler,
+        event_handler: &mut EventHandler,
         image_renderer: &mut RatatuiImage,
     ) {
-        key_event_handler.clear();
-        key_event_handler.bind_key((None, None), 'q', "Quit".into(), |app, _| {
+        event_handler.clear();
+        event_handler.bind_key((None, None), 'q', "Quit".into(), |app, _| {
             app.quit = true;
         });
-        key_event_handler.bind_key((Some(0), None), 'a', "Toggle all".into(), |app, _| {
+        event_handler.bind_key((Some(0), None), 'a', "Toggle all".into(), |app, _| {
             if let Some(Popup::OutOfBox(out_of_box_popup)) = app.drawer.active_popup.as_mut() {
                 if out_of_box_popup.toggled_list.contains(&false) {
                     out_of_box_popup.toggled_list = [true; 5];
@@ -117,8 +117,8 @@ impl PopupTrait for OutOfBoxPopup {
             }
         }
 
-        key_event_handler.bind_enter((None, None), "Confirm".into(), confirm_fn);
-        key_event_handler.bind_tab((None, None), "".into(), move |app, data| {
+        event_handler.bind_enter((None, None), "Confirm".into(), confirm_fn);
+        event_handler.bind_tab((None, None), "".into(), move |app, data| {
             if let Some(Popup::OutOfBox(out_of_box_popup)) = app.drawer.active_popup.as_mut() {
                 match data {
                     crate::event_handler::Data::Direction(true, _) => {
@@ -136,11 +136,11 @@ impl PopupTrait for OutOfBoxPopup {
         });
         let toggle_block = |area: Rect,
                             frame: &mut Frame,
-                            key_event_handler: &mut EventHandler,
+                            event_handler: &mut EventHandler,
                             text: &'static str,
                             i: usize| {
             let tab_selected = self.tab == 0;
-            key_event_handler.bind_mouse_button_down(
+            event_handler.bind_mouse_button_down(
                 ratatui::crossterm::event::MouseButton::Left,
                 area,
                 move |app, _| {
@@ -166,7 +166,7 @@ impl PopupTrait for OutOfBoxPopup {
                     }
                 },
             );
-            key_event_handler.bind_key((Some(0), Some(i)), ' ', "Toggle".into(), move |app, _| {
+            event_handler.bind_key((Some(0), Some(i)), ' ', "Toggle".into(), move |app, _| {
                 if let Some(Popup::OutOfBox(out_of_box_popup)) = app.drawer.active_popup.as_mut() {
                     out_of_box_popup.toggled_list[i] ^= true;
                     if i < NUM_REQUIRED_CHOICES
@@ -264,7 +264,7 @@ impl PopupTrait for OutOfBoxPopup {
             true,
         );
         image_renderer.add_overlay(popup_area.outer(Margin::new(1, 1)));
-        key_event_handler.bind_mouse_button_down(
+        event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
             popup_area.outer(Margin::new(1, 1)),
             |_, _| {},
@@ -308,7 +308,7 @@ impl PopupTrait for OutOfBoxPopup {
 
                 for (col, area) in areas.into_iter().enumerate() {
                     table_indices.last_mut().unwrap()[col] = Some(i);
-                    toggle_block(area, frame, key_event_handler, labels[i], i);
+                    toggle_block(area, frame, event_handler, labels[i], i);
 
                     i += 1;
                     if i == NUM_REQUIRED_CHOICES || i == self.toggled_list.len() {
@@ -321,7 +321,7 @@ impl PopupTrait for OutOfBoxPopup {
         }
 
         let table_indices_cloned = table_indices.clone();
-        key_event_handler.bind_vertical(
+        event_handler.bind_vertical(
             (Some(0), None),
             "Scroll".into(),
             Some(popup_area),
@@ -370,7 +370,7 @@ impl PopupTrait for OutOfBoxPopup {
                 }
             },
         );
-        key_event_handler.bind_horizontal(
+        event_handler.bind_horizontal(
             (Some(0), None),
             "Scroll".into(),
             Some(popup_area),
@@ -418,7 +418,7 @@ impl PopupTrait for OutOfBoxPopup {
             helpers::add_padding(popup_area, Padding::right(1)),
             frame,
         );
-        key_event_handler.bind_mouse_button_down(
+        event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
             confirm_mouse_area,
             confirm_fn,

@@ -164,7 +164,7 @@ impl ContextMenu {
         &mut self,
         position: Position,
         frame: &mut Frame,
-        key_event_handler: &mut EventHandler,
+        event_handler: &mut EventHandler,
     ) -> FxHashMap<Vec<usize>, (Rect, usize)> {
         let model_len = self.model.len();
         if self.selected_index < self.scroll_pos
@@ -241,7 +241,7 @@ impl ContextMenu {
             );
         }
         frame.render_widget(Clear, area);
-        key_event_handler.bind_mouse_button_down(
+        event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
             area,
             |_, _| {},
@@ -311,7 +311,7 @@ impl ContextMenu {
                 self.submenus
                     .get_mut(submenu_id)
                     .unwrap()
-                    .render(new_pos, frame, key_event_handler)
+                    .render(new_pos, frame, event_handler)
                     .into_iter()
                     .map(|(mut k, v)| {
                         k.insert(0, *submenu_id);
@@ -327,13 +327,13 @@ impl ContextMenu {
         &mut self,
         dropdown_widget_area: Rect,
         frame: &mut Frame,
-        key_event_handler: &mut EventHandler,
+        event_handler: &mut EventHandler,
     ) -> FxHashMap<Vec<usize>, (Rect, usize)> {
         self.width = dropdown_widget_area.width;
         let result = self.render(
             dropdown_widget_area.offset(Offset::new(0, 2)).as_position(),
             frame,
-            key_event_handler,
+            event_handler,
         );
 
         frame.render_widget(
