@@ -300,7 +300,7 @@ impl ScrolledList {
                     .bg(if i & 1 == 0 {
                         tailwind::SLATE.c950
                     } else {
-                        tailwind::BLACK
+                        tailwind::ZINC.c950
                     })
                     .render(area, buffer);
             }

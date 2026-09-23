@@ -12,7 +12,7 @@ use ratatui::{
     macros::{constraint, line, span},
     style::{Stylize, palette::tailwind},
     text::Text,
-    widgets::{Block, Clear},
+    widgets::{Clear, Fill},
 };
 
 use crate::{
@@ -71,9 +71,9 @@ impl Drawer {
                     PunchPlayInitPopup::new(home_dir, false)
                 ));
             }
-            if config.borrow_mut().options.trakt_enabled {
-                popups.push(new_popup!(TraktInit, TraktInitPopup::new(home_dir, false)));
-            }
+            // if config.borrow_mut().options.trakt_enabled {
+            //     popups.push(new_popup!(TraktInit, TraktInitPopup::new(home_dir, false)));
+            // }
             if config.borrow_mut().options.omdb_enabled {
                 popups.push(new_popup!(OMDBInit, OMDBInitPopup::new(home_dir, false)));
             }
@@ -136,6 +136,7 @@ impl Drawer {
 
     fn draw_term_size_warning(&mut self, frame: &mut Frame) {
         let frame_area = frame.area();
+        frame.render_widget(Fill::new(" ").bg(tailwind::SLATE.c950), frame.area());
         let lines = vec![
             line![
                 span!("Terminal is too small: "),
@@ -163,8 +164,6 @@ impl Drawer {
         frame: &mut Frame,
         event_handler: &mut EventHandler,
     ) {
-        frame.render_widget(Block::new().bg(tailwind::SLATE.c900), frame.area());
-
         if self.show_term_size_warning {
             self.state = (None, None);
             self.draw_term_size_warning(frame);
@@ -185,6 +184,8 @@ impl Drawer {
                     );
                 }
             }
+        } else {
+            frame.render_widget(Fill::new(" ").bg(tailwind::SLATE.c900), frame.area());
         }
     }
 
@@ -368,7 +369,7 @@ impl Drawer {
             .offset(Offset::new(0, area.height as i32 - 2));
 
         frame.render_widget(Clear, area);
-        frame.render_widget(Block::new().bg(tailwind::EMERALD.c950), area);
+        frame.render_widget(Fill::new(" ").bg(tailwind::EMERALD.c950), area);
 
         // ↔⇆⬌⬍⮀⬅⬆⬇←↕→↓↹•↵⏎
         let bind_to_string = |bind: event_handler::Bind| {
@@ -483,15 +484,17 @@ impl Drawer {
         omdb_tokens: OMDBTokens,
         take_rating: bool,
     ) {
-        self.popup_queue
-            .push_back(Popup::AddMovie(Box::new(AddMoviePopup::new(
+        self.popup_queue.push_back(new_popup!(
+            AddMovie,
+            AddMoviePopup::new(
                 tmdb_tokens,
                 punch_play_tokens,
                 trakt_tokens,
                 omdb_tokens,
                 take_rating,
                 &self.cache_dir,
-            ))));
+            )
+        ));
     }
 
     pub fn open_refetch_details_popup(
@@ -502,7 +505,8 @@ impl Drawer {
         omdb_tokens: OMDBTokens,
     ) {
         if let Some(Screen::MainScreen(main_screen)) = self.current_screen.as_mut() {
-            self.popup_queue.push_back(Popup::AddMovie(Box::new(
+            self.popup_queue.push_back(new_popup!(
+                AddMovie,
                 AddMoviePopup::new_refetch_details(
                     main_screen.current_movie().unwrap().id,
                     tmdb_tokens,
@@ -510,43 +514,45 @@ impl Drawer {
                     trakt_tokens,
                     omdb_tokens,
                     &self.cache_dir,
-                ),
-            )));
+                )
+            ));
         }
     }
 
     pub fn open_manage_plays_popup(&mut self, watched: &FxIndexMap<u32, Entry>) {
         if let Some(Screen::MainScreen(main_screen)) = self.current_screen.as_mut() {
             let entry = watched.get(&main_screen.current_movie().unwrap().id);
-            self.popup_queue
-                .push_back(Popup::ManagePlays(Box::new(ManagePlaysPopup::new(
-                    entry.cloned(),
-                ))));
+            self.popup_queue.push_back(new_popup!(
+                ManagePlays,
+                ManagePlaysPopup::new(entry.cloned())
+            ));
         }
     }
 
     pub fn open_add_play_popup(&mut self) {
-        self.popup_queue.push_back(Popup::ManagePlays(Box::new(
-            ManagePlaysPopup::new_add_play(),
-        )));
+        self.popup_queue
+            .push_back(new_popup!(ManagePlays, ManagePlaysPopup::new_add_play()));
     }
 
     pub fn open_edit_movie_popup(&mut self, watched: &FxIndexMap<u32, Entry>) {
         if let Some(Screen::MainScreen(main_screen)) = self.current_screen.as_mut() {
             let entry = &watched[&main_screen.current_movie().unwrap().id];
-            self.popup_queue.push_back(Popup::ManagePlays(Box::new(
-                ManagePlaysPopup::new_edit_rating(entry),
-            )));
+            self.popup_queue.push_back(new_popup!(
+                ManagePlays,
+                ManagePlaysPopup::new_edit_rating(entry)
+            ));
         }
     }
 
     pub fn open_open_popup(&mut self) {
         if let Some(Screen::MainScreen(main_screen)) = self.current_screen.as_mut() {
-            self.popup_queue
-                .push_back(Popup::Open(Box::new(OpenPopup::new(
+            self.popup_queue.push_back(new_popup!(
+                Open,
+                OpenPopup::new(
                     main_screen.current_movie().unwrap().clone(),
                     main_screen.selected_movie_rect.clone().unwrap(),
-                ))));
+                )
+            ));
         }
     }
 
@@ -557,23 +563,22 @@ impl Drawer {
                 .map(|x| &x.title)
             {
                 self.popup_queue
-                    .push_back(Popup::DeleteMovie(Box::new(DeleteMoviePopup::new(name))));
+                    .push_back(new_popup!(DeleteMovie, DeleteMoviePopup::new(name)));
             }
         }
     }
 
     pub fn open_advanced_filter_popup(&mut self) {
         if let Some(Screen::MainScreen(main_screen)) = self.current_screen.as_mut() {
-            self.popup_queue
-                .push_back(Popup::AdvancedFilter(Box::new(AdvancedFilterPopup::new(
-                    &main_screen.filter_criteria,
-                ))));
+            self.popup_queue.push_back(new_popup!(
+                AdvancedFilter,
+                AdvancedFilterPopup::new(&main_screen.filter_criteria)
+            ));
         }
     }
 
     pub fn open_manage_lists_popup(&mut self) {
-        self.popup_queue
-            .push_back(Popup::ManageLists(Box::new(ManageListsPopup::new())));
+        self.popup_queue.push_back(new_popup!(ManageLists));
     }
 
     pub fn close_popup(&mut self) {

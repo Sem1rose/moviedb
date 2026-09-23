@@ -762,6 +762,7 @@ impl Widget {
                         selected_index: *current_selected,
                         scroll_pos: *scroll_pos,
                         num_visible_items: *num_visible_items,
+
                         ..Default::default()
                     }
                     .render_dropdown(area, frame, event_handler)
@@ -869,6 +870,7 @@ impl AdvancedFilterPopup {
             filter_criteria: filter_criteria.to_vec(),
             dropdown_selected_item: Some(0),
             dropdown_num_visible_items: 5,
+
             ..Default::default()
         }
     }
@@ -2267,6 +2269,7 @@ impl PopupTrait for AdvancedFilterPopup {
                         selected_index: *index,
                         scroll_pos: self.dropdown_scroll_pos,
                         num_visible_items: self.dropdown_num_visible_items,
+
                         ..Default::default()
                     }
                     .render_dropdown(dropdown_area, frame, event_handler)

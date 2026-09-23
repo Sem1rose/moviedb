@@ -651,6 +651,11 @@ impl ProcessorTrait for HistorySyncerProcessor {
                         date: _,
                         movie_id,
                     } => format!("Adding {movie_id} to list {list_id}"),
+                    SyncItem::AddToList {
+                        list: crate::types::ListID::Watchlist,
+                        date: _,
+                        movie_id,
+                    } => format!("Adding {movie_id} to watchlist"),
                     SyncItem::AddPlay {
                         movie_id,
                         date: _,
@@ -669,6 +674,10 @@ impl ProcessorTrait for HistorySyncerProcessor {
                             | crate::types::ListID::TMDB(list_id),
                         movie_id,
                     } => format!("Removing {movie_id} from list {list_id}"),
+                    SyncItem::RemoveFromList {
+                        list: crate::types::ListID::Watchlist,
+                        movie_id,
+                    } => format!("Removing {movie_id} from watchlist"),
                     _ => String::default(),
                 },
             ]
@@ -690,10 +699,10 @@ impl ProcessorTrait for HistorySyncerProcessor {
                             format!(
                                 "{} {}",
                                 response.status(),
-                                match response.json::<Value>() {
-                                    Ok(err) => err.to_string(),
-                                    Err(_) => Default::default(),
-                                }
+                                response
+                                    .json::<Value>()
+                                    .map(|x| x.to_string())
+                                    .unwrap_or_default()
                             ),
                         ));
                     } else {

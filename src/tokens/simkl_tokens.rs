@@ -41,8 +41,7 @@ impl SimklTokens {
         Self {
             home_dir: home_dir.to_path_buf(),
 
-            status:      None,
-            user_tokens: UserTokens::default(),
+            ..Default::default()
         }
     }
 

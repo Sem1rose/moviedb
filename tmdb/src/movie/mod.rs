@@ -474,57 +474,57 @@ pub fn get_movie_artworks(
         Ok(0)
     };
 
-    let mut status = false;
-    let poster_path = cache_dir.join("posters").join(format!("{}.jpg", movie_id));
-    let poster_handle = {
-        let movie_images = movie_images.clone();
+    thread::scope(|s| {
+        let poster_handle = {
+            s.spawn(|| -> anyhow::Result<bool> {
+                if let Some(true) = backdrop_or_poster.as_ref() {
+                    return Ok(true);
+                }
 
-        thread::spawn(move || -> anyhow::Result<bool> {
-            if backdrop_or_poster.is_some() && backdrop_or_poster.unwrap() {
-                return Ok(true);
-            }
-
-            if !movie_images.posters.is_empty() {
-                for i in 0..5 {
-                    let result = try_get_artwork(i, false, &poster_path, &movie_images)?;
-                    match result {
-                        0 => return Ok(true),
-                        2 => return Ok(false),
-                        _ => (),
+                let poster_path = cache_dir.join("posters").join(format!("{}.jpg", movie_id));
+                if !movie_images.posters.is_empty() {
+                    for i in 0..5 {
+                        let result = try_get_artwork(i, false, &poster_path, &movie_images)?;
+                        match result {
+                            0 => return Ok(true),
+                            2 => return Ok(false),
+                            _ => (),
+                        }
                     }
                 }
-            }
-            Ok(false)
-        })
-    };
+                Ok(false)
+            })
+        };
 
-    let backdrop_path = cache_dir
-        .join("backdrops")
-        .join(format!("{}.jpg", movie_id));
-    let backdrop_handle = {
-        thread::spawn(move || -> anyhow::Result<bool> {
-            if backdrop_or_poster.is_some() && !backdrop_or_poster.unwrap() {
-                return Ok(true);
-            }
+        let backdrop_handle = {
+            s.spawn(|| -> anyhow::Result<bool> {
+                if let Some(false) = backdrop_or_poster.as_ref() {
+                    return Ok(true);
+                }
 
-            if !movie_images.backdrops.is_empty() {
-                for i in 0..5 {
-                    let result = try_get_artwork(i, true, &backdrop_path, &movie_images)?;
-                    match result {
-                        0 => return Ok(true),
-                        2 => return Ok(false),
-                        _ => (),
+                let backdrop_path = cache_dir
+                    .join("backdrops")
+                    .join(format!("{}.jpg", movie_id));
+                if !movie_images.backdrops.is_empty() {
+                    for i in 0..5 {
+                        let result = try_get_artwork(i, true, &backdrop_path, &movie_images)?;
+                        match result {
+                            0 => return Ok(true),
+                            2 => return Ok(false),
+                            _ => (),
+                        }
                     }
                 }
-            }
-            Ok(false)
-        })
-    };
+                Ok(false)
+            })
+        };
 
-    status |= poster_handle.join().unwrap()?;
-    status |= backdrop_handle.join().unwrap()?;
+        let mut status = true;
+        status &= poster_handle.join().unwrap()?;
+        status &= backdrop_handle.join().unwrap()?;
 
-    Ok(status)
+        Ok(status)
+    })
 }
 
 pub fn get_person_artwork(cache_dir: &Path, access_token: &str, id: u32) -> anyhow::Result<bool> {

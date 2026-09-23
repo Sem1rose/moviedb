@@ -11,8 +11,7 @@ use serde_json::json;
 use crate::{
     list::smo::ListItem,
     smo::{
-        MovieDetails, HistoryItem, ItemDetails, PaginatedResponse, RatingsResponse,
-        SearchResponse,
+        HistoryItem, ItemDetails, MovieDetails, PaginatedResponse, RatingsResponse, SearchResponse,
     },
 };
 

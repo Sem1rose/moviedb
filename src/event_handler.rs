@@ -103,10 +103,7 @@ impl EventHandler {
     ) {
         self.add_key_bind(state, description, callback.clone(), Bind::Horizontal);
         if let Some(area) = area {
-            self.mouse_binds.insert(
-                (self.mouse_binds.len(), Bind::Horizontal, area),
-                Box::new(callback),
-            );
+            self.bind_mouse_horizontal(area, callback);
         }
     }
 
@@ -119,10 +116,7 @@ impl EventHandler {
     ) {
         self.add_key_bind(state, description, callback.clone(), Bind::Vertical);
         if let Some(area) = area {
-            self.mouse_binds.insert(
-                (self.mouse_binds.len(), Bind::Vertical, area),
-                Box::new(callback),
-            );
+            self.bind_mouse_vertical(area, callback);
         }
     }
 
@@ -170,6 +164,36 @@ impl EventHandler {
         callback: impl FnMut(&mut App, Data) + Clone + 'static,
     ) {
         self.add_key_bind(state, description, callback, Bind::Key(keys.to_string()))
+    }
+
+    pub fn bind_mouse_vertical(
+        &mut self,
+        area: Rect,
+        callback: impl FnMut(&mut App, Data) + Clone + 'static,
+    ) {
+        if area.is_empty() {
+            return;
+        }
+
+        _ = self.mouse_binds.insert(
+            (self.mouse_binds.len(), Bind::Vertical, area),
+            Box::new(callback),
+        );
+    }
+
+    pub fn bind_mouse_horizontal(
+        &mut self,
+        area: Rect,
+        callback: impl FnMut(&mut App, Data) + Clone + 'static,
+    ) {
+        if area.is_empty() {
+            return;
+        }
+
+        _ = self.mouse_binds.insert(
+            (self.mouse_binds.len(), Bind::Horizontal, area),
+            Box::new(callback),
+        );
     }
 
     pub fn bind_mouse_button_down(

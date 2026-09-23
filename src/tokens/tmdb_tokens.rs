@@ -37,10 +37,9 @@ pub struct TMDBTokens {
 impl TMDBTokens {
     pub fn new(home_dir: &Path) -> Self {
         Self {
-            user_tokens: UserTokens::default(),
-            status:      None,
-
             home_dir: home_dir.to_path_buf(),
+
+            ..Default::default()
         }
     }
 

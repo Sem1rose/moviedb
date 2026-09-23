@@ -13,18 +13,16 @@ use crate::{
     event_handler::{self, Data, EventHandler},
     helpers,
     image_backend::RatatuiImage,
-    popups::{
-        OMDBInitPopup, Popup, PopupTrait, PunchPlayInitPopup, SimklInitPopup, TMDBInitPopup,
-        TraktInitPopup,
-    },
+    popups::{OMDBInitPopup, Popup, PopupTrait, PunchPlayInitPopup, SimklInitPopup, TMDBInitPopup},
     widgets::{self, Action, ActionType},
 };
 
+const LABELS: [&str; 4] = ["TMDB", "Simkl", "PunchPlay", "OMDB"];
 #[derive(Default)]
 pub struct OutOfBoxPopup {
     tab:          usize,
     item:         usize,
-    toggled_list: [bool; 5],
+    toggled_list: [bool; LABELS.len()],
 }
 
 const COLUMNS: usize = 2;
@@ -53,9 +51,9 @@ impl PopupTrait for OutOfBoxPopup {
         event_handler.bind_key((Some(0), None), 'a', "Toggle all".into(), |app, _| {
             if let Some(Popup::OutOfBox(out_of_box_popup)) = app.drawer.active_popup.as_mut() {
                 if out_of_box_popup.toggled_list.contains(&false) {
-                    out_of_box_popup.toggled_list = [true; 5];
+                    out_of_box_popup.toggled_list = [true; LABELS.len()];
                 } else {
-                    out_of_box_popup.toggled_list = [false; 5];
+                    out_of_box_popup.toggled_list = [false; LABELS.len()];
                 }
             }
         });
@@ -66,35 +64,40 @@ impl PopupTrait for OutOfBoxPopup {
             let mut config_mut = config.borrow_mut();
             config_mut.options = Default::default();
             if let Some(Popup::OutOfBox(out_of_box_popup)) = app.drawer.active_popup.as_mut() {
-                if out_of_box_popup.toggled_list[0] {
+                if out_of_box_popup.toggled_list[LABELS.iter().position(|&x| x == "TMDB").unwrap()]
+                {
                     popups.push(crate::new_popup!(
                         TMDBInit,
                         TMDBInitPopup::new(&app.home_dir, false)
                     ));
                     config_mut.options.tmdb_enabled = true;
                 }
-                if out_of_box_popup.toggled_list[1] {
+                if out_of_box_popup.toggled_list[LABELS.iter().position(|&x| x == "Simkl").unwrap()]
+                {
                     popups.push(crate::new_popup!(
                         SimklInit,
                         SimklInitPopup::new(&app.home_dir, false)
                     ));
                     config_mut.options.simkl_enabled = true;
                 }
-                if out_of_box_popup.toggled_list[2] {
+                if out_of_box_popup.toggled_list
+                    [LABELS.iter().position(|&x| x == "PunchPlay").unwrap()]
+                {
                     popups.push(crate::new_popup!(
                         PunchPlayInit,
                         PunchPlayInitPopup::new(&app.home_dir, false)
                     ));
                     config_mut.options.punch_play_enabled = true;
                 }
-                if out_of_box_popup.toggled_list[3] {
-                    popups.push(crate::new_popup!(
-                        TraktInit,
-                        TraktInitPopup::new(&app.home_dir, false)
-                    ));
-                    config_mut.options.trakt_enabled = true;
-                }
-                if out_of_box_popup.toggled_list[4] {
+                // if out_of_box_popup.toggled_list[LABELS.iter().position(|&x| x == "Simkl").unwrap()] {
+                //     popups.push(crate::new_popup!(
+                //         TraktInit,
+                //         TraktInitPopup::new(&app.home_dir, false)
+                //     ));
+                //     config_mut.options.trakt_enabled = true;
+                // }
+                if out_of_box_popup.toggled_list[LABELS.iter().position(|&x| x == "OMDB").unwrap()]
+                {
                     popups.push(crate::new_popup!(
                         OMDBInit,
                         OMDBInitPopup::new(&app.home_dir, false)
@@ -273,7 +276,6 @@ impl PopupTrait for OutOfBoxPopup {
             vertical![==1, >=1].areas(helpers::add_padding(popup_area, Padding::horizontal(2)));
 
         let mut table_indices = vec![];
-        let labels = ["TMDB", "Simkl", "PunchPlay", "Trakt", "OMDB"];
         let mut required_header = false;
         let mut optional_header = false;
         let mut i = 0;
@@ -308,7 +310,7 @@ impl PopupTrait for OutOfBoxPopup {
 
                 for (col, area) in areas.into_iter().enumerate() {
                     table_indices.last_mut().unwrap()[col] = Some(i);
-                    toggle_block(area, frame, event_handler, labels[i], i);
+                    toggle_block(area, frame, event_handler, LABELS[i], i);
 
                     i += 1;
                     if i == NUM_REQUIRED_CHOICES || i == self.toggled_list.len() {

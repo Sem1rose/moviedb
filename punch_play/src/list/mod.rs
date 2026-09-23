@@ -123,12 +123,12 @@ pub fn remove_id_from_list(
     tmdb_id: u32,
 ) -> anyhow::Result<Response> {
     let item_id = get_list_details(access_token, list_id)?
-    .items
-    .unwrap_or_default()
-    .into_iter()
-    .find(|x| x.tmdb_id == tmdb_id)
-    .map(|x| x.id)
-    .ok_or(anyhow!("PunchPlay: Item probably not in this list"))?;
+        .items
+        .unwrap_or_default()
+        .into_iter()
+        .find(|x| x.tmdb_id == tmdb_id)
+        .map(|x| x.id)
+        .ok_or(anyhow!("PunchPlay: Item probably not in this list"))?;
 
     remove_item_from_list(access_token, list_id, item_id)
 }

@@ -131,21 +131,21 @@ impl MainScreen {
             self.current_movie().cloned()
         };
 
+        frame.render_widget(Fill::new(" ").bg(tailwind::SLATE.c900), area);
+
         let inner = helpers::add_padding(area, Padding::proportional(1));
         let backdrop_height = (inner.width as f32 * 9.0 / 16.0).ceil() as u16 >> 1;
         let [backdrop_area, remaining_area] = vertical![==backdrop_height, >=1].areas(inner);
 
-        frame.render_widget(Fill::new(" ").bg(tailwind::GRAY.c950), backdrop_area);
+        frame.render_widget(Fill::new(" ").bg(tailwind::SLATE.c900), backdrop_area);
         if let Some(movie) = movie {
-            let no_date = !movie.released
-                && (movie.release_date == Default::default()
-                    || movie.release_date == chrono::NaiveDate::MIN);
+            let no_date = movie.release_date.is_none();
 
             let [title_area, description_area] =
                 vertical![==if !no_date {8} else {7}, >=1].areas(remaining_area);
 
             let mut cell = Cell::new(" ");
-            cell.set_style(Style::new().bg(tailwind::GRAY.c950));
+            cell.set_style(Style::new().bg(tailwind::SLATE.c900));
             let mut image_buffer = Buffer::filled(backdrop_area, cell);
             image_renderer.draw_image(
                 ImageID::Movie(movie.id, movie.override_backdrop.clone(), true),
@@ -198,12 +198,12 @@ impl MainScreen {
                 })
                 .unwrap_or(tailwind::GRAY.c300);
 
-            let title_line = if !no_date {
+            let title_line = if let Some(release_date) = movie.release_date {
                 line![
                     span!("     "),
                     name.bold(),
                     span!(" "),
-                    movie.release_date.year().to_string().italic()
+                    release_date.year().italic()
                 ]
             } else {
                 line![name.bold()]
@@ -232,7 +232,7 @@ impl MainScreen {
             if movie.released {
                 self.draw_ratings(&movie, frame, ratings_area);
             } else {
-                if movie.release_date > Default::default() {
+                if let Some(release_date) = movie.release_date {
                     frame.render_widget(
                         text![
                             line!(
@@ -245,7 +245,7 @@ impl MainScreen {
                             ),
                             line!(
                                 "Releases: ".bold().fg(tailwind::SKY.c400),
-                                span!(movie.release_date.format("%A, %-d %B, %C%y"))
+                                span!(release_date.format("%A, %-d %B, %C%y"))
                                     .italic()
                                     .fg(tailwind::INDIGO.c200),
                             )
@@ -295,45 +295,48 @@ impl MainScreen {
             }
 
             if num_available_tabs > 1 {
+                let change_tab = move |app: &mut crate::app::App, data: event_handler::Data| {
+                    if let Some(Screen::MainScreen(main_screen)) =
+                        app.drawer.current_screen.as_mut()
+                    {
+                        main_screen.tab = 1;
+                        main_screen.item = 0;
+
+                        match data {
+                            event_handler::Data::Direction(true, _) => {
+                                main_screen.movies_description.selected_tab = main_screen
+                                    .movies_description
+                                    .available_tabs[(main_screen
+                                    .movies_description
+                                    .available_tabs
+                                    .iter()
+                                    .position(|&x| x == main_screen.movies_description.selected_tab)
+                                    .unwrap()
+                                    + 1)
+                                .min(num_available_tabs - 1)];
+                            }
+                            event_handler::Data::Direction(false, _) => {
+                                main_screen.movies_description.selected_tab = main_screen
+                                    .movies_description
+                                    .available_tabs[main_screen
+                                    .movies_description
+                                    .available_tabs
+                                    .iter()
+                                    .position(|&x| x == main_screen.movies_description.selected_tab)
+                                    .unwrap()
+                                    .saturating_sub(1)];
+                            }
+                            _ => (),
+                        }
+                    }
+                };
                 event_handler.bind_horizontal(
                     (Some(1), None),
                     "Change tab".into(),
-                    None,
-                    move |app, data| {
-                        if let Some(Screen::MainScreen(main_screen)) =
-                            app.drawer.current_screen.as_mut()
-                        {
-                            match data {
-                                event_handler::Data::Direction(true, _) => {
-                                    main_screen.movies_description.selected_tab =
-                                        main_screen.movies_description.available_tabs[(main_screen
-                                            .movies_description
-                                            .available_tabs
-                                            .iter()
-                                            .position(|&x| {
-                                                x == main_screen.movies_description.selected_tab
-                                            })
-                                            .unwrap()
-                                            + 1)
-                                        .min(num_available_tabs - 1)];
-                                }
-                                event_handler::Data::Direction(false, _) => {
-                                    main_screen.movies_description.selected_tab =
-                                        main_screen.movies_description.available_tabs[main_screen
-                                            .movies_description
-                                            .available_tabs
-                                            .iter()
-                                            .position(|&x| {
-                                                x == main_screen.movies_description.selected_tab
-                                            })
-                                            .unwrap()
-                                            .saturating_sub(1)];
-                                }
-                                _ => (),
-                            }
-                        }
-                    },
+                    Some(tabs_area),
+                    change_tab.clone(),
                 );
+                event_handler.bind_mouse_vertical(tabs_area, change_tab);
             }
 
             const BGS: [Color; DESCRIPTION_TABS.len()] = [
@@ -419,6 +422,33 @@ impl MainScreen {
 
             match DESCRIPTION_TABS[self.movies_description.selected_tab] {
                 "Overview" => {
+                    event_handler.bind_vertical(
+                        (Some(1), None),
+                        "Scroll".into(),
+                        Some(description_area),
+                        move |app, data| {
+                            if let Some(Screen::MainScreen(main_screen)) =
+                                app.drawer.current_screen.as_mut()
+                            {
+                                main_screen.tab = 1;
+                                main_screen.item = 0;
+                                match data {
+                                    event_handler::Data::Direction(false, _) => {
+                                        main_screen.movies_description.overview_scroll =
+                                            main_screen
+                                                .movies_description
+                                                .overview_scroll
+                                                .saturating_sub(1);
+                                    }
+                                    event_handler::Data::Direction(true, _) => {
+                                        main_screen.movies_description.overview_scroll += 1;
+                                    }
+                                    _ => (),
+                                }
+                            }
+                        },
+                    );
+
                     let mut overview_lines =
                         helpers::wrap_text(&movie.overview, description_area.width as usize)
                             .into_iter()
@@ -471,34 +501,6 @@ impl MainScreen {
                         .saturating_sub(description_area.height as usize);
                     self.movies_description.overview_scroll =
                         self.movies_description.overview_scroll.min(max_scroll);
-                    if max_scroll > 0 {
-                        event_handler.bind_vertical(
-                            (Some(1), None),
-                            "Scroll".into(),
-                            Some(description_area),
-                            move |app, data| {
-                                if let Some(Screen::MainScreen(main_screen)) =
-                                    app.drawer.current_screen.as_mut()
-                                {
-                                    main_screen.tab = 1;
-                                    main_screen.item = 0;
-                                    match data {
-                                        event_handler::Data::Direction(false, _) => {
-                                            main_screen.movies_description.overview_scroll =
-                                                main_screen
-                                                    .movies_description
-                                                    .overview_scroll
-                                                    .saturating_sub(1);
-                                        }
-                                        event_handler::Data::Direction(true, _) => {
-                                            main_screen.movies_description.overview_scroll += 1;
-                                        }
-                                        _ => (),
-                                    }
-                                }
-                            },
-                        );
-                    }
 
                     let text = Text::from_iter(
                         overview_lines.split_off(self.movies_description.overview_scroll),

@@ -213,9 +213,6 @@ impl MainScreen {
         let alt = movie_index & 1 == 1;
         let tab_selected = self.tab == 0;
         let movie = &self.filtered_movies[movie_index];
-        let no_date = !movie.released
-            && (movie.release_date == Default::default()
-                || movie.release_date == chrono::NaiveDate::MIN);
 
         let num_items = self.filtered_movies.len();
         event_handler.bind_mouse_button_down(
@@ -296,6 +293,7 @@ impl MainScreen {
             }
         });
 
+        let no_date = movie.release_date.is_none();
         let mut description = vec![];
 
         const TITLE_LINES: usize = 2;
@@ -320,8 +318,8 @@ impl MainScreen {
                     - if movie.released { 0 } else { 15 },
             )
             .bold(),
-            if !no_date {
-                format!(" {}", movie.release_date.year()).italic()
+            if let Some(release_date) = movie.release_date {
+                format!(" {}", release_date.year()).italic()
             } else {
                 "".into()
             },
@@ -345,14 +343,15 @@ impl MainScreen {
         }
 
         const TAGLINE_LINES: usize = 2;
-        let mut tagline_lines = helpers::wrap_text(&movie.tagline, description_area.width as usize);
+        let tagline_lines = helpers::wrap_and_ellipsize(
+            &movie.tagline,
+            description_area.width as usize,
+            TAGLINE_LINES,
+        );
         for _ in 0..(TAGLINE_LINES.saturating_sub(tagline_lines.len())) {
             description.push("".into());
         }
-        tagline_lines.reverse();
-        for _ in 0..TAGLINE_LINES.min(tagline_lines.len()) {
-            description.push(tagline_lines.pop().unwrap().into());
-        }
+        description.extend(tagline_lines.into_iter().map(Into::into));
 
         for _ in 0..(area.height.saturating_sub(description.len() as u16)) {
             description.insert(0, "".into());

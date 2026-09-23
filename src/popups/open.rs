@@ -52,6 +52,7 @@ impl OpenPopup {
             })
             .collect_vec(),
             selected_movie,
+
             ..Default::default()
         }
     }
@@ -119,6 +120,13 @@ impl PopupTrait for OpenPopup {
         });
         event_handler.bind_mouse_button_down(
             ratatui::crossterm::event::MouseButton::Left,
+            frame.area(),
+            |app, _| {
+                app.drawer.close_popup();
+            },
+        );
+        event_handler.bind_mouse_button_down(
+            ratatui::crossterm::event::MouseButton::Right,
             frame.area(),
             |app, _| {
                 app.drawer.close_popup();

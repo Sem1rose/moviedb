@@ -1,13 +1,11 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Deserializer};
 
-fn naive_date_deserializer<'de, D>(d: D) -> Result<NaiveDate, D::Error>
+fn naive_date_deserializer<'de, D>(d: D) -> Result<Option<NaiveDate>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    Deserialize::deserialize(d).map(|value: &str| {
-        NaiveDate::parse_from_str(value, "%Y-%m-%d").unwrap_or(NaiveDate::MIN)
-    })
+    Deserialize::deserialize(d).map(|value: &str| NaiveDate::parse_from_str(value, "%Y-%m-%d").ok())
 }
 
 fn date_time_deserializer<'de, D>(d: D) -> Result<DateTime<Utc>, D::Error>
@@ -55,8 +53,8 @@ pub struct ItemDetails {
     pub poster_url:        Option<String>,
     pub backdrop_url:      Option<String>,
     pub community_rating:  f64,
-    #[serde(deserialize_with = "naive_date_deserializer", default)]
-    pub release_date:      NaiveDate,
+    #[serde(deserialize_with = "naive_date_deserializer")]
+    pub release_date:      Option<NaiveDate>,
     pub popularity:        Option<f64>,
     pub runtime_minutes:   Option<u32>,
     pub genres:            Vec<String>,
@@ -68,9 +66,8 @@ pub struct ItemDetails {
 
     // pub is_anime:             bool,
     // pub writers:           Option<Vec<Person>>,
-
-    pub poster_path:          Option<String>,
-    pub backdrop_path:        Option<String>,
+    pub poster_path:     Option<String>,
+    pub backdrop_path:   Option<String>,
     // pub poster_color:         String,
     // pub poster_color_is_dark: bool,
     pub cast:            Option<Vec<Person>>,

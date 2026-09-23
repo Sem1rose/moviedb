@@ -5,7 +5,7 @@ use std::{
     rc::Rc,
 };
 
-use chrono::{DateTime, Datelike, NaiveDate, TimeDelta, Utc};
+use chrono::{DateTime, Datelike, NaiveDate, Utc};
 use itertools::Itertools;
 use log::error;
 use nucleo_matcher::{Config as MatcherConfig, Matcher, pattern::Atom};
@@ -27,12 +27,12 @@ use crate::{
     event_handler::{self, EventHandler},
     helpers::{self, SuperOrd},
     image_backend::RatatuiImage,
-    load_file,
+    load_file, pop_criterion,
     screens::Screen,
     tokens::{PunchPlayTokens, SimklTokens, TMDBTokens},
     types::{
         Collection, Entry, FilterCriterion, FxIndexMap, List, ListID, ListItem, Movie, Person,
-        RatingSource, Sort, pop_criterion,
+        RatingSource, Sort,
     },
     widgets::{self, ContextMenu, Orientation, ScrolledList},
 };
@@ -142,6 +142,7 @@ impl MainScreen {
                     name: "Watchlist".into(),
                     items: Default::default(),
                     readonly: false,
+
                     ..Default::default()
                 },
             );
@@ -411,7 +412,6 @@ impl MainScreen {
     ) {
         match self.selected_list {
             ListID::Watchlist => {
-                let default_utc = DateTime::<Utc>::default();
                 let items = [
                     simkl::movie::get_user_watchlist(
                         simkl_tokens.access_token(),
@@ -435,7 +435,7 @@ impl MainScreen {
                             if x.item_type == "movie" {
                                 Some(ListItem {
                                     id:       x.tmdb_id,
-                                    added_at: x.added_at,
+                                    added_at: x.added_at.unwrap_or(DateTime::<Utc>::MIN_UTC),
                                 })
                             } else {
                                 None
@@ -448,10 +448,9 @@ impl MainScreen {
                     )
                     .unwrap_or_default()
                     .into_iter()
-                    .enumerate()
-                    .map(|(i, x)| ListItem {
+                    .map(|x| ListItem {
                         id:       x.id,
-                        added_at: default_utc + TimeDelta::seconds(i as i64),
+                        added_at: DateTime::<Utc>::MIN_UTC,
                     })
                     .collect_vec(),
                 ]
@@ -615,8 +614,12 @@ impl MainScreen {
                 }
                 FilterCriterion::Released(lower_bound, upper_bound, inverted) => {
                     movies.retain(|x| {
-                        (x.release_date.year() as u32).is_between(lower_bound, upper_bound)
-                            ^ *inverted
+                        x.release_date
+                            .map(|release_date| {
+                                (release_date.year() as u32).is_between(lower_bound, upper_bound)
+                                    ^ *inverted
+                            })
+                            .unwrap_or_default()
                     });
                 }
                 FilterCriterion::FirstWatched(lower_bound, upper_bound, inverted) => {
@@ -629,7 +632,7 @@ impl MainScreen {
                                     .is_between(lower_bound, upper_bound)
                                     ^ *inverted
                             })
-                            .unwrap_or(false)
+                            .unwrap_or_default()
                     });
                 }
                 FilterCriterion::LastWatched(lower_bound, upper_bound, inverted) => {
@@ -642,7 +645,7 @@ impl MainScreen {
                                     .is_between(lower_bound, upper_bound)
                                     ^ *inverted
                             })
-                            .unwrap_or(false)
+                            .unwrap_or_default()
                     });
                 }
                 FilterCriterion::Rating(rating, ordering, inverted) => {
@@ -660,7 +663,7 @@ impl MainScreen {
                                 (y.get_user_rating().partial_cmp(rating).unwrap() == *ordering)
                                     ^ *inverted
                             })
-                            .unwrap_or(false)
+                            .unwrap_or_default()
                     });
                 }
                 FilterCriterion::Language(language, inverted) => {
@@ -762,15 +765,11 @@ impl MainScreen {
             }
             Sort::ReleaseDate => {
                 self.filtered_movies.sort_by_key(|x| {
-                    if !x.released && x.release_date == Default::default() {
-                        if self.sort_ascending {
-                            NaiveDate::MAX
-                        } else {
-                            NaiveDate::MIN
-                        }
+                    x.release_date.unwrap_or(if self.sort_ascending {
+                        NaiveDate::MAX
                     } else {
-                        x.release_date
-                    }
+                        NaiveDate::MIN
+                    })
                 });
                 if !self.sort_ascending {
                     self.filtered_movies.reverse();
@@ -1247,7 +1246,7 @@ impl MainScreen {
                 &mut self.throbber_state,
             );
             frame.render_widget(
-                Fill::new("▋")
+                Fill::new("▌")
                     .bg(tailwind::SLATE.c900)
                     .fg(tailwind::SKY.c950),
                 helpers::add_padding(
@@ -1256,7 +1255,7 @@ impl MainScreen {
                 ),
             );
             frame.render_widget(
-                Fill::new("▍")
+                Fill::new("▌")
                     .fg(tailwind::SLATE.c900)
                     .bg(tailwind::SKY.c950),
                 helpers::add_padding(
@@ -1267,13 +1266,14 @@ impl MainScreen {
 
             let lines = next.unwrap();
             if lines[1].is_empty() {
-                let mut lines = helpers::wrap_text(&lines[0], text_area.width as usize);
-                lines.resize(text_area.height as usize, Default::default());
-                if let Some(line) = lines.iter_mut().next_back() {
-                    *line = helpers::ellipsize_string(line, text_area.width as usize);
-                }
                 frame.render_widget(
-                    Text::from_iter(lines).fg(tailwind::GRAY.c300).not_bold(),
+                    Text::from_iter(helpers::wrap_and_ellipsize(
+                        &lines[0],
+                        text_area.width as usize,
+                        text_area.height as usize,
+                    ))
+                    .fg(tailwind::BLUE.c300)
+                    .bold(),
                     text_area,
                 );
             } else {

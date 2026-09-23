@@ -65,7 +65,7 @@ enum SearchResults {
 struct SearchResultMovie {
     title:        String,
     released:     bool,
-    release_date: NaiveDate,
+    release_date: Option<NaiveDate>,
     rating:       f64,
     id:           u32,
     poster:       Option<String>,
@@ -85,8 +85,11 @@ impl From<PunchPlayItemDetails> for SearchResultMovie {
     fn from(value: PunchPlayItemDetails) -> Self {
         Self {
             title:        value.name,
-            released:     value.release_date != NaiveDate::MIN
-                && chrono::Utc::now().date_naive() > value.release_date,
+            released:     value
+                .release_date
+                .as_ref()
+                .map(|&release_date| chrono::Utc::now().date_naive() > release_date)
+                .unwrap_or_default(),
             release_date: value.release_date,
             rating:       value.community_rating,
             id:           value.tmdb_id,
@@ -98,8 +101,11 @@ impl From<TMDBSearchResult> for SearchResultMovie {
     fn from(value: TMDBSearchResult) -> Self {
         Self {
             title:        value.title,
-            released:     value.release_date != NaiveDate::MIN
-                && chrono::Utc::now().date_naive() > value.release_date,
+            released:     value
+                .release_date
+                .as_ref()
+                .map(|&release_date| chrono::Utc::now().date_naive() > release_date)
+                .unwrap_or_default(),
             release_date: value.release_date,
             rating:       value.vote_average.unwrap_or(0.0),
             id:           value.id,
@@ -160,6 +166,7 @@ impl AddMoviePopup {
             scrollview: ScrolledList::new(Orientation::Vertical, 8),
 
             _cache_dir: cache_dir.to_path_buf(),
+
             ..Default::default()
         }
     }
@@ -180,6 +187,7 @@ impl AddMoviePopup {
             _cache_dir: cache_dir.to_path_buf(),
             refetch_details: true,
             phase: Phase::ConfirmRefetchDetails(tmdb_id),
+
             ..Default::default()
         }
     }
@@ -537,7 +545,7 @@ impl PopupTrait for AddMoviePopup {
                         let alternate = index & 1 == 1;
 
                         let result = &self.search_results.as_ref().unwrap()[index];
-                        let no_date = result.release_date == NaiveDate::MIN;
+                        let no_date = result.release_date.is_none();
 
                         event_handler.bind_mouse_button_down(
                             ratatui::crossterm::event::MouseButton::Left,
@@ -607,8 +615,8 @@ impl PopupTrait for AddMoviePopup {
                             } else {
                                 Modifier::empty()
                             }),
-                            if !no_date {
-                                format!(" {}", result.release_date.year())
+                            if let Some(release_date) = result.release_date {
+                                format!(" {}", release_date.year())
                                     .fg(if selected {
                                         material::CYAN.c100
                                     } else {

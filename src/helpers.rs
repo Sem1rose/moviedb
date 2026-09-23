@@ -10,44 +10,6 @@ use ratatui_image::sliced::SignedPosition;
 
 use crate::widgets::Orientation;
 
-pub fn wrap_text(line: &str, width: usize) -> Vec<String> {
-    if line.chars().count() <= width {
-        return vec![line.to_string()];
-    }
-
-    let mut lines = vec![line.to_string()];
-    loop {
-        let line = lines.pop().unwrap();
-        if line.chars().count() <= width {
-            lines.push(line);
-            break;
-        }
-        let wrap_whitespace_index = if line.chars().nth(width).unwrap().is_whitespace() {
-            width - 1
-        } else {
-            line.chars()
-                .collect_vec()
-                .into_iter()
-                .take(width)
-                .rposition(|x| x.is_whitespace())
-                .unwrap_or(width - 1)
-        } + 1;
-
-        let mut line = line.chars().collect_vec();
-        let remaining_line = line
-            .split_off(wrap_whitespace_index)
-            .iter()
-            .collect::<String>()
-            .trim_start()
-            .to_string();
-
-        lines.push(line.iter().collect());
-        lines.push(remaining_line);
-    }
-
-    lines
-}
-
 pub fn centered_area(height: u16, width: u16, area: Rect) -> Rect {
     area.centered(
         constraint!(==width.min(area.width)),
@@ -107,6 +69,43 @@ pub fn deconstruct_scrollview_area(
     (visible_area, input_area)
 }
 
+pub fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
+    if text.chars().count() <= max_width {
+        return vec![text.to_string()];
+    }
+
+    let mut lines = vec![text.to_string()];
+    loop {
+        let line = lines.pop().unwrap();
+        if line.chars().count() <= max_width {
+            lines.push(line);
+            break;
+        }
+        let wrap_whitespace_index = if line.chars().nth(max_width).unwrap().is_whitespace() {
+            max_width - 1
+        } else {
+            line.chars()
+                .collect_vec()
+                .into_iter()
+                .take(max_width)
+                .rposition(|x| x.is_whitespace())
+                .unwrap_or(max_width - 1)
+        } + 1;
+
+        let mut line = line.chars().collect_vec();
+        let remaining_line = line
+            .split_off(wrap_whitespace_index)
+            .iter()
+            .collect::<String>()
+            .trim_start()
+            .to_string();
+
+        lines.push(line.iter().collect());
+        lines.push(remaining_line);
+    }
+
+    lines
+}
 pub fn ellipsize_string(string: &str, max_width: usize) -> String {
     let mut new_string = String::from(string);
     if new_string.len() > max_width {
@@ -115,6 +114,21 @@ pub fn ellipsize_string(string: &str, max_width: usize) -> String {
     }
 
     new_string
+}
+
+pub fn wrap_and_ellipsize(text: &str, max_width: usize, max_height: usize) -> Vec<String> {
+    let mut lines = wrap_text(&text, max_width);
+    if lines.len() > max_height {
+        if max_width - lines[max_height - 1].chars().count() < 3 {
+            let index = lines[max_height - 1].floor_char_boundary(max_width - 3);
+            _ = lines[max_height - 1].split_off(index);
+        }
+        lines[max_height - 1].push_str("...");
+
+        lines.resize(max_height, Default::default());
+    }
+
+    lines
 }
 
 pub trait SuperOrd {

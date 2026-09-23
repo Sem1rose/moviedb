@@ -73,6 +73,7 @@ impl TMDBInitPopup {
         Self {
             can_close,
             rx_init: Some(rx_init),
+
             ..Default::default()
         }
     }

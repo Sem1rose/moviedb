@@ -29,21 +29,20 @@ use crate::{
 };
 
 const SYNC: bool = true;
-
+#[derive(Default)]
 pub struct App {
-    pub _cache_dir: PathBuf,
-    pub home_dir:   PathBuf,
-    pub quit:       bool,
+    pub quit:     bool,
+    pub home_dir: PathBuf,
+
+    terminal:          Option<Term>,
+    pub drawer:        Drawer,
+    pub event_handler: EventHandler,
+    pub config:        Rc<RefCell<Config>>,
 
     pub movies:      Rc<RefCell<FxIndexMap<u32, Movie>>>,
     pub watched:     Rc<RefCell<FxIndexMap<u32, Entry>>>,
     pub persons:     Rc<RefCell<FxIndexMap<u32, Person>>>,
     pub collections: Rc<RefCell<FxIndexMap<u32, Collection>>>,
-
-    terminal:          Term,
-    pub drawer:        Drawer,
-    pub event_handler: EventHandler,
-    pub config:        Rc<RefCell<Config>>,
 
     pub tmdb_tokens:       TMDBTokens,
     pub simkl_tokens:      SimklTokens,
@@ -68,15 +67,10 @@ impl App {
         let config = helpers::new_rc(Config::new(&home_dir));
 
         Self {
-            terminal: initialize_terminal().expect("Unable to initialize terminal"),
-            event_handler: EventHandler::default(),
+            terminal: initialize_terminal()
+                .map(Option::Some)
+                .expect("Unable to initialize terminal"),
             drawer: Drawer::new(&home_dir, &cache_dir, config.clone()),
-
-            config,
-            movies: Default::default(),
-            watched: Default::default(),
-            persons: Default::default(),
-            collections: Default::default(),
 
             tmdb_tokens: TMDBTokens::new(&home_dir),
             simkl_tokens: SimklTokens::new(&home_dir),
@@ -89,9 +83,11 @@ impl App {
                     .into_iter()
                     .map(|x| (x.discriminant(), x)),
             ),
-            quit: false,
+
+            config,
             home_dir,
-            _cache_dir: cache_dir,
+
+            ..Default::default()
         }
         .load_data()
     }
@@ -124,6 +120,8 @@ impl App {
             self.update_processors();
 
             self.terminal
+                .as_mut()
+                .unwrap()
                 .draw(|frame| {
                     self.drawer.render_app(
                         frame,
@@ -195,7 +193,7 @@ impl App {
         &mut self,
         processor: ProcessorDiscriminants,
     ) -> Option<&mut Processor> {
-        self.terminal.backend_mut();
+        self.terminal.as_mut().unwrap().backend_mut();
         self.processors.get_mut(&processor)
     }
 
@@ -284,22 +282,29 @@ impl App {
                 },
             };
 
-            let imdb_id = tmdb_result.as_ref().unwrap().imdb_id.clone();
             let trakt_handle = if trakt_tokens.status.is_some() {
-                Some({
-                    let imdb_id = imdb_id.clone();
-                    s.spawn(move || {
-                        trakt::movie::get_movie_details(trakt_tokens.client_id(), &imdb_id)
+                if let Some(imdb_id) = tmdb_result.as_ref().unwrap().imdb_id.clone() {
+                    Some({
+                        let imdb_id = imdb_id.clone();
+                        s.spawn(move || {
+                            trakt::movie::get_movie_details(trakt_tokens.client_id(), &imdb_id)
+                        })
                     })
-                })
+                } else {
+                    None
+                }
             } else {
                 None
             };
             let omdb_handle = if omdb_tokens.status {
-                Some({
-                    let imdb_id = imdb_id.clone();
-                    s.spawn(move || omdb::get_movie_details(omdb_tokens.key(), &imdb_id))
-                })
+                if let Some(imdb_id) = tmdb_result.as_ref().unwrap().imdb_id.clone() {
+                    Some({
+                        let imdb_id = imdb_id.clone();
+                        s.spawn(move || omdb::get_movie_details(omdb_tokens.key(), &imdb_id))
+                    })
+                } else {
+                    None
+                }
             } else {
                 None
             };

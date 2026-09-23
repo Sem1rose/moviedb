@@ -320,7 +320,7 @@ impl RatatuiImage {
                             },
                     },
                     Err(error) => {
-                        error!("error loading image {image_id:?}: {error:#?}");
+                        error!("Error loading image {image_id:?}: {error:#?}");
 
                         self.loading_ids.remove(&image_id);
                     }

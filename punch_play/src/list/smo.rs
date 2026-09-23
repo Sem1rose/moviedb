@@ -1,16 +1,15 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer};
 
-fn date_time_deserializer<'de, D>(d: D) -> Result<DateTime<Utc>, D::Error>
+fn date_time_deserializer<'de, D>(d: D) -> Result<Option<DateTime<Utc>>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    Deserialize::deserialize(d).and_then(|value: Option<&str>| {
-        value.map_or(Ok(Default::default()), |value| {
-            DateTime::parse_from_rfc3339(value)
-                .map(|x| x.with_timezone(&Utc))
-                .map_err(serde::de::Error::custom)
-        })
+    Deserialize::deserialize(d).map(|value: &str| {
+        DateTime::parse_from_rfc3339(value)
+            .map(|x| x.with_timezone(&Utc))
+            .ok()
+        // .map_err(serde::de::Error::custom)
     })
 }
 
@@ -34,11 +33,11 @@ pub struct ListItem {
     pub title:        String,
     pub poster_path:  Option<String>,
     #[serde(deserialize_with = "date_time_deserializer", default)]
-    pub added_at:     DateTime<Utc>,
+    pub added_at:     Option<DateTime<Utc>>,
     // pub runtime:      Option<usize>,
     // pub popularity:   Option<f64>,
     #[serde(deserialize_with = "date_time_deserializer", default)]
-    pub release_date: DateTime<Utc>,
+    pub release_date: Option<DateTime<Utc>>,
     pub watched:      bool,
 }
 
@@ -57,7 +56,7 @@ pub struct ListDetails {
     pub item_count:      usize,
     pub preview_posters: Option<Vec<PreviewPoster>>,
     #[serde(deserialize_with = "date_time_deserializer", default)]
-    pub created_at:      DateTime<Utc>,
+    pub created_at:      Option<DateTime<Utc>>,
     pub items:           Option<Vec<ListItem>>,
 }
 

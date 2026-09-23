@@ -32,14 +32,6 @@ pub struct ManageListsPopup {
     screen: Screen,
 }
 
-impl ManageListsPopup {
-    pub fn new() -> Self {
-        Self {
-            ..Default::default()
-        }
-    }
-}
-
 impl PopupTrait for ManageListsPopup {
     fn get_state(&self) -> (Option<usize>, Option<usize>) {
         (Some(self.tab), Some(self.item))

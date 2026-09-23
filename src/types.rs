@@ -25,7 +25,6 @@ use tmdb::smo::{MovieDetails as TMDBMovieDetails, Person as TMDBPerson};
 use trakt::smo::MovieDetails as TraktMovieDetails;
 
 use crate::omdb::MovieDetails as OMDBMovieDetails;
-pub use crate::pop_criterion;
 
 pub type Term = Terminal<TermBackend>;
 type TermBackend = CrosstermBackend<std::io::Stdout>;
@@ -135,12 +134,13 @@ impl List {
                         x.id,
                         ListItem {
                             id:       x.id,
-                            added_at: Default::default(),
+                            added_at: DateTime::<Utc>::MIN_UTC,
                         },
                     ))
                 })
                 .collect(),
             readonly,
+
             ..Default::default()
         }
     }
@@ -158,12 +158,13 @@ impl List {
                         x.tmdb_id,
                         ListItem {
                             id:       x.tmdb_id,
-                            added_at: x.added_at,
+                            added_at: x.added_at.unwrap_or(DateTime::<Utc>::MIN_UTC),
                         },
                     ))
                 })
                 .collect(),
             readonly,
+
             ..Default::default()
         }
     }
@@ -180,12 +181,17 @@ impl List {
                         x.id,
                         ListItem {
                             id:       x.id,
-                            added_at: x.release_date.and_time(Default::default()).and_utc(),
+                            added_at: x
+                                .release_date
+                                .unwrap_or(NaiveDate::MIN)
+                                .and_time(Default::default())
+                                .and_utc(),
                         },
                     )
                 })
                 .collect(),
             readonly: true,
+
             ..Default::default()
         }
     }
@@ -447,7 +453,8 @@ pub struct Credits {
 pub struct Movie {
     pub id:               u32,
     pub title:            String,
-    pub release_date:     NaiveDate,
+    pub original_title:   String,
+    pub release_date:     Option<NaiveDate>,
     pub language:         String,
     pub external_ratings: ExternalRatings,
     pub genres:           Vec<String>,
@@ -472,6 +479,7 @@ impl From<TMDBMovieDetails> for Movie {
         let external_ratings = if released {
             ExternalRatings {
                 tmdb: (tmdb_details.vote_average, tmdb_details.vote_count),
+
                 ..Default::default()
             }
         } else {
@@ -480,6 +488,7 @@ impl From<TMDBMovieDetails> for Movie {
         Self {
             id: tmdb_details.id,
             title: tmdb_details.title.clone(),
+            original_title: tmdb_details.original_title.clone(),
             external_ratings,
             release_date: tmdb_details.release_date,
             language: tmdb_details.original_language.clone(),
