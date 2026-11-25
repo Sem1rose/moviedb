@@ -18,6 +18,7 @@ use crate::{
     helpers,
     image_backend::RatatuiImage,
     processors::{Processor, ProcessorDiscriminants, ProcessorTrait},
+    sources::{punch_play, trakt},
     tokens::{
         punch_play_tokens::{PunchPlayTokens, UserTokens as PunchPlayUserTokens},
         trakt_tokens::{TraktTokens, UserTokens as TraktUserTokens},
@@ -132,18 +133,17 @@ impl TokensRefresherProcessor {
             Tokens::Trakt => {
                 info!("refreshing trakt");
                 let client_id = self.trakt_tokens.client_id_owned();
-                let client_secret = self.trakt_tokens.client_secret_owned();
                 let refresh_token = self.trakt_tokens.refresh_token_owned();
                 thread::spawn(move || {
                     _ = tx_refresh_request.send(RefreshResponse::Trakt(
-                        trakt::tokens::refresh_tokens(&client_id, &client_secret, &refresh_token)
-                            .map(|x| TraktUserTokens {
+                        trakt::tokens::refresh_tokens(&client_id, &refresh_token).map(|x| {
+                            TraktUserTokens {
                                 client_id,
-                                client_secret,
                                 access_token: x.access_token,
                                 refresh_token: x.refresh_token,
                                 expires_on: x.created_at + x.expires_in,
-                            }),
+                            }
+                        }),
                     ));
                 });
                 self.skipped.insert(Tokens::Trakt);

@@ -9,8 +9,7 @@ use simple_encrypt::{decrypt_bytes, encrypt_bytes};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct UserTokens {
-    pub client_id:     String,
-    pub client_secret: String,
+    pub client_id: String,
 
     pub access_token:  String,
     pub refresh_token: String,
@@ -19,7 +18,7 @@ pub struct UserTokens {
 
 impl UserTokens {
     pub fn has_secrets(&self) -> bool {
-        !(self.client_id.is_empty() || self.client_secret.is_empty())
+        !self.client_id.is_empty()
     }
 
     pub fn has_tokens(&self) -> bool {
@@ -27,7 +26,8 @@ impl UserTokens {
     }
 
     pub fn should_refresh_tokens(&self) -> bool {
-        unix_ts::Timestamp::now().seconds() - self.expires_on > 0
+        false
+        // unix_ts::Timestamp::now().seconds() - self.expires_on > 0
     }
 }
 
@@ -104,16 +104,8 @@ impl TraktTokens {
         &self.user_tokens.client_id
     }
 
-    pub fn client_secret(&self) -> &str {
-        &self.user_tokens.client_secret
-    }
-
     pub fn client_id_owned(&self) -> String {
         self.user_tokens.client_id.clone()
-    }
-
-    pub fn client_secret_owned(&self) -> String {
-        self.user_tokens.client_secret.clone()
     }
 
     pub fn access_token(&self) -> &str {

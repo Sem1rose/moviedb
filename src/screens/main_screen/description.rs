@@ -226,8 +226,16 @@ impl MainScreen {
                     span!("").fg(user_rating_widget_bg)
                 )
                 .centered(),
-                helpers::add_padding(title_area, Padding::top(1))
-                    .resize(Size::new(title_area.width, 1)), // .centered(constraint!(==5), constraint!(==1)),
+                helpers::add_padding(title_area, Padding::top(1)),
+            );
+            frame.render_widget(
+                movie
+                    .language
+                    .to_uppercase()
+                    .fg(tailwind::INDIGO.c300)
+                    .italic()
+                    .into_centered_line(),
+                helpers::add_padding(title_area, Padding::top(2)),
             );
             if movie.released {
                 self.draw_ratings(&movie, frame, ratings_area);
@@ -541,16 +549,16 @@ impl MainScreen {
             Color::Black,
             Color::Rgb(140, 205, 215),
         );
-        const POPCORN_COLORS: (Color, Color, Color) = (
-            Color::Rgb(255, 114, 33),
-            Color::White,
-            Color::Rgb(242, 165, 121),
-        );
-        const TOMATOES_COLORS: (Color, Color, Color) = (
-            Color::Rgb(216, 44, 60),
-            Color::White,
-            Color::Rgb(247, 100, 103),
-        );
+        // const POPCORN_COLORS: (Color, Color, Color) = (
+        //     Color::Rgb(255, 114, 33),
+        //     Color::White,
+        //     Color::Rgb(242, 165, 121),
+        // );
+        // const TOMATOES_COLORS: (Color, Color, Color) = (
+        //     Color::Rgb(216, 44, 60),
+        //     Color::White,
+        //     Color::Rgb(247, 100, 103),
+        // );
 
         let mut ratings = vec![];
         if movie.external_ratings.imdb.0 > 0.0 {
@@ -565,14 +573,10 @@ impl MainScreen {
         if movie.external_ratings.trakt.0 > 0 {
             ratings.push(("trakt", movie.external_ratings.trakt.0.to_string()));
         }
-        if movie.external_ratings.tmdb.0 > 0.0 {
-            ratings.push(("tmdb", format!("{:.1}", movie.external_ratings.tmdb.0)));
-        }
-        if movie.external_ratings.popcorn.0 > 0 {
-            ratings.push(("popcorn", movie.external_ratings.popcorn.0.to_string()));
-        }
-        if movie.external_ratings.tomatoes.0 > 0 {
-            ratings.push(("tomatoes", movie.external_ratings.tomatoes.0.to_string()));
+        if ratings.len() < 3 {
+            if movie.external_ratings.tmdb.0 > 0.0 {
+                ratings.push(("tmdb", format!("{:.1}", movie.external_ratings.tmdb.0)));
+            }
         }
 
         if ratings.is_empty() {
@@ -581,36 +585,33 @@ impl MainScreen {
             return;
         }
 
-        let widget_areas = Layout::horizontal(vec![constraint!(==5); ratings.len()])
-            .flex(ratatui::layout::Flex::SpaceEvenly)
-            .split(helpers::add_padding(area, Padding::top(1)));
+        let widget_areas = Layout::horizontal(
+            ratings
+                .iter()
+                .map(|(a, b)| constraint!(==a.len().max(b.len() + 2) as u16))
+                .collect_vec(),
+        )
+        .flex(ratatui::layout::Flex::SpaceEvenly)
+        .split(helpers::add_padding(area, Padding::top(1)));
         let mut widgets = vec![];
         let mut labels = line!();
         for (name, rating) in ratings {
             let (bg, fg) = if name == "imdb" {
-                labels.push_span(span!("IMDB").fg(IMDB_COLORS.2));
+                labels.push_span(span!("IMDB ").fg(IMDB_COLORS.2));
 
                 (IMDB_COLORS.0, IMDB_COLORS.1)
             } else if name == "letterboxd" {
-                labels.push_span(span!("Letterboxd").fg(LETTERBOXD_COLORS.2));
+                labels.push_span(span!("Letterboxd ").fg(LETTERBOXD_COLORS.2));
 
                 (LETTERBOXD_COLORS.0, LETTERBOXD_COLORS.1)
             } else if name == "trakt" {
-                labels.push_span(span!("Trakt").fg(TRAKT_COLORS.2));
+                labels.push_span(span!("Trakt ").fg(TRAKT_COLORS.2));
 
                 (TRAKT_COLORS.0, TRAKT_COLORS.1)
             } else if name == "tmdb" {
-                labels.push_span(span!("TMDB").fg(TMDB_COLORS.2));
+                labels.push_span(span!("TMDB ").fg(TMDB_COLORS.2));
 
                 (TMDB_COLORS.0, TMDB_COLORS.1)
-            } else if name == "popcorn" {
-                labels.push_span(span!("Popcorn").fg(POPCORN_COLORS.2));
-
-                (POPCORN_COLORS.0, POPCORN_COLORS.1)
-            } else if name == "tomatoes" {
-                labels.push_span(span!("Tomatoes").fg(TOMATOES_COLORS.2));
-
-                (TOMATOES_COLORS.0, TOMATOES_COLORS.1)
             } else {
                 continue;
             };
@@ -619,8 +620,15 @@ impl MainScreen {
         }
 
         for ((widget, label), &area) in widgets.into_iter().zip(labels).zip(widget_areas.iter()) {
-            frame.render_widget(label, area.offset(Offset::new(0, -1)));
-            frame.render_widget(widget, area);
+            frame.render_widget(
+                &label,
+                area.offset(Offset::new(0, -1))
+                    .centered_horizontally(constraint!(==label.width() as u16)),
+            );
+            frame.render_widget(
+                &widget,
+                area.centered_horizontally(constraint!(==widget.width() as u16)),
+            );
         }
     }
 

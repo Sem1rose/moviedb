@@ -11,7 +11,7 @@ use simple_encrypt::{decrypt_bytes, encrypt_bytes};
 pub struct UserTokens {
     pub access_token: String,
 
-    pub account_id: u32,
+    pub account_id: u64,
     pub session_id: String,
 }
 
@@ -97,7 +97,7 @@ impl TMDBTokens {
         self.user_tokens.access_token.clone()
     }
 
-    pub fn account_id(&self) -> u32 {
+    pub fn account_id(&self) -> u64 {
         self.user_tokens.account_id
     }
 

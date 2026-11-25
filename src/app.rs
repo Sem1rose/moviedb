@@ -13,10 +13,11 @@ use crate::{
     event_handler::EventHandler,
     helpers,
     image_backend::ImageID,
-    load_file, omdb,
+    load_file,
     popups::Popup,
     processors::{Processor, ProcessorDiscriminants},
     screens::Screen,
+    sources::{omdb, punch_play, tmdb, trakt},
     tokens::{
         punch_play_tokens::UserTokens as PunchPlayUserTokens,
         simkl_tokens::UserTokens as SimklUserTokens, tmdb_tokens::UserTokens as TMDBUserTokens,
@@ -39,10 +40,10 @@ pub struct App {
     pub event_handler: EventHandler,
     pub config:        Rc<RefCell<Config>>,
 
-    pub movies:      Rc<RefCell<FxIndexMap<u32, Movie>>>,
-    pub watched:     Rc<RefCell<FxIndexMap<u32, Entry>>>,
-    pub persons:     Rc<RefCell<FxIndexMap<u32, Person>>>,
-    pub collections: Rc<RefCell<FxIndexMap<u32, Collection>>>,
+    pub movies:      Rc<RefCell<FxIndexMap<u64, Movie>>>,
+    pub watched:     Rc<RefCell<FxIndexMap<u64, Entry>>>,
+    pub persons:     Rc<RefCell<FxIndexMap<u64, Person>>>,
+    pub collections: Rc<RefCell<FxIndexMap<u64, Collection>>>,
 
     pub tmdb_tokens:       TMDBTokens,
     pub simkl_tokens:      SimklTokens,
@@ -167,6 +168,7 @@ impl App {
                 Processor::HistorySyncer(history_syncer_processor) => history_syncer_processor
                     .initialize(
                         self.tmdb_tokens.clone(),
+                        self.trakt_tokens.clone(),
                         self.simkl_tokens.clone(),
                         self.punch_play_tokens.clone(),
                     ),
@@ -196,23 +198,6 @@ impl App {
         self.terminal.as_mut().unwrap().backend_mut();
         self.processors.get_mut(&processor)
     }
-
-    // pub fn initialize_data(
-    //     &mut self,
-    //     movies: Vec<Movie>,
-    //     watched: Vec<Entry>,
-    //     persons: Vec<Person>,
-    //     collections: Vec<Collection>,
-    // ) {
-    //     *self.movies.borrow_mut() = FxIndexMap::from_iter(movies.into_iter().map(|x| (x.id, x)));
-    //     *self.watched.borrow_mut() =
-    //         FxIndexMap::from_iter(watched.into_iter().map(|x| (x.movie_id, x)));
-    //     *self.persons.borrow_mut() = FxIndexMap::from_iter(persons.into_iter().map(|x| (x.id, x)));
-    //     *self.collections.borrow_mut() =
-    //         FxIndexMap::from_iter(collections.into_iter().map(|x| (x.id, x)));
-
-    //     self.drawer.close_popup();
-    // }
 
     pub fn save_data(
         &self,
@@ -254,7 +239,7 @@ impl App {
         punch_play_tokens: PunchPlayTokens,
         trakt_tokens: TraktTokens,
         omdb_tokens: OMDBTokens,
-        tmdb_id: u32,
+        tmdb_id: u64,
     ) -> anyhow::Result<MovieDetailsResponse> {
         let mut trakt_result = None;
         let mut punch_play_result = None;
@@ -358,8 +343,8 @@ impl App {
 
             Ok(MovieDetailsResponse {
                 tmdb:       tmdb_result,
-                punch_play: punch_play_result,
                 trakt:      trakt_result,
+                punch_play: punch_play_result,
                 omdb:       omdb_result,
             })
         })
@@ -368,7 +353,8 @@ impl App {
     pub fn add_play(&mut self) {
         if let Some(Screen::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
             let movie_id = main_screen.current_movie().unwrap().id;
-            if let Some(Popup::ManagePlays(manage_plays_popup)) = self.drawer.active_popup.as_mut()
+            let (date, rating) = if let Some(Popup::ManagePlays(manage_plays_popup)) =
+                self.drawer.active_popup.as_mut()
             {
                 let rating = format!(
                     "{:.1}",
@@ -388,39 +374,49 @@ impl App {
                 }
                 .to_utc();
 
-                self.watched
-                    .borrow_mut()
-                    .entry(movie_id)
-                    .and_modify(|x| x.add_play(date, rating, None))
-                    .or_insert(Entry {
+                (date, rating)
+            } else {
+                unreachable!()
+            };
+
+            self.watched
+                .borrow_mut()
+                .entry(movie_id)
+                .and_modify(|x| x.add_play(date, rating, None))
+                .or_insert(Entry {
+                    movie_id,
+                    history: vec![HistoryEntry {
+                        date,
+                        rating,
+                        note: None,
+                    }],
+                });
+
+            let watchlist_items = &mut main_screen.lists.get_mut(&ListID::Watchlist).unwrap().items;
+            let in_watchlist = watchlist_items.contains_key(&movie_id);
+            if in_watchlist {
+                watchlist_items.shift_remove(&movie_id);
+                main_screen.save_lists();
+            }
+
+            if SYNC {
+                if let Some(Processor::HistorySyncer(history_syncer_processor)) = self
+                    .processors
+                    .get_mut(&ProcessorDiscriminants::HistorySyncer)
+                {
+                    history_syncer_processor.add_sync_item(SyncItem::AddPlay {
                         movie_id,
-                        history: vec![HistoryEntry {
-                            date,
-                            rating,
-                            note: None,
-                        }],
+                        date,
+                        rating,
                     });
-                if SYNC {
-                    if let Some(Processor::HistorySyncer(history_syncer_processor)) = self
-                        .processors
-                        .get_mut(&ProcessorDiscriminants::HistorySyncer)
-                    {
-                        history_syncer_processor.add_sync_item(SyncItem::AddPlay {
+                    if in_watchlist {
+                        history_syncer_processor.add_sync_item(SyncItem::RemoveFromList {
+                            list: ListID::Watchlist,
                             movie_id,
-                            date,
-                            rating,
                         });
                     }
                 }
             }
-
-            main_screen
-                .lists
-                .get_mut(&ListID::Watchlist)
-                .unwrap()
-                .items
-                .shift_remove(&movie_id);
-            main_screen.save_lists();
 
             if matches!(main_screen.selected_list, ListID::Watchlist) {
                 if self.watched.borrow().contains_key(&movie_id) {
@@ -538,12 +534,13 @@ impl App {
                         }],
                     });
 
-                main_screen
-                    .lists
-                    .get_mut(&ListID::Watchlist)
-                    .unwrap()
-                    .items
-                    .shift_remove(&movie_id);
+                let watchlist_items =
+                    &mut main_screen.lists.get_mut(&ListID::Watchlist).unwrap().items;
+                let in_watchlist = watchlist_items.contains_key(&movie_id);
+                if in_watchlist {
+                    watchlist_items.shift_remove(&movie_id);
+                    main_screen.save_lists();
+                }
 
                 if SYNC {
                     if let Some(Processor::HistorySyncer(history_syncer_processor)) = self
@@ -561,6 +558,13 @@ impl App {
                                 movie_id,
                                 date,
                                 rating,
+                            });
+                        }
+
+                        if in_watchlist {
+                            history_syncer_processor.add_sync_item(SyncItem::RemoveFromList {
+                                list: ListID::Watchlist,
+                                movie_id,
                             });
                         }
                     }
@@ -723,9 +727,11 @@ impl App {
                 }
                 .to_utc();
 
+                let mut old_date = Default::default();
                 let movie_id = main_screen.current_movie().unwrap().id;
                 self.watched.borrow_mut().entry(movie_id).and_modify(|x| {
                     if let Some(latest) = x.history.last_mut() {
+                        old_date = latest.date;
                         latest.date = date;
                         latest.rating = rating;
                     };
@@ -738,9 +744,10 @@ impl App {
                         .processors
                         .get_mut(&ProcessorDiscriminants::HistorySyncer)
                     {
-                        history_syncer_processor.add_sync_item(SyncItem::Edit {
+                        history_syncer_processor.add_sync_item(SyncItem::EditPlay {
                             movie_id,
-                            date,
+                            from: old_date,
+                            to: date,
                             rating,
                         });
                     }
@@ -801,7 +808,7 @@ impl App {
                 x.id == main_screen
                     .current_movie()
                     .map(|x| x.id)
-                    .unwrap_or(u32::MAX)
+                    .unwrap_or(u64::MAX)
             });
             let new_selected_index = if let Some(pos) = pos {
                 if pos == main_screen.filtered_movies.len() - 1 {
@@ -844,8 +851,11 @@ impl App {
                 }
                 .to_utc();
 
+                let mut old_date = Default::default();
                 self.watched.borrow_mut().entry(movie_id).and_modify(|x| {
                     let len = x.history.len();
+                    old_date =
+                        x.history[len - 1 - manage_plays_popup.scrollview.selected_index].date;
                     x.history[len - 1 - manage_plays_popup.scrollview.selected_index].date = date;
                     x.history[len - 1 - manage_plays_popup.scrollview.selected_index].rating =
                         rating;
@@ -853,6 +863,20 @@ impl App {
                     x.history
                         .sort_by(|a, b| a.date.partial_cmp(&b.date).unwrap());
                 });
+
+                if SYNC {
+                    if let Some(Processor::HistorySyncer(history_syncer_processor)) = self
+                        .processors
+                        .get_mut(&ProcessorDiscriminants::HistorySyncer)
+                    {
+                        history_syncer_processor.add_sync_item(SyncItem::EditPlay {
+                            movie_id,
+                            from: old_date,
+                            to: date,
+                            rating,
+                        });
+                    }
+                }
             }
         }
 
@@ -869,12 +893,25 @@ impl App {
                 unreachable!()
             };
 
+            let mut date = Default::default();
             let mut empty = false;
             self.watched.borrow_mut().entry(movie_id).and_modify(|x| {
+                date = x.history
+                    [x.history.len() - 1 - manage_plays_popup.scrollview.selected_index]
+                    .date;
                 x.history
                     .remove(x.history.len() - 1 - manage_plays_popup.scrollview.selected_index);
                 empty = x.history.is_empty();
             });
+
+            if SYNC {
+                if let Some(Processor::HistorySyncer(history_syncer_processor)) = self
+                    .processors
+                    .get_mut(&ProcessorDiscriminants::HistorySyncer)
+                {
+                    history_syncer_processor.add_sync_item(SyncItem::RemovePlay { movie_id, date });
+                }
+            }
 
             if empty {
                 if let Some(Screen::MainScreen(main_screen)) = self.drawer.current_screen.as_mut() {
@@ -885,6 +922,16 @@ impl App {
 
                     if matches!(main_screen.selected_list, ListID::Watched) {
                         self.drawer.close_popup();
+                    }
+                }
+
+                if SYNC {
+                    if let Some(Processor::HistorySyncer(history_syncer_processor)) = self
+                        .processors
+                        .get_mut(&ProcessorDiscriminants::HistorySyncer)
+                    {
+                        history_syncer_processor
+                            .add_sync_item(SyncItem::RemoveFromWatched { movie_id });
                     }
                 }
             }
@@ -985,6 +1032,20 @@ impl App {
             .update_access_token(self.tmdb_tokens.access_token());
     }
 
+    pub fn set_trakt_user_tokens(&mut self, user_tokens: TraktUserTokens) {
+        // log::info!("{user_tokens:#?}");
+        if let Err(error) = self.trakt_tokens.set_creds(user_tokens, true) {
+            error!("{error}");
+            return;
+        }
+        let tokens = self.trakt_tokens.clone();
+        if let Some(Processor::TokensRefresher(tokens_refresher_processor)) =
+            self.get_processor_mut(ProcessorDiscriminants::TokensRefresher)
+        {
+            tokens_refresher_processor.update_trakt_tokens(tokens);
+        }
+    }
+
     pub fn set_simkl_user_tokens(&mut self, user_tokens: SimklUserTokens) {
         // log::info!("{user_tokens:#?}");
         if let Err(error) = self.simkl_tokens.set_creds(user_tokens, true) {
@@ -1004,20 +1065,6 @@ impl App {
             self.get_processor_mut(ProcessorDiscriminants::TokensRefresher)
         {
             tokens_refresher_processor.update_punch_play_tokens(tokens);
-        }
-    }
-
-    pub fn set_trakt_user_tokens(&mut self, user_tokens: TraktUserTokens) {
-        // log::info!("{user_tokens:#?}");
-        if let Err(error) = self.trakt_tokens.set_creds(user_tokens, true) {
-            error!("{error}");
-            return;
-        }
-        let tokens = self.trakt_tokens.clone();
-        if let Some(Processor::TokensRefresher(tokens_refresher_processor)) =
-            self.get_processor_mut(ProcessorDiscriminants::TokensRefresher)
-        {
-            tokens_refresher_processor.update_trakt_tokens(tokens);
         }
     }
 

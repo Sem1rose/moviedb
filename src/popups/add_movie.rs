@@ -7,10 +7,6 @@ use std::{
 use chrono::{DateTime, Datelike, Local, NaiveDate, Utc};
 use itertools::Itertools;
 use log::error;
-use punch_play::{
-    self,
-    smo::{ItemDetails as PunchPlayItemDetails, MovieDetails as PunchPlayMovieDetails},
-};
 use ratatui::{
     Frame,
     buffer::{Buffer, Cell},
@@ -27,19 +23,22 @@ use ratatui::{
 use ratatui_image::sliced::SignedPosition;
 use ratatui_textarea::{TextArea, WrapMode};
 use throbber_widgets_tui::{Throbber, ThrobberState};
-use tmdb::{
-    self,
-    smo::{MovieDetails as TMDBMovieDetails, SearchResult as TMDBSearchResult},
-};
-use trakt::{self, smo::MovieDetails as TraktMovieDetails};
 
 use crate::{
     app::App,
     event_handler::{self, EventHandler},
     helpers,
     image_backend::{ImageID, RatatuiImage},
-    omdb::MovieDetails as OMDBMovieDetails,
     popups::{Popup, PopupTrait},
+    sources::{
+        omdb::MovieDetails as OMDBMovieDetails,
+        punch_play::smo::MovieDetails as PunchPlayMovieDetails,
+        tmdb::{
+            self,
+            smo::{MovieDetails as TMDBMovieDetails, SearchResult as TMDBSearchResult},
+        },
+        trakt::smo::MovieDetails as TraktMovieDetails,
+    },
     tokens::{OMDBTokens, PunchPlayTokens, TMDBTokens, TraktTokens},
     types::MovieDetailsResponse,
     widgets::{self, Action, ActionType, Orientation, ScrolledList},
@@ -47,7 +46,7 @@ use crate::{
 
 #[derive(Default)]
 pub enum Phase {
-    ConfirmRefetchDetails(u32),
+    ConfirmRefetchDetails(u64),
     #[default]
     SelectMovie,
     GetRating,
@@ -58,92 +57,97 @@ pub enum Phase {
 
 #[allow(clippy::upper_case_acronyms)]
 enum SearchResults {
-    // Trakt(anyhow::Result<Vec<TraktSearchResponseMovie>>),
-    PunchPlay(anyhow::Result<Vec<PunchPlayItemDetails>>),
     TMDB(anyhow::Result<Vec<TMDBSearchResult>>),
+    // Trakt(anyhow::Result<Vec<TraktMovieDetails>>),
+    // PunchPlay(anyhow::Result<Vec<PunchPlayItemDetails>>),
 }
 struct SearchResultMovie {
-    title:        String,
-    released:     bool,
+    title: String,
+    released: bool,
     release_date: Option<NaiveDate>,
-    rating:       f64,
-    id:           u32,
-    poster:       Option<String>,
-}
-// impl From<TraktSearchResponseMovie> for SearchResultMovie {
-//     fn from(value: TraktSearchResponseMovie) -> Self {
-//         Self {
-//             title:        value.title,
-//             release_year: value.year.unwrap_or(1970) as u32,
-//             rating:       value.rating,
-//             id:           value.ids.tmdb,
-//             poster:       None,
-//         }
-//     }
-// }
-impl From<PunchPlayItemDetails> for SearchResultMovie {
-    fn from(value: PunchPlayItemDetails) -> Self {
-        Self {
-            title:        value.name,
-            released:     value
-                .release_date
-                .as_ref()
-                .map(|&release_date| chrono::Utc::now().date_naive() > release_date)
-                .unwrap_or_default(),
-            release_date: value.release_date,
-            rating:       value.community_rating,
-            id:           value.tmdb_id,
-            poster:       value.poster_path,
-        }
-    }
+    rating: f64,
+    id: u64,
+    poster: Option<String>,
 }
 impl From<TMDBSearchResult> for SearchResultMovie {
     fn from(value: TMDBSearchResult) -> Self {
         Self {
-            title:        value.title,
-            released:     value
+            title: value.title,
+            released: value
                 .release_date
                 .as_ref()
                 .map(|&release_date| chrono::Utc::now().date_naive() > release_date)
                 .unwrap_or_default(),
             release_date: value.release_date,
-            rating:       value.vote_average.unwrap_or(0.0),
-            id:           value.id,
-            poster:       value.poster_path,
+            rating: value.vote_average.unwrap_or(0.0),
+            id: value.id,
+            poster: value.poster_path,
         }
     }
 }
+// impl From<TraktMovieDetails> for SearchResultMovie {
+//     fn from(value: TraktMovieDetails) -> Self {
+//         Self {
+//             title: value.title,
+//             released: value
+//                 .released
+//                 .as_ref()
+//                 .map(|&release_date| chrono::Utc::now().date_naive() > release_date)
+//                 .unwrap_or_default(),
+//             release_date: value.released,
+//             rating: value.rating.unwrap_or(0.0),
+//             id: value.ids.tmdb,
+//             poster: None,
+//         }
+//     }
+// }
+// impl From<PunchPlayItemDetails> for SearchResultMovie {
+//     fn from(value: PunchPlayItemDetails) -> Self {
+//         Self {
+//             title: value.name,
+//             released: value
+//                 .release_date
+//                 .as_ref()
+//                 .map(|&release_date| chrono::Utc::now().date_naive() > release_date)
+//                 .unwrap_or_default(),
+//             release_date: value.release_date,
+//             rating: value.community_rating,
+//             id: value.tmdb_id,
+//             poster: value.poster_path,
+//         }
+//     }
+// }
 
 #[derive(Default)]
 pub struct AddMoviePopup {
-    pub tick:         u64,
-    pub phase:        Phase,
+    pub tick: u64,
+    pub phase: Phase,
     throbber_visible: bool,
-    item:             usize,
-    scrollview:       ScrolledList,
+    item: usize,
+    scrollview: ScrolledList,
 
-    input0:         TextArea<'static>,
-    input1:         TextArea<'static>,
+    input0: TextArea<'static>,
+    input1: TextArea<'static>,
     throbber_state: ThrobberState,
 
-    last_input_tick:  Option<u64>,
-    search_results:   Option<Vec<SearchResultMovie>>,
+    last_input_tick: Option<u64>,
+    search_results: Option<Vec<SearchResultMovie>>,
     rx_search_result: Option<Receiver<SearchResults>>,
 
-    take_rating:                         bool,
-    pub refetch_details:                 bool,
-    pub user_rating:                     f64,
-    pub date:                            DateTime<Utc>,
-    pub trakt_movie_details_result:      Option<TraktMovieDetails>,
+    take_rating: bool,
+    pub refetch_details: bool,
+    pub user_rating: f64,
+    pub date: DateTime<Utc>,
+    pub tmdb_movie_details_result: Option<TMDBMovieDetails>,
+    pub trakt_movie_details_result: Option<TraktMovieDetails>,
     pub punch_play_movie_details_result: Option<PunchPlayMovieDetails>,
-    pub tmdb_movie_details_result:       Option<TMDBMovieDetails>,
-    pub omdb_movie_details_result:       Option<OMDBMovieDetails>,
-    rx_details_response:                 Option<Receiver<anyhow::Result<MovieDetailsResponse>>>,
+    pub omdb_movie_details_result: Option<OMDBMovieDetails>,
+    rx_details_response: Option<Receiver<anyhow::Result<MovieDetailsResponse>>>,
 
-    tmdb_tokens:       TMDBTokens,
+    tmdb_tokens: TMDBTokens,
+    trakt_tokens: TraktTokens,
     punch_play_tokens: PunchPlayTokens,
-    trakt_tokens:      TraktTokens,
-    omdb_tokens:       OMDBTokens,
+    omdb_tokens: OMDBTokens,
 
     _cache_dir: PathBuf,
 }
@@ -151,16 +155,16 @@ pub struct AddMoviePopup {
 impl AddMoviePopup {
     pub fn new(
         tmdb_tokens: TMDBTokens,
-        punch_play_tokens: PunchPlayTokens,
         trakt_tokens: TraktTokens,
+        punch_play_tokens: PunchPlayTokens,
         omdb_tokens: OMDBTokens,
         take_rating: bool,
         cache_dir: &Path,
     ) -> Self {
         Self {
             tmdb_tokens,
-            punch_play_tokens,
             trakt_tokens,
+            punch_play_tokens,
             omdb_tokens,
             take_rating,
             scrollview: ScrolledList::new(Orientation::Vertical, 8),
@@ -172,17 +176,17 @@ impl AddMoviePopup {
     }
 
     pub fn new_refetch_details(
-        tmdb_id: u32,
+        tmdb_id: u64,
         tmdb_tokens: TMDBTokens,
-        punch_play_tokens: PunchPlayTokens,
         trakt_tokens: TraktTokens,
+        punch_play_tokens: PunchPlayTokens,
         omdb_tokens: OMDBTokens,
         cache_dir: &Path,
     ) -> Self {
         Self {
+            tmdb_tokens,
             trakt_tokens,
             punch_play_tokens,
-            tmdb_tokens,
             omdb_tokens,
             _cache_dir: cache_dir.to_path_buf(),
             refetch_details: true,
@@ -197,9 +201,9 @@ impl AddMoviePopup {
 
         let search_string = self.input0.lines()[0].trim().to_string();
         // let trakt_status = self.trakt_tokens.status;
-        let punch_play_status = self.punch_play_tokens.status;
+        // let punch_play_status = self.punch_play_tokens.status;
+        // let trakt_client_id = self.trakt_tokens.client_id_owned();
         let tmdb_status = self.tmdb_tokens.status;
-        // let client_id = self.trakt_tokens.client_id_owned();
         let tmdb_access_token = self.tmdb_tokens.access_token_owned();
 
         thread::spawn(move || {
@@ -208,22 +212,22 @@ impl AddMoviePopup {
                     &tmdb_access_token,
                     &search_string,
                 )));
-            // } else if trakt_status.is_some() {
-            //     _ = tx_search_results.send(SearchResults::Trakt(trakt::movie::find_movie(
-            //         &client_id,
-            //         &search_string,
-            //     )));
-            } else if punch_play_status.is_some() {
-                _ = tx_search_results.send(SearchResults::PunchPlay(
-                    punch_play::movie::find_movie(&search_string),
-                ));
+                // } else if trakt_status.is_some() {
+                //     _ = tx_search_results.send(SearchResults::Trakt(trakt::movie::find_movie(
+                //         &trakt_client_id,
+                //         &search_string,
+                //     )));
+                // } else if punch_play_status.is_some() {
+                //     _ = tx_search_results.send(SearchResults::PunchPlay(
+                //         punch_play::movie::find_movie(&search_string),
+                //     ));
             }
         });
 
         self.rx_search_result = Some(rx_search_results);
     }
 
-    pub fn request_details(&mut self, tmdb_id: u32) {
+    pub fn request_details(&mut self, tmdb_id: u64) {
         let (tx_details_request, rx_details_response): (
             mpsc::Sender<anyhow::Result<MovieDetailsResponse>>,
             Receiver<anyhow::Result<MovieDetailsResponse>>,
@@ -233,7 +237,6 @@ impl AddMoviePopup {
         let punch_play_tokens = self.punch_play_tokens.clone();
         let trakt_tokens = self.trakt_tokens.clone();
         let omdb_tokens = self.omdb_tokens.clone();
-        // let cache_dir = self.cache_dir.clone();
 
         thread::spawn(move || {
             _ = tx_details_request.send(App::fetch_movie_details(
@@ -326,57 +329,66 @@ impl PopupTrait for AddMoviePopup {
         if self.tick & 7 == 0 {
             self.throbber_state.calc_next();
         }
-        if matches!(self.phase, Phase::SelectMovie) {
-            if let Some(last_tick) = self.last_input_tick {
-                if self.tick - last_tick > 20 {
-                    self.last_input_tick = None;
 
-                    self.scrollview.reset();
-                    self.search_results = None;
-                    if self.input0.lines()[0].trim().is_empty() {
-                        _ = self.rx_search_result.take();
-                    } else {
-                        self.request_search();
+        match self.phase {
+            Phase::SelectMovie => {
+                if let Some(last_tick) = self.last_input_tick {
+                    if self.tick - last_tick > 20 {
+                        self.last_input_tick = None;
+
+                        self.scrollview.reset();
+                        self.search_results = None;
+                        if self.input0.lines()[0].trim().is_empty() {
+                            _ = self.rx_search_result.take();
+                        } else {
+                            self.request_search();
+                        }
                     }
                 }
-            }
-        }
-        match self.phase {
-            Phase::SelectMovie =>
+
                 if let Some(rx_search_results) = self.rx_search_result.as_ref() {
                     if let Ok(search_result) = rx_search_results.try_recv() {
                         self.search_results = match search_result {
                             SearchResults::TMDB(tmdb_results) => match tmdb_results {
-                                Ok(results) =>
-                                    Some(results.into_iter().map(|x| x.into()).collect_vec()),
+                                Ok(results) => {
+                                    Some(results.into_iter().map(|x| x.into()).collect_vec())
+                                }
                                 Err(error) => {
                                     error!("TMDB error while searching: {error:#?}");
                                     None
                                 }
                             },
-                            SearchResults::PunchPlay(punch_play_results) =>
-                                match punch_play_results {
-                                    Ok(results) =>
-                                        Some(results.into_iter().map(|x| x.into()).collect_vec()),
-                                    Err(error) => {
-                                        error!("PunchPlay error while searching: {error:#?}");
-                                        None
-                                    }
-                                },
                             // SearchResults::Trakt(trakt_results) => match trakt_results {
-                            //     Ok(results) =>
-                            //         Some(results.into_iter().map(|x| x.into()).collect_vec()),
+                            //     Ok(results) => Some(
+                            //         results
+                            //             .into_iter()
+                            //             .inspect(|x| info!("{x:#?}"))
+                            //             .map(|x| x.into())
+                            //             .collect_vec(),
+                            //     ),
                             //     Err(error) => {
                             //         error!("Trakt error while searching: {error:#?}");
                             //         None
                             //     }
                             // },
+                            // SearchResults::PunchPlay(punch_play_results) => {
+                            //     match punch_play_results {
+                            //         Ok(results) => {
+                            //             Some(results.into_iter().map(|x| x.into()).collect_vec())
+                            //         }
+                            //         Err(error) => {
+                            //             error!("PunchPlay error while searching: {error:#?}");
+                            //             None
+                            //         }
+                            //     }
+                            // }
                         };
                         _ = self.rx_search_result.take();
                     }
-                },
+                }
+            }
             Phase::GettingDetails => match self.rx_details_response.as_ref().unwrap().try_recv() {
-                Ok(details_response) =>
+                Ok(details_response) => {
                     if let Ok(details_response) = details_response {
                         self.trakt_movie_details_result = details_response.trakt;
                         self.punch_play_movie_details_result = details_response.punch_play;
@@ -390,7 +402,8 @@ impl PopupTrait for AddMoviePopup {
                         self.item = 0;
                         self.rx_details_response = None;
                         self.phase = Phase::Error(error.to_string());
-                    },
+                    }
+                }
                 Err(mpsc::TryRecvError::Disconnected) => {
                     self.item = 0;
                     self.rx_details_response = None;

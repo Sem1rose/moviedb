@@ -209,9 +209,9 @@ impl ContextMenu {
         if let Some(x) = visible_items.get_mut(self.selected_index.saturating_sub(self.scroll_pos))
         {
             *x = x
-                    .clone() // why clone!!! :(
-                    .fg(material::BLUE.c100)
-                    .bg(material::LIGHT_BLUE.c900)
+                .clone() // why clone!!! :(
+                .fg(material::BLUE.c100)
+                .bg(material::LIGHT_BLUE.c900)
         }
 
         let area = Rect {

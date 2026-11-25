@@ -20,7 +20,8 @@ use crate::{
     helpers,
     image_backend::RatatuiImage,
     processors::{Processor, ProcessorDiscriminants, ProcessorTrait},
-    tokens::{PunchPlayTokens, SimklTokens, tmdb_tokens::TMDBTokens},
+    sources::{punch_play, simkl, tmdb, trakt},
+    tokens::{PunchPlayTokens, SimklTokens, TraktTokens, tmdb_tokens::TMDBTokens},
     types::{SyncItem, SyncSource},
     widgets::{self, Action, ActionType},
 };
@@ -32,6 +33,11 @@ pub struct HistorySyncerProcessor {
     processing:  FxHashSet<(SyncItem, SyncSource)>,
     pub idle:    bool,
 
+    tmdb_status:       Option<bool>,
+    trakt_status:      Option<bool>,
+    simkl_status:      Option<bool>,
+    punch_play_status: Option<bool>,
+
     errors:           Vec<(SyncItem, SyncSource, String)>,
     tx_sync_request:  Option<Sender<(SyncItem, SyncSource)>>,
     rx_sync_response: Option<Receiver<(SyncItem, SyncSource, anyhow::Result<Response>)>>,
@@ -41,12 +47,18 @@ impl HistorySyncerProcessor {
     fn start_thread(
         mut self,
         tmdb_tokens: TMDBTokens,
+        trakt_tokens: TraktTokens,
         simkl_tokens: SimklTokens,
         punch_play_tokens: PunchPlayTokens,
     ) -> Self {
         let (tx_sync_request, rx_sync_request) = channel::<(SyncItem, SyncSource)>();
         let (tx_sync_response, rx_sync_response) =
             channel::<(SyncItem, SyncSource, anyhow::Result<Response>)>();
+
+        self.tmdb_status = tmdb_tokens.status;
+        self.trakt_status = trakt_tokens.status;
+        self.simkl_status = simkl_tokens.status;
+        self.punch_play_status = punch_play_tokens.status;
 
         thread::spawn(move || {
             let mut punch_play_watchlist_id = None;
@@ -60,9 +72,7 @@ impl HistorySyncerProcessor {
 
                             match item {
                                 SyncItem::AddToWatched {
-                                    movie_id,
-                                    date: _,
-                                    rating,
+                                    movie_id, rating, ..
                                 } => {
                                     thread::spawn(move || {
                                         tx_sync_response.send((
@@ -76,11 +86,7 @@ impl HistorySyncerProcessor {
                                         ))
                                     });
                                 }
-                                SyncItem::AddToList {
-                                    list,
-                                    date: _,
-                                    movie_id,
-                                } => match list {
+                                SyncItem::AddToList { list, movie_id, .. } => match list {
                                     crate::types::ListID::Watchlist => {
                                         thread::spawn(move || {
                                             tx_sync_response.send((
@@ -111,9 +117,7 @@ impl HistorySyncerProcessor {
                                     _ => (),
                                 },
                                 SyncItem::AddPlay {
-                                    movie_id,
-                                    date: _,
-                                    rating,
+                                    movie_id, rating, ..
                                 } => {
                                     thread::spawn(move || {
                                         tx_sync_response.send((
@@ -127,10 +131,8 @@ impl HistorySyncerProcessor {
                                         ))
                                     });
                                 }
-                                SyncItem::Edit {
-                                    movie_id,
-                                    date: _,
-                                    rating,
+                                SyncItem::EditPlay {
+                                    movie_id, rating, ..
                                 } => {
                                     thread::spawn(move || {
                                         tx_sync_response.send((
@@ -144,6 +146,7 @@ impl HistorySyncerProcessor {
                                         ))
                                     });
                                 }
+                                SyncItem::RemovePlay { movie_id, date } => unimplemented!(),
                                 SyncItem::RemoveFromWatched { movie_id } => {
                                     thread::spawn(move || {
                                         tx_sync_response.send((
@@ -188,6 +191,175 @@ impl HistorySyncerProcessor {
                                 },
                             }
                         },
+                    SyncSource::Trakt => {
+                        if trakt_tokens.status.unwrap_or_default() {
+                            let tx_sync_response = tx_sync_response.clone();
+                            let trakt_tokens = trakt_tokens.clone();
+
+                            match item {
+                                SyncItem::AddToWatched {
+                                    movie_id,
+                                    date,
+                                    rating,
+                                } => {
+                                    thread::spawn(move || {
+                                        tx_sync_response.send((
+                                            item,
+                                            source,
+                                            trakt::movie::log_watches(
+                                                trakt_tokens.client_id(),
+                                                trakt_tokens.access_token(),
+                                                vec![(
+                                                    movie_id,
+                                                    Some(rating.trunc() as usize),
+                                                    date,
+                                                )],
+                                            ),
+                                        ))
+                                    });
+                                }
+                                SyncItem::AddToList { list, movie_id, .. } => match list {
+                                    crate::types::ListID::Watchlist => {
+                                        thread::spawn(move || {
+                                            tx_sync_response.send((item, source, {
+                                                trakt::movie::add_movies_to_watchlist(
+                                                    trakt_tokens.client_id(),
+                                                    trakt_tokens.access_token(),
+                                                    vec![movie_id],
+                                                )
+                                            }))
+                                        });
+                                    }
+                                    crate::types::ListID::Trakt(list_id) => {
+                                        thread::spawn(move || {
+                                            tx_sync_response.send((
+                                                item,
+                                                source,
+                                                trakt::list::add_movies_to_list(
+                                                    trakt_tokens.client_id(),
+                                                    trakt_tokens.access_token(),
+                                                    list_id,
+                                                    vec![movie_id],
+                                                ),
+                                            ))
+                                        });
+                                    }
+                                    _ => (),
+                                },
+                                SyncItem::AddPlay {
+                                    movie_id,
+                                    date,
+                                    rating,
+                                } => {
+                                    thread::spawn(move || {
+                                        tx_sync_response.send((
+                                            item,
+                                            source,
+                                            trakt::movie::log_watches(
+                                                trakt_tokens.client_id(),
+                                                trakt_tokens.access_token(),
+                                                vec![(
+                                                    movie_id,
+                                                    Some(rating.floor() as usize),
+                                                    date,
+                                                )],
+                                            ),
+                                        ))
+                                    });
+                                }
+                                SyncItem::EditPlay {
+                                    movie_id,
+                                    from,
+                                    to,
+                                    rating,
+                                } => {
+                                    thread::spawn(move || {
+                                        tx_sync_response.send((
+                                            item,
+                                            source,
+                                            // TODO: cleanup
+                                            'label: {
+                                                if let Err(error) = trakt::movie::modify_watch_date(
+                                                    trakt_tokens.client_id(),
+                                                    trakt_tokens.access_token(),
+                                                    movie_id,
+                                                    from,
+                                                    to,
+                                                ) {
+                                                    break 'label Err(error);
+                                                }
+
+                                                trakt::movie::modify_rating(
+                                                    trakt_tokens.client_id(),
+                                                    trakt_tokens.access_token(),
+                                                    movie_id,
+                                                    rating.floor() as usize,
+                                                    to,
+                                                )
+                                            },
+                                        ))
+                                    });
+                                }
+                                SyncItem::RemovePlay { movie_id, date } => {
+                                    thread::spawn(move || {
+                                        tx_sync_response.send((
+                                            item,
+                                            source,
+                                            trakt::movie::delete_movie_watch(
+                                                trakt_tokens.client_id(),
+                                                trakt_tokens.access_token(),
+                                                movie_id,
+                                                date,
+                                            ),
+                                        ))
+                                    });
+                                }
+                                SyncItem::RemoveFromWatched { movie_id } => {
+                                    thread::spawn(move || {
+                                        tx_sync_response.send((
+                                            item,
+                                            source,
+                                            trakt::movie::remove_movies_from_watched(
+                                                trakt_tokens.client_id(),
+                                                trakt_tokens.access_token(),
+                                                vec![movie_id],
+                                            ),
+                                        ))
+                                    });
+                                }
+                                SyncItem::RemoveFromList { list, movie_id } => match list {
+                                    crate::types::ListID::Watchlist => {
+                                        thread::spawn(move || {
+                                            tx_sync_response.send((
+                                                item,
+                                                source,
+                                                trakt::movie::remove_movies_from_watchlist(
+                                                    trakt_tokens.client_id(),
+                                                    trakt_tokens.access_token(),
+                                                    vec![movie_id],
+                                                ),
+                                            ))
+                                        });
+                                    }
+                                    crate::types::ListID::Trakt(list_id) => {
+                                        thread::spawn(move || {
+                                            tx_sync_response.send((
+                                                item,
+                                                source,
+                                                trakt::list::remove_movies_from_list(
+                                                    trakt_tokens.client_id(),
+                                                    trakt_tokens.access_token(),
+                                                    list_id,
+                                                    vec![movie_id],
+                                                ),
+                                            ))
+                                        });
+                                    }
+                                    _ => (),
+                                },
+                            }
+                        }
+                    }
                     SyncSource::Simkl =>
                         if simkl_tokens.status.unwrap_or_default() {
                             let tx_sync_response = tx_sync_response.clone();
@@ -254,9 +426,10 @@ impl HistorySyncerProcessor {
                                         ))
                                     });
                                 }
-                                SyncItem::Edit {
+                                SyncItem::EditPlay {
                                     movie_id,
-                                    date,
+                                    from: _from,
+                                    to,
                                     rating,
                                 } => {
                                     thread::spawn(move || {
@@ -268,11 +441,12 @@ impl HistorySyncerProcessor {
                                                 simkl_tokens.client_id(),
                                                 simkl_tokens.app_name(),
                                                 simkl_tokens.app_version(),
-                                                &[(movie_id, rating.trunc() as usize, date)],
+                                                &[(movie_id, rating.trunc() as usize, to)],
                                             ),
                                         ))
                                     });
                                 }
+                                SyncItem::RemovePlay { movie_id, date } => unimplemented!(),
                                 SyncItem::RemoveFromWatched { movie_id } => {
                                     thread::spawn(move || {
                                         tx_sync_response.send((
@@ -308,8 +482,9 @@ impl HistorySyncerProcessor {
                                 },
                             }
                         },
-                    SyncSource::PunchPlay =>
-                        if punch_play_tokens.status.is_some() {
+                    SyncSource::PunchPlay => {
+                        // if punch_play_tokens.status.is_some() {
+                        if punch_play_tokens.status.unwrap_or_default() {
                             let tx_sync_response = tx_sync_response.clone();
                             let punch_play_tokens = punch_play_tokens.clone();
 
@@ -377,11 +552,7 @@ impl HistorySyncerProcessor {
                                         }))
                                     });
                                 }
-                                SyncItem::AddToList {
-                                    list,
-                                    date: _,
-                                    movie_id,
-                                } => match list {
+                                SyncItem::AddToList { list, movie_id, .. } => match list {
                                     crate::types::ListID::Watchlist => {
                                         thread::spawn(move || {
                                             tx_sync_response.send((
@@ -472,9 +643,10 @@ impl HistorySyncerProcessor {
                                         }))
                                     });
                                 }
-                                SyncItem::Edit {
+                                SyncItem::EditPlay {
                                     movie_id,
-                                    date,
+                                    from: _,
+                                    to,
                                     rating,
                                 } => {
                                     thread::spawn(move || {
@@ -485,11 +657,12 @@ impl HistorySyncerProcessor {
                                                 punch_play_tokens.access_token(),
                                                 movie_id,
                                                 Some(rating.floor() as usize),
-                                                Some(date),
+                                                Some(to),
                                             ),
                                         ))
                                     });
                                 }
+                                SyncItem::RemovePlay { movie_id, date } => unimplemented!(),
                                 SyncItem::RemoveFromWatched { movie_id } => {
                                     thread::spawn(move || {
                                         tx_sync_response.send((item, source, {
@@ -575,7 +748,8 @@ impl HistorySyncerProcessor {
                                     _ => (),
                                 },
                             }
-                        },
+                        }
+                    }
                 }
             }
         });
@@ -589,6 +763,7 @@ impl HistorySyncerProcessor {
     pub fn initialize(
         &mut self,
         tmdb_tokens: TMDBTokens,
+        trakt_tokens: TraktTokens,
         simkl_tokens: SimklTokens,
         punch_play_tokens: PunchPlayTokens,
     ) {
@@ -602,7 +777,7 @@ impl HistorySyncerProcessor {
 
             ..Default::default()
         }
-        .start_thread(tmdb_tokens, simkl_tokens, punch_play_tokens);
+        .start_thread(tmdb_tokens, trakt_tokens, simkl_tokens, punch_play_tokens);
     }
 
     fn retry_sync(&mut self, sync_item: SyncItem, sync_source: SyncSource) {
@@ -614,6 +789,16 @@ impl HistorySyncerProcessor {
     pub fn add_sync_item(&mut self, sync_item: SyncItem) {
         if let Some(tx_sync_request) = self.tx_sync_request.as_ref() {
             for source in SyncSource::iter() {
+                if !match source {
+                    SyncSource::TMDB => self.tmdb_status,
+                    SyncSource::Trakt => self.trakt_status,
+                    SyncSource::Simkl => self.simkl_status,
+                    SyncSource::PunchPlay => self.punch_play_status,
+                }
+                .unwrap_or_default()
+                {
+                    continue;
+                }
                 if !self.processing.contains(&(sync_item, source)) {
                     if tx_sync_request.send((sync_item, source)).is_ok() {
                         self.processing.insert((sync_item, source));
@@ -639,35 +824,28 @@ impl ProcessorTrait for HistorySyncerProcessor {
             [
                 s.as_ref().to_string(),
                 match i {
-                    SyncItem::AddToWatched {
-                        movie_id,
-                        date: _,
-                        rating: _,
-                    } => format!("Adding {movie_id} to watched"),
+                    SyncItem::AddToWatched { movie_id, .. } => {
+                        format!("Adding {movie_id} to watched")
+                    }
                     SyncItem::AddToList {
                         list:
                             crate::types::ListID::PunchPlay(list_id)
                             | crate::types::ListID::TMDB(list_id),
-                        date: _,
                         movie_id,
+                        ..
                     } => format!("Adding {movie_id} to list {list_id}"),
                     SyncItem::AddToList {
                         list: crate::types::ListID::Watchlist,
-                        date: _,
                         movie_id,
+                        ..
                     } => format!("Adding {movie_id} to watchlist"),
-                    SyncItem::AddPlay {
-                        movie_id,
-                        date: _,
-                        rating: _,
-                    } => format!("Adding a new play for {movie_id}"),
-                    SyncItem::Edit {
-                        movie_id,
-                        date: _,
-                        rating: _,
-                    } => format!("Editing {movie_id}"),
-                    SyncItem::RemoveFromWatched { movie_id } =>
-                        format!("Removing {movie_id} from watched"),
+                    SyncItem::AddPlay { movie_id, .. } => {
+                        format!("Adding a new play for {movie_id}")
+                    }
+                    SyncItem::EditPlay { movie_id, .. } => format!("Editing {movie_id}"),
+                    SyncItem::RemoveFromWatched { movie_id } => {
+                        format!("Removing {movie_id} from watched")
+                    }
                     SyncItem::RemoveFromList {
                         list:
                             crate::types::ListID::PunchPlay(list_id)

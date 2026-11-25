@@ -875,7 +875,7 @@ impl AdvancedFilterPopup {
         }
     }
 
-    pub fn initialize(&mut self, movies: &[&Movie], persons: &FxIndexMap<u32, Person>) {
+    pub fn initialize(&mut self, movies: &[&Movie], persons: &FxIndexMap<u64, Person>) {
         self.available_genres = movies
             .iter()
             .flat_map(|x| x.genres.clone())
@@ -1351,23 +1351,23 @@ impl AdvancedFilterPopup {
                     };
                     let (lower_bound, upper_bound, inverted) = match ordering {
                         "In" => {
-                            let input0 = lower_bound.parse().unwrap_or(u32::MIN);
+                            let input0 = lower_bound.parse().unwrap_or(u64::MIN);
 
                             (input0, input0, false)
                         }
                         "After" => {
-                            let input0 = lower_bound.parse().unwrap_or(u32::MIN);
+                            let input0 = lower_bound.parse().unwrap_or(u64::MIN);
 
-                            (input0, u32::MAX - 1, false)
+                            (input0, u64::MAX - 1, false)
                         }
                         "Before" => {
-                            let input0 = lower_bound.parse().unwrap_or(u32::MIN);
+                            let input0 = lower_bound.parse().unwrap_or(u64::MIN);
 
-                            (input0, u32::MAX - 1, true)
+                            (input0, u64::MAX - 1, true)
                         }
                         "Between" => {
                             let input0 = lower_bound.parse().unwrap_or(1);
-                            let input1 = upper_bound.parse().unwrap_or(u32::MAX - 1);
+                            let input1 = upper_bound.parse().unwrap_or(u64::MAX - 1);
 
                             (input0, input1, false)
                         }

@@ -13,11 +13,16 @@ use crate::{
     event_handler::{self, Data, EventHandler},
     helpers,
     image_backend::RatatuiImage,
-    popups::{OMDBInitPopup, Popup, PopupTrait, PunchPlayInitPopup, SimklInitPopup, TMDBInitPopup},
+    popups::{
+        OMDBInitPopup, Popup, PopupTrait, PunchPlayInitPopup, SimklInitPopup, TMDBInitPopup,
+        TraktInitPopup,
+    },
     widgets::{self, Action, ActionType},
 };
 
-const LABELS: [&str; 4] = ["TMDB", "Simkl", "PunchPlay", "OMDB"];
+const COLUMNS: usize = 2;
+const NUM_REQUIRED_CHOICES: usize = 1;
+const LABELS: [&str; 5] = ["TMDB", "Trakt", "Simkl", "PunchPlay", "OMDB"];
 #[derive(Default)]
 pub struct OutOfBoxPopup {
     tab:          usize,
@@ -25,8 +30,6 @@ pub struct OutOfBoxPopup {
     toggled_list: [bool; LABELS.len()],
 }
 
-const COLUMNS: usize = 2;
-const NUM_REQUIRED_CHOICES: usize = 1;
 impl PopupTrait for OutOfBoxPopup {
     fn get_state(&self) -> (Option<usize>, Option<usize>) {
         (Some(self.tab), Some(self.item))
@@ -72,6 +75,14 @@ impl PopupTrait for OutOfBoxPopup {
                     ));
                     config_mut.options.tmdb_enabled = true;
                 }
+                if out_of_box_popup.toggled_list[LABELS.iter().position(|&x| x == "Trakt").unwrap()]
+                {
+                    popups.push(crate::new_popup!(
+                        TraktInit,
+                        TraktInitPopup::new(&app.home_dir, false)
+                    ));
+                    config_mut.options.trakt_enabled = true;
+                }
                 if out_of_box_popup.toggled_list[LABELS.iter().position(|&x| x == "Simkl").unwrap()]
                 {
                     popups.push(crate::new_popup!(
@@ -89,13 +100,6 @@ impl PopupTrait for OutOfBoxPopup {
                     ));
                     config_mut.options.punch_play_enabled = true;
                 }
-                // if out_of_box_popup.toggled_list[LABELS.iter().position(|&x| x == "Simkl").unwrap()] {
-                //     popups.push(crate::new_popup!(
-                //         TraktInit,
-                //         TraktInitPopup::new(&app.home_dir, false)
-                //     ));
-                //     config_mut.options.trakt_enabled = true;
-                // }
                 if out_of_box_popup.toggled_list[LABELS.iter().position(|&x| x == "OMDB").unwrap()]
                 {
                     popups.push(crate::new_popup!(

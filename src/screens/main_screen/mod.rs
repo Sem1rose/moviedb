@@ -29,7 +29,8 @@ use crate::{
     image_backend::RatatuiImage,
     load_file, pop_criterion,
     screens::Screen,
-    tokens::{PunchPlayTokens, SimklTokens, TMDBTokens},
+    sources::{punch_play, simkl, tmdb, trakt},
+    tokens::{PunchPlayTokens, SimklTokens, TMDBTokens, TraktTokens},
     types::{
         Collection, Entry, FilterCriterion, FxIndexMap, List, ListID, ListItem, Movie, Person,
         RatingSource, Sort,
@@ -69,10 +70,10 @@ pub struct MainScreen {
     pub selected_list: ListID,
     pub lists:         FxIndexMap<ListID, List>,
 
-    pub movies:          Rc<RefCell<FxIndexMap<u32, Movie>>>,
-    pub watched:         Rc<RefCell<FxIndexMap<u32, Entry>>>,
-    pub persons:         Rc<RefCell<FxIndexMap<u32, Person>>>,
-    pub collections:     Rc<RefCell<FxIndexMap<u32, Collection>>>,
+    pub movies:          Rc<RefCell<FxIndexMap<u64, Movie>>>,
+    pub watched:         Rc<RefCell<FxIndexMap<u64, Entry>>>,
+    pub persons:         Rc<RefCell<FxIndexMap<u64, Person>>>,
+    pub collections:     Rc<RefCell<FxIndexMap<u64, Collection>>>,
     pub filtered_movies: Vec<Movie>,
 
     movies_list:        ScrolledList,
@@ -123,10 +124,10 @@ impl MainScreen {
 
     pub fn initialize(
         &mut self,
-        movies: Rc<RefCell<FxIndexMap<u32, Movie>>>,
-        watched: Rc<RefCell<FxIndexMap<u32, Entry>>>,
-        persons: Rc<RefCell<FxIndexMap<u32, Person>>>,
-        collections: Rc<RefCell<FxIndexMap<u32, Collection>>>,
+        movies: Rc<RefCell<FxIndexMap<u64, Movie>>>,
+        watched: Rc<RefCell<FxIndexMap<u64, Entry>>>,
+        persons: Rc<RefCell<FxIndexMap<u64, Person>>>,
+        collections: Rc<RefCell<FxIndexMap<u64, Collection>>>,
     ) -> bool {
         self.movies = movies;
         self.watched = watched;
@@ -204,7 +205,7 @@ impl MainScreen {
         &mut self,
         id: ListID,
         items: Vec<ListItem>,
-        deleted_items: Option<Vec<u32>>,
+        deleted_items: Option<Vec<u64>>,
         overwrite: bool,
     ) {
         self.lists.entry(id).and_modify(|x| {
@@ -324,7 +325,7 @@ impl MainScreen {
     pub fn open_list_and_select_movie(
         &mut self,
         list_id: ListID,
-        movie_id: u32,
+        movie_id: u64,
         event_handler: &mut EventHandler,
     ) -> bool {
         if self.open_list_by_id(list_id, event_handler) {
@@ -343,7 +344,7 @@ impl MainScreen {
     pub fn open_list(
         &mut self,
         index: usize,
-        and_select_movie: Option<u32>,
+        and_select_movie: Option<u64>,
         event_handler: &mut EventHandler,
     ) -> bool {
         if index > self.lists.len() + 1 {
@@ -376,7 +377,7 @@ impl MainScreen {
         }
     }
 
-    pub fn get_list_ids(&self) -> Vec<u32> {
+    pub fn get_list_ids(&self) -> Vec<u64> {
         if matches!(&self.selected_list, ListID::Watched) {
             self.watched.borrow().keys().copied().collect()
         } else if matches!(&self.selected_list, ListID::All) {
@@ -405,8 +406,9 @@ impl MainScreen {
 
     fn refetch_current_list(
         &mut self,
-        watched: &FxIndexMap<u32, Entry>,
+        watched: &FxIndexMap<u64, Entry>,
         tmdb_tokens: &TMDBTokens,
+        trakt_tokens: &TraktTokens,
         simkl_tokens: &SimklTokens,
         punch_play_tokens: &PunchPlayTokens,
     ) {
@@ -475,6 +477,15 @@ impl MainScreen {
                     self.add_list(List::from_tmdb(list_details, false));
                 }
             }
+            ListID::Trakt(id) => {
+                if let Ok(list_details) = trakt::list::get_list_details(
+                    trakt_tokens.client_id(),
+                    trakt_tokens.access_token(),
+                    id,
+                ) {
+                    self.add_list(List::from_trakt(list_details, false));
+                }
+            }
             ListID::PunchPlay(id) => {
                 if let Ok(list_details) =
                     punch_play::list::get_list_details(punch_play_tokens.access_token(), id)
@@ -489,7 +500,9 @@ impl MainScreen {
                     self.add_list(List::from_collection(collection_details));
                 }
             }
-            _ => (),
+            ListID::All => (),
+            ListID::Watched => (),
+            ListID::Local(_) => (),
         }
     }
 
@@ -526,7 +539,9 @@ impl MainScreen {
         for movie in &self.filtered_movies {
             if let Some(score) = pattern.score(
                 nucleo_matcher::Utf32Str::Ascii(
-                    movie.title.clone()// + " " + &movie.release_date.year().to_string())
+                    movie
+                        .title
+                        .clone() // + " " + &movie.release_date.year().to_string())
                         .to_string()
                         .as_bytes(),
                 ),
@@ -571,7 +586,9 @@ impl MainScreen {
                     for movie in &movies {
                         if let Some(score) = pattern.score(
                             nucleo_matcher::Utf32Str::Ascii(
-                                movie.title.clone()
+                                movie
+                                    .title
+                                    .clone()
                                     // + " "
                                     // + &movie.release_date.year().to_string())
                                     .to_string()
@@ -616,7 +633,7 @@ impl MainScreen {
                     movies.retain(|x| {
                         x.release_date
                             .map(|release_date| {
-                                (release_date.year() as u32).is_between(lower_bound, upper_bound)
+                                (release_date.year() as u64).is_between(lower_bound, upper_bound)
                                     ^ *inverted
                             })
                             .unwrap_or_default()
@@ -628,7 +645,7 @@ impl MainScreen {
                         watched_borrowed
                             .get(&x.id)
                             .map(|y| {
-                                (y.get_first_play().year() as u32)
+                                (y.get_first_play().year() as u64)
                                     .is_between(lower_bound, upper_bound)
                                     ^ *inverted
                             })
@@ -641,7 +658,7 @@ impl MainScreen {
                         watched_borrowed
                             .get(&x.id)
                             .map(|y| {
-                                (y.get_latest_play().year() as u32)
+                                (y.get_latest_play().year() as u64)
                                     .is_between(lower_bound, upper_bound)
                                     ^ *inverted
                             })
@@ -817,7 +834,7 @@ impl MainScreen {
     }
 
     pub fn filter_sort_movies(&mut self, keep_selected: bool) {
-        let selected_movie_id = self.current_movie().map(|x| x.id).unwrap_or(u32::MAX);
+        let selected_movie_id = self.current_movie().map(|x| x.id).unwrap_or(u64::MAX);
 
         self.filter_movies();
 
@@ -1017,8 +1034,8 @@ impl MainScreen {
                             |app, _| {
                                 app.drawer.open_refetch_details_popup(
                                     app.tmdb_tokens.clone(),
-                                    app.punch_play_tokens.clone(),
                                     app.trakt_tokens.clone(),
+                                    app.punch_play_tokens.clone(),
                                     app.omdb_tokens.clone(),
                                 );
 
@@ -1080,8 +1097,8 @@ impl MainScreen {
                         } else if CONTEXT_MENU_MODEL[i] == "Refetch details" {
                             app.drawer.open_refetch_details_popup(
                                 app.tmdb_tokens.clone(),
-                                app.punch_play_tokens.clone(),
                                 app.trakt_tokens.clone(),
+                                app.punch_play_tokens.clone(),
                                 app.omdb_tokens.clone(),
                             );
                         } else if CONTEXT_MENU_MODEL[i] == "Change artworks" {
@@ -1159,8 +1176,8 @@ impl MainScreen {
                             } else if CONTEXT_MENU_MODEL[option_index] == "Refetch details" {
                                 app.drawer.open_refetch_details_popup(
                                     app.tmdb_tokens.clone(),
-                                    app.punch_play_tokens.clone(),
                                     app.trakt_tokens.clone(),
+                                    app.punch_play_tokens.clone(),
                                     app.omdb_tokens.clone(),
                                 );
                             } else if CONTEXT_MENU_MODEL[option_index] == "Change artworks" {
@@ -1337,8 +1354,8 @@ impl MainScreen {
                     |app, _| {
                         app.drawer.open_refetch_details_popup(
                             app.tmdb_tokens.clone(),
-                            app.punch_play_tokens.clone(),
                             app.trakt_tokens.clone(),
+                            app.punch_play_tokens.clone(),
                             app.omdb_tokens.clone(),
                         );
                     },
@@ -1417,6 +1434,7 @@ impl MainScreen {
                             main_screen.refetch_current_list(
                                 &app.watched.borrow_mut(),
                                 &app.tmdb_tokens,
+                                &app.trakt_tokens,
                                 &app.simkl_tokens,
                                 &app.punch_play_tokens,
                             );
@@ -1433,8 +1451,8 @@ impl MainScreen {
             event_handler.bind_key((Some(0), None), 'a', "Add movie".into(), move |app, _| {
                 app.drawer.open_add_movie_popup(
                     app.tmdb_tokens.clone(),
-                    app.punch_play_tokens.clone(),
                     app.trakt_tokens.clone(),
+                    app.punch_play_tokens.clone(),
                     app.omdb_tokens.clone(),
                     take_rating,
                 );

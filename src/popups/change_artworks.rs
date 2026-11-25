@@ -16,13 +16,13 @@ use ratatui::{
 };
 use ratatui_image::sliced::SignedPosition;
 use throbber_widgets_tui::{Throbber, ThrobberState, symbols::throbber};
-use tmdb::smo::MovieDetails as TMDBMovieDetails;
 
 use crate::{
     event_handler::{Data, EventHandler},
     helpers,
     image_backend::{ImageID, RatatuiImage},
     popups::{Popup, PopupTrait},
+    sources::tmdb::{self, smo::MovieDetails as TMDBMovieDetails},
     types::Movie,
     widgets::{self, Action, ActionType, Direction, Orientation, ScrollGallery},
 };
@@ -60,7 +60,7 @@ pub struct ChangeArtworksPopup {
     pub movie_images:    Option<TMDBMovieDetails>,
     rx_details_response: Option<Receiver<anyhow::Result<TMDBMovieDetails>>>,
 
-    pub movie_id:      u32,
+    pub movie_id:      u64,
     tmdb_access_token: String,
 }
 

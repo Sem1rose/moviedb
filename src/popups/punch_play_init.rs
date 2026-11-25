@@ -4,7 +4,6 @@ use std::{
     thread,
 };
 
-use punch_play::{self, smo::AccessTokenResponse};
 use ratatui::{
     Frame,
     layout::{Flex, HorizontalAlignment, Margin},
@@ -26,6 +25,7 @@ use crate::{
     helpers,
     image_backend::RatatuiImage,
     popups::{Popup, PopupTrait},
+    sources::punch_play::{self, smo::AccessTokenResponse},
     tokens::punch_play_tokens::{PunchPlayTokens, UserTokens},
     widgets::{self, Action, ActionType, Hyperlink},
 };

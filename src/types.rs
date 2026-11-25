@@ -3,7 +3,6 @@ use std::{cmp::Ordering, hash::Hash, io::stdout};
 use chrono::{DateTime, NaiveDate, TimeDelta, Utc};
 use indexmap::IndexMap;
 use itertools::Itertools;
-use punch_play::smo::{HistoryItem as PunchPlayHistoryItem, MovieDetails as PunchPlayMovieDetails};
 use ratatui::{
     Terminal,
     backend::CrosstermBackend,
@@ -21,10 +20,19 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use strum::{
     AsRefStr, EnumCount, EnumDiscriminants, EnumIter, FromRepr, IntoEnumIterator, IntoStaticStr,
 };
-use tmdb::smo::{MovieDetails as TMDBMovieDetails, Person as TMDBPerson};
-use trakt::smo::MovieDetails as TraktMovieDetails;
 
-use crate::omdb::MovieDetails as OMDBMovieDetails;
+use crate::sources::{
+    omdb::MovieDetails as OMDBMovieDetails,
+    punch_play::{
+        self,
+        smo::{HistoryItem as PunchPlayHistoryItem, MovieDetails as PunchPlayMovieDetails},
+    },
+    tmdb::{
+        self,
+        smo::{MovieDetails as TMDBMovieDetails, Person as TMDBPerson},
+    },
+    trakt::{self, smo::MovieDetails as TraktMovieDetails},
+};
 
 pub type Term = Terminal<TermBackend>;
 type TermBackend = CrosstermBackend<std::io::Stdout>;
@@ -81,13 +89,14 @@ pub enum ListID {
     #[default]
     Watched,
     Watchlist,
-    TMDB(u32),
-    Local(u32),
-    PunchPlay(u32),
-    Collection(u32),
+    TMDB(u64),
+    Trakt(u64),
+    Local(u64),
+    PunchPlay(u64),
+    Collection(u64),
 }
 
-fn indexmap_deserializer<'de, D>(d: D) -> Result<FxIndexMap<u32, ListItem>, D::Error>
+fn indexmap_deserializer<'de, D>(d: D) -> Result<FxIndexMap<u64, ListItem>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -105,7 +114,7 @@ where
 }
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct ListItem {
-    pub id:       u32,
+    pub id:       u64,
     pub added_at: DateTime<Utc>,
 }
 #[derive(Serialize, Deserialize, Default, Debug, Clone)]
@@ -117,7 +126,7 @@ pub struct List {
         deserialize_with = "indexmap_deserializer",
         serialize_with = "indexmap_serializer"
     )]
-    pub items:    FxIndexMap<u32, ListItem>,
+    pub items:    FxIndexMap<u64, ListItem>,
     pub readonly: bool,
 }
 impl List {
@@ -127,7 +136,6 @@ impl List {
             name: value.name,
             items: value
                 .items
-                .unwrap_or_default()
                 .iter()
                 .filter_map(|x| {
                     (x.media_type.as_ref().unwrap() == "movie").then_some((
@@ -145,13 +153,35 @@ impl List {
         }
     }
 
+    pub fn from_trakt(value: trakt::list::smo::ListDetails, readonly: bool) -> Self {
+        Self {
+            id: ListID::Trakt(value.ids.trakt),
+            name: value.name,
+            items: value
+                .items
+                .iter()
+                .map(|x| {
+                    (
+                        x.movie.ids.tmdb,
+                        ListItem {
+                            id:       x.movie.ids.tmdb,
+                            added_at: x.added_at,
+                        },
+                    )
+                })
+                .collect(),
+            readonly,
+
+            ..Default::default()
+        }
+    }
+
     pub fn from_punch_play(value: punch_play::list::smo::ListDetails, readonly: bool) -> Self {
         Self {
             id: ListID::PunchPlay(value.id),
             name: value.name,
             items: value
                 .items
-                .unwrap_or_default()
                 .iter()
                 .filter_map(|x| {
                     (x.item_type == "movie").then_some((
@@ -244,12 +274,12 @@ pub enum RatingSource {
 
 #[derive(Serialize, Clone, Copy, Deserialize, Debug, Default)]
 pub struct ExternalRatings {
-    pub imdb:       (f64, u32),
-    pub letterboxd: (f64, u32),
-    pub trakt:      (u32, u32),
-    pub tmdb:       (f64, u32),
-    pub popcorn:    (u32, u32),
-    pub tomatoes:   (u32, u32),
+    pub imdb:       (f64, u64),
+    pub letterboxd: (f64, u64),
+    pub trakt:      (u64, u64),
+    pub tmdb:       (f64, u64),
+    pub popcorn:    (u64, u64),
+    pub tomatoes:   (u64, u64),
 }
 
 #[derive(Clone, EnumDiscriminants, Debug)]
@@ -257,26 +287,26 @@ pub struct ExternalRatings {
 #[strum_discriminants(derive(EnumIter, IntoStaticStr, EnumCount))]
 pub enum FilterCriterion {
     Title(String, bool /*filter*/),
-    Director(u32, bool /*inverted*/),
-    Actors(Vec<u32>, bool /*contains all*/, bool /*inverted*/),
+    Director(u64, bool /*inverted*/),
+    Actors(Vec<u64>, bool /*contains all*/, bool /*inverted*/),
     Genres(
         Vec<String>,
         bool, /*contains all*/
         bool, /*inverted*/
     ),
     Released(
-        u32,  /*lower bound*/
-        u32,  /*upper bound*/
+        u64,  /*lower bound*/
+        u64,  /*upper bound*/
         bool, /*inverted*/
     ),
     FirstWatched(
-        u32,  /*lower bound*/
-        u32,  /*upper bound*/
+        u64,  /*lower bound*/
+        u64,  /*upper bound*/
         bool, /*inverted*/
     ),
     LastWatched(
-        u32,  /*lower bound*/
-        u32,  /*upper bound*/
+        u64,  /*lower bound*/
+        u64,  /*upper bound*/
         bool, /*inverted*/
     ),
     UserRating(f64, Ordering, bool /*inverted*/),
@@ -319,7 +349,7 @@ pub struct HistoryEntry {
 }
 #[derive(Serialize, Clone, Deserialize, Debug, Default)]
 pub struct Entry {
-    pub movie_id: u32,
+    pub movie_id: u64,
     pub history:  Vec<HistoryEntry>,
 }
 impl From<PunchPlayHistoryItem> for Entry {
@@ -420,12 +450,12 @@ impl Entry {
 
 #[derive(Serialize, Clone, Deserialize, Debug)]
 pub struct Role {
-    pub id:               u32,
+    pub id:               u64,
     pub job_or_character: String,
 }
 #[derive(Serialize, Clone, Deserialize, Debug)]
 pub struct Person {
-    pub id:     u32,
+    pub id:     u64,
     pub gender: usize,
     pub name:   String,
 }
@@ -440,9 +470,9 @@ impl From<&TMDBPerson> for Person {
 }
 #[derive(Serialize, Clone, Deserialize, Debug)]
 pub struct Collection {
-    pub id:    u32,
+    pub id:    u64,
     pub name:  String,
-    pub parts: Vec<u32>,
+    pub parts: Vec<u64>,
 }
 #[derive(Serialize, Clone, Deserialize, Debug, Default)]
 pub struct Credits {
@@ -451,22 +481,22 @@ pub struct Credits {
 }
 #[derive(Serialize, Clone, Deserialize, Debug, Default)]
 pub struct Movie {
-    pub id:               u32,
+    pub id:               u64,
     pub title:            String,
     pub original_title:   String,
     pub release_date:     Option<NaiveDate>,
     pub language:         String,
     pub external_ratings: ExternalRatings,
     pub genres:           Vec<String>,
-    pub tmdb_collection:  Option<u32>,
+    pub tmdb_collection:  Option<u64>,
     pub overview:         String,
-    pub runtime:          u32,
+    pub runtime:          u64,
     pub released:         bool,
     pub tagline:          String,
     pub certification:    String,
     pub origin_country:   String,
     pub credits:          Credits,
-    pub recommendations:  Vec<u32>,
+    pub recommendations:  Vec<u64>,
 
     pub override_poster:   Option<String>,
     pub override_backdrop: Option<String>,
@@ -584,17 +614,17 @@ impl Movie {
                             );
                         } else if source == "trakt" {
                             self.external_ratings.trakt = (
-                                external_rating.value.unwrap_or(0.0) as u32,
+                                external_rating.value.unwrap_or(0.0) as u64,
                                 external_rating.votes.unwrap_or(0),
                             );
                         } else if source == "popcorn" {
                             self.external_ratings.popcorn = (
-                                external_rating.value.unwrap_or(0.0) as u32,
+                                external_rating.value.unwrap_or(0.0) as u64,
                                 external_rating.votes.unwrap_or(0),
                             );
                         } else if source == "tomatoes" {
                             self.external_ratings.tomatoes = (
-                                external_rating.value.unwrap_or(0.0) as u32,
+                                external_rating.value.unwrap_or(0.0) as u64,
                                 external_rating.votes.unwrap_or(0),
                             );
                         }
@@ -619,7 +649,7 @@ impl Movie {
         // info!("{omdb_details:#?}");
 
         let rating = omdb_details.imdb_rating.parse::<f64>();
-        let votes = omdb_details.imdb_votes.replace(',', "").parse::<u32>();
+        let votes = omdb_details.imdb_votes.replace(',', "").parse::<u64>();
         if let (Ok(rating), Ok(votes)) = (rating, votes) {
             if votes > self.external_ratings.imdb.1 {
                 self.external_ratings.imdb = (rating, votes);
@@ -697,68 +727,62 @@ impl std::cmp::PartialEq<Movie> for Movie {
 #[derive(Debug, Clone, Copy, EnumIter, AsRefStr, PartialEq, Eq, Hash)]
 pub enum SyncSource {
     TMDB,
+    Trakt,
     Simkl,
     PunchPlay,
-    // Trakt
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SyncItem {
     AddToWatched {
-        movie_id: u32,
+        movie_id: u64,
         date:     DateTime<Utc>,
         rating:   f64,
     },
     AddToList {
         list:     ListID,
         date:     DateTime<Utc>,
-        movie_id: u32,
+        movie_id: u64,
     },
     AddPlay {
-        movie_id: u32,
+        movie_id: u64,
         date:     DateTime<Utc>,
         rating:   f64,
     },
-    Edit {
-        movie_id: u32,
-        date:     DateTime<Utc>,
+    EditPlay {
+        movie_id: u64,
+        from:     DateTime<Utc>,
+        to:       DateTime<Utc>,
         rating:   f64,
+    },
+    RemovePlay {
+        movie_id: u64,
+        date:     DateTime<Utc>,
     },
     RemoveFromWatched {
-        movie_id: u32,
+        movie_id: u64,
     },
     RemoveFromList {
         list:     ListID,
-        movie_id: u32,
+        movie_id: u64,
     },
-    // EditPlay,
-    // RemovePlay
 }
 
 impl Eq for SyncItem {}
 impl Hash for SyncItem {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         match self {
-            SyncItem::AddToWatched {
-                movie_id,
-                date,
-                rating: _,
-            } => (movie_id, date).hash(state),
+            SyncItem::AddToWatched { movie_id, date, .. } => (movie_id, date).hash(state),
             SyncItem::AddToList {
                 list,
                 date,
                 movie_id,
             } => (list, movie_id, date).hash(state),
-            SyncItem::AddPlay {
-                movie_id,
-                date,
-                rating: _,
-            } => (movie_id, date).hash(state),
-            SyncItem::Edit {
-                movie_id,
-                date,
-                rating: _,
-            } => (movie_id, date).hash(state),
+            SyncItem::AddPlay { movie_id, date, .. } => (movie_id, date).hash(state),
+            SyncItem::EditPlay {
+                movie_id, from, to, ..
+            } => (movie_id, from, to).hash(state),
+            SyncItem::RemovePlay { movie_id, date } => (movie_id, date).hash(state),
             SyncItem::RemoveFromWatched { movie_id } => movie_id.hash(state),
             SyncItem::RemoveFromList { list, movie_id } => (list, movie_id).hash(state),
         }
@@ -766,28 +790,13 @@ impl Hash for SyncItem {
 }
 
 impl SyncItem {
-    pub fn movie_id(&self) -> u32 {
+    pub fn movie_id(&self) -> u64 {
         match self {
-            SyncItem::AddToWatched {
-                movie_id,
-                date: _,
-                rating: _,
-            } => *movie_id,
-            SyncItem::AddToList {
-                list: _,
-                date: _,
-                movie_id,
-            } => *movie_id,
-            SyncItem::AddPlay {
-                movie_id,
-                date: _,
-                rating: _,
-            } => *movie_id,
-            SyncItem::Edit {
-                movie_id,
-                date: _,
-                rating: _,
-            } => *movie_id,
+            SyncItem::AddToWatched { movie_id, .. } => *movie_id,
+            SyncItem::AddToList { movie_id, .. } => *movie_id,
+            SyncItem::AddPlay { movie_id, .. } => *movie_id,
+            SyncItem::EditPlay { movie_id, .. } => *movie_id,
+            SyncItem::RemovePlay { movie_id, .. } => *movie_id,
             SyncItem::RemoveFromWatched { movie_id } => *movie_id,
             SyncItem::RemoveFromList { list: _, movie_id } => *movie_id,
         }

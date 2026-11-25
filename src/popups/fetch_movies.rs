@@ -33,22 +33,22 @@ pub struct FetchMoviesPopup {
     count:    usize,
     progress: usize,
     num_sent: usize,
-    errored:  Option<(u32, String)>,
+    errored:  Option<(u64, String)>,
     pub done: bool,
     started:  bool,
 
-    movies:           Rc<RefCell<FxIndexMap<u32, Movie>>>,
-    collections:      Rc<RefCell<FxIndexMap<u32, Collection>>>,
-    persons:          Rc<RefCell<FxIndexMap<u32, Person>>>,
-    unfetched_movies: Vec<u32>,
+    movies:           Rc<RefCell<FxIndexMap<u64, Movie>>>,
+    collections:      Rc<RefCell<FxIndexMap<u64, Collection>>>,
+    persons:          Rc<RefCell<FxIndexMap<u64, Person>>>,
+    unfetched_movies: Vec<u64>,
 
     tmdb_tokens:       TMDBTokens,
     punch_play_tokens: PunchPlayTokens,
     trakt_tokens:      TraktTokens,
     omdb_tokens:       OMDBTokens,
 
-    tx_details_request:  Option<Sender<u32>>,
-    rx_details_response: Option<Receiver<(u32, anyhow::Result<MovieDetailsResponse>)>>,
+    tx_details_request:  Option<Sender<u64>>,
+    rx_details_response: Option<Receiver<(u64, anyhow::Result<MovieDetailsResponse>)>>,
 
     tick:           u64,
     throbber_state: ThrobberState,
@@ -59,9 +59,9 @@ impl FetchMoviesPopup {
         if self.done {
             return self;
         }
-        let (tx_details_request, rx_details_request) = channel::<u32>();
+        let (tx_details_request, rx_details_request) = channel::<u64>();
         let (tx_details_response, rx_details_response) =
-            channel::<(u32, anyhow::Result<MovieDetailsResponse>)>();
+            channel::<(u64, anyhow::Result<MovieDetailsResponse>)>();
 
         let tmdb_tokens = self.tmdb_tokens.clone();
         let punch_play_tokens = self.punch_play_tokens.clone();
@@ -101,13 +101,13 @@ impl FetchMoviesPopup {
     pub fn initialize(
         &mut self,
         tmdb_tokens: TMDBTokens,
-        punch_play_tokens: PunchPlayTokens,
         trakt_tokens: TraktTokens,
+        punch_play_tokens: PunchPlayTokens,
         omdb_tokens: OMDBTokens,
-        movies: Rc<RefCell<FxIndexMap<u32, Movie>>>,
-        watched: &FxIndexMap<u32, Entry>,
-        persons: Rc<RefCell<FxIndexMap<u32, Person>>>,
-        collections: Rc<RefCell<FxIndexMap<u32, Collection>>>,
+        movies: Rc<RefCell<FxIndexMap<u64, Movie>>>,
+        watched: &FxIndexMap<u64, Entry>,
+        persons: Rc<RefCell<FxIndexMap<u64, Person>>>,
+        collections: Rc<RefCell<FxIndexMap<u64, Collection>>>,
         lists: &[&List],
     ) {
         let unfetched_movies = {

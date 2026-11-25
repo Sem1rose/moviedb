@@ -25,6 +25,7 @@ use crate::{
     helpers,
     image_backend::RatatuiImage,
     popups::{Popup, PopupTrait},
+    sources::simkl,
     tokens::simkl_tokens::{SimklTokens, UserTokens},
     widgets::{self, Action, ActionType, Hyperlink},
 };

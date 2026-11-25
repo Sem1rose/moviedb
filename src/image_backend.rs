@@ -24,14 +24,14 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use strum::{EnumDiscriminants, IntoDiscriminant};
 use throbber_widgets_tui::{BRAILLE_SIX_DOUBLE, Throbber, ThrobberState};
 
-use crate::helpers;
+use crate::{helpers, sources::tmdb};
 
 #[derive(PartialEq, Eq, Clone, Debug, EnumDiscriminants)]
 #[strum_discriminants(derive(Hash))]
 pub enum ImageID {
-    Movie(u32, Option<String>, bool),
-    Collection(u32, bool),
-    Person(u32),
+    Movie(u64, Option<String>, bool),
+    Collection(u64, bool),
+    Person(u64),
     Custom(String, bool),
 }
 impl Hash for ImageID {

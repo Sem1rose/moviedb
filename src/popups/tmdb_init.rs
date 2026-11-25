@@ -56,7 +56,7 @@ pub struct TMDBInitPopup {
 
     rx_init:              Option<Receiver<anyhow::Result<UserTokens>>>,
     rx_authorization_url: Option<Receiver<String>>,
-    rx_session_id:        Option<Receiver<anyhow::Result<(String, u32)>>>,
+    rx_session_id:        Option<Receiver<anyhow::Result<(String, u64)>>>,
 
     pub user_tokens: Option<UserTokens>,
 }
@@ -93,7 +93,7 @@ impl TMDBInitPopup {
                 let (tx_authorization_url, rx_authorization_url) = channel();
                 let (tx_session_id, rx_session_id) = channel();
                 thread::spawn(move || {
-                    _ = tx_session_id.send(tmdb::tokens::get_session_account_id(
+                    _ = tx_session_id.send(crate::sources::tmdb::tokens::get_session_account_id(
                         &access_token,
                         tx_authorization_url,
                     ));
